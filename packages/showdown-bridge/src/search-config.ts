@@ -23,10 +23,11 @@ export const SEARCH_POLICY_LABEL = "learned pair with decision-time search (one-
 
 /**
  * Bumped when the hypothetical-channel construction for the value-head leaf, or the non-learned HP and
- * knock-out leaf (`search-actor.ts`, `search-leaf.ts`), changes (ADR-026 section 5). The constant starts at 1 and is
- * the identity's `leaf_format`.
+ * knock-out leaf (`search-actor.ts`, `search-leaf.ts`), changes (ADR-026 section 5). It is the identity's `leaf_format`.
+ * 1: the value-head leaf asks `evaluate` with the hypothetical request's candidates. 2: the value-head leaf asks a `value` query
+ * (no candidates, no rows) of a worker that states `value_query` (ADR-026 erratum E2 decision 7).
  */
-export const LEAF_FORMAT = 1;
+export const LEAF_FORMAT = 2;
 
 export class SearchConfigError extends Error {
   override name = "SearchConfigError";

@@ -38,6 +38,8 @@ import {
   readHandshake,
   readPolicyQuery,
   readPolicyReply,
+  type ValueEvaluation,
+  type ValueQueryInput,
 } from "./policy-protocol.ts";
 
 /** What the actor needs from a worker: one query, one re-checked answer. */
@@ -65,6 +67,14 @@ export interface PolicyClient {
  */
 export interface EvaluationClient {
   evaluate(battle: string, query: EvaluateQueryInput): Promise<Evaluation>;
+  /**
+   * True when the worker stated `value_query` at the handshake (ADR-026 erratum E2 decision 7): its encoder reads nothing of the
+   * candidates or their rows in the trunk, so it answers `value` queries. Absent or false: the search asks `evaluate` for its leaves
+   * (and refuses a pair that reads candidate features).
+   */
+  readonly valueQuery?: boolean;
+  /** The policy's value of a state with no candidates and no rows, from the trunk and value head alone (same session rules as `evaluate`). */
+  value?(battle: string, query: ValueQueryInput): Promise<ValueEvaluation>;
 }
 
 /** The worker's reply is invalid: schema-invalid, for another query, wrong identity, or a choice outside the candidates. A policy forfeit. */
@@ -110,7 +120,7 @@ export interface PolicyWorkerOptions {
 
 interface Outstanding {
   query: PolicyQuery;
-  resolve: (answer: Recommendation | Evaluation) => void;
+  resolve: (answer: Recommendation | Evaluation | ValueEvaluation) => void;
   reject: (error: Error) => void;
 }
 
@@ -134,6 +144,7 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
   #failure: Error | undefined;
   #featureSet: FeatureSetStatement | null = null;
   #sheetSource: FeatureSetStatement | null = null;
+  #valueQuery = false;
   #closing = false;
   #peakRss: number | null = null;
   #stderr = "";
@@ -165,12 +176,19 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
     return this.#sheetSource;
   }
 
+  /** Whether the worker stated `value_query` at the last handshake. */
+  get valueQuery(): boolean {
+    return this.#valueQuery;
+  }
+
   /** Spawn the worker and open the session; resolves once the handshake agrees. */
   async start(): Promise<void> {
     if (this.#child !== undefined) throw new Error("the policy worker is already started");
     const { command, args, cwd, env = {}, handshake_timeout_ms, max_line_bytes } = this.#options;
     this.#failure = undefined;
     this.#featureSet = null;
+    this.#sheetSource = null;
+    this.#valueQuery = false;
     this.#closing = false;
     this.#stderr = "";
     this.#rest = Buffer.alloc(0);
@@ -240,10 +258,11 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
       throw new PolicyHandshakeError(`the worker needs the opponent sheet source ${jcs(sheet as unknown as Json)}, which this side cannot supply`);
     }
     this.#sheetSource = sheet ?? null;
+    this.#valueQuery = message.value_query === true;
   }
 
   async ask(battle: string, input: PolicyQueryInput): Promise<Recommendation> {
-    if (input.sampling.kind === "evaluate") throw new PolicyProtocolError("an evaluate query is sent with evaluate(), not ask()");
+    if (input.sampling.kind === "evaluate" || input.sampling.kind === "value") throw new PolicyProtocolError("an evaluate or value query is sent with evaluate() or value(), not ask()");
     return (await this.#send(battle, input)) as Recommendation;
   }
 
@@ -256,7 +275,18 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
     return (await this.#send(battle, input)) as Evaluation;
   }
 
-  async #send(battle: string, input: PolicyQueryInput): Promise<Recommendation | Evaluation> {
+  /**
+   * Ask for the policy's value of a state alone (ADR-026 erratum E2 decision 7): a query with no candidates and no rows, which the
+   * search sends for its leaves to a worker that stated `value_query`. The same session rules as `evaluate`; refused for a worker that
+   * did not state it. The reply is re-checked against the query before it is returned.
+   */
+  async value(battle: string, input: ValueQueryInput): Promise<ValueEvaluation> {
+    if (input.sampling.kind !== "value") throw new PolicyProtocolError("value() takes a query whose sampling is value");
+    if (!this.#valueQuery) throw new PolicyProtocolError("the worker stated no value_query: it answers no value query");
+    return (await this.#send(battle, input as unknown as PolicyQueryInput)) as ValueEvaluation;
+  }
+
+  async #send(battle: string, input: PolicyQueryInput): Promise<Recommendation | Evaluation | ValueEvaluation> {
     if (this.#failure !== undefined) throw this.#failure;
     if (this.#child === undefined) throw new PolicyWorkerError("crash", "the policy worker is not started");
     if (this.#battles.has(battle)) {
@@ -272,7 +302,7 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
       this.#checkFeatures(query);
       this.#checkSheet(query);
       const frame = encodeFrame(query, this.#options.max_line_bytes);
-      return await new Promise<Recommendation | Evaluation>((resolve, reject) => {
+      return await new Promise<Recommendation | Evaluation | ValueEvaluation>((resolve, reject) => {
         this.#outstanding.set(query.query_id, { query, resolve, reject });
         (this.#child as ChildProcessWithoutNullStreams).stdin.write(frame);
       });
@@ -284,6 +314,7 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
 
   /** `candidate_features` go to a worker that stated a feature set, and then must be that set; to no other. */
   #checkFeatures(query: PolicyQuery): void {
+    if (query.sampling.kind === "value") return; // value-only: the reader has refused rows
     const sent = query.candidate_features;
     const stated = this.#featureSet;
     if (stated === null) {
@@ -297,6 +328,7 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
 
   /** `opponent_sheet` goes to a worker that stated a source, and then must be that source's block; to no other. */
   #checkSheet(query: PolicyQuery): void {
+    if (query.sampling.kind === "value") return; // value-only: the reader has refused a block
     const sent = query.opponent_sheet;
     const stated = this.#sheetSource;
     if (stated === null) {
@@ -392,7 +424,8 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
     }
     this.#outstanding.delete(pending.query.query_id);
     try {
-      pending.resolve(pending.query.sampling.kind === "evaluate" ? this.#evaluation(pending.query, value) : this.#answer(pending.query, value));
+      const { kind } = pending.query.sampling;
+      pending.resolve(kind === "evaluate" ? this.#evaluation(pending.query, value) : kind === "value" ? this.#valueReply(pending.query, value) : this.#answer(pending.query, value));
     } catch (error) {
       pending.reject(error as Error);
     }
@@ -435,6 +468,7 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
       if (reply.error === "unsupported_candidate") throw new UnsupportedCandidateError(reply.detail);
       throw new PolicyProtocolError(`the worker refused the query: ${reply.detail}`);
     }
+    if (reply.kind !== "evaluation") throw new PolicyReplyError("the reply to an evaluate query is not an evaluation");
     const { evaluation } = reply;
     if (!answersRequest(evaluation, query.identity)) {
       throw new PolicyReplyError("the reply answers another request than the query's");
@@ -443,6 +477,25 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
       throw new PolicyReplyError(`the reply has ${evaluation.prior_ppm.length} prior entries for ${query.candidates.length} candidates`);
     }
     return evaluation;
+  }
+
+  /** The value of a reply to a `value` query, once it is of the query's request. */
+  #valueReply(query: PolicyQuery, value: unknown): ValueEvaluation {
+    let reply;
+    try {
+      reply = readEvaluationReply(value).reply;
+    } catch (error) {
+      throw new PolicyReplyError((error as Error).message);
+    }
+    if (reply.kind === "error") {
+      if (reply.error === "unsupported_candidate") throw new UnsupportedCandidateError(reply.detail);
+      throw new PolicyProtocolError(`the worker refused the query: ${reply.detail}`);
+    }
+    if (reply.kind !== "value") throw new PolicyReplyError("the reply to a value query is not a value");
+    if (!answersRequest(reply.value, query.identity)) {
+      throw new PolicyReplyError("the reply answers another request than the query's");
+    }
+    return reply.value;
   }
 
   #closed(code: number | null, signal: NodeJS.Signals | null): void {

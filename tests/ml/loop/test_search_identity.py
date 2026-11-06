@@ -18,8 +18,9 @@ H = "a" * 64
 CONFIG_HASH = "739f4b1f1a30411b3d5fb3d37749739a6673bcaf6195941f3a57f6dc1e70d49c"
 # Moved by #248's format bumps (WORLD_BUILDER_FORMAT 2, world-facts/3), by #1282 (world-facts/4;
 # sha256 of the sorted-key compact JSON of these inputs with hashlib; /3 gave 3508d46a...), and by
-# belief/5 and belief/6 through the belief identity hash named in the config.
-SEARCH_HASH = "17e58d7cd228cefe6a6102a2f3eb2d24f959bb2f0de5f3c0581d74c3a46f99fa"
+# belief/5 and belief/6 through the belief identity hash named in the config, and by #1287
+# (LEAF_FORMAT 2: value-only leaf queries; leaf_format 1 gave 17e58d7c...).
+SEARCH_HASH = "5eddc05daa1004b1a72ccc3deae10adfcc56b38ceba6a1d755344f2a77b53081"
 # The policy-id vectors take a search hash as an opaque string and keep the one
 # they were computed with.
 ID_VECTOR_SEARCH = "edd348bdf8b9f5069ada74afae22d3ba99e1b349e2748b245de73384c9d666b9"
@@ -37,7 +38,7 @@ def identity() -> dict[str, Any]:
         "world_builder_format": 2,
         "world_facts_format": "world-facts/4",
         "reply_model_format": 1,
-        "leaf_format": 1,
+        "leaf_format": 2,
         "reader_sha256": "4" * 64,
         "version_manifest": {
             "showdown_commit": "c" * 40,

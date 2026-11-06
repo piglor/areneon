@@ -665,6 +665,14 @@ class PolicyNetwork(nn.Module):
         value: torch.Tensor = self.value(self._trunk(batch)[2]).squeeze(-1)
         return value
 
+    def value_output(self, batch: Batch) -> torch.Tensor:
+        """The value [B] from the trunk and the value head alone: no candidate is scored.
+
+        Equal, bit for bit, to ``forward(batch).value`` for the same state, since the trunk reads
+        nothing of the candidates (ADR-026 erratum E2 decision 7); a batch needs no candidates.
+        """
+        return self._value(batch, self._trunk(batch)[2])
+
     def forward(self, batch: Batch) -> PolicyOutput:
         x, mask, state, mons, mega = self._trunk(batch)
         value = self._value(batch, state)

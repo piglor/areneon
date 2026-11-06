@@ -204,6 +204,17 @@ class EvaluateSampling(BaseModel):
     kind: Literal["evaluate"]
 
 
+class ValueSampling(BaseModel):
+    """
+    No candidate and no pick: the worker answers with an EvaluationReply whose reply is a value (the policy's value of the state, same rounding as evaluate) from one batch-1 trunk and value-head pass. A decision-time search asks it for the leaves of its hypothetical channels (ADR-026 erratum E2 decision 7). Reader rules: candidates is empty, and the query carries no candidate_features and no opponent_sheet. A worker answers it only if it stated value_query in its ready message.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["value"]
+
+
 class ThresholdTruncation(BaseModel):
     """
     Every candidate whose probability is below min_ppm / 10^6 gets probability 0, except that the first highest candidate is always kept; the rest are renormalised. Applied after the temperature, before the draw.
@@ -888,9 +899,9 @@ class PolicyQuery(BaseModel):
     """
     Built by the ObservationBuilder from the Episode's own channel prefix.
     """
-    candidates: Annotated[list[Candidate], Field(max_length=1024, min_length=1)]
+    candidates: Annotated[list[Candidate], Field(max_length=1024, min_length=0)]
     """
-    The candidate joint choices of the request, each with its pending flag, in the enumerator's canonical order (ADR-006); the choice is one of them. The same N_max as TrainingExample.candidates (ADR-010 §3). No CloneJudge verdict is ever part of it.
+    The candidate joint choices of the request, each with its pending flag, in the enumerator's canonical order (ADR-006); the choice is one of them. The same N_max as TrainingExample.candidates (ADR-010 §3). No CloneJudge verdict is ever part of it. Empty exactly when the sampling kind is value (a reader rule); every other query has at least one.
     """
     candidate_features: CandidateFeatures | MISSING = MISSING
     """
@@ -901,10 +912,11 @@ class PolicyQuery(BaseModel):
     Optional derived opponent sheet block (ADR-027 section 2, ADR-025 erratum E4): what the player's own view makes probable about each opponent preview slot. Absent unless the session or the run declared a sheet source: a writer omits it (never null or empty), so every existing value keeps its bytes and hash (a minor change within v1, ADR-008 section 3). Reader rules are those of the OpponentSheet contract.
     """
     sampling: Annotated[
-        ArgmaxSampling | SampleSampling | EvaluateSampling, Field(discriminator="kind")
+        ArgmaxSampling | SampleSampling | EvaluateSampling | ValueSampling,
+        Field(discriminator="kind"),
     ]
     """
-    How the worker picks among the candidates (ADR-010 §2): argmax, a draw from the policy's probabilities using u, or (ADR-026 §5) no pick at all: evaluate asks for the policy's prior over the candidates and its value of the state.
+    How the worker picks among the candidates (ADR-010 §2): argmax, a draw from the policy's probabilities using u, or (ADR-026 §5) no pick at all: evaluate asks for the policy's prior over the candidates and its value of the state; value (ADR-026 erratum E2 decision 7) asks only for the policy's value of the state and carries no candidates.
     """
     policy_id: Annotated[StrictStr, Field(max_length=256, min_length=1)]
     """
