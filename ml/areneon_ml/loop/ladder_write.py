@@ -23,12 +23,12 @@ loss for the side that failed (the row's ``winner`` is the other side). In half 
 **Window and copies.** A record at generation ``g`` fits the results of generations ``max(1, g -
 window + 1) .. g``. A copy decided in generation ``c`` replaces the loser's slot with the donor's
 weights, so every result involving that slot from generations ``<= c`` (as the member or as an
-opposing member) is dropped (:func:`window_results`). No copy exists yet (slice 8); the rule is
-tested with forged history.
+opposing member) is dropped (:func:`window_results`). The copy itself is applied by the driver at
+the start of generation ``c + 1`` (:mod:`areneon_ml.loop.selection`).
 
 **Bootstrap labels.** Every bootstrap of generation ``g`` draws ``population_draw(run_key, g,
 "m0", "bootstrap", lane << 32 | counter)``: lane 0 for the strengths, ``1 + 64 i + j`` for the
-cyclic-triple edge of members ``i < j``, ``2^20`` reserved for the copy test (slice 8). One seed
+cyclic-triple edge of members ``i < j``, ``2^20`` (``rating.LANE_COPY``) for the copy test. One seed
 label, distinct lanes per use (the slice-6 rule).
 """
 
@@ -42,7 +42,7 @@ from typing import Any
 from areneon_contracts.contracts import jcs, sha256_hex
 
 from areneon_ml.learner.config import RunConfig
-from areneon_ml.loop import rating
+from areneon_ml.loop import rating, selection
 from areneon_ml.loop.ladder import read_ladder_record
 from areneon_ml.loop.league import calibration_game_seed
 from areneon_ml.loop.rating import BootstrapPlan, BootstrapSeed, ResultCell
@@ -64,6 +64,10 @@ _BUCKETS = 5
 MIN_ANCHOR_GAMES = 2
 _HASH_LENGTH = 64
 _HEX64 = frozenset("0123456789abcdef")
+
+
+#: Kept here for the callers that read a member's starting settings with the ladder code.
+member_settings = selection.member_settings
 
 
 class LadderBuildError(ValueError):
@@ -190,7 +194,7 @@ def read_calibration(raw: object, config: RunConfig) -> Calibration:
             or row.get("seats") != seats
             or row.get("outcome") not in ("played", "forfeit")
             or row.get("winner") not in ("p1", "p2", None)
-            or (row["outcome"] == "forfeit" and row["winner"] is None)
+            or not _forfeit_fits(row)
         ):
             _fail(f"calibration game {index} is not the game the plan asks for")
     teams: Any = raw.get("team_hashes")
@@ -204,6 +208,31 @@ def read_calibration(raw: object, config: RunConfig) -> Calibration:
     for (a, b), buckets in _group_by_anchor_pair(games).items():
         cells.append(ResultCell(a, b, _scores_tuple(_tally(buckets))))
     return Calibration(tuple(ids), tuple(cells), tuple(teams))
+
+
+_ROW_KEYS = frozenset(
+    ("game", "pair", "half", "seed", "a", "b", "seats", "outcome", "winner", "turns", "forfeit")
+)
+
+
+def _forfeit_fits(row: Mapping[str, Any]) -> bool:
+    """A row holds the simulator side's keys only, and a forfeit's winner is the other seat."""
+    if not set(row) <= _ROW_KEYS or not isinstance(row.get("turns"), int):
+        return False
+    held = row.get("forfeit")
+    if row["outcome"] == "played":
+        return held is None
+    if not isinstance(held, dict) or set(held) != {"loser", "cause"}:
+        return False
+    return (
+        held["loser"] in ("p1", "p2")
+        and isinstance(held["cause"], str)
+        and row["winner"]
+        == {
+            "p1": "p2",
+            "p2": "p1",
+        }.get(held["loser"])
+    )
 
 
 def _group_by_anchor_pair(games: list[dict[str, Any]]) -> dict[tuple[str, str], list[int]]:
@@ -383,32 +412,20 @@ def result_cells(table: Table) -> list[ResultCell]:
     return cells
 
 
-def member_settings(config: RunConfig, index: int) -> dict[str, Any]:
-    """A member's effective PPO settings and opponent shares, as the record states them."""
-    ppo = config.raw["ppo"]
-    population = config.raw["population"]
-    over: dict[str, Any] = next(
-        (e for e in population.get("member_ppo", []) if e["member"] == index), {}
-    )
-    settings: dict[str, Any] = {
-        key: over.get(key, ppo[key])
-        for key in ("learning_rate_micro", "entropy_coef_micro", "epochs", "clip_micro")
-    }
-    kl = over.get("target_kl_micro", ppo.get("target_kl_micro"))
-    if kl is not None:
-        settings["target_kl_micro"] = kl
-    settings["shares"] = dict(population["shares"])
-    return settings
-
-
-def build_ladder_record(
+def build_ladder_record(  # noqa: PLR0913, PLR0917
     config: RunConfig,
     generation: int,
     history: Sequence[GenerationRows],
     anchors: Mapping[str, int],
     previous: Mapping[str, Any] | None = None,
+    last_copy: Mapping[str, int] | None = None,
 ) -> dict[str, Any]:
-    """The generation's ``ladder.json`` (selection ``none`` until slice 8)."""
+    """The generation's ``ladder.json``, with the copy test's outcome (slice 8).
+
+    ``previous`` is the committed record of the generation before: the members' roots and effective
+    settings are its state with its copy applied (:func:`selection.slot_state`). ``last_copy`` maps
+    a member to the generation of its last copy, from every committed record.
+    """
     population = config.raw["population"]
     window = population["rating"]["window"]
     members = [f"m{k}" for k in range(population["members"])]
@@ -426,6 +443,18 @@ def build_ladder_record(
     )
     strengths = rating.bootstrap_strengths(cells, members, anchors, plan)
     triples = rating.cyclic_triples(cells, members, plan)
+    roots, settings = selection.slot_state(config, previous)
+    outcome = selection.decide(
+        config,
+        generation,
+        strengths={m: strengths[m].strength for m in members},
+        table=table,
+        anchors=sorted(anchors),
+        roots=roots,
+        settings=settings,
+        last_copy=last_copy or {},
+        bootstrap=plan,
+    )
     record: dict[str, Any] = {
         "schema_version": 1,
         "data_class": "synthetic",
@@ -441,15 +470,15 @@ def build_ladder_record(
         "members": [
             {
                 "member": m,
-                "root": m,
+                "root": roots[m],
                 "strength": {
                     "strength": strengths[m].strength,
                     "lower": strengths[m].lower,
                     "upper": strengths[m].upper,
                 },
-                "settings": member_settings(config, k),
+                "settings": settings[m],
             }
-            for k, m in enumerate(members)
+            for m in members
         ],
         "snapshots": [],
         "cells": [
@@ -457,7 +486,7 @@ def build_ladder_record(
             for (member, kind, opponent), scores in table.items()
         ],
         "cyclic_triples": triples,
-        "selections": [{"kind": "none", "failed": "no_ready_member"}],
+        "selections": [outcome],
     }
     read_ladder_record(record, previous, config)
     return record

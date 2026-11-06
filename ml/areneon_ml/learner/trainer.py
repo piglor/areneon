@@ -255,6 +255,9 @@ class Learner:
         # Entropy weight (millionths) of the newest update; set only under a linear
         # ``ppo.entropy_schedule`` (stored in the sidecar then, and nowhere otherwise).
         self.last_entropy_coef_micro: int | None = None
+        # The member's effective PPO settings (ADR-021 section 8); set only by a population run,
+        # which stores them in the learner-state sidecar. ``None`` keeps a single lineage's bytes.
+        self.population_settings: dict[str, int] | None = None
 
     def optimiser_groups(
         self,

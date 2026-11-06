@@ -118,6 +118,8 @@ def pack_state(learner: Learner) -> PackedState:
         sidecar["anchor_beta_micro"] = learner.last_anchor_beta_micro
     if learner.last_entropy_coef_micro is not None:  # linear entropy_schedule only
         sidecar["entropy_coef_micro"] = learner.last_entropy_coef_micro
+    if learner.population_settings is not None:  # population runs only (ADR-021 section 8)
+        sidecar["population_settings"] = learner.population_settings
     data = pack_safetensors(tensors)
     return PackedState(data, jcs(sidecar), state_hash(data, sidecar))
 
@@ -176,6 +178,11 @@ def _check_sidecar(described: Mapping[str, Any], learner: Learner) -> int:
         raise LearnerOptionsError("the learner state was made under other model options")
     if described.get("run_config_hash") != learner.config.hash:
         raise LearnerStateError("the learner state was made under another TrainingRunConfig")
+    if ("population_settings" in described) != (learner.population_settings is not None) or (
+        described.get("population_settings") != learner.population_settings
+        and learner.population_settings is not None
+    ):
+        raise LearnerStateError("the learner state's PPO settings are not the member's")
     generation = described.get("generation")
     if isinstance(generation, bool) or not isinstance(generation, int) or generation < 0:
         raise LearnerStateError("the sidecar's generation is not a counter")
