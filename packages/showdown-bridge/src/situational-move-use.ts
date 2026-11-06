@@ -10,7 +10,7 @@
 // read from the pinned source); no move, threat or order rule is written here.
 //
 // Per own living active at a move request (position = slot, `side.pokemon[slot]`):
-//   Threatened      some REVEALED foe damaging move reaches its HP with at least one no-crit roll (`ohko_rolls > 0`) and that
+//   Threatened      some REVEALED foe damaging move reaches its HP with at least one no-crit roll (`ohko_rolls > 0`, or `max_ppm >= 1,000,000` when the KO counts are null) and that
 //                   foe acts first: the foe move's priority is above 0, or equal to 0 and the speed relation is `foe_first`
 //                   (the own action is taken at default priority 0; a tie is not "first").
 //   Safe            no revealed foe move reaches its HP at all.
@@ -63,8 +63,13 @@ export function tallyDecision(counts: Counts, input: DecisionInput): void {
   if (chosen.length !== active.length || parsed.some((p) => p.length !== active.length)) throw new Error("a choice has a different number of parts than the request has active Pokemon");
   bump(counts, "decisions");
 
-  const reaches = (position: number): { foe: number; move: string }[] =>
-    features.threats.filter((t) => t.own === position && !t.mega && t.kind === "computed" && t.ohko_rolls !== null && t.ohko_rolls > 0).map((t) => ({ foe: t.foe, move: t.move }));
+  // A row reaches the HP when some no-crit roll does: `ohko_rolls > 0`, or, when the probe gives no KO counts (a defender on
+  // `ko_blockers`, e.g. a Sash), `max_ppm >= 1,000,000` (the largest roll as a share of HP, clamped at HP). The blockers' own
+  // effects (a Sash surviving at full HP) are second order for this diagnostic on assumed sets, which the label already says.
+  const reaches = (position: number): { foe: number; move: string; fallback: boolean }[] =>
+    features.threats
+      .filter((t) => t.own === position && !t.mega && t.kind === "computed" && (t.ohko_rolls === null ? t.max_ppm >= 1_000_000 : t.ohko_rolls > 0))
+      .map((t) => ({ foe: t.foe, move: t.move, fallback: (t as { ohko_rolls: number | null }).ohko_rolls === null }));
   const priorityOf = (foe: number, move: string): number => {
     const row = features.foe_priorities.find((p) => p.foe === foe && p.move === move);
     if (row === undefined || row.kind !== "computed") {
@@ -83,13 +88,15 @@ export function tallyDecision(counts: Counts, input: DecisionInput): void {
     }
     return row.relation === "foe_first";
   };
-  for (const t of features.threats) if (t.kind === "computed" && t.ohko_rolls === null) bump(counts, "unknown_threat_ko");
+  for (const t of features.threats) if (t.kind === "computed" && t.ohko_rolls === null) bump(counts, "ko_fallback_rows");
   const moveId = (slot: number, part: SlotPart): string | null => (part.kind === "move" ? ((asList(asRecord(active[slot]).moves)[part.index - 1] as { id?: string } | undefined)?.id ?? null) : null);
 
   for (let slot = 0; slot < active.length; slot++) {
     if (/ fnt$/.test(String(asRecord(pokemon[slot]).condition))) continue;
     const reached = reaches(slot);
-    const situation: Situation = reached.length === 0 ? "safe" : reached.some((r) => foeFirst(slot, r.foe, r.move)) ? "threatened" : "exposed_slower";
+    const first = reached.filter((r) => foeFirst(slot, r.foe, r.move));
+    const situation: Situation = reached.length === 0 ? "safe" : first.length > 0 ? "threatened" : "exposed_slower";
+    if (situation === "threatened" && first.every((r) => r.fallback)) bump(counts, "threatened_by_max_fallback");
     bump(counts, `slots.${situation}`);
 
     const protectOffered = parsed.some((p) => stall.has(moveId(slot, p[slot] as SlotPart) ?? ""));

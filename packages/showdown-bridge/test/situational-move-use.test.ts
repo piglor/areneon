@@ -13,13 +13,13 @@ const body = {
   active: [{ moves: [{ id: "protect" }, { id: "tackle" }] }, { moves: [{ id: "protect" }, { id: "tackle" }] }],
 };
 const candidates = ["move 1, move 2 1", "move 2 1, move 2 1", "move 2 1, move 1", "switch 3, move 2 1"].map((choice) => ({ choice, pending: false }));
-type Threat = { own: number; foe: number; move: string; ohko: number | null; mega?: boolean };
+type Threat = { own: number; foe: number; move: string; ohko: number | null; mega?: boolean; max?: number };
 const features = (threats: Threat[], speeds: Record<string, "own_first" | "foe_first" | "tie"> = {}, priorities: Record<string, number> = {}): CandidateFeatures2 =>
   ({
     feature_set: "probe-damage/2",
     feature_set_hash: "h",
     rows: [],
-    threats: threats.map((t) => ({ own: t.own, mega: t.mega ?? false, foe: t.foe, move: t.move, kind: "computed", mean_ppm: 0, max_ppm: 0, min_ppm: 0, ohko_rolls: t.ohko })),
+    threats: threats.map((t) => ({ own: t.own, mega: t.mega ?? false, foe: t.foe, move: t.move, kind: "computed", mean_ppm: 0, max_ppm: t.max ?? 0, min_ppm: 0, ohko_rolls: t.ohko })),
     speeds: Object.entries(speeds).map(([k, relation]) => ({ own: Number(k.split(":")[0]), mega: false, foe: Number(k.split(":")[1]), kind: "computed", relation })),
     own_priorities: [],
     foe_priorities: Object.entries(priorities).map(([k, priority]) => ({ foe: Number(k.split(":")[0]), move: k.split(":")[1] as string, kind: "computed", priority })),
@@ -57,7 +57,13 @@ describe("situations from hand-built features", () => {
     const f = features([{ own: 0, foe: 1, move: "x", ohko: null }]);
     f.threats.push({ own: 1, mega: false, foe: 1, move: "y", kind: "unsupported", reason: "query_kind" });
     const counts = run("move 2 1, move 2 1", f);
-    expect(counts).toMatchObject({ "slots.safe": 2, unknown_threat_ko: 1 });
+    expect(counts).toMatchObject({ "slots.safe": 2, ko_fallback_rows: 1 });
+    const lethal = features([{ own: 0, foe: 1, move: "x", ohko: null, max: 1_000_000 }], { "0:1": "foe_first" });
+    expect(run("move 2 1, move 2 1", lethal)).toMatchObject({ "slots.threatened": 1, threatened_by_max_fallback: 1, ko_fallback_rows: 1 });
+    const short = features([{ own: 0, foe: 1, move: "x", ohko: null, max: 999_999 }], { "0:1": "foe_first" });
+    expect(run("move 2 1, move 2 1", short)).toMatchObject({ "slots.safe": 2 });
+    const mixed = features([{ own: 0, foe: 1, move: "x", ohko: null, max: 1_000_000 }, { own: 0, foe: 2, move: "y", ohko: 2 }], { "0:1": "foe_first", "0:2": "foe_first" });
+    expect(run("move 2 1, move 2 1", mixed)["threatened_by_max_fallback"]).toBeUndefined();
     const g = features([{ own: 0, foe: 1, move: "x", ohko: 1 }]);
     expect(run("move 2 1, move 2 1", g)).toMatchObject({ unknown_foe_priority: 1, unknown_speed_relation: 1, "slots.exposed_slower": 1 });
   });
