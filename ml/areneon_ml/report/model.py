@@ -261,6 +261,9 @@ class ReportModel:
     looks: int | None = None
     #: The family label of a pair that reads a candidate feature set (ADR-022 §6); None otherwise.
     family: str | None = None
+    #: The situational move-use summary (#1283; ``report.situational.summarise``) given with
+    #: ``--situational``; None when none was given. Its file is among ``inputs``.
+    situational: dict[str, Any] | None = None
 
 
 def _json(path: Path) -> Any:

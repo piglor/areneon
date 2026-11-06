@@ -12,7 +12,10 @@ The record is the ``RunMetrics`` contract (integers only). A rate is the count t
 divided by the phase's milliseconds, truncated, and 0 when the phase took no time. A CUDA
 learner's generation that trains nothing (generation 0) records a peak of 0. The optional
 ``peak_accelerator_reserved_bytes`` and ``peak_rss_bytes`` (#1069) are diagnostics, written only
-when measured. A failed write
+when measured. The optional ``profile`` (ADR-028 section 1, #1191) is written only by a run
+started with ``--profile``: where a generation's time goes, by phase and process, for the
+loop-share measurement (``loop/share.py``). It is outside every hash like the rest of the
+record. A failed write
 raises out of ``Loop.run`` after the commit: the generation is whole and a resume continues.
 """
 
@@ -25,6 +28,7 @@ from typing import Any
 
 from areneon_contracts.contracts import ContractError, jcs, validate
 
+from areneon_ml import stopwatch
 from areneon_ml.learner.config import RunConfig
 from areneon_ml.loop import layout
 
@@ -64,13 +68,15 @@ class Counts:
 class Peaks:
     """The peak memory figures of a generation; only ``accelerator`` is a required key.
 
-    ``reserved`` and ``rss`` are the optional keys of #1069, written only when given, so a record
-    without them keeps its bytes.
+    ``reserved`` and ``rss`` are the optional keys of #1069 and ``profile`` the optional one of
+    #1191, written only when given, so a record without them keeps its bytes.
     """
 
     accelerator: int | None = None
     reserved: int | None = None
     rss: dict[str, int] | None = None
+    #: The ``profile`` value (``profile_record``) of a run started with ``--profile`` (#1191).
+    profile: dict[str, Any] | None = None
 
 
 def build_metrics(
@@ -106,8 +112,36 @@ def build_metrics(
         record["peak_accelerator_reserved_bytes"] = peaks.reserved
     if peaks.rss:
         record["peak_rss_bytes"] = dict(sorted(peaks.rss.items()))
+    if peaks.profile is not None:
+        record["profile"] = peaks.profile
     validate("run-metrics", record)
     return record
+
+
+def profile_record(play: dict[str, Any], load: dict[str, dict[str, int]]) -> dict[str, Any] | None:
+    """The ``profile`` value: the play script's figures and the load phase's split.
+
+    ``play`` is the script's ``profile`` line (None when it reported none: a run whose play
+    side is a stand-in has no profile) and ``load`` the stop-watch totals of the load phase
+    (``validate``, ``reduce`` and ``encode``; a name never timed counts as 0).
+    """
+    if not play:
+        return None
+
+    def at(name: str, key: str) -> int:
+        return stopwatch.ms(load.get(name, {}).get(key, 0))
+
+    return {
+        **play,
+        "load": {
+            "validate_ms": at("validate", "wall_ns"),
+            "reduce_ms": at("reduce", "wall_ns"),
+            "encode_ms": at("encode", "wall_ns"),
+            "validate_cpu_ms": at("validate", "cpu_ns"),
+            "reduce_cpu_ms": at("reduce", "cpu_ns"),
+            "encode_cpu_ms": at("encode", "cpu_ns"),
+        },
+    }
 
 
 def write_metrics(run_dir: Path, record: dict[str, Any]) -> Path:
@@ -151,4 +185,21 @@ def read_run_metrics(raw: object, config: RunConfig, generation: int) -> dict[st
             )
         if raw["peak_accelerator_reserved_bytes"] < raw["peak_accelerator_memory_bytes"]:
             raise MetricsError("the allocator cannot have reserved less than the tensors used")
+    if "profile" in raw:
+        check_profile(raw["profile"])
     return raw
+
+
+def check_profile(profile: dict[str, Any]) -> None:
+    """The profile's lists agree with its totals (the profile is a diagnostic: nothing else)."""
+    games, workers = profile["game_processes"], profile["policy_workers"]
+    if games["processes"] != len(games["per_process"]):
+        raise MetricsError("the profile's game process count is not its list's length")
+    if workers["workers"] != len(workers["per_process"]):
+        raise MetricsError("the profile's policy worker count is not its list's length")
+    if profile["decisions"] != sum(p["decisions"] for p in games["per_process"]):
+        raise MetricsError("the profile's decisions are not the game processes' sum")
+    if games["cpu_ms"] != sum(p["cpu_ms"] for p in games["per_process"]):
+        raise MetricsError("the profile's game process CPU is not the processes' sum")
+    if workers["cpu_ms"] != sum(p["cpu_ms"] for p in workers["per_process"]):
+        raise MetricsError("the profile's policy worker CPU is not the workers' sum")

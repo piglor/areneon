@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from areneon_contracts.contracts import jcs
 from areneon_ml.inspector.readers import InspectError
 from areneon_ml.loop import layout
 from areneon_ml.loop.__main__ import main
@@ -27,7 +28,7 @@ from areneon_ml.progress.stats import (
     match_pair_scores,
     pair_interval,
 )
-from areneon_ml.report import charts, page
+from areneon_ml.report import charts, page, situational
 from areneon_ml.report.command import inspector_links, report_run
 from areneon_ml.report.model import (
     GenerationFacts,
@@ -999,3 +1000,38 @@ def test_the_dashboard_shows_explained_variance_and_the_last_calibration(tmp_pat
     assert "0.3 to 0.4" in text
     assert "0.3500" in text
     assert "Diagnostic, not skill" in text
+
+
+# --- the situational move-use section (#1283) ---
+
+
+def test_situational_summary_is_shown_and_hashed(run: Path, tmp_path: Path) -> None:
+    raw = {
+        "format": situational.FORMAT,
+        "generation": 1,
+        "run_id": "r",
+        "pin": "x",
+        "games": [
+            {
+                "match_id": "m",
+                "game": g,
+                "pair": g >> 1,
+                "seats": {
+                    "p1": {"policy": "policy:aa", "counts": {"protect.safe.fresh.offered": 2}},
+                    "p2": {"policy": "actor-rule@v1", "counts": {}},
+                },
+            }
+            for g in range(4)
+        ],
+    }
+    summary = tmp_path / "summary.json"
+    summary.write_bytes(jcs(situational.summarise(raw, b_boot=20)))
+    out = tmp_path / "out" / "report.html"
+    report_run(run, None, out, None, summary)
+    text = out.read_text()
+    assert "Situational move-use" in text
+    assert situational.LABEL in text
+    bad = tmp_path / "bad.json"
+    bad.write_text("{}")
+    with pytest.raises(ReportError, match="situational summary is unusable"):
+        report_run(run, None, tmp_path / "o2.html", None, bad)

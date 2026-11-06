@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "run_config_hash": "853e9e39b7ed10ee57224d43d247e309da5819d713951cbbade42d0556aade16",
+  "generation": 1,
+  "phase_ms": {
+    "play": 41250,
+    "write": 310,
+    "load": 1900,
+    "train": 8400,
+    "seal": 120
+  },
+  "counts": {
+    "games": 6,
+    "decisions": 480,
+    "optimiser_steps": 36
+  },
+  "per_hour": {
+    "games": 523,
+    "decisions": 205714,
+    "optimiser_steps": 15428
+  },
+  "peak_accelerator_memory_bytes": null,
+  "device": "cpu",
+  "threads": 1,
+  "profile": {
+    "decisions": 480,
+    "game_processes": {
+      "processes": 2,
+      "cpu_ms": 61000,
+      "e_sim_ms": 9000,
+      "e_judge_ms": 6500,
+      "e_probe_ms": 11000,
+      "o_obs_ms": 4000,
+      "ipc_wait_ms": 38000,
+      "pool_load_ms": 2100,
+      "merge_ms": 900,
+      "per_process": [
+        {
+          "cpu_ms": 31000,
+          "peak_rss_bytes": 629145600,
+          "decisions": 250
+        },
+        {
+          "cpu_ms": 30000,
+          "peak_rss_bytes": 612368384,
+          "decisions": 230
+        }
+      ]
+    },
+    "policy_workers": {
+      "workers": 1,
+      "queries": 480,
+      "cpu_ms": 36000,
+      "w_enc_ms": 14000,
+      "w_fwd_ms": 21000,
+      "w_enc_cpu_ms": 13800,
+      "w_fwd_cpu_ms": 20500,
+      "per_process": [
+        {
+          "cpu_ms": 36000,
+          "peak_rss_bytes": 452984832
+        }
+      ]
+    },
+    "load": {
+      "validate_ms": 700,
+      "reduce_ms": 410,
+      "encode_ms": 640,
+      "validate_cpu_ms": 690,
+      "reduce_cpu_ms": 405,
+      "encode_cpu_ms": 630
+    }
+  }
+}

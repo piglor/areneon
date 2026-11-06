@@ -13,8 +13,10 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from functools import partial
+from typing import Any
 
 from areneon_ml.inspector.page import esc
+from areneon_ml.loop.share import loop_share
 from areneon_ml.progress.gap import GAP_LABEL, SAME_MODE_NOTE
 from areneon_ml.progress.records import (
     SEARCH_EVIDENCE_NOTE,
@@ -695,6 +697,27 @@ def _counts_section(model: ReportModel, tips: Tips) -> str:
     return "".join(out)
 
 
+_GAME_PHASES = ("e_sim", "e_judge", "e_probe", "o_obs", "ipc_wait", "pool_load", "merge")
+_PROFILE_LABELS = (
+    "E_sim",
+    "E_judge",
+    "E_probe",
+    "O_obs",
+    "IPC wait",
+    "Pool load",
+    "Merge",
+    "W_enc",
+    "W_fwd",
+    "Load: validate",
+    "Load: reduce",
+    "Load: encode",
+    "CPU (processes and workers)",
+    "Decisions",
+    "c",
+    "L",
+)
+
+
 def _seconds(ms: int) -> str:
     return f"{ms // 1000}.{ms % 1000:03d} s"
 
@@ -770,6 +793,55 @@ def _metrics_section(model: ReportModel) -> str:
             ],
             rows,
             "Wall-clock time per phase of each committed generation, and the throughput that follows.",
+        )
+    )
+
+
+def _percent(ppm: int) -> str:
+    return f"{ppm // 10_000}.{ppm // 100 % 100:02d} %"
+
+
+def _profile_section(model: ReportModel) -> str:
+    """Where a profiled generation's time went (ADR-028 section 1); nothing for a run without."""
+    rows = []
+    for g in model.generations:
+        m = g.metrics
+        if m is None or "profile" not in m:
+            continue
+        found = loop_share(m)
+        games, workers, load = (
+            m["profile"][k] for k in ("game_processes", "policy_workers", "load")
+        )
+        rows.append(
+            [
+                str(g.number),
+                *(_seconds(games[f"{name}_ms"]) for name in _GAME_PHASES),
+                _seconds(workers["w_enc_ms"]),
+                _seconds(workers["w_fwd_ms"]),
+                *(_seconds(load[f"{name}_ms"]) for name in ("validate", "reduce", "encode")),
+                _seconds(games["cpu_ms"] + workers["cpu_ms"]),
+                str(m["profile"]["decisions"]),
+                f"{_percent(found['c_ppm'])} ({found['c_source']})",
+                _percent(found["l_ppm"]),
+            ]
+        )
+    if not rows:
+        return ""
+    heads = [("Generation", True)] + [(label, True) for label in _PROFILE_LABELS]
+    return (
+        "<h2>Where the time went (profile)</h2>"
+        '<p class="note">From the optional <code>profile</code> of <code>metrics/gNNNNNN.json</code>, '
+        "written only by a run started with <code>--profile</code>; diagnostics outside every hash. "
+        "Game-process phases are wall time summed over the processes (IPC wait overlaps the "
+        "workers' own time and, with several games in flight, can exceed the play phase); worker "
+        "and load figures are wall time summed over the workers; CPU is user plus system time of "
+        "every game process and worker (worker CPU is after the session began, so start-up is left out; the game processes still include Node and engine start-up). c is the CPU share of E_sim, E_judge, O_obs, W_enc and W_fwd "
+        "during play (the smaller of the CPU reading and the wall reading, which is an upper bound because waits overlap across games in flight) and L = c x play / T "
+        "(<code>python -m areneon_ml.loop loop-share</code> prints the same figures).</p>"
+        + _table(
+            heads,
+            rows,
+            "Time per phase, process and worker of each profiled generation, and the loop share.",
         )
     )
 
@@ -993,12 +1065,14 @@ def build_report(model: ReportModel, links: Links | None = None) -> str:
         [
             head,
             _progress_section(model, tips),
+            _situational_section(model),
             _training_section(model, tips),
             _forfeit_section(model, tips),
             _sheet_section(model),
             _progress_sheet_section(model),
             _counts_section(model, tips),
             _metrics_section(model),
+            _profile_section(model),
             _diagnostics_section(model, tips),
             _comparison(model, links),
             _inputs(model),
@@ -1401,6 +1475,61 @@ def _rate(part: int, interval: dict[str, int] | None) -> str:
     return (
         f"{part} ({pct(interval['ppm'])}; {pct(interval['low_ppm'], down=True)} to "
         f"{pct(interval['high_ppm'], up=True)})"
+    )
+
+
+def _situational_section(model: ReportModel) -> str:
+    """The situational move-use diagnostic (#1283), from a summary file given to the command."""
+    found = model.situational
+    if found is None:
+        return ""
+    names = [
+        ("protect_threatened", "Protect, Threatened"),
+        ("protect_safe", "Protect, Safe"),
+        ("protect_threatened_minus_safe", "Threatened minus Safe"),
+        ("repeat_protect", "Repeat Protect"),
+        ("switch_bad_matchup", "Switch, Bad matchup"),
+        ("switch_not_threatened", "Switch, not threatened"),
+        ("switch_bad_matchup_minus_not_threatened", "Bad matchup minus not threatened"),
+    ]
+
+    def cell(stat: dict[str, Any]) -> str:
+        if stat["mean_ppm"] is None:
+            return "none offered"
+        iv = stat["interval"]
+        span = "no interval" if iv is None else f"{iv['low_ppm']} to {iv['high_ppm']}"
+        return f"{stat['mean_ppm']} ppm ({span})"
+
+    rows = [
+        [
+            str(found["generation"]),
+            esc(match_id),
+            esc(policy[:24]),
+            str(body["pairs"]),
+            *(cell(body["statistics"][name]) for name, _ in names),
+        ]
+        for match_id, policies in found["matches"].items()
+        for policy, body in policies.items()
+    ]
+    return (
+        "<h3>Situational move-use</h3>"
+        f'<p class="banner">{esc(found["label"])}</p>'
+        '<p class="note">Threatened: a revealed foe damaging move reaches the Pokemon\'s HP and '
+        "acts first (priority 0 for the own action). Bad matchup: Threatened and a switch "
+        "candidate names a bench Pokemon no revealed foe move reaches. Intervals are "
+        "pair-level percentile bootstrap, descriptive, conditional on the fixed validation plan; "
+        "values are in parts per million.</p>"
+        + _table(
+            [
+                ("Generation", True),
+                ("Match", False),
+                ("Policy", False),
+                ("Pairs", True),
+                *((label, True) for _, label in names),
+            ],
+            rows,
+            "Rates over offered decisions, from the stored games re-simulated on the pinned engine.",
+        )
     )
 
 
