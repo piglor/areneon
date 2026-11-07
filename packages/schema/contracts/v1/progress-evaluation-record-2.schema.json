@@ -213,6 +213,12 @@
           "minimum": 2,
           "maximum": 9007199254740991
         },
+        "preview_solve_budget_ms": {
+          "description": "The Team Preview latency budget the solver's config declares (ADR-029 section 4), in ms. Present exactly when the record has solver matches: every game of those matches runs with a Team Preview budget of at least this, the control's included; latency_budget_ms stays the run config's.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
         "max_turns": {
           "description": "The turn cap of the run's TrainingRunConfig.generation: a game still running past it is a tie.",
           "type": "integer",
@@ -263,6 +269,9 @@
         },
         {
           "$ref": "#/$defs/SelfNoSearchOpponent"
+        },
+        {
+          "$ref": "#/$defs/SelfNoSolveOpponent"
         }
       ],
       "discriminator": {
@@ -520,6 +529,14 @@
           "$ref": "#/$defs/SearchSummary",
           "description": "Only a self-no-search match: the control's counts (searched_decisions 0) summed over the match's games."
         },
+        "solve": {
+          "$ref": "#/$defs/SolveSummary",
+          "description": "Only a match of a Team Preview solver candidate (match_id starts with psolve-): the candidate's identity hash and its game counts summed."
+        },
+        "opponent_solve": {
+          "$ref": "#/$defs/SolveSummary",
+          "description": "Only a self-no-solve match: the control's counts (solved 0) summed over the match's games."
+        },
         "sheet": {
           "$ref": "#/$defs/SheetCounts",
           "description": "Only a match of a pair that reads opponent_sheet: the candidate seat's block counts summed over the match's games. The refused share is derived on display, with E4's 1% validity rule."
@@ -654,6 +671,14 @@
         "opponent_search": {
           "$ref": "#/$defs/SearchCounts",
           "description": "Only a game of a self-no-search match: the control's counts for this game."
+        },
+        "solve": {
+          "$ref": "#/$defs/SolveCounts",
+          "description": "Only a game of a match with the solver: the candidate's counts for this game."
+        },
+        "opponent_solve": {
+          "$ref": "#/$defs/SolveCounts",
+          "description": "Only a game of a self-no-solve match: the control's counts for this game."
         },
         "sheet": {
           "$ref": "#/$defs/SheetCounts",
@@ -1179,6 +1204,278 @@
               }
             }
           }
+        }
+      }
+    },
+    "SolveCounts": {
+      "description": "The integer counts of one game of a Team Preview solver policy (ADR-029 section 8), or the sums of several games'. Wall time is printed, never stored. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decisions",
+        "previews",
+        "solved",
+        "fallbacks",
+        "belief_refusals",
+        "worlds_asked",
+        "worlds_refused",
+        "worlds_unstarted",
+        "payoff",
+        "exploitability_ppm",
+        "support_size"
+      ],
+      "properties": {
+        "decisions": {
+          "description": "Requests answered, every phase.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "previews": {
+          "description": "Team Preview requests answered (the one phase the solver acts in; the no-solve control counts them too).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "solved": {
+          "description": "Team Preview decisions the solver chose (0 for the self-no-solve control).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "fallbacks": {
+          "description": "Team Previews the pair played itself, by reason (ADR-029 section 4); all 0 for the control.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "belief_refusal",
+            "clock_floor",
+            "engine_failure",
+            "too_few_worlds",
+            "worker_failure"
+          ],
+          "properties": {
+            "belief_refusal": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "clock_floor": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "engine_failure": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "too_few_worlds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "worker_failure": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "belief_refusals": {
+          "description": "Belief refusals behind belief_refusal fallbacks, by the opponent model's code, sorted and unique by key.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CountEntry"
+          }
+        },
+        "worlds_asked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "worlds_refused": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "worlds_unstarted": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "payoff": {
+          "description": "The payoff table builder's counts, summed over the solves tried.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "back_draws",
+            "clamped",
+            "clamped_high",
+            "clamped_low",
+            "engine_refusals",
+            "entries",
+            "entry_attempts",
+            "game_end_entries",
+            "missing_entries",
+            "not_move_request",
+            "preview_queries",
+            "rollout_capped",
+            "rollout_choices",
+            "value_queries",
+            "worlds_asked",
+            "worlds_dropped",
+            "worlds_used"
+          ],
+          "properties": {
+            "back_draws": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "clamped": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "clamped_high": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "clamped_low": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "engine_refusals": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "entries": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "entry_attempts": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "game_end_entries": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "missing_entries": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "not_move_request": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "preview_queries": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "rollout_capped": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "rollout_choices": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "value_queries": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "worlds_asked": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "worlds_dropped": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "worlds_used": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "exploitability_ppm": {
+          "description": "Sum over the solved decisions of the matrix exploitability in ppm (divide by solved).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "support_size": {
+          "description": "Sum over the solved decisions of the support size of our mixture (divide by solved).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "SolveSummary": {
+      "description": "A Team Preview solver policy's identity hash and its per-game counts summed over the match's games (ADR-029 section 8). Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity_hash",
+        "counts"
+      ],
+      "properties": {
+        "identity_hash": {
+          "description": "The solver identity hash (ADR-029 section 4; the preview_solve: member of the candidate's policy id). On the opponent side of a self-no-solve match it names the solver policy the control belongs to.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "counts": {
+          "$ref": "#/$defs/SolveCounts"
+        }
+      }
+    },
+    "SelfNoSolveOpponent": {
+      "description": "The control opponent of a Team Preview solver policy (ADR-029 section 8): the very pair the solver policy wraps, played without the solver. A minor change within v2: a reader older than it rejects a record that carries it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "policy_id",
+        "checkpoints",
+        "mode"
+      ],
+      "properties": {
+        "kind": {
+          "const": "self-no-solve"
+        },
+        "policy_id": {
+          "type": "string",
+          "pattern": "^policy:[0-9a-f]{64}$",
+          "description": "The same frozen pair played WITHOUT the solver, in the mode the match played (its ordinary policy id)."
+        },
+        "checkpoints": {
+          "$ref": "#/$defs/Checkpoints"
+        },
+        "mode": {
+          "enum": [
+            "sample",
+            "argmax"
+          ],
+          "description": "The pair's play mode: the control's mode, the one the solver policy plays every other decision in."
         }
       }
     }

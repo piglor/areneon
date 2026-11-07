@@ -52,9 +52,15 @@ from areneon_ml.progress.records import (
     SEARCH_LABEL,
     SEARCH_PREFIX,
     SEARCH_PRIOR_LABEL,
+    SOLVE_CONTROL_LABEL,
+    SOLVE_EVIDENCE_NOTE,
+    SOLVE_LABEL,
+    SOLVE_PREFIX,
+    SOLVE_PRIOR_LABEL,
     ProgressRecordError,
     check_game_baseline,
     check_game_search,
+    check_game_solve,
     is_damage_aware,
     is_v2,
     read_game_record,
@@ -255,6 +261,10 @@ class ProgressRequest:
     #: (``argmax`` or ``sample``) with the committed ``rerank-1`` config, against the baselines and
     #: the control ``self-no-search``; its matches are ``search-<opponent>-<mode>``.
     search_mode: str | None = None
+    #: The Team Preview solver as the candidate (ADR-029 section 8): the pair in this one play mode
+    #: (``argmax`` or ``sample``) with the committed solver config, against the baselines and the
+    #: control ``self-no-solve``; its matches are ``psolve-<opponent>-<mode>``.
+    preview_solve_mode: str | None = None
     #: Extra play modes (#1044): samples at a declared temperature and/or threshold, played against
     #: the baselines and the other run's pair beside argmax and sample; empty plays today's matches.
     extra_modes: tuple[PlayMode, ...] = ()
@@ -350,6 +360,11 @@ class NodeProgressPlayer(NodePlayer):
             *(() if request.eval_dataset is None else request.eval_dataset.node_args()),
             *ekey.node_args(request.evaluation_key),
             *(() if request.search_mode is None else ("--search-mode", request.search_mode)),
+            *(
+                ()
+                if request.preview_solve_mode is None
+                else ("--preview-solve", request.preview_solve_mode)
+            ),
             *(
                 arg
                 for extra in request.extra_modes
@@ -598,15 +613,51 @@ def _is_search(record: dict[str, Any]) -> bool:
     return any("search" in m for m in record["matches"])
 
 
+def _is_solve(record: dict[str, Any]) -> bool:
+    """Whether the record is a solver record: the Team Preview solver candidate's matches, alone."""
+    return any("solve" in m for m in record["matches"])
+
+
 def _bare(match: dict[str, Any]) -> str:
-    """The match id without the search candidate's ``search-`` prefix."""
+    """The match id without a candidate prefix (``search-`` or ``psolve-``)."""
     name: str = match["match_id"]
-    return name.removeprefix(SEARCH_PREFIX) if "search" in match else name
+    if "search" in match:
+        return name.removeprefix(SEARCH_PREFIX)
+    return name.removeprefix(SOLVE_PREFIX) if "solve" in match else name
 
 
 def _modes(record: dict[str, Any]) -> set[str]:
-    """The modes a record's matches are played in: the one search mode, else both."""
-    return {m["mode"] for m in record["matches"]} if _is_search(record) else {"argmax", "sample"}
+    """The modes a record's matches are played in: the one search or solver mode, else both."""
+    if _is_search(record) or _is_solve(record):
+        return {m["mode"] for m in record["matches"]}
+    return {"argmax", "sample"}
+
+
+def _check_solve(record: dict[str, Any], asked: str | None, *, legacy: bool) -> None:
+    """A solver record (ADR-029 section 8) holds the Team Preview solver candidate's matches alone,
+    in the one mode asked for, with the control ``psolve-self-no-solve-<mode>`` (the policy ids and
+    the control's pair are tied to the run by the record reader).
+
+    ``asked`` is the mode, or None for no solver; ``legacy`` is a committed record (any one mode).
+    """
+    solved = _is_solve(record)
+    if asked is None and not legacy:
+        if solved:
+            raise ProgressError("this evaluation asks for no Team Preview solver")
+        return
+    if not solved:
+        if asked is not None:
+            raise ProgressError("the record holds no solver matches")
+        return
+    modes = {m["mode"] for m in record["matches"]}
+    if len(modes) != 1 or (asked is not None and modes != {asked}):
+        raise ProgressError("a solver record plays the one mode asked for")
+    mode = next(iter(modes))
+    controls = [
+        m["match_id"] for m in record["matches"] if m["opponent"]["kind"] == "self-no-solve"
+    ]
+    if controls != [f"{SOLVE_PREFIX}self-no-solve-{mode}"]:
+        raise ProgressError(f"a solver record holds the control match psolve-self-no-solve-{mode}")
 
 
 def _check_search(record: dict[str, Any], asked: str | None, *, legacy: bool) -> None:
@@ -919,6 +970,7 @@ def _check_extra_modes(
         and match_extra(m) is None
         and m["opponent"]["kind"] in ("baseline", "run")
         and "search" not in m
+        and "solve" not in m
         and m.get("candidate_preview") is None
     }
     for match in found.values():
@@ -989,6 +1041,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
     evaluation_key: str | None = None,
     search_mode: str | None = None,
     extra_modes: Sequence[PlayMode] = (),
+    preview_solve: str | None = None,
 ) -> dict[str, Any]:
     """The simulator side's files are the record's: read both kinds, check every hash and name."""
     record = read_progress_record(layout.read_json(work / PROGRESS), config)
@@ -1010,6 +1063,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
         raise ProgressError("progress.json is not the record asked for")
     _check_ablation(record, ablation, run_dir, config, fresh=True)
     _check_search(record, search_mode, legacy=False)
+    _check_solve(record, preview_solve, legacy=False)
     _check_damage_aware(record, damage_aware, legacy=False)
     _check_versus(record, versus, legacy=False)
     _check_extra_modes(record, extra_modes, versus, legacy=False)
@@ -1036,6 +1090,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
             try:
                 check_game_baseline(stored, match, rows[(match["match_id"], game)])
                 check_game_search(stored, match, rows[(match["match_id"], game)])
+                check_game_solve(stored, match, rows[(match["match_id"], game)])
             except ProgressRecordError as exc:
                 raise ProgressError(f"games/{name}: {exc}") from exc
             listed.append(record_hash(stored))
@@ -1193,7 +1248,25 @@ def summary_of(record: dict[str, Any]) -> list[dict[str, Any]]:
                 if match["opponent"]["kind"] == "self-no-search"
                 else {}
             )
+            | (
+                {"comparison": SOLVE_CONTROL_LABEL, "opponent_solve": match["opponent_solve"]}
+                if match["opponent"]["kind"] == "self-no-solve"
+                else {}
+            )
             | ({"sheet": _sheet_summary(match["sheet"])} if "sheet" in match else {})
+            | (
+                {
+                    "solve": {
+                        "label": SOLVE_LABEL,
+                        "prior_label": SOLVE_PRIOR_LABEL,
+                        "note": SOLVE_EVIDENCE_NOTE,
+                        "identity_hash": match["solve"]["identity_hash"],
+                        "counts": match["solve"]["counts"],
+                    }
+                }
+                if "solve" in match
+                else {}
+            )
             | (
                 {
                     "search": {
@@ -1244,7 +1317,13 @@ def _pair_stats(record: dict[str, Any], match: dict[str, Any]) -> dict[str, Any]
         "interval_high_ppm": interval.high_ppm,
         "interval": PAIR_INTERVAL_LABEL,
     }
-    if match["opponent"]["kind"] in ("previous", "anchor", "run", "self-no-search"):
+    if match["opponent"]["kind"] in (
+        "previous",
+        "anchor",
+        "run",
+        "self-no-search",
+        "self-no-solve",
+    ):
         # pair score minus 1/2: the same resamples, shifted, so the bounds shift exactly
         out |= {
             "diff_mean_ppm": interval.mean_ppm - PPM // 2,
@@ -1284,6 +1363,7 @@ def verify_progress_dir(  # noqa: PLR0913, PLR0917
     _check_anchors(record, None, run_dir, config)
     _check_ablation(record, None, run_dir, config, fresh=False)
     _check_search(record, None, legacy=True)
+    _check_solve(record, None, legacy=True)
     # The damage-aware matches are optional (a record may hold them or not), never half a set.
     _check_damage_aware(record, None, legacy=True)
     _check_versus(record, versus, legacy=True)
@@ -1312,6 +1392,7 @@ def verify_progress_dir(  # noqa: PLR0913, PLR0917
                 try:
                     check_game_baseline(stored, match, rows[(match["match_id"], stored["game"])])
                     check_game_search(stored, match, rows[(match["match_id"], stored["game"])])
+                    check_game_solve(stored, match, rows[(match["match_id"], stored["game"])])
                 except (ProgressRecordError, KeyError) as exc:
                     raise ProgressError(f"games/{name}: {exc}") from exc
     owned = {f"{m['match_id']}-{g}.json" for m in record["matches"] for g in range(m["games"])}
@@ -1323,12 +1404,13 @@ def verify_progress_dir(  # noqa: PLR0913, PLR0917
     return record
 
 
-def _check_asked(
+def _check_asked(  # noqa: PLR0913, PLR0917
     generation: int,
     sizes: tuple[int, int, int],
     asked: tuple[Sequence[int], bool, bool, VersusSpec | None],
     search_mode: str | None = None,
     modes: Sequence[ExtraMode] = (),
+    preview_solve: str | None = None,
 ) -> tuple[list[int], list[int]]:
     """Refuse a request that cannot be played; returns the anchors played and left out."""
     games, record_games, anchor_games = sizes
@@ -1352,10 +1434,20 @@ def _check_asked(
             "no --anchors and no --previous-matches (the baselines, the control and "
             "--versus-run-dir are played)"
         )
-    if modes and (preview_ablation or search_mode is not None):
+    if preview_solve is not None and preview_solve not in ("argmax", "sample"):
+        raise ProgressError("--preview-solve must be argmax or sample")
+    if preview_solve is not None and (
+        preview_ablation or anchors or previous_matches or search_mode is not None
+    ):
+        raise ProgressError(
+            "the Team Preview solver candidate is evaluated alone, in one mode: no "
+            "--preview-ablation, no --search-mode, no --anchors and no --previous-matches "
+            "(the baselines, the control and --versus-run-dir are played)"
+        )
+    if modes and (preview_ablation or search_mode is not None or preview_solve is not None):
         raise ProgressError(
             "--modes names extra play modes for the baselines and the head-to-head: "
-            "not with --preview-ablation or --search-mode"
+            "not with --preview-ablation, --search-mode or --preview-solve"
         )
     if len(set(modes)) != len(modes):
         raise ProgressError("an extra play mode is listed once")
@@ -1390,6 +1482,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
     search_mode: str | None = None,
     modes: Sequence[ExtraMode] = (),
     member: str | None = None,
+    preview_solve: str | None = None,
 ) -> dict[str, Any]:
     """Evaluate one generation into ``root``; a committed directory is verified and kept.
 
@@ -1448,19 +1541,23 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
         (anchors, previous_matches, preview_ablation, versus),
         search_mode,
         modes,
+        preview_solve,
     )
     damage_budget_ms = _damage_budget_ms(
         damage_aware_budget_minutes, preview_ablation, damage_aware_version
     )
     config = _read_config(run_dir)
     if config.population and (
-        anchors or previous_matches or preview_ablation or versus or search_mode
+        anchors or previous_matches or preview_ablation or versus or search_mode or preview_solve
     ):
         raise ProgressError(
             "a population run is evaluated against the baselines only: no --anchors, "
-            "--previous-matches, --preview-ablation, --versus-run-dir or --search-mode"
+            "--previous-matches, --preview-ablation, --versus-run-dir, --search-mode "
+            "or --preview-solve"
         )
-    modes = _with_run_mode(config, modes, preview_ablation or search_mode is not None)
+    modes = _with_run_mode(
+        config, modes, preview_ablation or search_mode is not None or preview_solve is not None
+    )
     try:
         evaluation_key = ekey.check(evaluation_key, config.run_key)
     except ekey.EvaluationKeyError as exc:
@@ -1494,6 +1591,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
                 search_mode,
                 modes,
                 member,
+                preview_solve,
             )
         source = _source(run_dir, config, generation, member=member)
         previous = _previous_pair(run_dir, config, generation) if previous_matches else None
@@ -1552,6 +1650,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
                     eval_dataset=eval_dataset,
                     evaluation_key=evaluation_key,
                     search_mode=search_mode,
+                    preview_solve_mode=preview_solve,
                     extra_modes=extra_modes,
                 )
             )
@@ -1572,6 +1671,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
                 evaluation_key,
                 search_mode,
                 extra_modes,
+                preview_solve,
             )
             layout.fsync_tree(work)
             layout.write_json(
@@ -1621,6 +1721,7 @@ def _skipped(  # noqa: PLR0913, PLR0917
     search_mode: str | None = None,
     modes: Sequence[ExtraMode] = (),
     member: str | None = None,
+    preview_solve: str | None = None,
 ) -> dict[str, Any]:
     """A committed directory is verified and reported, never rewritten."""
     pair = None if versus is None else _versus_pair(run_dir, config, versus, eval_dataset)
@@ -1649,6 +1750,14 @@ def _skipped(  # noqa: PLR0913, PLR0917
         raise ProgressError(
             f"{target.name} already holds "
             f"{'a search record of another kind' if _is_search(record) else 'a normal record'}: "
+            "use a progress directory of its own for the other kind"
+        )
+    if (preview_solve is not None) != _is_solve(record) or (
+        preview_solve is not None and {m["mode"] for m in record["matches"]} != {preview_solve}
+    ):
+        raise ProgressError(
+            f"{target.name} already holds "
+            f"{'a solver record of another kind' if _is_solve(record) else 'a normal record'}: "
             "use a progress directory of its own for the other kind"
         )
     if preview_ablation != bool(ablation_summary(record)):

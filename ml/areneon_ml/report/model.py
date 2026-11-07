@@ -221,6 +221,10 @@ class MatchFacts:
     #: A match of a pair that reads ``opponent_sheet``: the candidate seat's block counts summed
     #: over the match (E4 point 5); None for every other match.
     sheet: SheetCounts | None = None
+    #: A Team Preview solver match (ADR-029): the solver identity hash and the counts summed over
+    #: its games, and for a self-no-solve match the control's; None for every other match.
+    solve: dict[str, Any] | None = None
+    opponent_solve: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -527,6 +531,8 @@ def _progress_facts(
                 match_stem(match),
                 summary.get("play_mode_gap"),
                 read_sheet_counts(match["sheet"]) if "sheet" in match else None,
+                match.get("solve"),
+                match.get("opponent_solve"),
             )
         )
     plan = record["plan"]

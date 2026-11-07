@@ -93,6 +93,104 @@ SEARCH_TABLE_KEYS = ("refusals", "refusal_check_class", "belief_refusals", "resa
 CONTROL_FALLBACK_KEYS = ("team_preview", "forced_switch", "too_few_candidates")
 SEARCH_PREFIX = "search-"
 
+#: What a Team Preview solver match is (ADR-029 section 8), shown on every summary and page.
+SOLVE_LABEL = "learned pair with a Team Preview solver (decision-time, one-shot)"
+SOLVE_PRIOR_LABEL = "belief matched to the synthetic generator: an upper bound for this evaluation"
+SOLVE_EVIDENCE_NOTE = "solver results are never held-out evidence"
+#: What the ``self-no-solve`` opponent is: the same pair, no solver, same mode.
+SOLVE_CONTROL_LABEL = "control: the same frozen pair without the solver"
+SOLVE_PREFIX = "psolve-"
+#: The numeric counts of a Team Preview solver policy's game, in the record's order.
+SOLVE_COUNT_KEYS = (
+    "decisions",
+    "previews",
+    "solved",
+    "worlds_asked",
+    "worlds_refused",
+    "worlds_unstarted",
+    "exploitability_ppm",
+    "support_size",
+)
+SOLVE_FALLBACK_KEYS = (
+    "belief_refusal",
+    "clock_floor",
+    "engine_failure",
+    "too_few_worlds",
+    "worker_failure",
+)
+SOLVE_PAYOFF_KEYS = (
+    "back_draws",
+    "clamped",
+    "clamped_high",
+    "clamped_low",
+    "engine_refusals",
+    "entries",
+    "entry_attempts",
+    "game_end_entries",
+    "missing_entries",
+    "not_move_request",
+    "preview_queries",
+    "rollout_capped",
+    "rollout_choices",
+    "value_queries",
+    "worlds_asked",
+    "worlds_dropped",
+    "worlds_used",
+)
+
+
+def sum_solve_counts(counts: list[dict[str, Any]]) -> dict[str, Any]:
+    """The per-game solver counts summed, key by key (the belief refusals merged, sorted by key)."""
+    total: dict[str, Any] = {key: sum(c[key] for c in counts) for key in SOLVE_COUNT_KEYS}
+    total["fallbacks"] = {k: sum(c["fallbacks"][k] for c in counts) for k in SOLVE_FALLBACK_KEYS}
+    total["payoff"] = {k: sum(c["payoff"][k] for c in counts) for k in SOLVE_PAYOFF_KEYS}
+    merged: dict[str, int] = {}
+    for c in counts:
+        for entry in c["belief_refusals"]:
+            merged[entry["key"]] = merged.get(entry["key"], 0) + entry["count"]
+    total["belief_refusals"] = [{"key": k, "count": merged[k]} for k in sorted(merged)]
+    return total
+
+
+def check_solve_counts(counts: dict[str, Any], what: str) -> None:
+    """The rules the profile cannot say about one solver count record (a game's, or a sum)."""
+    fell_back = sum(counts["fallbacks"].values())
+    if counts["solved"] + fell_back > counts["previews"]:
+        raise ProgressRecordError(
+            f"{what}: solved and fallback Team Previews cannot exceed Team Previews"
+        )
+    if counts["previews"] > counts["decisions"]:
+        raise ProgressRecordError(f"{what}: Team Previews cannot exceed decisions")
+    if counts["worlds_refused"] + counts["worlds_unstarted"] > counts["worlds_asked"]:
+        raise ProgressRecordError(
+            f"{what}: refused and unstarted worlds cannot exceed worlds asked"
+        )
+    if not _ascending([entry["key"] for entry in counts["belief_refusals"]]):
+        raise ProgressRecordError(f"{what}: belief_refusals must be sorted by key, each once")
+    if (
+        sum(entry["count"] for entry in counts["belief_refusals"])
+        > counts["fallbacks"]["belief_refusal"]
+    ):
+        raise ProgressRecordError(
+            f"{what}: belief refusals cannot exceed the belief_refusal fallbacks"
+        )
+
+
+def _check_solve_control_counts(counts: dict[str, Any], what: str) -> None:
+    """The no-solve control solves nothing: only its decisions and Team Previews are counted."""
+    check_solve_counts(counts, what)
+    quiet = all(counts[k] == 0 for k in SOLVE_COUNT_KEYS if k not in ("decisions", "previews"))
+    silent = (
+        not any(counts["fallbacks"].values())
+        and not any(counts["payoff"].values())
+        and not counts["belief_refusals"]
+    )
+    if not (quiet and silent):
+        raise ProgressRecordError(
+            f"{what}: the no-solve control solves nothing: "
+            "every count but decisions and previews is 0"
+        )
+
 
 def sum_search_counts(counts: list[dict[str, Any]]) -> dict[str, Any]:
     """The per-game search counts summed, key by key (the keyed tables merged, sorted by key)."""
@@ -228,6 +326,67 @@ def _check_search_of_match(  # noqa: PLR0912
     ):
         raise ProgressRecordError(
             f"{name}: opponent_search.counts must be the sum of the game rows' counts"
+        )
+
+
+def _check_solve_of_match(  # noqa: PLR0912
+    match: dict[str, Any], rows: list[dict[str, Any]], identities: set[str]
+) -> None:
+    """ADR-029 section 8: a solver match (``psolve-<opponent>-<mode>``) carries the solver identity
+    hash and the sum of its rows' counts; against the self-no-solve control, also the control's
+    (solved 0). No other match carries either; the sums recompute from the rows."""
+    name = match["match_id"]
+    control = match["opponent"]["kind"] == "self-no-solve"
+    solved = "solve" in match
+    if solved != name.startswith(SOLVE_PREFIX):
+        raise ProgressRecordError(
+            f"{name}: a match is named psolve-<opponent>-<mode> exactly when it carries "
+            "solver counts"
+        )
+    if not solved:
+        if (
+            control
+            or "opponent_solve" in match
+            or any("solve" in r or "opponent_solve" in r for r in rows)
+        ):
+            raise ProgressRecordError(
+                f"{name}: only a solver match carries solver counts, "
+                "and the self-no-solve control belongs to one"
+            )
+        return
+    if "candidate_preview" in match or "search" in match:
+        raise ProgressRecordError(f"{name}: a solver match has no Preview variant and no search")
+    if any("solve" not in r for r in rows):
+        raise ProgressRecordError(
+            f"{name}: a solver match carries solver counts in its summary and in every game row"
+        )
+    identities.add(match["solve"]["identity_hash"])
+    for index, row in enumerate(rows):
+        check_solve_counts(row["solve"], f"{name} game {index}")
+    if match["solve"]["counts"] != sum_solve_counts([r["solve"] for r in rows]):
+        raise ProgressRecordError(f"{name}: solve.counts must be the sum of the game rows' counts")
+    if not control:
+        if "opponent_solve" in match or any("opponent_solve" in r for r in rows):
+            raise ProgressRecordError(
+                f"{name}: only a self-no-solve match carries the control's counts"
+            )
+        return
+    if match["opponent"]["mode"] != match["mode"]:
+        raise ProgressRecordError(f"{name}: the control plays the pair in the match's mode")
+    if "opponent_solve" not in match or any("opponent_solve" not in r for r in rows):
+        raise ProgressRecordError(
+            f"{name}: a self-no-solve match carries the control's counts "
+            "in its summary and in every game row"
+        )
+    if match["opponent_solve"]["identity_hash"] != match["solve"]["identity_hash"]:
+        raise ProgressRecordError(
+            f"{name}: the control's identity hash is the solver policy's it belongs to"
+        )
+    for index, row in enumerate(rows):
+        _check_solve_control_counts(row["opponent_solve"], f"{name} game {index} control")
+    if match["opponent_solve"]["counts"] != sum_solve_counts([r["opponent_solve"] for r in rows]):
+        raise ProgressRecordError(
+            f"{name}: opponent_solve.counts must be the sum of the game rows' counts"
         )
 
 
@@ -454,13 +613,25 @@ def _check_play(match: dict[str, Any], name: str) -> str:
             f"{name}: an extra play mode is played against a scripted baseline "
             "or another run's pair"
         )
-    if "search" in match or match.get("candidate_preview") is not None:
-        raise ProgressRecordError(f"{name}: an extra play mode is not a search or ablation match")
+    if "search" in match or "solve" in match or match.get("candidate_preview") is not None:
+        raise ProgressRecordError(
+            f"{name}: an extra play mode is not a search, solver or ablation match"
+        )
     if not name.endswith(f"-sample{extra.suffix}"):
         raise ProgressRecordError(
             f"{name}: a match with play settings is named <opponent>-sample[-t<ppm>][-th<ppm>]"
         )
     return extra.suffix
+
+
+def _usual_name(match: dict[str, Any]) -> str:
+    """The match id without a candidate prefix: the usual opponent-and-mode name."""
+    name: str = match["match_id"]
+    if "search" in match:
+        return name.removeprefix(SEARCH_PREFIX)
+    if "solve" in match:
+        return name.removeprefix(SOLVE_PREFIX)
+    return name
 
 
 def _check_match_v2(  # noqa: PLR0913, PLR0917
@@ -471,12 +642,14 @@ def _check_match_v2(  # noqa: PLR0913, PLR0917
     identities: set[str],
     run_id: str,
     search_identities: set[str],
+    solve_identities: set[str],
 ) -> None:
     opponent = match["opponent"]
     _check_search_of_match(match, rows, search_identities)
+    _check_solve_of_match(match, rows, solve_identities)
     _check_sheet_of_match(match, rows)
     # The usual opponent-and-mode name; a search candidate's match carries the prefix `search-`.
-    name = match["match_id"].removeprefix(SEARCH_PREFIX) if "search" in match else match["match_id"]
+    name = _usual_name(match)
     _check_ablation_match(match, generation)
     suffix = _check_play(match, name)
     if opponent["kind"] == "anchor":
@@ -529,6 +702,7 @@ def _check_matches_v2(
 ) -> None:
     identities: set[str] = set()
     search_identities: set[str] = set()
+    solve_identities: set[str] = set()
     for match in matches:
         _check_match_v2(
             match,
@@ -538,6 +712,7 @@ def _check_matches_v2(
             identities,
             run_id,
             search_identities,
+            solve_identities,
         )
     if len(identities) > 1:
         raise ProgressRecordError(
@@ -546,6 +721,10 @@ def _check_matches_v2(
     if len(search_identities) > 1:
         raise ProgressRecordError(
             "every search match of a record must carry one search identity hash"
+        )
+    if len(solve_identities) > 1:
+        raise ProgressRecordError(
+            "every solver match of a record must carry one solver identity hash"
         )
 
 
@@ -556,6 +735,13 @@ def _check_not_mixed(matches: list[dict[str, Any]]) -> None:
         raise ProgressRecordError(
             "a search record holds search matches only: the search candidate is evaluated alone"
         )
+    if len({"solve" not in m for m in matches}) > 1:
+        raise ProgressRecordError(
+            "a solver record holds solver matches only: "
+            "the Team Preview solver candidate is evaluated alone"
+        )
+    if any("solve" in m for m in matches) and any("search" in m for m in matches):
+        raise ProgressRecordError("a record holds search matches or solver matches, never both")
 
 
 def _check_plan_v2(raw: dict[str, Any]) -> None:
@@ -566,6 +752,10 @@ def _check_plan_v2(raw: dict[str, Any]) -> None:
     if anchored != (anchor_games is not None):
         raise ProgressRecordError(
             "plan.anchor_games_per_match is present exactly when the record has anchor matches"
+        )
+    if any("solve" in m for m in matches) != ("preview_solve_budget_ms" in plan):
+        raise ProgressRecordError(
+            "plan.preview_solve_budget_ms is present exactly when the record has solver matches"
         )
     run_games = plan.get("run_games_per_match")
     if any(m["opponent"]["kind"] == "run" for m in matches) != (run_games is not None):
@@ -648,6 +838,7 @@ def _check_run(raw: dict[str, Any], config: RunConfig) -> None:
             truncation=None if extra is None else extra.truncation,
             features=own_features,
             search=match["search"]["identity_hash"] if "search" in match else None,
+            preview_solve=match["solve"]["identity_hash"] if "solve" in match else None,
         ):
             raise ProgressRecordError(
                 f"{match['match_id']}: policy_id is not the frozen pair's in this mode"
@@ -661,6 +852,14 @@ def _check_run(raw: dict[str, Any], config: RunConfig) -> None:
         ):
             raise ProgressRecordError(
                 f"{match['match_id']}: the self-no-search control is not the pair without search"
+            )
+        if opponent["kind"] == "self-no-solve" and (
+            opponent["checkpoints"] != pair
+            or opponent["policy_id"]
+            != policy_id(pair["preview"], pair["battle"], match["mode"], features=own_features)
+        ):
+            raise ProgressRecordError(
+                f"{match['match_id']}: the self-no-solve control is not the pair without the solver"
             )
         # The other run's pair (`run`) may read a feature set of its own, or none, that this record
         # does not name (its config is not in the record): its id is checked against THAT run's
@@ -707,6 +906,41 @@ def _check_game_search(raw: dict[str, Any]) -> None:
     if not answered_ok(control["seat"], control["counts"]):
         raise ProgressRecordError(
             "opponent_search.counts.decisions must be the control seat's decisions"
+        )
+
+
+def _check_game_solve(raw: dict[str, Any]) -> None:
+    """A stored game's solver fields: the control belongs to a solver; two seats, one identity;
+    each seat's decisions count is the seat's recorded decisions (a forfeit can stop it on one it
+    never answered)."""
+    solve, control = raw.get("solve"), raw.get("opponent_solve")
+    if solve is None:
+        if control is not None:
+            raise ProgressRecordError("opponent_solve belongs to a game that carries solve")
+        return
+    if "search" in raw:
+        raise ProgressRecordError("a game carries search or solver counts, never both")
+    forfeited = 1 if raw["outcome"]["kind"] == "forfeit" else 0
+
+    def answered_ok(seat: str, counts: dict[str, Any]) -> bool:
+        answered = sum(1 for d in raw["decisions"] if d["player"] == seat)
+        return answered <= int(counts["decisions"]) <= answered + forfeited
+
+    check_solve_counts(solve["counts"], "solve")
+    if not answered_ok(solve["seat"], solve["counts"]):
+        raise ProgressRecordError("solve.counts.decisions must be the solver seat's decisions")
+    if control is None:
+        return
+    if control["seat"] == solve["seat"]:
+        raise ProgressRecordError("opponent_solve.seat must be the seat the solver does not hold")
+    if control["identity_hash"] != solve["identity_hash"]:
+        raise ProgressRecordError(
+            "the control's identity hash is the solver policy's it belongs to"
+        )
+    _check_solve_control_counts(control["counts"], "opponent_solve")
+    if not answered_ok(control["seat"], control["counts"]):
+        raise ProgressRecordError(
+            "opponent_solve.counts.decisions must be the control seat's decisions"
         )
 
 
@@ -757,6 +991,32 @@ def check_game_search(stored: dict[str, Any], match: dict[str, Any], row: dict[s
         )
 
 
+def check_game_solve(stored: dict[str, Any], match: dict[str, Any], row: dict[str, Any]) -> None:
+    """A stored game's solver fields are its match's and its row's: the candidate's seat, the
+    solver identity hash and the row's counts, and the control's on the other seat (none outside a
+    solver match, and no control outside a self-no-solve match)."""
+    seat = row["candidate_seat"]
+    other = "p2" if seat == "p1" else "p1"
+    expected: dict[str, Any] = {}
+    if "solve" in match:
+        expected["solve"] = {
+            "seat": seat,
+            "identity_hash": match["solve"]["identity_hash"],
+            "counts": row["solve"],
+        }
+    if "opponent_solve" in match:
+        expected["opponent_solve"] = {
+            "seat": other,
+            "identity_hash": match["opponent_solve"]["identity_hash"],
+            "counts": row["opponent_solve"],
+        }
+    found = {k: stored[k] for k in ("solve", "opponent_solve") if k in stored}
+    if found != expected:
+        raise ProgressRecordError(
+            "the stored game's solver fields are not its match's identity and its row's counts"
+        )
+
+
 def check_game_baseline(stored: dict[str, Any], match: dict[str, Any], row: dict[str, Any]) -> None:
     """A stored game's baseline fields are its match's and its row's: the seat the candidate does
     not hold, the match's identity hash and the row's counts (none outside a damage-aware match)."""
@@ -797,6 +1057,7 @@ def read_game_record(raw: object) -> dict[str, Any]:
         raise ProgressRecordError("omniscient_log_sha256 does not recompute")
     _check_game_baseline(raw)
     _check_game_search(raw)
+    _check_game_solve(raw)
     # A game of a both-seats evaluation names its pair: both games of a pair share the pair's seed.
     pair = raw.get("pair")
     if pair is not None and pair != raw["game"] // 2:

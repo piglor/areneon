@@ -478,6 +478,7 @@ export { type ExtraPlay, matchSuffix, modeName, parseExtraMode, parseModes, Prog
 export { EVAL_DATASET_FLAGS, type EvalDataset, readEvalDataset, withEvalDataset } from "./eval-dataset.ts";
 export { committedPlanSeeds, type ProgressPoolSource, type ProgressPorts, runProgressCli } from "./progress-cli.ts";
 export { controlSeat, searchCountsRecord, searchSeat } from "./search-progress.ts";
+export { solveControlSeat, solveCountsRecord, solveSeat } from "./preview-solve-progress.ts";
 export { H2H_FILE, runScriptedH2HCli } from "./scripted-h2h-cli.ts";
 export {
   type ScriptedGameRow,

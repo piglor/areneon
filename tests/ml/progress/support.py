@@ -25,6 +25,7 @@ from areneon_ml.progress.records import (
     record_hash,
     sum_baseline_counts,
     sum_search_counts,
+    sum_solve_counts,
 )
 from areneon_ml.progress.run import ProgressRequest
 from areneon_ml.progress.seeds import progress_game_seed
@@ -63,6 +64,63 @@ def baseline_counts(stored: dict[str, Any], seat: str, game: int) -> dict[str, i
 
 #: The stand-in search identity hash of the search matches.
 SEARCH_IDENTITY = "e" * 64
+
+
+#: The stand-in solver identity hash of the psolve matches.
+SOLVE_IDENTITY = "c" * 64
+
+
+def solve_counts(decisions: int, *, control: bool = False) -> dict[str, Any]:
+    """Stand-in per-game solver counts for a seat that answered ``decisions`` requests (one of
+    them the Team Preview); the control solves nothing, so only decisions and previews count."""
+    payoff = dict.fromkeys(
+        (
+            "back_draws",
+            "clamped",
+            "clamped_high",
+            "clamped_low",
+            "engine_refusals",
+            "entries",
+            "entry_attempts",
+            "game_end_entries",
+            "missing_entries",
+            "not_move_request",
+            "preview_queries",
+            "rollout_capped",
+            "rollout_choices",
+            "value_queries",
+            "worlds_asked",
+            "worlds_dropped",
+            "worlds_used",
+        ),
+        0,
+    )
+    fallbacks = dict.fromkeys(
+        ("belief_refusal", "clock_floor", "engine_failure", "too_few_worlds", "worker_failure"), 0
+    )
+    base: dict[str, Any] = {
+        "decisions": decisions,
+        "previews": 1,
+        "solved": 0,
+        "fallbacks": fallbacks,
+        "belief_refusals": [],
+        "worlds_asked": 0,
+        "worlds_refused": 0,
+        "worlds_unstarted": 0,
+        "payoff": payoff,
+        "exploitability_ppm": 0,
+        "support_size": 0,
+    }
+    if control:
+        return base
+    return base | {
+        "solved": 1,
+        "worlds_asked": 8,
+        "worlds_refused": 1,
+        "payoff": payoff | {"entries": 40, "value_queries": 40, "worlds_used": 7},
+        "exploitability_ppm": 3000,
+        "support_size": 2,
+    }
 
 
 def search_counts(decisions: int, *, control: bool = False) -> dict[str, Any]:
@@ -279,10 +337,14 @@ def progress_files(  # noqa: PLR0912, PLR0915
         opponents = []
         add_ablation(config, request, games, matches, rows, stored)
     searching = request.search_mode is not None
-    if searching:
-        opponents.append(("self-no-search", "", {"control": True}))
+    solving = request.preview_solve_mode is not None
+    wrapped = searching or solving
+    candidate_mode = request.search_mode or request.preview_solve_mode
+    prefix = "search-" if searching else "psolve-" if solving else ""
+    if wrapped:
+        opponents.append((f"self-no-{'search' if searching else 'solve'}", "", {"control": True}))
     for _actor, baseline, previous in opponents:
-        plain_modes = [(m, None) for m in (request.search_mode,) if m is not None] or [
+        plain_modes = [(m, None) for m in (candidate_mode,) if m is not None] or [
             (m, None) for m in MODES
         ]
         # The extra play modes (#1044) go against the baselines and the other run's pair only.
@@ -290,7 +352,7 @@ def progress_files(  # noqa: PLR0912, PLR0915
         extras = [("sample", e) for e in request.extra_modes] if takes_extra else []
         for mode, extra in [*plain_modes, *extras]:
             suffix = "" if extra is None else extra.mode.suffix
-            match_id = f"{'search-' if searching else ''}{_actor}-{mode}{suffix}"
+            match_id = f"{prefix}{_actor}-{mode}{suffix}"
             play = (
                 {}
                 if extra is None
@@ -313,9 +375,10 @@ def progress_files(  # noqa: PLR0912, PLR0915
                     request.battle,
                     mode,
                     features=features_hash(config),
-                    search=SEARCH_IDENTITY,
+                    search=SEARCH_IDENTITY if searching else None,
+                    preview_solve=SOLVE_IDENTITY if solving else None,
                 )
-                if searching
+                if wrapped
                 else plain
             )
             other = baseline
@@ -338,7 +401,7 @@ def progress_files(  # noqa: PLR0912, PLR0915
             elif previous is not None and "control" in previous:
                 other = plain
                 opponent = {
-                    "kind": "self-no-search",
+                    "kind": "self-no-search" if searching else "self-no-solve",
                     "policy_id": plain,
                     "checkpoints": {"preview": request.preview, "battle": request.battle},
                     "mode": mode,
@@ -375,35 +438,39 @@ def progress_files(  # noqa: PLR0912, PLR0915
             per_game: list[dict[str, int]] = []
             searched: list[dict[str, Any]] = []
             controlled: list[dict[str, Any]] = []
+            counts_of = search_counts if searching else solve_counts
+            sum_of = sum_search_counts if searching else sum_solve_counts
+            key = "search" if searching else "solve"
+            identity = SEARCH_IDENTITY if searching else SOLVE_IDENTITY
             for game in range(count):
                 seat = "p2" if game % 2 == 0 else "p1"
                 if damage:
                     sampled = game_file(config, request, match_id, game, pair, other)
                     per_game.append(baseline_counts(sampled, seat, game))
-                if searching:
+                if wrapped:
                     sampled = game_file(config, request, match_id, game, pair, other)
                     mine = "p1" if game % 2 == 0 else "p2"
                     answered = sum(1 for d in sampled["decisions"] if d["player"] == mine)
-                    searched.append(search_counts(answered))
+                    searched.append(counts_of(answered))
                     if control:
                         theirs = sum(1 for d in sampled["decisions"] if d["player"] == seat)
-                        controlled.append(search_counts(theirs, control=True))
+                        controlled.append(counts_of(theirs, control=True))
                 if game >= min(request.record_games, count):
                     continue
                 found = game_file(config, request, match_id, game, pair, other)
-                if searching:
+                if wrapped:
                     mine = "p1" if game % 2 == 0 else "p2"
                     found["policies"] = {mine: pair, seat: other}
-                    found["search"] = {
+                    found[key] = {
                         "seat": mine,
-                        "identity_hash": SEARCH_IDENTITY,
+                        "identity_hash": identity,
                         "counts": searched[game],
                     }
                     if control:
                         # the control plays the pair's own id on the other seat
-                        found["opponent_search"] = {
+                        found[f"opponent_{key}"] = {
                             "seat": seat,
-                            "identity_hash": SEARCH_IDENTITY,
+                            "identity_hash": identity,
                             "counts": controlled[game],
                         }
                 if damage:
@@ -436,8 +503,8 @@ def progress_files(  # noqa: PLR0912, PLR0915
                         "candidate_seat": "p1" if game % 2 == 0 else "p2",
                         "outcome": outcome,
                         **({"baseline_counts": per_game[game]} if damage else {}),
-                        **({"search": searched[game]} if searching else {}),
-                        **({"opponent_search": controlled[game]} if control else {}),
+                        **({key: searched[game]} if wrapped else {}),
+                        **({f"opponent_{key}": controlled[game]} if control else {}),
                     }
                 )
             wins = sum(won)
@@ -467,20 +534,15 @@ def progress_files(  # noqa: PLR0912, PLR0915
                         else {}
                     ),
                     **(
-                        {
-                            "search": {
-                                "identity_hash": SEARCH_IDENTITY,
-                                "counts": sum_search_counts(searched),
-                            }
-                        }
-                        if searching
+                        {key: {"identity_hash": identity, "counts": sum_of(searched)}}
+                        if wrapped
                         else {}
                     ),
                     **(
                         {
-                            "opponent_search": {
-                                "identity_hash": SEARCH_IDENTITY,
-                                "counts": sum_search_counts(controlled),
+                            f"opponent_{key}": {
+                                "identity_hash": identity,
+                                "counts": sum_of(controlled),
                             }
                         }
                         if control
@@ -520,6 +582,7 @@ def progress_files(  # noqa: PLR0912, PLR0915
                 if request.evaluation_key is not None
                 else {}
             ),
+            **({"preview_solve_budget_ms": 30000} if solving else {}),
             "max_turns": config.generation.max_turns,
             "latency_budget_ms": {
                 "preview_ms": config.generation.preview_ms,

@@ -437,6 +437,18 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "of its own",
     )
     progress.add_argument(
+        "--preview-solve",
+        choices=("argmax", "sample"),
+        default=None,
+        help="evaluate the pair played with the Team Preview solver (ADR-029, the committed "
+        "preview-solve-1 config) in this play mode, instead of the pair itself: matches "
+        "psolve-<opponent>-<mode> against the baselines, --versus-run-dir and the control "
+        "self-no-solve (the same pair, same mode, without the solver); learned pair with a Team "
+        "Preview solver (decision-time, one-shot), the belief matched to the synthetic generator: "
+        "solver results are never held-out evidence. Alone: no --anchors, --previous-matches, "
+        "--preview-ablation, --search-mode or --modes; use a progress directory of its own",
+    )
+    progress.add_argument(
         "--modes",
         default=None,
         help="extra play modes (ADR-023, #1044), comma separated: sample at a declared "
@@ -445,8 +457,8 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "listed). Played against every scripted baseline and, with --versus-run-dir, against the "
         "other run's pair with both sides in the mode, on the same pairs, seats and seeds; "
         "matches <opponent>-sample-t<ppm>[-th<ppm>]. Anchor and previous-generation matches keep "
-        "their two modes. Not with --preview-ablation or --search-mode; use a progress directory "
-        "of its own for a generation already committed",
+        "their two modes. Not with --preview-ablation, --search-mode or --preview-solve; use a "
+        "progress directory of its own for a generation already committed",
     )
     progress.add_argument(
         "--damage-aware-budget-minutes",
@@ -588,6 +600,7 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
             search_mode=args.search_mode,
             modes=modes,
             member=args.member,
+            preview_solve=args.preview_solve,
         )
         for g in generations
     ]

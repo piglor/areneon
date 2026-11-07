@@ -22,6 +22,10 @@ from areneon_ml.progress.records import (
     SEARCH_EVIDENCE_NOTE,
     SEARCH_LABEL,
     SEARCH_PRIOR_LABEL,
+    SOLVE_CONTROL_LABEL,
+    SOLVE_EVIDENCE_NOTE,
+    SOLVE_LABEL,
+    SOLVE_PRIOR_LABEL,
 )
 from areneon_ml.report.charts import Pt, Series, Stack, Tips, line_chart, stacked_chart
 from areneon_ml.report.dominated import INTERVAL_LABEL as DOMINATED_INTERVAL_LABEL
@@ -321,7 +325,8 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:  # noqa: PLR0915
                     str(g),
                     esc(m.match_id)
                     + (f' <span class="muted">({esc(m.seen_label)})</span>' if m.seen_label else "")
-                    + (f' <span class="muted">({esc(SEARCH_LABEL)})</span>' if m.search else ""),
+                    + (f' <span class="muted">({esc(SEARCH_LABEL)})</span>' if m.search else "")
+                    + (f' <span class="muted">({esc(SOLVE_LABEL)})</span>' if m.solve else ""),
                     esc(_mode(m)),
                     str(m.games),
                     f"{m.wins} / {m.ties} / {m.losses}",
@@ -361,6 +366,7 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:  # noqa: PLR0915
     out.append(_anchor_section(model, done))
     out.append(_damage_aware_section(model, done))
     out.append(_search_section(model, done))
+    out.append(_solve_section(model, done))
     out.append(_versus_section(model, done))
     out.append("<h3>Score by seat (diagnostic)</h3>")
     out.append(
@@ -1192,6 +1198,62 @@ def _search_section(model: ReportModel, done: list[int]) -> str:
             "the pair played itself (Team Preview, forced switches, fewer than two candidates, "
             "too few valid worlds, a belief refusal); wall time is printed by the command, "
             "never stored.",
+        )
+    )
+
+
+def _solve_section(model: ReportModel, done: list[int]) -> str:
+    """The Team Preview solver's counts per match (ADR-029 section 8), summed over its games, and
+    the no-solve control's beside them (solved 0). Labelled, never held-out evidence; wall time is
+    not recorded."""
+    rows = []
+    for g in done:
+        for m in model.progress[g].matches:
+            for who, block in (("solver", m.solve), ("control", m.opponent_solve)):
+                if block is None:
+                    continue
+                c = block["counts"]
+                rows.append(
+                    [
+                        str(g),
+                        esc(m.match_id),
+                        who,
+                        str(c["decisions"]),
+                        str(c["previews"]),
+                        str(c["solved"]),
+                        str(sum(c["fallbacks"].values())),
+                        str(c["worlds_asked"]),
+                        str(c["worlds_refused"] + c["worlds_unstarted"]),
+                        str(c["payoff"]["value_queries"]),
+                        f'<span class="m">{esc(block["identity_hash"][:16])}</span>',
+                    ]
+                )
+    if not rows:
+        return ""
+    return (
+        f"<h3>Team Preview solver counts</h3>"
+        f'<p class="note">{esc(SOLVE_LABEL)}. Prior: {esc(SOLVE_PRIOR_LABEL)}. '
+        f"{esc(SOLVE_EVIDENCE_NOTE.capitalize())}. {esc(SOLVE_CONTROL_LABEL.capitalize())}: its "
+        "decisions and Team Previews are counted, nothing else.</p>"
+        + _table(
+            [
+                ("Generation", True),
+                ("Match", False),
+                ("Side", False),
+                ("Decisions", True),
+                ("Team Previews", True),
+                ("Solved", True),
+                ("Fallbacks", True),
+                ("Worlds asked", True),
+                ("Worlds lost", True),
+                ("Value queries", True),
+                ("Solver identity (first 16 hex)", False),
+            ],
+            rows,
+            "Summed over each match's games, as the record states them. Fallbacks are Team "
+            "Previews the pair played itself (a belief refusal, too few worlds, a worker or "
+            "engine failure, the clock floor); worlds lost are draws the belief refused or the "
+            "engine could not start; wall time is printed by the command, never stored.",
         )
     )
 

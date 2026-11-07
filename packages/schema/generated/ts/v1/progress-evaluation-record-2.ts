@@ -6,7 +6,8 @@
  * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
  * via the `definition` "Opponent".
  */
-export type Opponent = BaselineOpponent | PreviousOpponent | AnchorOpponent | RunOpponent | SelfNoSearchOpponent;
+export type Opponent =
+  BaselineOpponent | PreviousOpponent | AnchorOpponent | RunOpponent | SelfNoSearchOpponent | SelfNoSolveOpponent;
 /**
  * Which Team Preview the candidate's Battle network played with in an ablation match (ADR-017 erratum E1). Absent: the candidate's own learned Preview, as in every other match.
  *
@@ -149,6 +150,10 @@ export interface Plan {
    */
   run_games_per_match?: number;
   /**
+   * The Team Preview latency budget the solver's config declares (ADR-029 section 4), in ms. Present exactly when the record has solver matches: every game of those matches runs with a Team Preview budget of at least this, the control's included; latency_budget_ms stays the run config's.
+   */
+  preview_solve_budget_ms?: number;
+  /**
    * The turn cap of the run's TrainingRunConfig.generation: a game still running past it is a tie.
    */
   max_turns: number;
@@ -217,6 +222,8 @@ export interface Match {
   baseline?: BaselineSummary;
   search?: SearchSummary;
   opponent_search?: SearchSummary1;
+  solve?: SolveSummary;
+  opponent_solve?: SolveSummary1;
   sheet?: SheetCounts;
 }
 /**
@@ -301,6 +308,24 @@ export interface SelfNoSearchOpponent {
   checkpoints: Checkpoints;
   /**
    * The pair's no-search play mode: the control's mode, the one the search policy falls back to.
+   */
+  mode: "sample" | "argmax";
+}
+/**
+ * The control opponent of a Team Preview solver policy (ADR-029 section 8): the very pair the solver policy wraps, played without the solver. A minor change within v2: a reader older than it rejects a record that carries it.
+ *
+ * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
+ * via the `definition` "SelfNoSolveOpponent".
+ */
+export interface SelfNoSolveOpponent {
+  kind: "self-no-solve";
+  /**
+   * The same frozen pair played WITHOUT the solver, in the mode the match played (its ordinary policy id).
+   */
+  policy_id: string;
+  checkpoints: Checkpoints;
+  /**
+   * The pair's play mode: the control's mode, the one the solver policy plays every other decision in.
    */
   mode: "sample" | "argmax";
 }
@@ -531,6 +556,93 @@ export interface SearchSummary1 {
   counts: SearchCounts;
 }
 /**
+ * Only a match of a Team Preview solver candidate (match_id starts with psolve-): the candidate's identity hash and its game counts summed.
+ */
+export interface SolveSummary {
+  /**
+   * The solver identity hash (ADR-029 section 4; the preview_solve: member of the candidate's policy id). On the opponent side of a self-no-solve match it names the solver policy the control belongs to.
+   */
+  identity_hash: string;
+  counts: SolveCounts;
+}
+/**
+ * The integer counts of one game of a Team Preview solver policy (ADR-029 section 8), or the sums of several games'. Wall time is printed, never stored. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+ *
+ * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
+ * via the `definition` "SolveCounts".
+ */
+export interface SolveCounts {
+  /**
+   * Requests answered, every phase.
+   */
+  decisions: number;
+  /**
+   * Team Preview requests answered (the one phase the solver acts in; the no-solve control counts them too).
+   */
+  previews: number;
+  /**
+   * Team Preview decisions the solver chose (0 for the self-no-solve control).
+   */
+  solved: number;
+  /**
+   * Team Previews the pair played itself, by reason (ADR-029 section 4); all 0 for the control.
+   */
+  fallbacks: {
+    belief_refusal: number;
+    clock_floor: number;
+    engine_failure: number;
+    too_few_worlds: number;
+    worker_failure: number;
+  };
+  /**
+   * Belief refusals behind belief_refusal fallbacks, by the opponent model's code, sorted and unique by key.
+   */
+  belief_refusals: CountEntry[];
+  worlds_asked: number;
+  worlds_refused: number;
+  worlds_unstarted: number;
+  /**
+   * The payoff table builder's counts, summed over the solves tried.
+   */
+  payoff: {
+    back_draws: number;
+    clamped: number;
+    clamped_high: number;
+    clamped_low: number;
+    engine_refusals: number;
+    entries: number;
+    entry_attempts: number;
+    game_end_entries: number;
+    missing_entries: number;
+    not_move_request: number;
+    preview_queries: number;
+    rollout_capped: number;
+    rollout_choices: number;
+    value_queries: number;
+    worlds_asked: number;
+    worlds_dropped: number;
+    worlds_used: number;
+  };
+  /**
+   * Sum over the solved decisions of the matrix exploitability in ppm (divide by solved).
+   */
+  exploitability_ppm: number;
+  /**
+   * Sum over the solved decisions of the support size of our mixture (divide by solved).
+   */
+  support_size: number;
+}
+/**
+ * Only a self-no-solve match: the control's counts (solved 0) summed over the match's games.
+ */
+export interface SolveSummary1 {
+  /**
+   * The solver identity hash (ADR-029 section 4; the preview_solve: member of the candidate's policy id). On the opponent side of a self-no-solve match it names the solver policy the control belongs to.
+   */
+  identity_hash: string;
+  counts: SolveCounts;
+}
+/**
  * Only a match of a pair that reads opponent_sheet: the candidate seat's block counts summed over the match's games. The refused share is derived on display, with E4's 1% validity rule.
  */
 export interface SheetCounts {
@@ -568,6 +680,8 @@ export interface GameRow {
   baseline_counts?: BaselineCounts1;
   search?: SearchCounts1;
   opponent_search?: SearchCounts2;
+  solve?: SolveCounts1;
+  opponent_solve?: SolveCounts2;
   sheet?: SheetCounts1;
 }
 /**
@@ -796,6 +910,134 @@ export interface SearchCounts2 {
   replies_uniform: number;
 }
 /**
+ * The integer counts of one game of a Team Preview solver policy (ADR-029 section 8), or the sums of several games'. Wall time is printed, never stored. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+ */
+export interface SolveCounts1 {
+  /**
+   * Requests answered, every phase.
+   */
+  decisions: number;
+  /**
+   * Team Preview requests answered (the one phase the solver acts in; the no-solve control counts them too).
+   */
+  previews: number;
+  /**
+   * Team Preview decisions the solver chose (0 for the self-no-solve control).
+   */
+  solved: number;
+  /**
+   * Team Previews the pair played itself, by reason (ADR-029 section 4); all 0 for the control.
+   */
+  fallbacks: {
+    belief_refusal: number;
+    clock_floor: number;
+    engine_failure: number;
+    too_few_worlds: number;
+    worker_failure: number;
+  };
+  /**
+   * Belief refusals behind belief_refusal fallbacks, by the opponent model's code, sorted and unique by key.
+   */
+  belief_refusals: CountEntry[];
+  worlds_asked: number;
+  worlds_refused: number;
+  worlds_unstarted: number;
+  /**
+   * The payoff table builder's counts, summed over the solves tried.
+   */
+  payoff: {
+    back_draws: number;
+    clamped: number;
+    clamped_high: number;
+    clamped_low: number;
+    engine_refusals: number;
+    entries: number;
+    entry_attempts: number;
+    game_end_entries: number;
+    missing_entries: number;
+    not_move_request: number;
+    preview_queries: number;
+    rollout_capped: number;
+    rollout_choices: number;
+    value_queries: number;
+    worlds_asked: number;
+    worlds_dropped: number;
+    worlds_used: number;
+  };
+  /**
+   * Sum over the solved decisions of the matrix exploitability in ppm (divide by solved).
+   */
+  exploitability_ppm: number;
+  /**
+   * Sum over the solved decisions of the support size of our mixture (divide by solved).
+   */
+  support_size: number;
+}
+/**
+ * The integer counts of one game of a Team Preview solver policy (ADR-029 section 8), or the sums of several games'. Wall time is printed, never stored. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+ */
+export interface SolveCounts2 {
+  /**
+   * Requests answered, every phase.
+   */
+  decisions: number;
+  /**
+   * Team Preview requests answered (the one phase the solver acts in; the no-solve control counts them too).
+   */
+  previews: number;
+  /**
+   * Team Preview decisions the solver chose (0 for the self-no-solve control).
+   */
+  solved: number;
+  /**
+   * Team Previews the pair played itself, by reason (ADR-029 section 4); all 0 for the control.
+   */
+  fallbacks: {
+    belief_refusal: number;
+    clock_floor: number;
+    engine_failure: number;
+    too_few_worlds: number;
+    worker_failure: number;
+  };
+  /**
+   * Belief refusals behind belief_refusal fallbacks, by the opponent model's code, sorted and unique by key.
+   */
+  belief_refusals: CountEntry[];
+  worlds_asked: number;
+  worlds_refused: number;
+  worlds_unstarted: number;
+  /**
+   * The payoff table builder's counts, summed over the solves tried.
+   */
+  payoff: {
+    back_draws: number;
+    clamped: number;
+    clamped_high: number;
+    clamped_low: number;
+    engine_refusals: number;
+    entries: number;
+    entry_attempts: number;
+    game_end_entries: number;
+    missing_entries: number;
+    not_move_request: number;
+    preview_queries: number;
+    rollout_capped: number;
+    rollout_choices: number;
+    value_queries: number;
+    worlds_asked: number;
+    worlds_dropped: number;
+    worlds_used: number;
+  };
+  /**
+   * Sum over the solved decisions of the matrix exploitability in ppm (divide by solved).
+   */
+  exploitability_ppm: number;
+  /**
+   * Sum over the solved decisions of the support size of our mixture (divide by solved).
+   */
+  support_size: number;
+}
+/**
  * Only a game of a pair that reads opponent_sheet: the candidate seat's block counts for this game.
  */
 export interface SheetCounts1 {
@@ -848,4 +1090,17 @@ export interface SheetCounts2 {
     code: string;
     count: number;
   }[];
+}
+/**
+ * A Team Preview solver policy's identity hash and its per-game counts summed over the match's games (ADR-029 section 8). Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+ *
+ * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
+ * via the `definition` "SolveSummary".
+ */
+export interface SolveSummary2 {
+  /**
+   * The solver identity hash (ADR-029 section 4; the preview_solve: member of the candidate's policy id). On the opponent side of a self-no-solve match it names the solver policy the control belongs to.
+   */
+  identity_hash: string;
+  counts: SolveCounts;
 }
