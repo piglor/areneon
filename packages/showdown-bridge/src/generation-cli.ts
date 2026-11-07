@@ -13,12 +13,13 @@ import { parseArgs } from "node:util";
 import { engineDataHash, readEngineDataAny } from "./engine-data.ts";
 import { loadEngine } from "./engine.ts";
 import type { Engine } from "./engine.ts";
-import { featureSetup, GenerationError, sheetSetup, type PlayedEntry, type PoolRequest, playEntries, playGeneration, type Shard, type TrainingPool, trainingTeamPool, writeGeneration } from "./league-generation.ts";
+import { featureSetup, GenerationError, labelSetup, type SearchSetupFactory, sheetSetup, type PlayedEntry, type PoolRequest, playEntries, playGeneration, type Shard, type TrainingPool, trainingTeamPool, writeGeneration } from "./league-generation.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import { ChunkedFileWriter, readFileLines } from "./chunked-file.ts";
 import { resolveFormat } from "./formats.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
 import { type BeliefFeaturesFactory, SheetTotals } from "./belief-features.ts";
+import { labelCounts } from "./search-labeller.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import { PastPoolError, readPastPool } from "./past-pool.ts";
 import { leaveFigures, printProfile, startProfile, stopProfile, timed } from "./profile.ts";
@@ -70,6 +71,8 @@ const FLAGS = {
   "episodes-dir": { type: "string" },
   // Internal: the scratch directory the game processes leave the recomputed candidate feature rows of their Episodes in (#1185; only with game processes and a candidate feature set).
   "features-dir": { type: "string" },
+  // Internal: the scratch directory the game processes leave their search label files in (only with `generation.search_labels`, from its start generation).
+  "labels-dir": { type: "string" },
   // Operational: time the phases of this generation (ADR-028 section 1, #1191) and print the figures as one more output line; no file the manifest hashes changes.
   profile: { type: "boolean" },
   // Internal: the directory the game processes and policy workers leave their profile figures in (made by the process that starts the others when --profile is given).
@@ -82,7 +85,7 @@ const FLAGS = {
   calibrate: { type: "boolean" },
 } as const;
 
-const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "shard", "episodes-dir", "features-dir", "profile", "profile-dir", "member", "calibrate", "past-pool"];
+const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "shard", "episodes-dir", "features-dir", "labels-dir", "profile", "profile-dir", "member", "calibrate", "past-pool"];
 /** The flags a population run gives per member instead. */
 const PER_MEMBER: readonly (keyof typeof FLAGS)[] = ["preview", "battle", "policy-id"];
 
@@ -116,6 +119,8 @@ export async function runGenerationCli(
   beliefWorlds?: BeliefWorldsFactory,
   /** The opponent sheet port factory, for a run config that names `opponent_sheet` (the composition root supplies it). */
   beliefFeatures?: BeliefFeaturesFactory,
+  /** The search setup factory, for a run config that asks for search labels (the composition root supplies it). */
+  searchSetups?: SearchSetupFactory,
 ): Promise<number> {
   let values: Record<Exclude<keyof typeof FLAGS, "member" | "calibrate" | "profile">, string | undefined> & { member?: string[]; calibrate?: boolean; profile?: boolean };
   try {
@@ -216,6 +221,16 @@ export async function runGenerationCli(
     sheet === undefined
       ? { client: {}, options: {}, report: () => undefined }
       : { client: { sheet: sheet.statement }, options: { sheet: sheet.setup, on_sheet_counts: totals.add }, report: totals.report };
+  // The search labelling the config asks for (none: nothing below changes), at or after its start generation.
+  let labels: ReturnType<typeof labelSetup>;
+  try {
+    labels = labelSetup(engine, config, { preview, battle }, searchSetups, features?.configs);
+  } catch (error) {
+    if (!(error instanceof GenerationError)) throw error;
+    console.error(`play-generation: ${error.message}`);
+    return 1;
+  }
+  const labelling = labels !== undefined && generation >= labels.start_generation;
   // The profile (#1191): on for --profile, and for a game process whose starter gave it the directory. Timers only read clocks.
   const profile = startProfile(values["profile-dir"], values.profile === true);
   const profileDir = profile?.dir;
@@ -248,6 +263,10 @@ export async function runGenerationCli(
   const scratch = values.shard === undefined && processes > 1 ? mkdtempSync(join(tmpdir(), "areneon-shards-")) : undefined;
   // With game processes and a feature set, every process recomputes the rows of its own Episodes when its games are done (#1185).
   const featuresDir = featuresDirOf(values["features-dir"], scratch, features !== undefined);
+  // With game processes and labels, every process labels its own Episodes when its games are done (#1290); a lone process leaves its files in a scratch directory of its own.
+  const ownLabels = labelling && values["labels-dir"] === undefined && scratch === undefined ? mkdtempSync(join(tmpdir(), "areneon-labels-")) : undefined;
+  const labelsDir = !labelling ? undefined : values["labels-dir"] ?? (scratch !== undefined ? join(scratch, "labels") : ownLabels);
+  const labelArgs = labels === undefined || !labelling ? {} : { labels, labels_dir: labelsDir };
   const children: ShardProcess[] = [];
   let closed = false;
   try {
@@ -256,9 +275,9 @@ export async function runGenerationCli(
       for (let index = 1; index < processes; index++) {
         const out = join(scratch, String(index));
         const rest = Object.entries(values).flatMap(([name, value]) =>
-          value === undefined || typeof value !== "string" || ["out", "game-processes", "shard", "episodes-dir", "features-dir", "profile", "profile-dir"].includes(name) ? [] : [`--${name}`, value],
+          value === undefined || typeof value !== "string" || ["out", "game-processes", "shard", "episodes-dir", "features-dir", "labels-dir", "profile", "profile-dir"].includes(name) ? [] : [`--${name}`, value],
         );
-        children.push(startShard(shardScript as string, [...rest, "--out", out, "--shard", `${index}/${processes}`, "--episodes-dir", episodesDir, ...optionalFlag("--features-dir", featuresDir), ...optionalFlag("--profile-dir", profileDir)], out, index));
+        children.push(startShard(shardScript as string, [...rest, "--out", out, "--shard", `${index}/${processes}`, "--episodes-dir", episodesDir, ...optionalFlag("--features-dir", featuresDir), ...optionalFlag("--labels-dir", labelsDir), ...optionalFlag("--profile-dir", profileDir)], out, index));
       }
     }
     const pool = timed("pool_load", () => poolSource(engine, config));
@@ -270,7 +289,7 @@ export async function runGenerationCli(
       process.stdin.resume();
       (process.stdin as unknown as { unref?: () => void }).unref?.(); // an open pipe must not keep the finished process alive
       // It plays the slice and leaves it for the process that started this one.
-      const entries = await playEntries({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, episodes_dir: episodesDir, belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, features_dir: featuresDir }, own);
+      const entries = await playEntries({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, episodes_dir: episodesDir, belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, ...labelArgs, features_dir: featuresDir }, own);
       mkdirSync(need("out"), { recursive: true });
       writeShardFile(join(need("out"), SHARD_FILE), entries);
       writeFileSync(join(need("out"), USAGE_FILE), `${jcs(usageOf(ownPeakRss(), largest(clients.map((worker) => worker.peakRssBytes()))) as unknown as Json)}\n`);
@@ -281,8 +300,10 @@ export async function runGenerationCli(
     const others = Promise.all(children.map((child) => child.entries));
     // The stream goes straight to its file in chunks as the examples are made (#998).
     mkdirSync(need("out"), { recursive: true });
-    const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, stream_path: join(need("out"), "stream.jsonl"), episodes_dir: episodesDir, belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, features_dir: featuresDir, ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()), live_children: () => children.filter((child) => child.alive()).length });
+    const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, stream_path: join(need("out"), "stream.jsonl"), episodes_dir: episodesDir, ...labelArgs, ...(labelling ? { labels_path: join(need("out"), "labels.jsonl") } : {}), belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, features_dir: featuresDir, ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()), live_children: () => children.filter((child) => child.alive()).length });
     timed("merge", () => writeGeneration(need("out"), result));
+    // The labelling counts of this generation (also in generation.json): a generation with no label is told from a broken labeller by them.
+    if (result.labels !== undefined) process.stderr.write(`search labels: ${jcs(labelCounts(result.labels.totals) as unknown as Json)}\n`);
     sheetArgs.report();
     print(jcs({ generation, run_config_hash: await runConfigHash(config), training_set_hash: result.training_set_hash, examples: result.set.examples }));
     // After the summary line, so a reader of the first line is unchanged: the peak memory of this process, its workers and the further game processes.
@@ -304,6 +325,7 @@ export async function runGenerationCli(
     for (const child of children) child.stop();
     if (!closed) await Promise.all(clients.map((client) => client.close()));
     if (scratch !== undefined) rmSync(scratch, { recursive: true, force: true });
+    if (ownLabels !== undefined) rmSync(ownLabels, { recursive: true, force: true });
     stopProfile(profile);
   }
 }
