@@ -67,7 +67,7 @@ export interface PreviewSolveConfig {
     iterations?: number;
   };
   /**
-   * The per-decision guard in milliseconds that an overrun is a latency forfeit against; not a cut-off inside the solve, whose work is fixed by k_own, k_opp, N_w and the leaf.
+   * The per-decision guard in milliseconds that an overrun is a latency forfeit against; not a cut-off inside the solve, whose work is fixed by k_own, k_opp, N_w and the leaf. Nothing in the solve enforces it: the caller must give the seat a guardActor Team Preview budget of at least this value (previewSolveBudgetMs reads it).
    */
   budget_ms: number;
   /**

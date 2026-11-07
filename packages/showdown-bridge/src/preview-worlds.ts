@@ -30,8 +30,12 @@ export function readPreviewChannel(seat: Player, channel: readonly string[]): { 
   return { opponent: frame.state.opponent, flags: run.flags, request: request.slice(REQUEST_PREFIX.length) };
 }
 
-/** The errors that say one sampled team cannot be started as a hypothetical battle (counted); anything else is a defect of the run. */
-const UNSTARTABLE = new Set(["InvalidTeamError", "HypotheticalError"]);
+/**
+ * The one error that says a sampled team cannot be started as a hypothetical battle (counted): the validator refuses it as a whole.
+ * Anything else is a defect of the run and propagates, a `HypotheticalError` for our own request or team that does not match,
+ * or for a format with no Team Preview, included.
+ */
+const UNSTARTABLE = new Set(["InvalidTeamError"]);
 
 export interface PreviewWorlds {
   readonly worlds: { index: number; preview: HypotheticalPreview }[];
@@ -39,7 +43,7 @@ export interface PreviewWorlds {
   readonly refused: number;
   /** The same refusals by the belief's code. */
   readonly refusal_codes: Readonly<Record<string, number>>;
-  /** Draws that mapped to a team the validator refuses as a whole, or a format without Team Preview. */
+  /** Draws that mapped to a team the validator refuses as a whole. */
   readonly unstarted: number;
 }
 

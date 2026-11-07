@@ -26,10 +26,9 @@ import { readerSha256 } from "@areneon/public-state";
 import { type Json, jcs } from "./canonical-json.ts";
 import { BELIEF_DEFECTS } from "./damage-aware-worlds.ts";
 import type { Engine } from "./engine.ts";
-import { UnsupportedCandidateError } from "./evaluation-harness.ts";
 import type { VersionManifest } from "./formats.ts";
-import { HYPOTHETICAL_BATTLE_FORMAT, HypotheticalError, type PreviewSolveInput } from "./hypothetical-preview.ts";
-import { type PayoffClient, type PayoffConfig, type PayoffCounts, PAYOFF_LEAF_FORMAT, type PayoffTable, buildPayoffTable, PayoffError } from "./preview-payoff.ts";
+import { HYPOTHETICAL_BATTLE_FORMAT, type PreviewSolveInput } from "./hypothetical-preview.ts";
+import { type PayoffClient, type PayoffConfig, type PayoffCounts, PAYOFF_LEAF_FORMAT, type PayoffTable, buildPayoffTable, emptyCounts as emptyPayoff } from "./preview-payoff.ts";
 import { type PreviewSolveConfig, previewSolveIdentity, previewSolveIdentityHash } from "./preview-solve-config.ts";
 import { readPreviewChannel, type ResponderTeamSource, startPreviewWorlds } from "./preview-worlds.ts";
 import { type PlaySettings, PolicyProtocolError, policyId } from "./policy-protocol.ts";
@@ -46,7 +45,7 @@ export const PREVIEW_SOLVE_PURPOSE = "preview-solve/1";
 /** The purpose of the solve's per-decision stream (worlds, engine seeds, back draws): its own, apart from the draw's. */
 export const PREVIEW_SOLVE_WORLDS_PURPOSE = "preview-solve-worlds/1";
 
-export type PreviewSolveErrorCode = "setup_mismatch" | "features_pair" | "missing_context" | "belief_defect" | "solver_unbuilt";
+export type PreviewSolveErrorCode = "setup_mismatch" | "features_pair" | "missing_context" | "belief_defect" | "solver_unbuilt" | "bad_mixture";
 
 export class PreviewSolveError extends Error {
   override name = "PreviewSolveError";
@@ -149,7 +148,7 @@ export function drawFromMixture(mixture: readonly number[], u: number): number {
     cumulative += mixture[i] as number;
     if (cumulative > target) return i;
   }
-  return mixture.length - 1;
+  throw new PreviewSolveError("bad_mixture", "the mixture does not sum to 10^6");
 }
 
 export const FALLBACK_REASONS = ["belief_refusal", "too_few_worlds", "worker_failure", "engine_failure", "clock_floor"] as const;
@@ -187,7 +186,6 @@ export interface Fallback {
   readonly reason: FallbackReason;
   /** The belief's code of a refusal. */
   readonly code?: string;
-  readonly payoff?: PayoffCounts;
   readonly worlds: WorldCounts;
 }
 
@@ -202,10 +200,11 @@ const leafOf = (config: PreviewSolveConfig): PayoffConfig["leaf"] => (config.lea
 
 /**
  * Solve one Team Preview decision. It reads only `PreviewSolveInput` (the own view and the harness stream) and returns the table, the
- * mixtures and the counts, or the fallback reason. A worker or engine failure is thrown (`PolicyReplyError`, `HypotheticalError`,
- * `PayoffError`, ...): the actor classifies it.
+ * mixtures and the counts, or the fallback reason. `sink` collects the payoff builder's counts as they are made, so a solve that
+ * throws keeps them. A worker reply that is invalid is thrown (`PolicyReplyError`) and the actor counts it as a fallback; every
+ * other failure (a defect of the table, of the hypothetical battle or of the worker's protocol) is thrown and stays an incident.
  */
-export async function solvePreview(deps: SolveDeps, input: PreviewSolveInput): Promise<Solved | Fallback> {
+export async function solvePreview(deps: SolveDeps, input: PreviewSolveInput, sink: PayoffCounts = emptyPayoff()): Promise<Solved | Fallback> {
   const { engine, vocabulary, config, teams, solver, client, battle, policy_id, channel_class } = deps;
   const view = readPreviewChannel(input.seat, input.channel);
   const asked = config.worlds.n;
@@ -224,9 +223,10 @@ export async function solvePreview(deps: SolveDeps, input: PreviewSolveInput): P
     return { kind: "fallback", reason: "too_few_worlds", worlds };
   }
   const payoffConfig: PayoffConfig = { k_own: config.k_own, k_opp: config.k_opp, own_rule: config.selection_rule, leaf: leafOf(config) };
-  const table = await buildPayoffTable({ config: payoffConfig, worlds: started.worlds, client, battle, policy_id, own_request: view.request, stream: input.stream });
+  const table = await buildPayoffTable({ config: payoffConfig, worlds: started.worlds, client, battle, policy_id, own_request: view.request, stream: input.stream, counts: sink });
   const valid = table.counts.worlds_used - table.counts.worlds_dropped;
-  if (table.matrix === null || valid < config.worlds.min_valid) return { kind: "fallback", reason: "too_few_worlds", payoff: table.counts, worlds };
+  // A world the engine refused to play on is dropped and counted by the table; losing worlds that way is the engine's failure, not a lack of draws.
+  if (table.matrix === null || valid < config.worlds.min_valid) return { kind: "fallback", reason: table.counts.engine_refusals > 0 ? "engine_failure" : "too_few_worlds", worlds };
   const solution = solver.solve(table.matrix, config.solver.iterations as number, config.solver.kind as PreviewSolverKind);
   const exploitability_ppm = Number((solution.exploitability + 999_999n) / 1_000_000n);
   return { kind: "solved", table, row: solution.row, col: solution.col, exploitability_ppm, support_size: solution.row.filter((ppm) => ppm > 0).length, worlds };
@@ -251,11 +251,6 @@ export interface PreviewSolveCounts {
   exploitability_ppm: number;
   support_size: number;
 }
-
-const emptyPayoff = (): PayoffCounts => ({
-  worlds_asked: 0, worlds_used: 0, preview_queries: 0, entry_attempts: 0, entries: 0, value_queries: 0, rollout_choices: 0, back_draws: 0,
-  clamped: 0, clamped_low: 0, clamped_high: 0, game_end_entries: 0, engine_refusals: 0, not_move_request: 0, worlds_dropped: 0, rollout_capped: 0, missing_entries: 0,
-});
 
 const emptyCounts = (): PreviewSolveCounts => ({
   decisions: 0,
@@ -307,14 +302,21 @@ export interface PreviewSolveActorOptions {
   on_solve?: (decision: SolvedDecision) => void;
 }
 
-export type PreviewSolveActor = Actor & { report(): PreviewSolveReport };
+/**
+ * The per-decision budget the config declares (`budget_ms`). Nothing in the solve enforces it: the evaluation wiring must give the seat
+ * a `guardActor` Team Preview budget of at least this, or a solve that runs longer is a latency forfeit of the seat.
+ */
+export const previewSolveBudgetMs = (setup: Pick<PreviewSolveSetup, "config">): number => setup.config.budget_ms;
 
-/** Worker and engine failures that make a solve a counted fallback; anything else is a defect or an incident and propagates. */
-function failureReason(error: unknown): FallbackReason | null {
-  if (error instanceof PolicyReplyError || error instanceof UnsupportedCandidateError) return "worker_failure";
-  if (error instanceof HypotheticalError || error instanceof PayoffError) return "engine_failure";
-  return null;
-}
+export type PreviewSolveActor = Actor & { report(): PreviewSolveReport; readonly budget_ms: number };
+
+/**
+ * The one failure that makes a solve a counted fallback: the worker's reply to a hypothetical query is invalid. Everything else is a
+ * defect or an incident and propagates: a `PayoffError` (another own Team Preview request, a prior that does not match its
+ * candidates), a `HypotheticalError`, an `UnsupportedCandidateError` (a candidate shape the worker cannot parse) and any worker or
+ * protocol failure. A world the engine refuses to play on is not thrown at all: the table drops and counts it.
+ */
+const failureReason = (error: unknown): FallbackReason | null => (error instanceof PolicyReplyError ? "worker_failure" : null);
 
 export function previewSolveActor(options: PreviewSolveActorOptions): PreviewSolveActor {
   const { setup, client, battle, player, policy_id, identity_hash, seed, game, channel_class, base, bank_ms } = options;
@@ -338,18 +340,23 @@ export function previewSolveActor(options: PreviewSolveActorOptions): PreviewSol
     if (bank !== null && searchSkipReason(bank, config.a2_clock_floor_ms) !== null) return fallback("clock_floor");
     const stream = previewSolveStream({ seed, game, player, policy_id, request_seq: request.request_seq });
     let outcome: Solved | Fallback;
+    // The work a solve did is counted whether it solved, fell back or failed.
+    const sink = emptyPayoff();
+    const addWork = (): void => {
+      for (const key of Object.keys(counts.payoff) as (keyof PayoffCounts)[]) counts.payoff[key] += sink[key];
+    };
     try {
-      outcome = await solvePreview(deps, { format_id: setup.format_id, seat: player, team: context.team, channel: context.channel, stream });
+      outcome = await solvePreview(deps, { format_id: setup.format_id, seat: player, team: context.team, channel: context.channel, stream }, sink);
     } catch (error) {
+      addWork();
       const reason = failureReason(error);
       if (reason === null) throw error;
       return fallback(reason);
     }
+    addWork();
     counts.worlds_asked += outcome.worlds.asked;
     counts.worlds_refused += outcome.worlds.refused;
     counts.worlds_unstarted += outcome.worlds.unstarted;
-    const payoff = outcome.kind === "solved" ? outcome.table.counts : outcome.payoff;
-    if (payoff !== undefined) for (const key of Object.keys(counts.payoff) as (keyof PayoffCounts)[]) counts.payoff[key] += payoff[key];
     if (outcome.kind === "fallback") {
       if (outcome.code !== undefined) counts.belief_refusals[outcome.code] = (counts.belief_refusals[outcome.code] ?? 0) + 1;
       return fallback(outcome.reason);
@@ -364,6 +371,7 @@ export function previewSolveActor(options: PreviewSolveActorOptions): PreviewSol
   };
 
   return Object.assign(actor, {
+    budget_ms: previewSolveBudgetMs(setup),
     report(): PreviewSolveReport {
       return { policy_id, identity_hash, prior_label: setup.teams.prior_label, counts: { ...counts, fallbacks: { ...counts.fallbacks }, belief_refusals: { ...counts.belief_refusals }, payoff: { ...counts.payoff } } };
     },

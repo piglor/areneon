@@ -5,6 +5,8 @@ import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const ROOT = new URL("../../..", import.meta.url).pathname;
+/** The solver's own modules: each gets the forbidden-import and banned-name checks. */
+const SOLVER_SOURCES = ["preview-solve.ts", "preview-worlds.ts", "preview-solve-config.ts"];
 const SOLVER_FILES = ["preview-solve.ts", "preview-solve-config.ts", "preview-solve-config-samples.ts", "samples.ts", "index.ts"];
 /** The shipped modules that write training data or Episodes. */
 const TRAINING_FILES = ["training-loader.ts", "episode-io.ts", "episode.ts", "league-generation.ts", "teacher-generation.ts", "play-generation.ts", "generation-cli.ts", "feature-recompute.ts"];
@@ -20,7 +22,7 @@ interface Finding {
 export function scanSource(file: string, text: string): Finding[] {
   const name = file.split("/").at(-1) as string;
   const found: Finding[] = [];
-  if (name === "preview-solve.ts") {
+  if (SOLVER_SOURCES.includes(name)) {
     for (const forbidden of SOLVER_FORBIDDEN_IMPORTS) {
       // A type-only import of the runner's `Actor` and `Player` is how every actor module names the actor type; the runner's records are banned by name.
       if (forbidden !== "runner.ts" && new RegExp(`from "[^"]*${forbidden}[^"]*"`).test(text)) found.push({ file, what: `imports ${forbidden}` });
@@ -50,7 +52,7 @@ describe("the Team Preview solver is evaluation only", () => {
     const names = files.map((f) => relative(ROOT, f));
     expect(names).toContain("packages/showdown-bridge/src/preview-solve.ts");
     expect(names).toContain("packages/showdown-bridge/src/training-loader.ts");
-    for (const name of SOLVER_FILES) expect(names.some((n) => n.endsWith(`/${name}`)), name).toBe(true);
+    for (const name of [...SOLVER_FILES, "preview-worlds.ts"]) expect(names.some((n) => n.endsWith(`/${name}`)), name).toBe(true);
     const findings = files.flatMap((file) => scanSource(relative(ROOT, file), readFileSync(file, "utf8")));
     expect(findings).toEqual([]);
   });
@@ -62,5 +64,9 @@ describe("the Team Preview solver is evaluation only", () => {
     expect(scanSource("src/training-loader.ts", 'import { x } from "./preview-solve.ts";').map((f) => f.what)).toEqual(["reaches the solver"]);
     expect(scanSource("src/policy-actor.ts", 'import { x } from "./preview-solve.ts";')).toEqual([]);
     expect(scanSource("src/preview-solve.ts", 'import { Actor } from "./runner.ts";')).toEqual([]);
+    for (const file of ["src/preview-worlds.ts", "src/preview-solve-config.ts"]) {
+      expect(scanSource(file, 'import { x } from "./episode-io.ts";').map((f) => f.what)).toEqual(["imports episode-io"]);
+      expect(scanSource(file, "const l: OmniscientLog = 1;").map((f) => f.what)).toEqual(["names OmniscientLog"]);
+    }
   });
 });

@@ -139,7 +139,7 @@
       }
     },
     "budget_ms": {
-      "description": "The per-decision guard in milliseconds that an overrun is a latency forfeit against; not a cut-off inside the solve, whose work is fixed by k_own, k_opp, N_w and the leaf.",
+      "description": "The per-decision guard in milliseconds that an overrun is a latency forfeit against; not a cut-off inside the solve, whose work is fixed by k_own, k_opp, N_w and the leaf. Nothing in the solve enforces it: the caller must give the seat a guardActor Team Preview budget of at least this value (previewSolveBudgetMs reads it).",
       "type": "integer",
       "minimum": 1,
       "maximum": 3600000

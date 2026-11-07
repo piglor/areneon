@@ -15,6 +15,10 @@ import {
   loadPreviewSolveConfig,
   loadTrainingSet,
   type PayoffClient,
+  PayoffError,
+  previewSolveBudgetMs,
+  UnsupportedCandidateError,
+  startPreviewWorlds,
   PolicyProtocolError,
   policyActor,
   PolicyReplyError,
@@ -57,16 +61,18 @@ const toId = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]/g, 
 
 /** The stand-in: a Preview prior that reads the observation's own team, and a value that hashes the hypothetical channel. */
 class Worker extends StandInWorker implements PayoffClient {
-  fault: "none" | "reply" | "engine" | "protocol" = "none";
+  fault: "none" | "reply" | "engine" | "protocol" | "unsupported" | "prior" = "none";
   override async evaluate(_battle: string, query: Parameters<EvaluationClient["evaluate"]>[1]): ReturnType<EvaluationClient["evaluate"]> {
     if (this.fault === "reply") throw new PolicyReplyError("the stand-in's reply is invalid");
     if (this.fault === "engine") throw new HypotheticalError("the stand-in's engine refuses");
+    if (this.fault === "unsupported") throw new UnsupportedCandidateError("the stand-in cannot parse a candidate");
     if (this.fault === "protocol") throw new PolicyProtocolError("the stand-in's worker is gone");
     const observation = query.observation as unknown as { kind: string; team: unknown; log?: readonly string[] };
     this.queries.push({ kind: "evaluate", log_lines: observation.log?.length ?? 0, candidates: query.candidates.length, rows: false });
     const digest = (text: string): number => createHash("sha256").update(text).digest().readUInt32BE(0);
     const own = jcs(observation.team as Json);
     const prior_ppm = query.candidates.map(({ choice }) => 1 + (digest(`${observation.kind}|${own}|${choice}`) % 1000));
+    if (this.fault === "prior") prior_ppm.pop();
     const value_ppm = digest(`value|${observation.log?.join("\n") ?? ""}`) % 1_000_001;
     return { identity: query.identity, prior_ppm, value_ppm } as Awaited<ReturnType<EvaluationClient["evaluate"]>>;
   }
@@ -350,17 +356,40 @@ describe("fallbacks and refusals", () => {
     expect(all).toMatchObject({ kind: "fallback", reason: "belief_refusal", code: "legality_redraws_exhausted", worlds: { asked: 2, refused: 2 } });
   }, 300_000);
 
-  it("counts a worker failure and an engine failure as fallbacks, and lets any other failure through", async () => {
+  it("counts an invalid worker reply as a fallback and keeps the work it counted; every other failure is an incident", async () => {
     const reply = new Worker();
     reply.fault = "reply";
-    expect((await play(battle, { worker: reply })).actor.report().counts.fallbacks).toMatchObject({ worker_failure: 1, engine_failure: 0 });
-    const engineFault = new Worker();
-    engineFault.fault = "engine";
-    expect((await play(battle, { worker: engineFault })).actor.report().counts.fallbacks).toMatchObject({ worker_failure: 0, engine_failure: 1 });
-    const gone = new Worker();
-    gone.fault = "protocol";
-    await expect(play(battle, { worker: gone })).rejects.toThrow(PolicyProtocolError);
+    const failed = await play(battle, { worker: reply });
+    expect(failed.actor.report().counts.fallbacks).toMatchObject({ worker_failure: 1, engine_failure: 0 });
+    // The failing query is the first one; the work the table counted before it failed is kept.
+    expect(failed.actor.report().counts.payoff.worlds_asked).toBe(2);
+    // Defects throw: the engine's hypothetical refusal of a query, a candidate shape the worker cannot parse, a prior that does not
+    // match its candidates (a PayoffError), and a dead worker.
+    for (const [fault, error] of [["engine", HypotheticalError], ["unsupported", UnsupportedCandidateError], ["prior", PayoffError], ["protocol", PolicyProtocolError]] as const) {
+      const worker = new Worker();
+      worker.fault = fault;
+      await expect(play(battle, { worker }), fault).rejects.toThrow(error);
+    }
   }, 300_000);
+
+  it("throws, and does not count an unstarted world, when our own request or team does not match the hypothetical battle", async () => {
+    const { channel, team } = await view();
+    const base = { format_id: FORMAT, seat: "p1" as const, channel, stream: new Uint8Array(32) };
+    const setup = setupFor();
+    await expect(solvePreview(deps(setup), { ...base, team: team.slice(0, 5) })).rejects.toThrow(HypotheticalError);
+    // A team the validator refuses as a whole is the one counted case.
+    const source = (setup.teams.open({ opponent: readPreviewChannel("p1", channel).opponent, flags: [] }) as { source: Parameters<typeof startPreviewWorlds>[0]["source"] }).source;
+    const view_ = readPreviewChannel("p1", channel);
+    const input = { engine, vocabulary, format_id: FORMAT, source, count: 1, stream: new Uint8Array(32), seat: "p1" as const, own_team: team, channel_class: "synthetic" as const, own_request: view_.request };
+    expect(startPreviewWorlds({ ...input, source: { draw: () => ({ kind: "team", redraws: 0, team: { sets: [] } }) } }).unstarted).toBe(1);
+    expect(() => startPreviewWorlds({ ...input, own_team: team.slice(0, 5) })).toThrow(HypotheticalError);
+  }, 300_000);
+
+  it("exposes the config's budget for the evaluation wiring", () => {
+    const setup = setupFor();
+    expect(previewSolveBudgetMs(setup)).toBe(setup.config.budget_ms);
+    expect(previewSolveBudgetMs(setupFor(smallConfig((c) => (c.budget_ms = 1234))))).toBe(1234);
+  });
 
   it("skips the solve below the A2 clock floor and solves above it", async () => {
     const low = await play(battle, { bank_ms: () => 100 });

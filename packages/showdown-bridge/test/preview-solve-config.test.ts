@@ -128,7 +128,7 @@ describe("the harness derivations", () => {
     const at = (ppm: number): number => drawFromMixture(mixture, Math.ceil((ppm * 2 ** 53) / 1_000_000));
     expect([at(0), at(249_999), at(250_000), at(749_999), at(750_000), at(999_999)]).toEqual([0, 0, 2, 2, 3, 3]);
     expect(drawFromMixture([1_000_000], 2 ** 53 - 1)).toBe(0);
-    // A mixture that does not reach the target (it should sum to 10^6) falls to its last entry rather than going out of range.
-    expect(drawFromMixture([1, 1], 2 ** 53 - 1)).toBe(1);
+    // A mixture that does not reach the target (it should sum to 10^6) is a defect, not a silent last entry.
+    expect(() => drawFromMixture([1, 1], 2 ** 53 - 1)).toThrow(/sum to 10\^6/);
   });
 });

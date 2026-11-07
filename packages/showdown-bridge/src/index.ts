@@ -789,6 +789,7 @@ export {
   PREVIEW_SOLVE_PURPOSE,
   PREVIEW_SOLVE_WORLDS_PURPOSE,
   previewSolveActor,
+  previewSolveBudgetMs,
   type PreviewSolveActor,
   type PreviewSolveActorOptions,
   type PreviewSolveCounts,
