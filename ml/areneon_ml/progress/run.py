@@ -33,6 +33,7 @@ from areneon_ml.checkpoint.record import CheckpointRecord, read_record
 from areneon_ml.learner.config import RunConfig, read_run_config
 from areneon_ml.loop import layout
 from areneon_ml.loop.driver import sources_registry
+from areneon_ml.loop.ladder_write import json_hash
 from areneon_ml.loop.play import NodePlayer, PlayError
 from areneon_ml.loop.records import features_hash, policy_id
 from areneon_ml.loop.sheet_counts import read_sheet_counts
@@ -454,15 +455,18 @@ class _Source:
     version_manifest: dict[str, Any]
     #: ``private`` when either checkpoint record has private ancestry (only with ``allow_private``).
     data_class: str = "synthetic"
+    #: The population member whose pair this is (``m<k>``); None for a single-lineage run.
+    member: str | None = None
 
 
-def _source(
+def _source(  # noqa: PLR0913
     run_dir: Path,
     config: RunConfig,
     generation: int,
     *,
     allow_private: bool = False,
     needs_dataset: bool = True,
+    member: str | None = None,
 ) -> _Source:
     """Verify the committed generation and its records; refuse a non-synthetic run.
 
@@ -485,13 +489,25 @@ def _source(
     )
     if facts.get("run_config_hash") != config.hash:
         raise ProgressError("the generation was committed under another run config")
-    checkpoints = facts.get("checkpoints")
+    records = path / "records"
+    if "members" in facts:
+        # A population run (ADR-021): the pair is one member's, by default the ladder top.
+        member = member or ladder_top(path, facts, generation)
+        entry = facts["members"].get(member)
+        if not isinstance(entry, dict):
+            raise ProgressError(f"generation {generation} has no member {member}")
+        checkpoints = entry.get("checkpoints")
+        records = path / "members" / member / "records"
+    elif member is not None:
+        raise ProgressError("--member names a member of a population run: this run has none")
+    else:
+        checkpoints = facts.get("checkpoints")
     if not isinstance(checkpoints, dict) or set(checkpoints) != {"preview", "battle"}:
         raise ProgressError("the generation's manifest names no frozen pair")
     version_manifest: dict[str, Any] = {}
     data_class = "synthetic"
     for role in ("preview", "battle"):
-        record = read_record(layout.read_json(path / "records" / f"{role}.json"))
+        record = read_record(layout.read_json(records / f"{role}.json"))
         version_manifest = record.manifest
         if record.data_class != "synthetic":
             if not allow_private:
@@ -511,7 +527,51 @@ def _source(
         team_set,
         version_manifest,
         data_class,
+        member,
     )
+
+
+def ladder_top(path: Path, facts: dict[str, Any], generation: int) -> str:
+    """The member with the highest committed strength in the generation's ``ladder.json``.
+
+    Ties go to the lower member index (ADR-021 section 10). The strength is the one the ladder
+    fitted for the member's slot in this generation's games; the pair evaluated is the member's
+    pair frozen at the end of the generation. Generation 0 has no ladder (only the anchors'
+    calibration): name a member there.
+    """
+    if generation == 0:
+        raise ProgressError("generation 0 has no ladder: name the member with --member")
+    raw = layout.read_json(path / "ladder.json")
+    if facts.get("ladder_hash") != json_hash(raw):
+        raise ProgressError(f"generation {generation}: ladder.json differs from its manifest")
+    members = raw.get("members")
+    if not isinstance(members, list) or not members:
+        raise ProgressError(f"generation {generation}: ladder.json lists no members")
+    best = min(members, key=lambda m: (-m["strength"]["strength"], int(m["member"][1:])))
+    return str(best["member"])
+
+
+MEMBER_LABEL = (
+    "selected by the strength the generation's games gave; the pair evaluated is the member's "
+    "pair frozen at the end of the generation"
+)
+
+
+def _member_part(member: str | None) -> dict[str, Any]:
+    """The printed member of a population run (a single lineage's result has no such keys)."""
+    return {} if member is None else {"member": member, "member_label": MEMBER_LABEL}
+
+
+def _recorded_member(run_dir: Path, generation: int, checkpoints: dict[str, str]) -> str | None:
+    """The member of a population run whose frozen pair a committed record names (else None)."""
+    manifest = layout.read_json(layout.generation_dir(run_dir, generation) / layout.MANIFEST)
+    held = manifest.get("members") if isinstance(manifest, dict) else None
+    if held is None:
+        return None
+    found = [m for m, entry in held.items() if entry.get("checkpoints") == checkpoints]
+    if len(found) != 1:
+        raise ProgressError("the record's pair is not exactly one member's frozen pair")
+    return str(found[0])
 
 
 def _check_previous(record: dict[str, Any], previous: PreviousPair | None, *, legacy: bool) -> None:
@@ -654,8 +714,8 @@ def _damage_budget_ms(minutes: int | None, preview_ablation: bool, version: str)
 
 def _previous_pair(run_dir: Path, config: RunConfig, generation: int) -> PreviousPair | None:
     """The frozen pair of generation ``generation - 1`` (verified), or None at generation 0."""
-    if generation == 0:
-        return None
+    if generation == 0 or config.population:
+        return None  # a population run has no single previous pair (refused when asked for)
     before = _source(run_dir, config, generation - 1)
     return PreviousPair(
         before.preview,
@@ -703,6 +763,8 @@ def _versus_pair(
     if other_dir == run_dir.resolve():
         raise ProgressError("the other run is the evaluated run itself")
     other = _read_config(other_dir)
+    if other.population:
+        raise ProgressError("the other run is a population run: it has no single frozen pair")
     if other.run_key == config.run_key:
         raise ProgressError("the other run has the same run key as the evaluated one")
     if other.format_id != config.format_id:
@@ -1217,8 +1279,13 @@ def verify_progress_dir(  # noqa: PLR0913, PLR0917
 ) -> dict[str, Any]:
     """A committed progress directory, checked against its manifest and the run."""
     manifest = layout.verify_generation(target, generation)
-    source = _source(run_dir, config, generation)
     record = read_progress_record(layout.read_json(target / PROGRESS), config)
+    source = _source(
+        run_dir,
+        config,
+        generation,
+        member=_recorded_member(run_dir, generation, record["checkpoints"]),
+    )
     if (
         record["generation_manifest_sha256"] != source.manifest_sha256
         or record["generation"] != generation
@@ -1334,8 +1401,17 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
     damage_aware_version: str = "v1",
     search_mode: str | None = None,
     modes: Sequence[ExtraMode] = (),
+    member: str | None = None,
 ) -> dict[str, Any]:
     """Evaluate one generation into ``root``; a committed directory is verified and kept.
+
+    A population run (ADR-021, slice 12) evaluates ONE member's frozen pair: ``member`` (``m<k>``),
+    by default the ladder top of the generation (``ladder_top``). The record is the ordinary
+    version 2 record of that pair; it names the member by its checkpoints (the generation's
+    manifest says which member holds them), and the printed result by ``member``. A population
+    run is evaluated against the baselines (and the damage-aware baseline, extra modes) only: no
+    anchors, previous-generation matches, Preview ablation, head to head or search, which read a
+    single lineage's pair per generation. A progress directory holds one member per generation.
 
     ``modes`` (ADR-023 section 1, #1044) adds extra play modes, each a sample at a declared
     temperature and/or threshold (``progress/modes.py``), played against every scripted baseline
@@ -1389,6 +1465,13 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
         damage_aware_budget_minutes, preview_ablation, damage_aware_version
     )
     config = _read_config(run_dir)
+    if config.population and (
+        anchors or previous_matches or preview_ablation or versus or search_mode
+    ):
+        raise ProgressError(
+            "a population run is evaluated against the baselines only: no --anchors, "
+            "--previous-matches, --preview-ablation, --versus-run-dir or --search-mode"
+        )
     modes = _with_run_mode(config, modes, preview_ablation or search_mode is not None)
     try:
         evaluation_key = ekey.check(evaluation_key, config.run_key)
@@ -1422,8 +1505,9 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
                 evaluation_key,
                 search_mode,
                 modes,
+                member,
             )
-        source = _source(run_dir, config, generation)
+        source = _source(run_dir, config, generation, member=member)
         previous = _previous_pair(run_dir, config, generation) if previous_matches else None
         ablation = _ablation_spec(run_dir, config, source) if preview_ablation else None
         anchor_pairs = tuple(_anchor_pair(run_dir, config, a) for a in wanted)
@@ -1528,6 +1612,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
                 "game_ms": facts.get("game_ms", {}),
                 "matches": summary_of(record),
             }
+            | _member_part(source.member)
             | _gap_part(record)
             | _ablation_part(record)
             | _versus_part(record, relation, versus)
@@ -1547,6 +1632,7 @@ def _skipped(  # noqa: PLR0913, PLR0917
     evaluation_key: str | None = None,
     search_mode: str | None = None,
     modes: Sequence[ExtraMode] = (),
+    member: str | None = None,
 ) -> dict[str, Any]:
     """A committed directory is verified and reported, never rewritten."""
     pair = None if versus is None else _versus_pair(run_dir, config, versus, eval_dataset)
@@ -1561,6 +1647,12 @@ def _skipped(  # noqa: PLR0913, PLR0917
         evaluation_key=evaluation_key,
     )
     held = None
+    kept = _recorded_member(run_dir, generation, record["checkpoints"])
+    if member is not None and kept != member:
+        raise ProgressError(
+            f"{target.name} already holds {kept or 'a single lineage'}'s pair: use a progress "
+            f"directory of its own to evaluate {member}"
+        )
     if pair is not None and any(m["opponent"]["kind"] == "run" for m in record["matches"]):
         held = versus_relation(run_dir, _source(run_dir, config, generation), pair)
     if (search_mode is not None) != _is_search(record) or (
@@ -1586,6 +1678,7 @@ def _skipped(  # noqa: PLR0913, PLR0917
             "damage_aware": _damage_aware_status(record),
             "matches": summary_of(record),
         }
+        | _member_part(kept)
         | _gap_part(record)
         | _modes_status(record, modes)
         | _ablation_part(record)

@@ -54,7 +54,7 @@ from areneon_ml.learner.data import LearnerDataError
 from areneon_ml.learner.state import LearnerStateError
 from areneon_ml.learner.trainer import LearnerError
 from areneon_ml.loop import layout
-from areneon_ml.loop.driver import Loop, LoopError, export_provenance
+from areneon_ml.loop.driver import Loop, LoopError, export_provenance, population_learner_steps
 from areneon_ml.loop.metrics import MetricsError
 from areneon_ml.loop.play import NodePlayer, PlayError
 from areneon_ml.loop.population import PopulationLoop
@@ -418,6 +418,13 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "damage-aware-<mode>) or v3 (the corrected scorer, #1180; matches damage-aware-v3-<mode>)",
     )
     progress.add_argument(
+        "--member",
+        default=None,
+        help="a population run only (ADR-021): the member (m<k>) whose frozen pair is evaluated; "
+        "the default is the ladder top of the evaluated generation (highest strength, ties by "
+        "member index)",
+    )
+    progress.add_argument(
         "--search-mode",
         choices=("argmax", "sample"),
         default=None,
@@ -599,6 +606,7 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
             damage_aware_version=args.damage_aware_version or "v1",
             search_mode=args.search_mode,
             modes=modes,
+            member=args.member,
         )
         for g in generations
     ]
@@ -662,9 +670,10 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
     return result.as_dict(loop.frozen)
 
 
-#: Commands that read a run directory with a single lineage's layout (ADR-021 slices 11 and 12
-#: add the population views): a population run is refused by name, before anything is read.
-_SINGLE_LINEAGE_ONLY = ("inspect", "report", "progress", "replay")
+#: Commands that read a run directory with a single lineage's layout (ADR-021 slice 12 adds the
+#: population views of the inspector; slice 11 added the dashboard's ladder view, so ``report``
+#: reads a population run): a population run is refused by name, before anything is read.
+_SINGLE_LINEAGE_ONLY = ("inspect", "replay")
 
 
 def _refuse_population_dir(args: argparse.Namespace) -> None:
@@ -720,7 +729,11 @@ def _records(args: argparse.Namespace) -> dict[str, object]:
                 args.clone_dir, args.run_dir, ("battle",) if args.roles == "battle" else ROLES
             )
         }
-    return {"sources_hash": export_provenance(args.run_dir, args.out)}
+    out: dict[str, object] = {"sources_hash": export_provenance(args.run_dir, args.out)}
+    steps = population_learner_steps(args.run_dir)
+    if steps:  # a population run only: a single lineage's output keeps its bytes
+        out["learner_steps"] = steps
+    return out
 
 
 def _scripted(args: argparse.Namespace) -> dict[str, object]:
