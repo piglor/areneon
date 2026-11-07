@@ -73,6 +73,19 @@ class SeatView:
 
 
 @dataclass(frozen=True)
+class PopulationInfo:
+    """What a population game adds (ADR-021): kind, pair, half and who held each seat."""
+
+    kind: str
+    member: str
+    pair: int
+    half: int
+    #: seat -> (kind, label): the kind is ``member``, ``snapshot`` or ``baseline``; the label is the
+    #: member id, the past-pool snapshot id or the baseline's policy id.
+    holders: dict[str, tuple[str, str]]
+
+
+@dataclass(frozen=True)
 class GameReplay:
     run_key: str
     generation: int
@@ -80,6 +93,8 @@ class GameReplay:
     row: GameRow
     pair_policy_id: str
     views: tuple[SeatView, ...]
+    #: Set for a population game only; None keeps the single-lineage page as it was.
+    population: PopulationInfo | None = None
 
 
 def to_id(text: str) -> str:

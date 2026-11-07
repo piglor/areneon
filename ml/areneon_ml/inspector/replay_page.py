@@ -126,14 +126,27 @@ def _outcome(view: SeatView) -> str:
     return f"{view.seat} {verdict} after {view.turns} turns"
 
 
+def _holder_words(kind: str, label: str) -> str:
+    """Who held a seat of a population game, in words."""
+    return {
+        "member": f"learning member {label}",
+        "snapshot": f"frozen past-pool snapshot {label}",
+        "baseline": f"scripted baseline {label}",
+    }[kind]
+
+
 def payload(game: GameReplay, dex: dict[str, Any]) -> dict[str, Any]:
     """The page's data block. Every field is data the reader trusts nothing from."""
+    info = game.population
     played = "the frozen pair (self-play)" if game.plan.opponent == "self" else None
     views = []
     for view in game.views:
-        who = played or (
-            "the frozen pair" if view.played_by == game.pair_policy_id else view.played_by
-        )
+        if info is not None:
+            who = _holder_words(*info.holders[view.seat])
+        else:
+            who = played or (
+                "the frozen pair" if view.played_by == game.pair_policy_id else view.played_by
+            )
         views.append(
             {
                 "player": view.seat,
@@ -152,7 +165,18 @@ def payload(game: GameReplay, dex: dict[str, Any]) -> dict[str, Any]:
         "filled in: an opponent shows only what its side's log revealed, and unrevealed Pokémon are "
         "blank tokens.",
     ]
-    if game.plan.opponent != "self":
+    if info is not None:
+        notes.append(
+            f"A {info.kind} game scheduled for member {info.member}: half {info.half} of team pair "
+            f"{info.pair}, played twice on one battle seed."
+        )
+        scripted = sorted(label for kind, label in info.holders.values() if kind == "baseline")
+        if scripted:
+            notes.append(
+                f"A scripted baseline ({scripted[0]}) played one seat; its decisions are "
+                "recorded in its own Episode."
+            )
+    elif game.plan.opponent != "self":
         notes.append(
             f"A scripted baseline ({game.plan.opponent}) played the other seat; its decisions are "
             "recorded in its own Episode."
