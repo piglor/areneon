@@ -16,7 +16,7 @@ const ready = {
     kind: "ready",
     contracts: mode === "bad-contracts" ? [{ ...contracts[0], schema_sha256: "0".repeat(64) }, ...contracts.slice(1)] : contracts,
     encoder_version: mode === "bad-encoder" ? "other-1" : ENCODER_VERSION,
-    engine_data_hash: mode === "bad-engine" ? "0".repeat(64) : ENGINE_DATA_HASH,
+    engine_data_hash: mode === "bad-engine" ? "0".repeat(64) : (process.env.FAKE_ENGINE_DATA_HASH ?? ENGINE_DATA_HASH),
     checkpoints: mode === "bad-checkpoints" ? [CHECKPOINTS[0]] : CHECKPOINTS,
     // The feature set this worker's checkpoints need (ADR-022 section 3), when the test names one.
     ...(process.env.FAKE_FEATURE_SET === undefined ? {} : { feature_set: JSON.parse(process.env.FAKE_FEATURE_SET) as unknown }),
@@ -42,11 +42,18 @@ const recommendation = (query: PolicyQuery, change: Record<string, unknown> = {}
   };
 };
 
+// The value of a state: 500000, or (FAKE_VALUE_VARY) a number that follows the observation's log, so searched candidates differ in value.
+const stateValue = (query: PolicyQuery): number => {
+  if (process.env.FAKE_VALUE_VARY === undefined) return 500000;
+  const log = (query as unknown as { observation: { log?: string[] } }).observation.log ?? [];
+  return 100000 + ((log.reduce((n, line) => n + line.length, 0) * 7919) % 800000);
+};
+
 // An evaluation of an `evaluate` query (ADR-026 section 5): invented prior, one entry per candidate, in the query's order.
 const evaluation = (query: PolicyQuery, change: Record<string, unknown> = {}) => ({
   identity: query.identity,
   prior_ppm: query.candidates.map((_, i) => (i === 0 ? 1000000 - (query.candidates.length - 1) * 1000 : 1000)),
-  value_ppm: 500000,
+  value_ppm: stateValue(query),
   ...change,
 });
 
@@ -69,7 +76,7 @@ lines.on("line", (text) => {
   const ok = (change: Record<string, unknown> = {}): void => reply({ kind: "recommendation", recommendation: recommendation(query, change) });
   if (query.sampling.kind === "value" && (mode === "ok" || mode.startsWith("value-"))) {
     // A value query (ADR-026 erratum E2 decision 7): the value of the state alone, 500000 unless the mode misbehaves.
-    const value = { identity: mode === "value-wrong-identity" ? { ...query.identity, request_seq: query.identity.request_seq + 1 } : query.identity, value_ppm: 500000 };
+    const value = { identity: mode === "value-wrong-identity" ? { ...query.identity, request_seq: query.identity.request_seq + 1 } : query.identity, value_ppm: stateValue(query) };
     if (mode === "value-evaluation") reply({ kind: "evaluation", evaluation: evaluation(query, { prior_ppm: [1000000] }) });
     else reply({ kind: "value", value });
     return;

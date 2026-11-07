@@ -263,6 +263,31 @@ describe("a run config that names an opponent sheet source (ADR-027 slice 4)", (
   });
 });
 
+describe("a run config that asks for search labels (ADR-026 erratum E2, #1290)", () => {
+  const withLabels = (_generation: number, hash: string, name: string): string => {
+    const raw = JSON.parse(readFileSync(join(SAMPLES_DIR, "v1/training-run-config/valid/search-distill.json"), "utf8")) as { generation: { search_labels: { search_config_hash: string; start_generation: number } } };
+    raw.generation.search_labels.search_config_hash = hash;
+    const file = join(dir, `labels-${name}.json`);
+    writeFileSync(file, JSON.stringify(raw));
+    return file;
+  };
+
+  it("fails with exit 1 when the script has no search setup factory, or the config names another label search config", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      expect(await runGenerationCli(flags(withLabels(3, "e".repeat(64), "a"), { generation: "3" }))).toBe(1);
+      expect(error.mock.calls.flat().join(" ")).toMatch(/no search setup factory/);
+      const factory = () => {
+        throw new Error("the factory is not reached with a wrong config hash");
+      };
+      expect(await runGenerationCli(flags(withLabels(3, "e".repeat(64), "b"), { generation: "3" }), console.log, interimPoolSource, undefined, undefined, undefined, factory)).toBe(1);
+      expect(error.mock.calls.flat().join(" ")).toMatch(/which this checkout computes as/);
+    } finally {
+      error.mockRestore();
+    }
+  });
+});
+
 describe("a further game process", () => {
   const script = (name: string, body: string): string => {
     const file = join(dir, name);

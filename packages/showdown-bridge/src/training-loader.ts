@@ -254,24 +254,25 @@ export function trainingExample(
   return readTrainingExample({ schema_version: 1, episode_hash, observation, choice, candidates, ...(candidate_features === undefined ? {} : { candidate_features }), ...(opponent_sheet === undefined ? {} : { opponent_sheet }), outcome });
 }
 
-/** The Episode's TrainingExamples, one per decision. */
-async function examplesOf(episode: Episode, hash: string, features: TrainingInput["features"], sheet: TrainingInput["sheet"]): Promise<TrainingExample[]> {
+/** The Episode's TrainingExamples, one per decision (only those of `only`'s request numbers when given: the label stream, #1290). */
+export async function examplesOf(episode: Episode, hash: string, features: TrainingInput["features"], sheet: TrainingInput["sheet"], only?: ReadonlySet<number>): Promise<TrainingExample[]> {
   const observations = await decisionObservations(episode);
   const outcome = outcomeOf(episode);
   const memo = createFeatureMemo(); // one Episode is one game, as at play time; the memo never changes a byte
   const given = features?.precomputed?.(hash, observations.map((o) => o.identity.request_seq));
   const rows = given?.length === episode.decisions.length ? given : undefined;
   const builder = sheet === undefined ? undefined : createSheetBuilder({ engine: sheet.engine, vocabulary: sheet.vocabulary, port: sheet.port, scenario_id: sheet.scenario_id });
-  return episode.decisions.map(({ choice }, i) => {
+  return episode.decisions.flatMap(({ choice }, i) => {
     const observation = observations[i] as TrainingExample["observation"];
-    return trainingExample({
+    if (only !== undefined && !only.has(observation.identity.request_seq)) return [];
+    return [trainingExample({
       observation,
       choice,
       outcome,
       episode_hash: hash,
       ...(features === undefined ? {} : { candidate_features: rows?.[i] ?? featuresOf(episode, observation, hash, features, memo) }),
       ...(builder === undefined ? {} : { opponent_sheet: sheetOf(builder, observation, episode) }),
-    });
+    })];
   });
 }
 
@@ -479,7 +480,7 @@ export async function streamTraining(
   };
 }
 
-async function readTraining(value: unknown, index: number, known_synthetic: SyntheticTeamHashes, behaviour_policy_id: string): Promise<Episode> {
+export async function readTraining(value: unknown, index: number, known_synthetic: SyntheticTeamHashes, behaviour_policy_id: string): Promise<Episode> {
   const episode = await readEpisode(value, { known_synthetic }).catch((error: Error) => {
     throw new TrainingLoaderError(`Episode ${index} is refused: ${error.message}`, { cause: error });
   });

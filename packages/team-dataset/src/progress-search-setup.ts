@@ -3,15 +3,15 @@
 // committed format (the same restriction the damage-aware baseline has: its vocabulary is the golden one).
 
 import { readerSha256 } from "../../public-state/src/index.ts";
-import { type Engine, goldenWorldFactsData, loadRulesSnapshot, resolveFormat, type SearchSetup, searchSetup } from "@areneon/showdown-bridge";
+import { type Engine, type SearchConfig, goldenWorldFactsData, loadRulesSnapshot, resolveFormat, type SearchSetup, searchSetup } from "@areneon/showdown-bridge";
 import { GOLDEN_FORMAT, goldenTeamVocabulary } from "../../showdown-bridge/src/golden.ts";
 import { createSearchWorlds } from "./search-worlds.ts";
 
-export function progressSearchSetup(engine: Engine, formatId: string): SearchSetup {
+export function progressSearchSetup(engine: Engine, formatId: string, config?: SearchConfig): SearchSetup {
   if (formatId !== GOLDEN_FORMAT) throw new Error(`the search has a vocabulary for ${GOLDEN_FORMAT} only, not ${formatId}`);
   const vocabulary = goldenTeamVocabulary();
   const snapshot = loadRulesSnapshot(engine.commit);
   const manifest = resolveFormat(engine, formatId, snapshot).manifest;
   const port = createSearchWorlds({ engine, vocabulary, reader_sha256: readerSha256(), manifest, arm: "generator-matched" });
-  return searchSetup({ engine, format_id: formatId, vocabulary, port, facts_data: goldenWorldFactsData(), data_class: "synthetic", snapshot });
+  return searchSetup({ engine, format_id: formatId, vocabulary, port, facts_data: goldenWorldFactsData(), data_class: "synthetic", snapshot, ...(config === undefined ? {} : { config }) });
 }
