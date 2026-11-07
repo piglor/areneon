@@ -479,6 +479,12 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "--versus-generation", type=int, help="the other run's generation (with --versus-run-dir)"
     )
     progress.add_argument(
+        "--versus-engine-data",
+        type=Path,
+        help="with --versus-run-dir: the other run's engine-data table, when its checkpoints were "
+        "made for another one than --engine-data (default: --engine-data)",
+    )
+    progress.add_argument(
         "--run-games",
         type=int,
         default=DEFAULT_RUN_GAMES,
@@ -559,16 +565,29 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
     if (args.versus_run_dir is None) != (args.versus_generation is None):
         raise ProgressError("--versus-run-dir and --versus-generation go together")
     versus = None
+    if args.versus_engine_data is not None and args.versus_run_dir is None:
+        raise ProgressError("--versus-engine-data needs --versus-run-dir")
     if args.versus_run_dir is not None:
         if args.all:
             raise ProgressError("--versus-run-dir needs --generation, not --all")
         other_dir = args.versus_run_dir.resolve()
         other = read_run_config(layout.read_json(other_dir / layout.CONFIG))
+        other_game = game
+        if args.versus_engine_data is not None:
+            try:
+                other_game = GameData.from_table(
+                    json.loads(args.versus_engine_data.read_text(encoding="utf-8"))
+                )
+            except Exception as exc:  # a missing, malformed or off-contract table
+                raise ProgressError(
+                    "--versus-engine-data is not a readable engine-data table"
+                ) from exc
         versus = VersusSpec(
             other_dir,
             args.versus_generation,
             args.run_games,
-            encoder_version(game, other.model.encoder),
+            encoder_version(other_game, other.model.encoder),
+            None if args.versus_engine_data is None else args.versus_engine_data.resolve(),
         )
     try:
         modes = parse_modes(() if args.modes is None else args.modes.split(","))
@@ -664,9 +683,10 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
     return result.as_dict(loop.frozen)
 
 
-#: Commands that read a run directory with a single lineage's layout (ADR-021 slices 11 and 12
-#: add the population views): a population run is refused by name, before anything is read.
-_SINGLE_LINEAGE_ONLY = ("inspect", "report", "replay")
+#: Commands that read a run directory with a single lineage's layout (ADR-021 slice 12 adds the
+#: population views of the inspector; slice 11 added the dashboard's ladder view, so ``report``
+#: reads a population run): a population run is refused by name, before anything is read.
+_SINGLE_LINEAGE_ONLY = ("inspect", "replay")
 
 
 def _refuse_population_dir(args: argparse.Namespace) -> None:
