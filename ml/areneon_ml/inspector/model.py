@@ -176,8 +176,16 @@ class EpisodeFacts:
     turns: int
 
 
-def read_episode_facts(path: Path, run_key: str) -> tuple[str, str, EpisodeFacts]:
-    """(seed, player, facts) of one Episode file: its counts and ids, nothing of its channel."""
+@dataclass(frozen=True)
+class EpisodeLinks:
+    """Who played an Episode's seat and who the other seat was (policy ids the Episode names)."""
+
+    behaviour_policy_id: str | None
+    opponent_policy_id: str | None
+
+
+def read_episode_header(path: Path, run_key: str) -> tuple[str, str, EpisodeFacts, EpisodeLinks]:
+    """(seed, player, facts, links) of one Episode file: counts and ids, nothing of its channel."""
     data = path.read_bytes()
     if hashlib.sha256(data.rstrip(b"\n")).hexdigest() != path.stem:
         raise InspectError(f"episodes/{path.name} does not hash to its name")
@@ -188,8 +196,10 @@ def read_episode_facts(path: Path, run_key: str) -> tuple[str, str, EpisodeFacts
         sets = episode["team"]["team"]
         result = episode["result"]
         label = (episode["data_class"], episode["rights"], episode["team"]["data_class"])
-    except (json.JSONDecodeError, KeyError, TypeError) as exc:
-        raise InspectError(f"episodes/{path.name} is not an Episode this inspector reads") from exc
+        behaviour = episode["provenance"].get("behaviour_policy_id")
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError) as exc:
+        message = f"episodes/{path.name} is not an Episode this inspector reads"
+        raise InspectError(message) from exc
     if label != (PUBLIC_CLASS, PUBLIC_RIGHTS, PUBLIC_CLASS):
         raise InspectError(f"episodes/{path.name} is not a synthetic cc0-synthetic Episode")
     if (
@@ -208,7 +218,14 @@ def read_episode_facts(path: Path, run_key: str) -> tuple[str, str, EpisodeFacts
         collection["seed"],
         player,
         EpisodeFacts(sha256_hex(jcs(sets)), result["winner"], turns),
+        EpisodeLinks(behaviour, collection.get("opponent_policy_id")),
     )
+
+
+def read_episode_facts(path: Path, run_key: str) -> tuple[str, str, EpisodeFacts]:
+    """(seed, player, facts) of one Episode file: its counts and ids, nothing of its channel."""
+    seed, player, facts, _ = read_episode_header(path, run_key)
+    return seed, player, facts
 
 
 def _episodes(
