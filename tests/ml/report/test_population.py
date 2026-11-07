@@ -19,8 +19,15 @@ from areneon_contracts.contracts import sha256_hex
 from areneon_ml.learner.trainer import Learner
 from areneon_ml.loop import ladder_write, layout
 from areneon_ml.loop.__main__ import EXIT_REFUSED, main
+from areneon_ml.loop.selection import health_donor
 from areneon_ml.report.command import report_run
-from areneon_ml.report.ladder_view import events, rating, shown
+from areneon_ml.report.ladder_view import (
+    LADDER_LABEL,
+    _health_stats,
+    events,
+    rating,
+    shown,
+)
 from areneon_ml.report.model import ReportError, read_report_model
 from areneon_ml.report.render import build_report
 
@@ -34,6 +41,7 @@ from tests.ml.loop.test_population import (
     reseal,
 )
 from tests.ml.loop.test_population_copy import run_to
+from tests.ml.report.support import fixture_copy
 from tests.ml.report.test_report import TEMPLATE_TAGS, assert_inert, parsed
 
 HOSTILE = "x</script><img src=x onerror=alert(1)> \"q\" 's' & <!-- " + chr(0x2028)
@@ -109,7 +117,9 @@ def test_ladder_numbers_equal_the_files(copying: Path) -> None:
 
 def test_the_page_says_what_the_ladder_is_and_is_not(copying: Path) -> None:
     text = page(copying)
-    assert "training-pool teams, sampling mode; not validation, not held out" in text.lower()
+    assert LADDER_LABEL in text
+    assert LADDER_LABEL == "Training-pool teams, sampling mode; not validation, not held out."
+    assert text.count(LADDER_LABEL) >= 8  # the top and every section
     assert "never a measure of strength" in text
     assert "Not the Training gate" in text
     assert "validation teams" not in text.replace("not validation", "")
@@ -662,3 +672,131 @@ def test_a_real_quarantine_run_is_reported(tmp_path: Path) -> None:
     assert "not finite" in text
     assert "update discarded (no training set)" in text
     assert "quarantine and replacement" in text
+
+
+# -- nulls only where the ladder record quarantines ---
+
+
+def test_a_null_in_a_member_the_ladder_does_not_quarantine_is_refused(
+    plain: Path, tmp_path: Path
+) -> None:
+    run = clone(plain, tmp_path / "report")
+    path = gen_path(run, 2) / "members" / "m1" / "train-report.json"
+    report = layout.read_json(path)
+    report["battle"]["entropy"] = None
+    layout.write_json(path, report)
+    reseal(run, 2)
+    refused(run, "m1's train report holds a null but the ladder record does not quarantine it")
+    other = clone(plain, tmp_path / "hash")
+    manifest = layout.read_json(gen_path(other, 2) / "manifest.json")
+    manifest["members"]["m1"]["training_set_hash"] = None
+    reseal(other, 2, members=manifest["members"])
+    refused(other, "manifest training set is null exactly when the ladder record quarantines it")
+
+
+def test_a_quarantined_member_has_a_null_training_set(plain: Path, tmp_path: Path) -> None:
+    run = clone(plain, tmp_path)
+    path = gen_path(run, 2) / "ladder.json"
+    ladder = layout.read_json(path)
+    ladder["selections"].append({"kind": "health", "member": "m1", "cause": "forfeits"})
+    layout.write_json(path, ladder)
+    reseal(run, 2, ladder_hash=ladder_write.json_hash(ladder))
+    refused(run, "manifest training set is null exactly when the ladder record quarantines it")
+
+
+def test_every_float_health_sanitize_can_null_is_accepted_for_a_quarantined_member(
+    plain: Path, tmp_path: Path
+) -> None:
+    run = clone(plain, tmp_path)
+    quarantine(run)
+    path = gen_path(run, 2) / "members" / "m1" / "train-report.json"
+    report = layout.read_json(path)
+    battle = report["battle"]
+    for key in ("approx_kl", "entropy", "value_loss", "explained_variance"):
+        battle[key] = None
+    battle["anchor_kl"] = None
+    battle["anchor_beta_micro"] = 5
+    for entry in battle["value_calibration"][:2]:
+        entry["mean_value"] = None
+        entry["mean_score"] = None
+    report["preview"]["explained_variance"] = None
+    layout.write_json(path, report)
+    reseal(run, 2)
+    model = read_report_model(run, None)
+    assert model.population is not None
+    member = next(m for m in model.population.generations[2].members if m.member == "m1")
+    assert dict(member.nulls)["battle"] == (
+        "anchor_kl",
+        "approx_kl",
+        "clip_fraction",
+        "entropy",
+        "explained_variance",
+        "policy_loss",
+        "value_calibration",
+        "value_loss",
+    )
+    assert dict(member.nulls)["preview"] == ("explained_variance",)
+    assert "not finite" in build_report(model)
+    # An integer is never null, whoever the member is.
+    battle["steps"] = None
+    layout.write_json(path, report)
+    reseal(run, 2)
+    refused(run, "steps")
+
+
+def forge_all_quarantined(run: Path) -> None:
+    path = gen_path(run, 2)
+    ladder = layout.read_json(path / "ladder.json")
+    ladder["selections"] += [
+        {"kind": "health", "member": "m0", "cause": "non_finite_loss"},
+        {"kind": "health", "member": "m1", "cause": "non_finite_loss"},
+    ]
+    layout.write_json(path / "ladder.json", ladder)
+    manifest = layout.read_json(path / "manifest.json")
+    for label in ("m0", "m1"):
+        manifest["members"][label]["training_set_hash"] = None
+    reseal(run, 2, ladder_hash=ladder_write.json_hash(ladder), members=manifest["members"])
+
+
+def test_a_generation_where_every_member_is_quarantined_has_no_donor(
+    plain: Path, tmp_path: Path
+) -> None:
+    run = clone(plain, tmp_path)
+    forge_all_quarantined(run)
+    model = read_report_model(run, None)
+    assert model.population is not None
+    assert [e["donor"] for e in events(model.population)] == [None, None]
+    text = build_report(model)
+    assert "none (derived: the strongest member not quarantined)" in text
+    assert "Copy tree" in text
+
+
+def test_the_donor_is_the_loops_own_function(plain: Path, tmp_path: Path) -> None:
+    run = clone(plain, tmp_path)
+    quarantine(run)
+    model = read_report_model(run, None)
+    assert model.population is not None
+    ladder = model.population.generations[2].ladder
+    assert ladder is not None
+    assert [e["donor"] for e in events(model.population)] == [health_donor(ladder)]
+
+
+def test_a_member_without_a_row_or_a_report_has_no_health_numbers(plain: Path) -> None:
+    model = read_report_model(plain, None)
+    assert model.population is not None
+    assert _health_stats(model.population, 0, "m1") == "not recorded"
+
+
+def test_generation_zero_must_name_the_anchors_exactly(plain: Path, tmp_path: Path) -> None:
+    run = clone(plain, tmp_path)
+    manifest = layout.read_json(gen_path(run, 0) / "manifest.json")
+    del manifest["anchors_hash"]
+    layout.write_json(gen_path(run, 0) / "manifest.json", manifest)
+    refused(run, "other anchor strengths than anchors.json")
+
+
+def test_a_single_lineage_run_does_not_skip_a_members_metrics_directory(tmp_path: Path) -> None:
+    run = fixture_copy(tmp_path, train=True)
+    (run / "metrics" / "members").mkdir(parents=True)
+    with pytest.raises(ReportError, match="is not a metrics file of this run"):
+        read_report_model(run, None)

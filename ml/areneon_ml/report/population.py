@@ -36,6 +36,7 @@ from areneon_ml.loop.league import (
     read_league_run_record_v2,
 )
 from areneon_ml.loop.past_pool import PastPoolError
+from areneon_ml.loop.selection import quarantined
 from areneon_ml.report.model import (
     METRICS,
     ROLES,
@@ -56,8 +57,9 @@ GENERATION_MEMBER_KEYS = (
     frozenset({"episode_hashes", "examples", "member", "training_set_hash"}),
     frozenset[str](),
 )
-#: A report value a quarantined member stores as ``null`` (a non-finite number).
-NULLABLE_KEYS = (*METRICS, "explained_variance")
+#: The float keys of a train report role: ``health.sanitize`` stores ``null`` for a non-finite one.
+FLOAT_KEYS = (*METRICS, "explained_variance", "anchor_kl", "search_kl_before", "search_kl_after")
+CALIBRATION_FLOATS = ("mean_value", "mean_score")
 
 
 @dataclass(frozen=True)
@@ -115,10 +117,14 @@ def is_population(config: RunConfig) -> bool:
 def read_member_train_report(
     raw: object,
 ) -> tuple[TrainFacts, tuple[tuple[str, tuple[str, ...]], ...]]:
-    """A member's train report, with ``null`` accepted for the numbers a quarantine cannot state.
+    """A member's train report, with ``null`` accepted wherever ``health.sanitize`` writes one.
 
-    Returns the facts (a ``null`` read as 0.0, listed in the second value so the page can say
-    "not finite" and never show the zero) and, per role, the keys that were ``null``.
+    ``sanitize`` replaces every non-finite float by ``null``: the metrics, the explained
+    variance, the anchor and search KLs and the means of the value calibration bins. Integers and
+    booleans are never null. The facts read a ``null`` as 0.0 and the second value lists, per
+    role, the keys that were ``null`` (``value_calibration`` once for its bins), so the page can
+    say "not finite" and never show the zero. The caller accepts a non-empty list only for a
+    quarantined member.
     """
     if not isinstance(raw, dict):
         raise ReportError("train-report.json is not an object")
@@ -129,10 +135,23 @@ def read_member_train_report(
         if not isinstance(values, dict):
             cleaned[role] = values  # the strict reader names the problem
             continue
-        found = tuple(sorted(k for k in NULLABLE_KEYS if k in values and values[k] is None))
-        cleaned[role] = {k: (0.0 if k in found else v) for k, v in values.items()}
+        found = {k for k in FLOAT_KEYS if k in values and values[k] is None}
+        out = {k: (0.0 if k in found else v) for k, v in values.items()}
+        bins = values.get("value_calibration")
+        if isinstance(bins, list):
+            fixed = []
+            for item in bins:
+                entry = item
+                if isinstance(entry, dict):
+                    nulled = [k for k in CALIBRATION_FLOATS if k in entry and entry[k] is None]
+                    if nulled:
+                        found.add("value_calibration")
+                    entry = {k: (0.0 if k in nulled else v) for k, v in entry.items()}
+                fixed.append(entry)
+            out["value_calibration"] = fixed
+        cleaned[role] = out
         if found:
-            nulls.append((role, found))
+            nulls.append((role, tuple(sorted(found))))
     for key, value in raw.items():
         if key not in ROLES:
             cleaned[key] = value
@@ -253,6 +272,7 @@ def _read_generation(  # noqa: PLR0913, PLR0917
         _json(path / ladder_write.LADDER_FILE), previous, config, manifest, anchors, number
     )
     _check_records(path, number, names)
+    stopped_members = set(quarantined(ladder))
     by_member = {m["member"]: m for m in league.raw["members"]}
     rows = []
     for entry, label in zip(file_members, names, strict=True):
@@ -260,6 +280,12 @@ def _read_generation(  # noqa: PLR0913, PLR0917
         # A member whose update was discarded (quarantine) has a null manifest hash while the
         # simulator side's generation.json still names the set it played.
         sealed = held[label].get("training_set_hash")
+        stopped = label in stopped_members
+        if (sealed is None) != stopped:
+            raise ReportError(
+                f"g{number:06d}: {label}'s manifest training set is null exactly when the ladder "
+                "record quarantines it"
+            )
         if sealed is not None and entry["training_set_hash"] != sealed:
             raise ReportError(f"g{number:06d}: {label}'s training set differs between its files")
         # The games were played by the pair frozen at the end of the generation before.
@@ -274,6 +300,11 @@ def _read_generation(  # noqa: PLR0913, PLR0917
             )
         except InspectError as exc:
             raise ReportError(f"g{number:06d}: {label}: {exc}") from exc
+        if nulls and not stopped:
+            raise ReportError(
+                f"g{number:06d}: {label}'s train report holds a null but the ladder record "
+                "does not quarantine it"
+            )
         if report.exists():
             inputs[f"generations/g{number:06d}/members/{label}/train-report.json"] = sha256_hex(
                 report.read_bytes()
@@ -371,7 +402,7 @@ def _read_population_model(
             inputs[f"generations/g000000/{name}"] = sha256_hex((zero / name).read_bytes())
     digest = ladder_write.json_hash(anchors_raw)
     first = layout.read_json(zero / layout.MANIFEST)
-    if first.get("anchors_hash") not in (None, digest):
+    if first.get("anchors_hash") != digest:
         raise ReportError("g000000: its manifest names other anchor strengths than anchors.json")
     facts: list[GenerationFacts] = []
     gens: list[PopulationGeneration] = [

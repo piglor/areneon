@@ -597,7 +597,12 @@ def read_progress_root(
 
 
 def read_metrics(
-    run_dir: Path, config: RunConfig, numbers: list[int], inputs: dict[str, str]
+    run_dir: Path,
+    config: RunConfig,
+    numbers: list[int],
+    inputs: dict[str, str],
+    *,
+    population: bool = False,
 ) -> dict[int, dict[str, Any]]:
     """The run-metrics record of each generation that has one; none is estimated for the rest.
 
@@ -614,7 +619,7 @@ def read_metrics(
     for path in sorted(base.iterdir()):
         if path.name.startswith("."):
             continue  # a write that was interrupted
-        if path.name == "members" and path.is_dir() and not path.is_symlink():
+        if population and path.name == "members" and path.is_dir() and not path.is_symlink():
             continue  # a population run's per-member counts (report.population reads them)
         match = _METRICS_FILE.fullmatch(path.name)
         if match is None or not path.is_file() or path.is_symlink():
@@ -676,7 +681,7 @@ def read_report_model(run_dir: Path, progress_dir: Path | None) -> ReportModel:
 
         built, facts = read_population_model(run_dir, config, numbers, shas, inputs)
         generations = list(built)
-    metrics = read_metrics(run_dir, config, sorted(shas), inputs)
+    metrics = read_metrics(run_dir, config, sorted(shas), inputs, population=population)
     progress = (
         {} if progress_dir is None else read_progress_root(progress_dir, config, shas, inputs)
     )

@@ -18,6 +18,7 @@ from decimal import Decimal, localcontext
 from typing import Any
 
 from areneon_ml.inspector.page import esc
+from areneon_ml.loop.selection import health_donor, quarantined
 from areneon_ml.report.charts import Pt, Series, Tips, line_chart
 from areneon_ml.report.model import NOT_RECORDED, ReportModel
 from areneon_ml.report.page import STYLE, document
@@ -109,13 +110,11 @@ def _number(label: str) -> int:
 # -- the events: copies and quarantines -----------------------------------------------------------
 
 
-def _strongest_live(ladder: dict[str, Any], quarantined: set[str]) -> str | None:
-    """The replacement donor: the greatest strength among the members not quarantined (ties: lower)."""
-    live = [m for m in ladder["members"] if m["member"] not in quarantined]
-    if not live:
+def _donor(ladder: dict[str, Any], stopped: dict[str, str]) -> str | None:
+    """The loop's replacement donor (``selection.health_donor``); None if all are quarantined."""
+    if len(stopped) >= len(ladder["members"]):
         return None
-    best = max(live, key=lambda m: (m["strength"]["strength"], -_number(m["member"])))
-    return str(best["member"])
+    return health_donor(ladder)
 
 
 def events(facts: PopulationFacts) -> list[dict[str, Any]]:
@@ -131,7 +130,7 @@ def events(facts: PopulationFacts) -> list[dict[str, Any]]:
         first, *rest = g.ladder["selections"]
         if first["kind"] == "copy":
             out.append({"kind": "copy", "at": g.number, **first})
-        stopped = {e["member"] for e in rest}
+        stopped = quarantined(g.ladder)
         for entry in rest:
             out.append(
                 {
@@ -139,7 +138,7 @@ def events(facts: PopulationFacts) -> list[dict[str, Any]]:
                     "at": g.number,
                     "member": entry["member"],
                     "cause": entry["cause"],
-                    "donor": _strongest_live(g.ladder, stopped),
+                    "donor": _donor(g.ladder, stopped),
                 }
             )
     return out
