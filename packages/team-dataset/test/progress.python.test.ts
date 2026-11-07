@@ -4,6 +4,7 @@
 // and the real policy worker. It needs the project's Python environment (`make setup`, uv sync); without it the file
 // is skipped, unless ARENEON_REQUIRE_PYTHON_WORKER=1 (the typescript CI job sets it).
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -33,6 +34,7 @@ import { engine, FORMAT } from "./support.ts";
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const PYTHON = join(ROOT, ".venv/bin/python");
 const DATA = join(ROOT, "fixtures/showdown", FORMAT, "engine-data.json");
+const DATA2 = join(ROOT, "fixtures/showdown", FORMAT, "engine-data-2.json");
 const SOURCE = join(DATASETS_DIR(FORMAT), "fixtures-v1");
 const env = { ...(process.env.SHOWDOWN_DIR ? { SHOWDOWN_DIR: process.env.SHOWDOWN_DIR } : {}) };
 
@@ -251,6 +253,40 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     loop("progress", "--run-dir", runDir, "--engine-data", DATA, "--games", "4", "--record-games", "2", "--generation", "1", "--versus-run-dir", otherDir, "--versus-generation", "1", "--run-games", "4", "--progress-dir", again, "--node", process.execPath, "--worker-python", PYTHON);
     for (const file of tree(join(h, gen(1)))) expect(readFileSync(join(h, gen(1), file), "utf8"), file).toBe(readFileSync(join(again, gen(1), file), "utf8"));
     expect(tree(otherDir).map((f) => [f, readFileSync(join(otherDir, f), "utf8")])).toEqual(before);
+  }, 900_000);
+
+  it("plays a run made for the version 2 engine-data table against a version 1 run with --versus-engine-data, byte-identical on rerun, refused without it (#1306)", () => {
+    const otherDir = join(dir, "v2-run");
+    const tiny = json<{ seeds: Record<string, unknown>; model: { encoder: object } }>(ROOT, "fixtures/contracts/v1/training-run-config/valid/tiny.json");
+    const otherConfig = join(dir, "v2-config.json");
+    const model = { ...tiny.model, encoder: { ...tiny.model.encoder, options: { exact_volatiles: true } } };
+    writeFileSync(otherConfig, JSON.stringify({ ...tiny, model, seeds: { ...tiny.seeds, run_key: "v2-table-run", init_preview: 31, init_battle: 32 }, team_dataset: { path: SOURCE, dataset_hash: verifiedDatasetHash(engine, SOURCE, FORMAT) } }));
+    loop("run", "--config", otherConfig, "--run-dir", otherDir, "--engine-data", DATA2, "--generations", "1", "--node", process.execPath, "--worker-python", PYTHON);
+    const flagsFor = (out: string, ...more: string[]): string[] => ["progress", "--run-dir", runDir, "--engine-data", DATA, "--games", "4", "--record-games", "2", "--generation", "1", "--versus-run-dir", otherDir, "--versus-generation", "1", "--run-games", "4", "--progress-dir", out, "--node", process.execPath, "--worker-python", PYTHON, ...more];
+    // Without the option the other run's worker is given the evaluated run's table and its checkpoints are refused.
+    const refused = spawnSync(PYTHON, ["-I", "-m", "areneon_ml.loop", ...flagsFor(join(dir, "t0.progress"))], { encoding: "utf8", env, cwd: ROOT });
+    expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toMatch(/engine.data|encoder.version|handshake/i);
+    expect(existsSync(join(dir, "t0.progress", gen(1)))).toBe(false);
+    const a = join(dir, "t1.progress");
+    const printed = JSON.parse(execFileSync(PYTHON, ["-I", "-m", "areneon_ml.loop", ...flagsFor(a, "--versus-engine-data", DATA2)], { encoding: "utf8", env, cwd: ROOT })) as { generations: { matches: { match_id: string }[] }[] };
+    expect((printed.generations[0] as { matches: { match_id: string }[] }).matches.map((m) => m.match_id)).toEqual(expect.arrayContaining(["run-argmax", "run-sample"]));
+    const tableHash = createHash("sha256").update(jcs(JSON.parse(readFileSync(DATA2, "utf8")) as Json)).digest("hex");
+    expect((printed.generations[0] as unknown as { head_to_head: { engine_data_hash: string } }).head_to_head.engine_data_hash).toBe(tableHash);
+    const record = readProgressEvaluationRecordV2(json<ProgressEvaluationRecordV2>(a, gen(1), "progress.json"));
+    for (const m of record.matches.filter((x) => x.opponent.kind === "run")) expect(m.opponent).toMatchObject({ kind: "run", run_id: "v2-table-run" });
+    const b = join(dir, "t2.progress");
+    execFileSync(PYTHON, ["-I", "-m", "areneon_ml.loop", ...flagsFor(b, "--versus-engine-data", DATA2)], { encoding: "utf8", env, cwd: ROOT });
+    for (const file of tree(join(a, gen(1)))) expect(readFileSync(join(a, gen(1), file), "utf8"), file).toBe(readFileSync(join(b, gen(1), file), "utf8"));
+    // The option alone, and an unreadable table, are refused before any work.
+    const lone = spawnSync(PYTHON, ["-I", "-m", "areneon_ml.loop", "progress", "--run-dir", runDir, "--engine-data", DATA, "--generation", "1", "--versus-engine-data", DATA2, "--progress-dir", join(dir, "t3.progress")], { encoding: "utf8", env, cwd: ROOT });
+    expect(lone.status).not.toBe(0);
+    expect(lone.stderr).toMatch(/--versus-engine-data needs --versus-run-dir/);
+    const junk = join(dir, "junk.json");
+    writeFileSync(junk, "{}");
+    const bad = spawnSync(PYTHON, ["-I", "-m", "areneon_ml.loop", ...flagsFor(join(dir, "t4.progress"), "--versus-engine-data", junk)], { encoding: "utf8", env, cwd: ROOT });
+    expect(bad.status).not.toBe(0);
+    expect(bad.stderr).toMatch(/--versus-engine-data is not a readable engine-data table/);
   }, 900_000);
 
   it("plays extra modes with the real workers (--modes): head to head in the mode on both sides, byte-identical on rerun, today's bytes without the flag (#1044)", () => {
@@ -517,6 +553,11 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       mkdirSync(bare, { recursive: true });
       await expect(run("v6", all({ "--versus-dir": bare }))).rejects.toThrow(/no readable run-config\.json/);
       await expect(run("v7", all({ "--versus-dir": runDir }))).rejects.toThrow(/another run config/);
+      // The other run's table (#1306): only with --versus, and a readable engine-data table.
+      await expect(run("v9", ["--versus-engine-data", DATA])).rejects.toThrow(/--versus-engine-data needs --versus/);
+      const junk = join(dir, "junk-table.json");
+      writeFileSync(junk, "{}");
+      await expect(run("v10", [...all(), "--versus-engine-data", junk])).rejects.toThrow(/not a readable engine-data table/);
       // A run config that names a feature set this checkout does not compute is a usage error before any worker starts.
       const wrong = join(dir, "wrong-features.json");
       const own = json<{ model: { encoder: object } }>(runDir, "run-config.json");
