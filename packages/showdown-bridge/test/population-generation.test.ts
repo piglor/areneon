@@ -9,6 +9,7 @@ import { GenerationError, trainingTeamPool, type TrainingPool } from "../src/lea
 import { checkPopulationConfig, memberDir, playPopulationGeneration, type PopulationMember, populationWaves, writePopulationGeneration, POPULATION_FEATURES_REFUSAL } from "../src/population-generation.ts";
 import { parseMemberFlag, runPopulationCli } from "../src/population-cli.ts";
 import { planPopulation } from "../src/population-plan.ts";
+import { emptyPastPool } from "../src/past-pool.ts";
 import { type PolicyClient, PolicyWorkerError } from "../src/index.ts";
 import { UnsupportedCandidateError } from "../src/evaluation-harness.ts";
 import { loadTrainingSet, TrainingLoaderError } from "../src/training-loader.ts";
@@ -186,9 +187,10 @@ describe("refusals", () => {
     await expect(playPopulationGeneration(options({ members: same }))).rejects.toThrow(/same frozen pair/);
   });
 
-  it("refuses a past-pool share with the plan's fixed words, before any worker is asked", async () => {
+  it("refuses a past-pool share without its pool, and a pool without a share, before any worker is asked", async () => {
     const members = membersOf();
-    await expect(playPopulationGeneration(options({ members, config: populationConfig(2, 2, [500_000, 250_000, 250_000]) }))).rejects.toThrow(/non-zero past_pool_ppm is refused/);
+    await expect(playPopulationGeneration(options({ members, config: populationConfig(2, 2, [500_000, 250_000, 250_000]) }))).rejects.toThrow(/needs the committed past pool/);
+    await expect(playPopulationGeneration(options({ members, past: { pool: emptyPastPool(config), open: () => Promise.reject(new Error("never opened")) } }))).rejects.toThrow(/without a past-pool share/);
     expect(members.every((m) => m.client.asked === 0)).toBe(true);
   });
 

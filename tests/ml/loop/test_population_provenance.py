@@ -28,6 +28,7 @@ from areneon_ml.loop.population_provenance import (
 from areneon_ml.loop.warm_start import import_clone
 from areneon_ml.model.network import ROLES
 
+from tests.ml.loop.test_past_pool import loop_config_edit
 from tests.ml.loop.test_population import (
     LABELS,
     gen_path,
@@ -226,3 +227,49 @@ def test_the_refusals_of_the_record_reader(tmp_path: Path) -> None:
     (gen_path(run_dir, 1) / "members/m0/train-report.json").write_text("{}")
     with pytest.raises(PopulationProvenanceError):
         verified_manifests(run_dir, newest)
+
+
+def test_a_past_pool_run_exports_every_checkpoint_and_snapshots_enter_through_league_opponents(
+    tmp_path: Path,
+) -> None:
+    """A snapshot every generation (slice 10): each snapshot is a member's frozen pair, so it has
+    a record already, and a snapshot met in a played game is a ``league_opponents`` entry."""
+    run_dir = tmp_path / "run"
+    make_population(run_dir, loop_config_edit()).run(GENERATIONS)
+    out = tmp_path / "out"
+    export_provenance(run_dir, out)
+    written = {p.stem for p in (out / "records").glob("*.json")}
+    expected = {c for g in range(GENERATIONS + 1) for m in LABELS for c in pair(run_dir, g, m)}
+    assert written == expected  # every checkpoint has a record, snapshots add none of their own
+    checked = 0
+    for g in range(1, GENERATIONS + 1):
+        rows = layout.read_json(gen_path(run_dir, g) / "generation.json")["games"]
+        snapshots = {
+            s["id"]: s
+            for s in layout.read_json(gen_path(run_dir, g - 1) / "past-pool.json")["snapshots"]
+        }
+        for member in LABELS:
+            met = {
+                r["opponent"]
+                for r in rows
+                if r["kind"] == "past" and r["member"] == member and r["outcome"] == "played"
+            }
+            for role in ROLES:
+                record = read_record(
+                    layout.read_json(gen_path(run_dir, g) / f"members/{member}/records/{role}.json")
+                )
+                for snap in (snapshots[i] for i in met):
+                    assert snap[role] in record.league_opponents
+                    checked += 1
+    assert checked > 0
+    # Classified, a pair and a snapshot it met are seen (the snapshot is in its ancestry).
+    graph = provenance_graph(run_dir)
+    for g in range(1, GENERATIONS + 1):
+        pool = layout.read_json(gen_path(run_dir, g - 1) / "past-pool.json")["snapshots"]
+        for snap in pool:
+            for member in LABELS:
+                found = graph.classify(pair(run_dir, g, member), [snap["preview"], snap["battle"]])
+                assert found.label == "seen"
+    own = graph.ancestry(pair(run_dir, GENERATIONS, "m0")).checkpoints
+    first = layout.read_json(gen_path(run_dir, GENERATIONS - 1) / "past-pool.json")["snapshots"]
+    assert {c for s in first if s["member"] == "m0" for c in (s["preview"], s["battle"])} <= own

@@ -6,6 +6,7 @@ import { jcs, type Json } from "../src/canonical-json.ts";
 import { combineUsage, featuresDirOf, interimPoolSource, optionalFlag, readShardFile, runGenerationCli, runManifestCli, startShard, UsageError, writeShardFile } from "../src/generation-cli.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT } from "../src/golden.ts";
 import { loadEngine, readTrainingRunConfig } from "../src/index.ts";
+import { runConfigHash } from "../src/training-run-config.ts";
 import { type PlayedEntry, trainingTeamPool } from "../src/league-generation.ts";
 import { resetProfile } from "../src/profile.ts";
 import { SAMPLES_DIR } from "../src/samples.ts";
@@ -149,6 +150,43 @@ describe("a population run (ADR-021 slice 4)", () => {
   });
 });
 
+describe("a population run with a past pool (ADR-021 slice 10)", () => {
+  const member = (k: number): string[] => ["--member", `m${k},${String(k).repeat(64)},${String(k + 2).repeat(64)},policy:${String(k + 4).repeat(64)}`];
+  const perMember = { preview: undefined, battle: undefined, "policy-id": undefined };
+  const refuse = (): never => {
+    throw new UsageError("from the port");
+  };
+  const poolFile = async (config: ReturnType<typeof populationConfig>): Promise<unknown> => ({
+    schema_version: 1,
+    format: "past-pool/1",
+    run_id: config.seeds.run_key,
+    run_config_hash: await runConfigHash(config),
+    generation: 0,
+    snapshots: [0, 1].map((k) => ({ id: `m${k}@g0`, member: `m${k}`, generation: 0, policy_id: `policy:${String(k + 6).repeat(64)}`, preview: "a".repeat(64), battle: "b".repeat(64) })),
+    cells: [],
+  });
+
+  it("takes --past-pool exactly when the config has a past-pool share, and refuses a bad file", async () => {
+    const withShare = populationConfig(2, 4, [500_000, 250_000, 250_000]);
+    const file = join(dir, "past-config.json");
+    writeFileSync(file, JSON.stringify(withShare));
+    const plain = join(dir, "no-past-config.json");
+    writeFileSync(plain, JSON.stringify(populationConfig(2, 2)));
+    const pool = join(dir, "past-pool.json");
+    writeFileSync(pool, JSON.stringify(await poolFile(withShare)));
+    const members = [...member(0), ...member(1)];
+    await expect(runGenerationCli([...flags(file, perMember), ...members])).rejects.toThrow(/--past-pool is required with a past-pool share/);
+    await expect(runGenerationCli([...flags(plain, perMember), ...members, "--past-pool", pool])).rejects.toThrow(/refused without one/);
+    const bad = join(dir, "bad-past-pool.json");
+    writeFileSync(bad, JSON.stringify({ ...(await poolFile(withShare) as object), run_id: "other" }));
+    await expect(runGenerationCli([...flags(file, perMember), ...members, "--past-pool", bad])).rejects.toThrow(/another run or config/);
+    writeFileSync(bad, "not json");
+    await expect(runGenerationCli([...flags(file, perMember), ...members, "--past-pool", bad])).rejects.toThrow(SyntaxError);
+    // A good file reaches the pool source.
+    await expect(runGenerationCli([...flags(file, perMember), ...members, "--past-pool", pool], console.log, refuse)).rejects.toThrow("from the port");
+  });
+});
+
 describe("the anchor calibration of a population run (ADR-021 slice 7)", () => {
   const perMember = { preview: undefined, battle: undefined, "policy-id": undefined };
   const calibrate = (config: string, change: Record<string, string | undefined> = {}): string[] => [...flags(config, { generation: "0", ...perMember, ...change }), "--calibrate"];
@@ -219,6 +257,31 @@ describe("a run config that names an opponent sheet source (ADR-027 slice 4)", (
       // A matching hash gets past the setup: the next thing that fails is the worker that cannot start.
       const matching = () => ({ features_hash: "d".repeat(64), prior_format_id: GOLDEN_FORMAT }) as never;
       await expect(runGenerationCli(flags(named("d".repeat(64))), console.log, interimPoolSource, undefined, undefined, matching)).rejects.toThrow(/cannot start the worker|ENOENT/);
+    } finally {
+      error.mockRestore();
+    }
+  });
+});
+
+describe("a run config that asks for search labels (ADR-026 erratum E2, #1290)", () => {
+  const withLabels = (_generation: number, hash: string, name: string): string => {
+    const raw = JSON.parse(readFileSync(join(SAMPLES_DIR, "v1/training-run-config/valid/search-distill.json"), "utf8")) as { generation: { search_labels: { search_config_hash: string; start_generation: number } } };
+    raw.generation.search_labels.search_config_hash = hash;
+    const file = join(dir, `labels-${name}.json`);
+    writeFileSync(file, JSON.stringify(raw));
+    return file;
+  };
+
+  it("fails with exit 1 when the script has no search setup factory, or the config names another label search config", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      expect(await runGenerationCli(flags(withLabels(3, "e".repeat(64), "a"), { generation: "3" }))).toBe(1);
+      expect(error.mock.calls.flat().join(" ")).toMatch(/no search setup factory/);
+      const factory = () => {
+        throw new Error("the factory is not reached with a wrong config hash");
+      };
+      expect(await runGenerationCli(flags(withLabels(3, "e".repeat(64), "b"), { generation: "3" }), console.log, interimPoolSource, undefined, undefined, undefined, factory)).toBe(1);
+      expect(error.mock.calls.flat().join(" ")).toMatch(/which this checkout computes as/);
     } finally {
       error.mockRestore();
     }

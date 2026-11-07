@@ -37,10 +37,12 @@ from areneon_ml.checkpoint.provenance import ProvenanceGraph
 from areneon_ml.checkpoint.record import CheckpointRecord, read_record
 from areneon_ml.learner.config import RunConfig
 from areneon_ml.learner.data import trajectories
+from areneon_ml.learner.labels import LabelReader, LabelStep
 from areneon_ml.learner.parallel import fit_processes
 from areneon_ml.learner.state import pack_state, restore_state
 from areneon_ml.learner.trainer import Learner, configure_learner
 from areneon_ml.loop import layout
+from areneon_ml.loop.label_counts import LabelCountsError, read_label_counts
 from areneon_ml.loop.league import (
     LeagueRecordError,
     LeagueRunRecord,
@@ -141,6 +143,9 @@ class Sealing:
     #: Records to write as they are (a warm start's clone records, for the warm-started roles
     #: only) instead of building new ones.
     records: dict[str, CheckpointRecord] | None = None
+    #: Hashes of the label sets (``label-set.json``, ADR-026 erratum E2) the update was trained on,
+    #: listed with the training set in each record's ``training_set_hashes``.
+    label_set_hashes: tuple[str, ...] = ()
 
 
 class Timing:
@@ -346,7 +351,9 @@ class Loop:
                 # is the check.
                 write_checkpoint(self.run_dir, found)
                 continue
-            if record.training_set_hashes != (() if ts_hash is None else (ts_hash,)):
+            if record.training_set_hashes != tuple(
+                _record_sets(ts_hash, tuple(facts.get("label_set_hashes", ())))
+            ):
                 raise LoopError(
                     f"generation {newest.generation}: the {role} record's training sets "
                     "differ from its manifest"
@@ -424,6 +431,7 @@ class Loop:
                     pair,
                     fit_processes(self.load_processes, self.load_memory_mb),
                 )
+                labels, label_sets = self._load_labels(generation, work, summary, pair)
             if self.profile:
                 timing.profile = profile_record(
                     dict(getattr(self.player, "last_profile", None) or {}), stopwatch.take()
@@ -434,7 +442,7 @@ class Loop:
         if self.device.type == "cuda":
             torch.cuda.reset_peak_memory_stats(self.device)
         with timing.phase("train"):
-            report = learner.train(found)
+            report = learner.train(found, labels)
         if self.device.type == "cuda":
             timing.peak_memory = int(torch.cuda.max_memory_allocated(self.device))
             timing.peak_reserved = int(torch.cuda.max_memory_reserved(self.device))
@@ -452,9 +460,82 @@ class Loop:
         self._on_stage(generation, "trained")
         teams = sorted(set(previous.team_hashes) | set(summary["team_hashes"]))
         sealing = Sealing(
-            previous.checkpoints, summary["training_set_hash"], tuple(teams), summary["manifest"]
+            previous.checkpoints,
+            summary["training_set_hash"],
+            tuple(teams),
+            summary["manifest"],
+            label_set_hashes=label_sets,
         )
         return self._seal(generation, work, sealing, timing)
+
+    def _load_labels(
+        self, generation: int, work: Path, summary: dict[str, Any], pair: str
+    ) -> tuple[list[LabelStep] | None, tuple[str, ...]]:
+        """The usable search labels of the current and the previous aggregated generations
+        (``ppo.search_distill``, ADR-026 erratum E2), and the hashes of the label sets read.
+
+        ``None`` without the block. Before ``generation.search_labels.start_generation`` there are
+        none yet (an empty list). From it, each generation's ``generation.json`` must state a
+        ``search_labels`` block (hashes and counts) whose label config hash is the run config's.
+        A generation in which nothing was labelled has no label files (the contract holds at least
+        one example) and its block says ``labelled`` 0; one that labelled has both files, made under
+        the identity its block states, and its count is the manifest's. An older generation is read
+        only after its manifest verifies.
+        """
+        settings = self.config.ppo.search_distill
+        if settings is None:
+            return None, ()
+        generation_settings = self.config.generation
+        start = generation_settings.search_start_generation
+        assert start is not None  # the config reader requires both blocks together
+        if generation < start:
+            return [], ()
+        reader = LabelReader(
+            self._encoders["battle"], settings, generation_settings.temperature_ppm
+        )
+        steps: list[LabelStep] = []
+        hashes: set[str] = set()
+        for g in range(max(start, generation - settings.aggregate_generations + 1), generation + 1):
+            if g == generation:
+                where, stated, played_by = work, summary, pair
+            else:
+                # An older generation is read only once its own manifest verifies (every file
+                # hashes as committed), then against its own summary and its own pair.
+                where = layout.generation_dir(self.run_dir, g)
+                layout.verify_generation(where, g)
+                stated = layout.read_json(where / "generation.json")
+                played_by = layout.read_json(where / "league-run.json")["pair_policy_id"]
+            try:
+                block = read_label_counts(stated.get("search_labels"))
+            except LabelCountsError as exc:
+                raise LoopError(f"generation {g}: {exc}") from exc
+            if block.search_config_hash != generation_settings.search_config_hash:
+                raise LoopError(
+                    f"generation {g}: generation.json does not state the run's label search "
+                    "config hash and identity"
+                )
+            present = (where / "label-set.json").is_file(), (where / "labels.jsonl").is_file()
+            if block.labelled == 0:
+                # Nothing was labelled (the counts show how many decisions were selected and why
+                # they were refused): no label files, and none may be there.
+                if any(present):
+                    raise LoopError(
+                        f"generation {g}: label files exist for a generation with no label"
+                    )
+                continue
+            if not all(present):
+                raise LoopError(f"generation {g}: its label stream is missing")
+            manifest = layout.read_json(where / "label-set.json")
+            found = reader.read(
+                where / "labels.jsonl", manifest, played_by, block.search_identity_hash
+            )
+            if manifest["examples"] != block.labelled:
+                raise LoopError(
+                    f"generation {g}: generation.json counts other labels than the manifest"
+                )
+            steps.extend(found.steps)
+            hashes.add(sha256_hex(jcs(manifest)))
+        return steps, tuple(sorted(hashes))
 
     def _check_league_run(
         self, work: Path, generation: int, pair: str, summary: dict[str, Any]
@@ -508,9 +589,9 @@ class Loop:
                         role=role,
                         checkpoint_id=checkpoints[role],
                         parent=None if sealing.parents is None else sealing.parents[role],
-                        training_set_hashes=[]
-                        if sealing.training_set_hash is None
-                        else [sealing.training_set_hash],
+                        training_set_hashes=_record_sets(
+                            sealing.training_set_hash, sealing.label_set_hashes
+                        ),
                         team_set_manifest_hash=team_set_hash(manifest),
                         learner_state_hash=packed.hash,
                         encoder_version=self.encoder_version,
@@ -529,6 +610,12 @@ class Loop:
                     "training_set_hash": sealing.training_set_hash,
                     "team_set_manifest_hash": team_set_hash(manifest),
                     "run_config_hash": self.config.hash,
+                    # Only with a label stream: every other run keeps its bytes.
+                    **(
+                        {"label_set_hashes": list(sealing.label_set_hashes)}
+                        if sealing.label_set_hashes
+                        else {}
+                    ),
                 },
             )
         self._on_stage(generation, "committed")
@@ -558,6 +645,14 @@ class Loop:
         )
 
 
+def _record_sets(training_set_hash: str | None, label_sets: tuple[str, ...]) -> list[str]:
+    """A record's ``training_set_hashes``: the PPO set and the label sets, sorted and unique."""
+    held = set(label_sets)
+    if training_set_hash is not None:
+        held.add(training_set_hash)
+    return sorted(held)
+
+
 def sources_registry(run_dir: Path) -> dict[str, list[str]]:
     """Training-set hash to the checkpoints that generated it (the C1/C6 checker's registry).
 
@@ -584,6 +679,12 @@ def sources_registry(run_dir: Path) -> dict[str, list[str]]:
         if facts["training_set_hash"] is not None:
             assert previous is not None  # generation 0 has no training set
             registry[facts["training_set_hash"]] = sorted(previous.values())
+        # A label set (ADR-026 erratum E2) was played AND labelled by the same pair as the set.
+        if (path / "label-set.json").is_file():
+            assert previous is not None
+            registry[sha256_hex(jcs(layout.read_json(path / "label-set.json")))] = sorted(
+                previous.values()
+            )
         previous = dict(facts["checkpoints"])
     return registry
 

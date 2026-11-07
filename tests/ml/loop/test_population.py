@@ -24,6 +24,8 @@ from areneon_ml.loop.driver import LoopError
 from areneon_ml.loop.ladder import read_ladder_record
 from areneon_ml.loop.league import calibration_game_seed, league_game_seed
 from areneon_ml.loop.metrics import metrics_path, read_run_metrics
+from areneon_ml.loop.past_pool import Snapshot, draw_past
+from areneon_ml.loop.past_pool import read_file as read_pool
 from areneon_ml.loop.play import PlayError, PopulationCalibrationRequest, PopulationPlayRequest
 from areneon_ml.loop.population import (
     PopulationLoop,
@@ -104,7 +106,9 @@ class FakePopulationPlayer:
     def row(self, entry: dict[str, Any]) -> dict[str, Any]:
         """The game row of ``generation.json`` the simulator side writes for a plan entry."""
         seats = {
-            p: entry["seats"][p].get("member", entry["seats"][p].get("policy_id"))
+            p: entry["seats"][p].get(
+                "member", entry["seats"][p].get("snapshot", entry["seats"][p].get("policy_id"))
+            )
             for p in ("p1", "p2")
         }
         winner = toss(self.config.run_key, self.generation_of(entry), entry["pair"], entry["half"])
@@ -122,6 +126,21 @@ class FakePopulationPlayer:
             "turns": 5,
             "winner": winner,
         }
+
+    def pool_of(self, request: PopulationPlayRequest) -> tuple[Snapshot, ...]:
+        """The committed past pool the request names (none for a run without a past-pool share)."""
+        if request.past_pool is None:
+            return ()
+        return read_pool(layout.read_json(request.past_pool), self.config).snapshots
+
+    def past_snapshots(
+        self, request: PopulationPlayRequest, member: str, generation: int, policy: str
+    ) -> list[Snapshot]:
+        """One past pair for each member of a run with a pool: the PFSP draw."""
+        if request.past_pool is None:
+            return []
+        pool = read_pool(layout.read_json(request.past_pool), self.config)
+        return draw_past(self.config, generation, member, 1, policy, pool)
 
     def generation_of(self, entry: dict[str, Any]) -> int:
         return self.requests[-1].generation
@@ -176,13 +195,19 @@ class FakePopulationPlayer:
             if len(labels) > 1:
                 pairs.append(("ladder", label, labels[(k + 1) % len(labels)]))
             pairs.append(("self", label, label))
+            for snapshot in self.past_snapshots(request, label, generation, ids[label]):
+                pairs.append(("past", label, snapshot.id))
             for baseline in self.config.raw["generation"]["baseline_games"]:
                 pairs.extend([("anchor", label, baseline["policy_id"])] * (baseline["games"] // 2))
         actors = {
             b["policy_id"]: b["actor"] for b in self.config.raw["generation"]["baseline_games"]
         }
 
+        snapshots = {p.id: p for p in self.pool_of(request)}
+
         def seat(name: str) -> dict[str, str]:
+            if name in snapshots:
+                return {"snapshot": name, "policy_id": snapshots[name].policy_id}
             if name in actors:
                 return {"actor": actors[name], "policy_id": name}
             return {"member": name}
@@ -683,27 +708,12 @@ def test_the_population_driver_refuses_a_single_lineage_config(tmp_path: Path) -
     assert list(tmp_path.iterdir()) == []
 
 
-def test_exploiters_and_a_past_pool_are_refused_as_the_play_side_refuses_them(
-    tmp_path: Path,
-) -> None:
+def test_exploiters_are_refused_as_the_play_side_refuses_them(tmp_path: Path) -> None:
     def exploiters(raw: dict[str, Any]) -> None:
         raw["population"]["exploiters"] = 1
 
     with pytest.raises(LoopError, match="exploiter seats"):
         make_population(tmp_path / "x", population_config(edit=exploiters))
-
-    def past(raw: dict[str, Any]) -> None:
-        raw["population"]["shares"] = {
-            "ladder_ppm": 500_000,
-            "self_play_ppm": 250_000,
-            "past_pool_ppm": 250_000,
-        }
-        bounds = raw["population"]["explore"]["bounds"]
-        bounds["self_play_ppm"] = {"min": 200_000, "max": 300_000}
-        bounds["past_pool_ppm"] = {"min": 200_000, "max": 300_000}
-
-    with pytest.raises(LoopError, match="past_pool_ppm"):
-        make_population(tmp_path / "p", population_config(edit=past))
 
 
 def test_a_two_role_warm_start_is_refused_with_population() -> None:

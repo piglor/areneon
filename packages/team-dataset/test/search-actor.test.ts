@@ -341,6 +341,22 @@ describe("refusals and drops", () => {
   }, 300_000);
 });
 
+describe("the actor's decision and label members", () => {
+  const battle = battles[0] as RandomBattleFile;
+  it("answer through the shared decision: a refused belief is a fallback, and a lone candidate is no label", async () => {
+    const port: WorldSamplePort = { ...portFor(), open: () => ({ kind: "refused", code: "evidence_has_no_support" }) };
+    const { actor } = await playSearch(battle, { maxTurns: 1, setup: setupFor(port, { config: loadSearchConfig(FORMAT) }) });
+    const side = { roster: [], conditions: {}, teamsize: 6 };
+    const world = { request: {}, team: [], state: { own: side, opponent: side, weather: null, terrain: null, field_conditions: [] }, flags: [], facts: null } as never;
+    const stream = new Uint8Array(32);
+    expect(await actor.decide({ world, channel: [], top: [], stream })).toEqual({ kind: "fallback", reason: "belief_refused" });
+    const one = [{ choice: "default", pending: false }] as never;
+    expect(await actor.label({ world, channel: [], candidates: one, prior_ppm: [1_000_000], stream })).toEqual({ kind: "refused", reason: "too_few_candidates", prior_ppm: [1_000_000] });
+    const two = [{ choice: "move 1", pending: false }, { choice: "move 2", pending: false }] as never;
+    expect(await actor.label({ world, channel: [], candidates: two, prior_ppm: [500_000, 500_000], stream })).toMatchObject({ kind: "refused", reason: "belief_refused" });
+  }, 300_000);
+});
+
 // ---- privacy ----
 
 const MAX_TURNS = 4;
