@@ -119,11 +119,18 @@ export interface PlaySettings {
  * is unchanged. A pair that reads a candidate feature set (ADR-022 section 6) adds `features: <feature_set_hash>`;
  * `features` is absent for every other pair, whose id is unchanged. A pair played with decision-time search
  * (ADR-026 section 5) adds `search: <search identity hash>` (`searchIdentityHash`), with the play settings of its
- * underlying mode as above; `search` is absent for every other policy, whose id is unchanged. The Python
+ * underlying mode as above; `search` is absent for every other policy, whose id is unchanged. A pair whose Team Preview is chosen
+ * by the solver (ADR-029 section 4) adds `preview_solve: <solver identity hash>` (`previewSolveIdentityHash`), independently of
+ * `search` (a pair with the solver, with search, or with both are three different policies); it is absent for every other
+ * policy, whose id is unchanged. The Python
  * `areneon_ml.loop.records.policy_id` computes the same value.
  */
-export function policyId(pair: { preview: string; battle: string }, mode: "sample" | "argmax", play: PlaySettings = {}, features?: string, search?: string): string {
+export function policyId(pair: { preview: string; battle: string }, mode: "sample" | "argmax", play: PlaySettings = {}, features?: string, search?: string, previewSolve?: string): string {
   const body: Record<string, Json> = { preview: pair.preview, battle: pair.battle, mode, temperature: 1, precision: "float32" };
+  if (previewSolve !== undefined) {
+    if (!/^[0-9a-f]{64}$/.test(previewSolve)) throw new PolicyProtocolError("preview_solve is a Team Preview solver identity hash: 64 lowercase hex digits");
+    body.preview_solve = previewSolve;
+  }
   if (search !== undefined) {
     if (!/^[0-9a-f]{64}$/.test(search)) throw new PolicyProtocolError("search is a search identity hash: 64 lowercase hex digits");
     body.search = search;

@@ -18,24 +18,21 @@
 // The module is reachable only from the best-response command (a source scan). It writes no Episode, no training example and
 // no stream: the games are plain battle outcomes the command tallies, and the responder's decision is a choice string.
 
-import { interpretChannel } from "@areneon/public-state";
 import type { PublicFlag, PublicSide } from "@areneon/public-state";
 import type { Decision } from "@areneon/schema/types/v1/best-response-record.ts";
 import { type BestResponseOutcome, type BestResponseRecord, BEST_RESPONSE_ARMS, readBestResponseRecord, tallyArm } from "./best-response-record.ts";
 import { jcs } from "./canonical-json.ts";
-import type { WorldSetLike } from "./damage-aware-assumed-set.ts";
-import { mapWorld } from "./world-sampler.ts";
+import { type ResponderTeamDraw, type ResponderTeamSource, readPreviewChannel, startPreviewWorlds } from "./preview-worlds.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import type { PlayedGame } from "./evaluation-harness.ts";
 import { resolveFormat } from "./formats.ts";
-import { HYPOTHETICAL_BATTLE_FORMAT, type HypotheticalPreview, startHypothetical } from "./hypothetical-preview.ts";
+import { HYPOTHETICAL_BATTLE_FORMAT } from "./hypothetical-preview.ts";
 import { progressGameStreams, PROGRESS_PAIRING, PROGRESS_SEED_DERIVATION } from "./progress-seed.ts";
 import { type PayoffClient, type PayoffConfig, type PayoffTable, PAYOFF_LEAF_FORMAT, type OwnRule, type PayoffLeaf, buildPayoffTable } from "./preview-payoff.ts";
 import { type PolicyActorOptions, policyActor, type PolicySeat, policyGame } from "./policy-actor.ts";
 import type { PolicyClient } from "./policy-worker.ts";
 import { type ProgressPool, progressPlan } from "./progress-evaluation.ts";
 import { sha256Hex } from "./rules.ts";
-import { validateTeam } from "./teams.ts";
 import type { Actor, Player } from "./runner.ts";
 import type { DataClass } from "./team-class.ts";
 import type { TeamVocabulary } from "./team-vocabulary.ts";
@@ -70,9 +67,7 @@ export interface ResponderSettings {
   leaf: PayoffLeaf;
 }
 
-/** The structural port of the full-team opponent draw (the composition root joins the opponent model; the bridge does not import it). */
-export type ResponderTeamDraw = { readonly kind: "team"; readonly team: { readonly sets: readonly WorldSetLike[] }; readonly redraws: number } | { readonly kind: "refused"; readonly code: string };
-export type ResponderTeamSource = { readonly kind: "refused"; readonly code: string } | { readonly kind: "source"; readonly source: { draw(stream: Uint8Array, index: number): ResponderTeamDraw } };
+export type { ResponderTeamDraw, ResponderTeamSource };
 export interface ResponderTeamPort {
   /** ADR-025 section 5: the belief identity hash. */
   readonly identity_hash: string;
@@ -163,7 +158,6 @@ export interface PreviewResult {
 }
 
 const ARM_MODEL = (arm: ResponderArm, mode: PlayMode): PlayMode | "blind" => (arm === "blind" ? "blind" : mode);
-const REQUEST_PREFIX = "|request|";
 
 /**
  * The responder's decision at one Team Preview request for the given arms. Everything it reads is the seat's own view
@@ -171,39 +165,13 @@ const REQUEST_PREFIX = "|request|";
  */
 export async function decidePreview(deps: ResponderDeps, ctx: PreviewContext, arms: readonly ResponderArm[]): Promise<PreviewResult> {
   const { engine, vocabulary, format_id, teams, settings, client, policy_id, mode } = deps;
-  const format = resolveFormat(engine, format_id);
   const fallback = (code: string): PreviewResult => ({ decision: { kind: "fallback", code }, orders: {} });
-  const run = interpretChannel(ctx.seat, ctx.channel);
-  const frame = run.frames.at(-1);
-  const request = ctx.channel.findLast((line) => line.startsWith(REQUEST_PREFIX));
-  need(frame !== undefined && request !== undefined, "the Team Preview channel holds no line or no request");
-  const realRequest = (request as string).slice(REQUEST_PREFIX.length);
-  const opened = teams.open({ opponent: (frame as NonNullable<typeof frame>).state.opponent, flags: run.flags });
+  const view = readPreviewChannel(ctx.seat, ctx.channel);
+  const realRequest = view.request;
+  const opened = teams.open({ opponent: view.opponent, flags: view.flags });
   if (opened.kind === "refused") return fallback(opened.code);
   const stream = responderStream({ seed: ctx.seed, game: ctx.game, player: ctx.seat, policy_id, request_seq: ctx.request_seq });
-  const worlds: { index: number; preview: HypotheticalPreview }[] = [];
-  let refused = 0;
-  let unstarted = 0;
-  for (let index = 0; index < settings.worlds; index += 1) {
-    const drawn = opened.source.draw(stream, index);
-    if (drawn.kind === "refused") {
-      refused += 1;
-      continue;
-    }
-    const world = { slots: drawn.team.sets.map((set, slot) => ({ index: slot, brought: true, set })) };
-    try {
-      // The sets a battle plays are the validator's normalised copy (a set with no nickname is named by its species, as in the pool's teams
-      // a real game plays): the worker's reader checks the engine's request against those names. A team the validator refuses stays refused.
-      const sets = mapWorld({ engine, vocabulary }, format_id, world).map((member) => member.set);
-      // Called for its in-place normalisation (nicknames), not its verdict: startHypothetical validates the team again and refuses it.
-      validateTeam(engine, format, sets);
-      worlds.push({ index, preview: startHypothetical({ engine, format_id, seat: ctx.seat, own_team: ctx.team, world_team: sets, stream, world: index, data_class: ctx.channel_class, own_request: realRequest }) });
-    } catch (error) {
-      // A sampled team the validator refuses as a whole, or a format without Team Preview, is counted; a set the vocabulary cannot map is a defect.
-      if (!UNSTARTABLE.has((error as Error).name)) throw error;
-      unstarted += 1;
-    }
-  }
+  const { worlds, refused, unstarted } = startPreviewWorlds({ engine, vocabulary, format_id, source: opened.source, count: settings.worlds, stream, seat: ctx.seat, own_team: ctx.team, channel_class: ctx.channel_class, own_request: realRequest });
   if (worlds.length === 0) return fallback("no_world");
   const config: PayoffConfig = { k_own: settings.k_own, k_opp: ALL_COLUMNS, own_rule: settings.own_rule, leaf: settings.leaf, argmax_columns: true };
   const table = await buildPayoffTable({ config, worlds, client, battle: ctx.battle, policy_id, own_request: realRequest, stream });
@@ -226,9 +194,6 @@ export async function decidePreview(deps: ResponderDeps, ctx: PreviewContext, ar
 function need(ok: boolean, reason: string): void {
   if (!ok) throw new BestResponseError(reason);
 }
-
-/** The errors that say one sampled team cannot be started as a hypothetical battle (counted); anything else is a defect of the run. */
-const UNSTARTABLE = new Set(["InvalidTeamError", "HypotheticalError"]);
 
 const rival = (player: Player): Player => (player === "p1" ? "p2" : "p1");
 

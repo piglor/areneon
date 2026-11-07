@@ -284,6 +284,7 @@ export {
   readWorldWriters,
   worldWritersHash,
 } from "./world-writers.ts";
+export { ITERATIVE_SOLVERS, loadPreviewSolveConfig, PREVIEW_SOLVE_POLICY_LABEL, type PreviewSolveConfig, PreviewSolveConfigError, previewSolveConfigHash, previewSolveIdentity, previewSolveIdentityHash, type PreviewSolveIdentityInputs, readPreviewSolveConfig } from "./preview-solve-config.ts";
 export { LEAF_FORMAT, loadSearchConfig, readSearchConfig, type SearchConfig, SearchConfigError, searchConfigHash, searchIdentity, searchIdentityHash, type SearchIdentityInputs, SEARCH_POLICY_LABEL } from "./search-config.ts";
 export { deriveRoleSetsPrior, ROLE_SETS_PRIOR_SCRIPT, RoleSetsPriorError, type RoleSetsPriorInput } from "./role-sets-prior.ts";
 export { deriveGeneratorPrior, GENERATOR_PRIOR_SCRIPT, GeneratorPriorError, type GeneratorPriorInput, generatorConfigHash, megaHolderAbilities, megaPreviewSpecies } from "./generator-prior.ts";
@@ -781,6 +782,33 @@ export {
   type PayoffWorld,
   type Strategy as PreviewStrategy,
 } from "./preview-payoff.ts";
+export {
+  drawFromMixture,
+  FALLBACK_REASONS as PREVIEW_SOLVE_FALLBACK_REASONS,
+  type FallbackReason as PreviewSolveFallbackReason,
+  PREVIEW_SOLVE_PURPOSE,
+  PREVIEW_SOLVE_WORLDS_PURPOSE,
+  previewSolveActor,
+  type PreviewSolveActor,
+  type PreviewSolveActorOptions,
+  type PreviewSolveCounts,
+  PreviewSolveError,
+  type PreviewSolvePolicyResult,
+  previewSolvePolicy,
+  type PreviewSolveReport,
+  type PreviewSolveSetup,
+  previewSolveSetup,
+  previewSolveStream,
+  previewSolveU,
+  type PreviewSolverKind,
+  type PreviewSolverPort,
+  type PreviewTeamPort,
+  solvePreview,
+  type Solved as PreviewSolved,
+  type SolvedDecision as PreviewSolvedDecision,
+  type SolveDeps as PreviewSolveDeps,
+} from "./preview-solve.ts";
+export { readPreviewChannel, startPreviewWorlds } from "./preview-worlds.ts";
 export { type BeliefFeaturesContext, BELIEF_REFUSAL_CODES, type BeliefMoveInclusion, type BeliefMoveInclusions, type BeliefRefusalCode, type BeliefThreatsPort, type BeliefFeaturesFactory, type BeliefFeaturesPort, BeliefFeaturesError, createSheetBuilder, SHEET_FEATURE_SET, SheetInputError, SheetTotals, sheetForChannel, sheetStatement, type SheetBuilder, type SheetCounts, type SheetInput, type SheetKValues, type SheetSetup } from "./belief-features.ts";
 export { OpponentSheetError, opponentSheetProblem, readOpponentSheet } from "./opponent-sheet.ts";
 export { MAX_REFUSED_PPM, refusedSharePpm, sheetCountsProblem, sheetCountsValid, sumSheetCounts } from "./sheet-counts.ts";

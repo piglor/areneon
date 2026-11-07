@@ -14,7 +14,7 @@
 // `sampleTeams` (n teams by index) is an addition beyond the erratum, mirroring `sampleWorlds`.
 
 import { belief, type OpponentTeam, type SetLegality, teamStream } from "@areneon/opponent-model";
-import { refusalCode, type WorldSamplePort } from "@areneon/showdown-bridge";
+import { GENERATOR_MATCHED_LABEL, refusalCode, ROLE_SETS_LABEL, type WorldSamplePort } from "@areneon/showdown-bridge";
 import { armParts, type SearchWorldsContext, type SearchWorldsFiles, searchWorldsFiles } from "./search-worlds.ts";
 
 type OpenInput = Parameters<WorldSamplePort["open"]>[0];
@@ -38,6 +38,9 @@ export interface OpponentTeamPort {
   readonly prior_hash: string;
   readonly belief_config_hash: string;
   readonly prior_format_id: string;
+  /** The prior arm and the label every result of the arm carries (as `WorldSamplePort` states them). */
+  readonly prior_kind: "generator-matched" | "role-sets";
+  readonly prior_label: string;
   /** The belief of the reader's opponent half, then teams by index (team `i` is `sampleTeam` over `teamStream(stream, i)`). */
   open(input: Pick<OpenInput, "opponent" | "flags">): TeamSourceResult;
   counts(): OpponentTeamCounts;
@@ -65,6 +68,8 @@ export function createOpponentTeams(context: SearchWorldsContext, options: Oppon
     prior_hash,
     belief_config_hash,
     prior_format_id: prior.format_id,
+    prior_kind: context.arm,
+    prior_label: context.arm === "generator-matched" ? GENERATOR_MATCHED_LABEL : ROLE_SETS_LABEL,
     open({ opponent, flags }) {
       opened += 1;
       let computed;

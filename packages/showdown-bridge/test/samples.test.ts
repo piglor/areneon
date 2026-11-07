@@ -1,3 +1,4 @@
+import { PreviewSolveConfigError, readPreviewSolveConfig } from "../src/preview-solve-config.ts";
 import { readSearchConfig, SearchConfigError } from "../src/search-config.ts";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -286,6 +287,9 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/policy-query/reader-invalid/value-with-candidates.json",
       "v1/policy-query/reader-invalid/value-with-features.json",
       "v1/policy-query/reader-invalid/value-with-sheet.json",
+      "v1/preview-solve-config/reader-invalid/exact-support-with-iterations.json",
+      "v1/preview-solve-config/reader-invalid/iterative-without-iterations.json",
+      "v1/preview-solve-config/reader-invalid/min-valid-over-n.json",
       "v1/private-snapshot-manifest/reader-invalid/active-rows-over-rows.json",
       "v1/private-snapshot-manifest/reader-invalid/both-parent-and-first.json",
       "v1/private-snapshot-manifest/reader-invalid/cell-not-active-sum.json",
@@ -658,6 +662,17 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     expect(Object.keys(fresh)).toContain(file);
     expect(() => reader(committed(file))).toThrow(SearchConfigError);
     expect(() => reader(committed(file))).toThrow(message);
+  });
+
+  // ADR-029 section 4: the PreviewSolveConfig reader refuses what the profile cannot say.
+  it.each([
+    ["v1/preview-solve-config/reader-invalid/min-valid-over-n.json", "min_valid exceeds"],
+    ["v1/preview-solve-config/reader-invalid/iterative-without-iterations.json", "iterations is present exactly"],
+    ["v1/preview-solve-config/reader-invalid/exact-support-with-iterations.json", "iterations is present exactly"],
+  ])("the preview solve config reader refuses %s", (file, message) => {
+    expect(Object.keys(fresh)).toContain(file);
+    expect(() => readPreviewSolveConfig(committed(file))).toThrow(PreviewSolveConfigError);
+    expect(() => readPreviewSolveConfig(committed(file))).toThrow(message);
   });
 
   // ADR-010 section 5: the TrainingRunConfig reader refuses what the profile cannot say.
