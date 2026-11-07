@@ -954,7 +954,6 @@ def test_a_member_whose_games_all_forfeited_fails_the_generation(tmp_path: Path)
     "command",
     [
         ["inspect"],
-        ["report"],
         ["replay", "--generation", "1"],
     ],
 )

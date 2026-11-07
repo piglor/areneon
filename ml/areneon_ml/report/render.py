@@ -1042,6 +1042,10 @@ def _inputs(model: ReportModel) -> str:
 
 
 def build_report(model: ReportModel, links: Links | None = None) -> str:
+    if model.population is not None:
+        from areneon_ml.report.ladder_view import build_population_report  # noqa: PLC0415
+
+        return build_population_report(model)
     links = links or Links()
     tips = Tips()
     evaluated = len(model.progress)

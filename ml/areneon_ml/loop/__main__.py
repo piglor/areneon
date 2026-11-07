@@ -651,9 +651,10 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
     return result.as_dict(loop.frozen)
 
 
-#: Commands that read a run directory with a single lineage's layout (ADR-021 slices 11 and 12
-#: add the population views): a population run is refused by name, before anything is read.
-_SINGLE_LINEAGE_ONLY = ("inspect", "report", "replay")
+#: Commands that read a run directory with a single lineage's layout (ADR-021 slice 12 adds the
+#: population views of the inspector; slice 11 added the dashboard's ladder view, so ``report``
+#: reads a population run): a population run is refused by name, before anything is read.
+_SINGLE_LINEAGE_ONLY = ("inspect", "replay")
 
 
 def _refuse_population_dir(args: argparse.Namespace) -> None:
