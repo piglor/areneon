@@ -64,7 +64,15 @@ from areneon_ml.learner.data import trajectories
 from areneon_ml.learner.parallel import fit_processes
 from areneon_ml.learner.state import pack_state, restore_state
 from areneon_ml.learner.trainer import Learner, TrainReport, configure_learner
-from areneon_ml.loop import ladder_write, layout, past_pool, rating, selection, slot_copy
+from areneon_ml.loop import (
+    health,
+    ladder_write,
+    layout,
+    past_pool,
+    rating,
+    selection,
+    slot_copy,
+)
 from areneon_ml.loop.driver import LoopError, StageHook, Timing
 from areneon_ml.loop.ladder import LadderRecordError, read_ladder_record
 from areneon_ml.loop.league import (
@@ -454,6 +462,17 @@ class PopulationLoop:
         self._anchors = self._load_anchors(newest)
         ladder = self._read_ladder(newest.generation) if newest.generation >= 1 else None
         effective = {m["member"]: m["settings"] for m in ladder["members"]} if ladder else {}
+        # A member quarantined in the newest generation froze the pair it already had (its update
+        # was discarded), so its records are the earlier ones and do not name this state.
+        held_back = selection.quarantined(ladder) if ladder else {}
+        # A slot replaced in this very generation froze the donor's weights, with ordinary records.
+        replaced_now: set[str] = set()
+        if newest.generation > 1:
+            replaced_now = set(
+                selection.replaced_slots(
+                    self._committed_json(newest.generation - 1, ladder_write.LADDER_FILE)
+                )
+            )
         members: list[MemberFrozen] = []
         for k, label in enumerate(self._labels()):
             entry = held[label]
@@ -481,6 +500,10 @@ class PopulationLoop:
                 )
             records = {role: self._read_record(path, role) for role in ROLES}
             warm_roles = frozenset(warm_ids or ()) if warm_zero else frozenset()
+            if label in held_back:
+                warm_roles = frozenset(ROLES)
+                if label not in replaced_now:
+                    self._check_held_records(newest, label)
             if (
                 warm_ids is not None
                 and warm_zero
@@ -587,12 +610,11 @@ class PopulationLoop:
         return raw
 
     def _last_copies(self, generation: int) -> dict[str, int]:
-        """Each member's last copy generation, from the committed ladders 1 to ``generation``."""
+        """Each slot's last copy or replacement over the committed ladders 1 to generation."""
         found: dict[str, int] = {}
         for g in range(1, generation + 1):
-            first = self._committed_json(g, ladder_write.LADDER_FILE)["selections"][0]
-            if first["kind"] == "copy":
-                found[first["loser"]] = g
+            for slot in selection.replaced_slots(self._committed_json(g, ladder_write.LADDER_FILE)):
+                found[slot] = g
         return found
 
     def _check_member(  # noqa: PLR0913, PLR0917
@@ -634,6 +656,18 @@ class PopulationLoop:
                     f"generation {generation}: {label}'s {role} record disagrees with the state"
                 )
 
+    def _check_held_records(self, newest: layout.Committed, label: str) -> None:
+        """A quarantined member's records equal the generation before's, byte for byte."""
+        before = member_dir(layout.generation_dir(self.run_dir, newest.generation - 1), label)
+        now = member_dir(newest.path, label)
+        for role in ROLES:
+            name = Path("records") / f"{role}.json"
+            if (now / name).read_bytes() != (before / name).read_bytes():
+                raise LoopError(
+                    f"generation {newest.generation}: {label} is quarantined but its {role} "
+                    "record is not the one of the generation before"
+                )
+
     def _read_record(self, path: Path, role: str) -> CheckpointRecord:
         record = read_record(layout.read_json(path / "records" / f"{role}.json"))
         if record.role != role:
@@ -642,7 +676,7 @@ class PopulationLoop:
 
     # -- generation g --------------------------------------------------------
 
-    def _generation(
+    def _generation(  # noqa: PLR0915
         self, previous: PopulationFrozen, result: PopulationRunResult
     ) -> PopulationFrozen:
         generation = previous.generation + 1
@@ -693,12 +727,25 @@ class PopulationLoop:
         member_counts: dict[str, dict[str, int]] = {}
         reports: dict[str, dict[str, Any]] = {}
         sealings: dict[str, MemberSealing] = {}
+        stopped: dict[str, str] = {}
+        found = health.limits(self.config)
+        last_event = self._last_copies(previous.generation)
         for entry in record.members:
             label = entry.member
             held = self._summary_member(summary, label)
-            report = self._train_member(
-                work, generation, label, held, previous.policy_id(by_label[label]), timing
+            report, cause = self._train_member(
+                work,
+                generation,
+                label,
+                held,
+                previous.policy_id(by_label[label]),
+                timing,
+                self._judge(
+                    generation, label, last_event, summary["games"], found, label in parents
+                ),
             )
+            if cause is not None:
+                stopped[label] = cause
             roles = report.roles.values()
             member_counts[label] = {
                 "games": entry.games,
@@ -732,6 +779,10 @@ class PopulationLoop:
                 held["training_set_hash"],
                 tuple(sorted(others)),
             )
+        # Half or more quarantined at once: nothing of the generation is kept (the partial stays
+        # until the next start deletes it).
+        health.check_incident(stopped, self.members)
+        self._freeze_stopped(previous.generation, stopped, parents, sealings)
         timing.counts = Counts(
             record.games,
             sum(c["decisions"] for c in member_counts.values()),
@@ -741,7 +792,9 @@ class PopulationLoop:
         self._on_stage(generation, "trained")
         teams = tuple(sorted(set(previous.team_hashes) | set(summary["team_hashes"])))
         with timing.phase("write"):
-            ladder, past = self._write_ladder(work, generation, summary["games"], before, pool)
+            ladder, past = self._write_ladder(
+                work, generation, summary["games"], before, stopped, pool
+            )
         self._on_stage(generation, "rated")
         frozen = self._seal(
             generation,
@@ -762,41 +815,107 @@ class PopulationLoop:
     def _apply_copy(
         self, ladder: dict[str, Any] | None, by_label: dict[str, MemberFrozen]
     ) -> dict[str, dict[str, str]]:
-        """Apply the copy the committed ladder of the generation before decided, if it made one.
+        """Apply the replacements the committed ladder of the generation before decided, if any.
 
-        The loser's learner takes the donor's newest frozen state (weights and Adam moments), a new
-        generator seed and the explored settings. The loser's next records name the donor's frozen
-        checkpoints as ``parent``; they are returned by loser.
+        The copy of Figure 2 and the health replacements of quarantined members
+        (:func:`selection.replacements`) are applied alike: the loser's learner takes the donor's
+        newest frozen state (weights and Adam moments), a new generator seed and the explored
+        settings. The loser's next records name the donor's frozen checkpoints as ``parent``; they
+        are returned by loser.
         """
-        if ladder is None or ladder["selections"][0]["kind"] != "copy":
+        if ladder is None:
             return {}
-        first = ladder["selections"][0]
-        loser, donor = first["loser"], first["donor"]
-        learner = self._learners[loser]
-        slot_copy.copy_slot(
-            self._learners[donor],
-            learner,
-            ppo=selection.ppo_with(learner.config.ppo, first["settings"], exact=True),
-            seed=selection.learner_seed(
-                self.config,
-                ladder["generation"],
-                loser,
-                first["learner_seed_index"],
-                MAX_SEED,
-            ),
-            settings=selection.ppo_part(first["settings"]),
-        )
-        # The slot trains on games its donor did not play (the loser's old pair played them), so
-        # this one update is value-only: the policy is frozen (ADR-021 erratum point).
-        learner.value_only = True
-        return {loser: by_label[donor].checkpoints}
+        parents: dict[str, dict[str, str]] = {}
+        for found in selection.replacements(self.config, ladder):
+            learner = self._learners[found.loser]
+            slot_copy.copy_slot(
+                self._learners[found.donor],
+                learner,
+                ppo=selection.ppo_with(learner.config.ppo, found.settings, exact=True),
+                seed=selection.learner_seed(
+                    self.config,
+                    ladder["generation"],
+                    found.loser,
+                    found.seed_index,
+                    MAX_SEED,
+                ),
+                settings=selection.ppo_part(found.settings),
+            )
+            # The slot trains on games its donor did not play (the loser's old pair played them),
+            # so this one update is value-only: the policy is frozen (ADR-021 erratum point).
+            learner.value_only = True
+            parents[found.loser] = by_label[found.donor].checkpoints
+        return parents
 
-    def _write_ladder(
+    def _judge(  # noqa: PLR0913, PLR0917
+        self,
+        generation: int,
+        label: str,
+        last_event: dict[str, int],
+        rows: list[dict[str, Any]],
+        found: health.Limits,
+        replaced: bool = False,
+    ) -> Callable[[dict[str, Any]], str | None]:
+        """The health judgement of a member's train report (its history is read now).
+
+        A slot replaced in this generation (copy or health) played the generation's games with its
+        OLD pair, so those games' forfeits are not the new slot's and are not judged (``replaced``,
+        the same exemption the clip and KL streak has through ``last_event``).
+        """
+        earlier = self._earlier_reports(generation, label, last_event)
+
+        def judge(report: dict[str, Any]) -> str | None:
+            return health.stop_cause(report, earlier, rows, label, found, judge_rows=not replaced)
+
+        return judge
+
+    def _freeze_stopped(
+        self,
+        previous: int,
+        stopped: dict[str, str],
+        parents: dict[str, dict[str, str]],
+        sealings: dict[str, MemberSealing],
+    ) -> None:
+        """Seal a quarantined member: no training set, and the records it already has.
+
+        Its update was discarded, so it freezes the pair it had (a checkpoint has one record: the
+        earlier records are written again as they are). A member that was copied in this very
+        generation froze the donor's weights instead, and keeps ordinary records naming the donor.
+        """
+        for label in stopped:
+            if label in parents:
+                sealings[label] = dataclasses.replace(sealings[label], training_set_hash=None)
+                continue
+            before = member_dir(layout.generation_dir(self.run_dir, previous), label)
+            sealings[label] = MemberSealing(
+                None, None, (), {role: self._read_record(before, role) for role in ROLES}
+            )
+
+    def _earlier_reports(
+        self, generation: int, label: str, last_event: dict[str, int]
+    ) -> list[dict[str, Any] | None]:
+        """The stored train reports of the generations before, newest first, for a streak.
+
+        A generation counts only if it is after the slot's last copy or replacement and has a
+        report; any other is ``None`` and breaks the streak.
+        """
+        found: list[dict[str, Any] | None] = []
+        for earlier in range(generation - 1, generation - health.STREAK, -1):
+            path = member_dir(layout.generation_dir(self.run_dir, earlier), label)
+            if earlier < 1 or earlier <= last_event.get(label, 0) or not path.is_dir():
+                found.append(None)
+                continue
+            raw = layout.read_json(path / "train-report.json")
+            found.append(raw if isinstance(raw, dict) else None)
+        return found
+
+    def _write_ladder(  # noqa: PLR0913, PLR0917
         self,
         work: Path,
         generation: int,
         rows: list[dict[str, Any]],
         before: dict[str, Any] | None,
+        stopped: dict[str, str],
         pool: past_pool.PastPool | None = None,
     ) -> tuple[dict[str, Any], PastSeal | None]:
         """Fit the window, count the cycles and write ``ladder.json`` and the copy test's outcome.
@@ -807,10 +926,9 @@ class PopulationLoop:
         window = self.config.raw["population"]["rating"]["window"]
         history: list[ladder_write.GenerationRows] = []
         for g in range(max(1, generation - window + 1), generation):
-            first = self._read_ladder(g)["selections"][0]
+            replaced = selection.replaced_slots(self._read_ladder(g))
             games = self._committed_json(g, "generation.json")["games"]
-            copied = (first["loser"],) if first["kind"] == "copy" else ()
-            history.append(ladder_write.GenerationRows(g, games, copied))
+            history.append(ladder_write.GenerationRows(g, games, replaced))
         history.append(ladder_write.GenerationRows(generation, rows))
         held = () if pool is None else pool.snapshots
         try:
@@ -821,6 +939,7 @@ class PopulationLoop:
                 self._anchors,
                 before,
                 self._last_copies(generation - 1),
+                stopped,
                 held,
             )
         except (LadderRecordError, ladder_write.LadderBuildError, rating.RatingError) as exc:
@@ -846,8 +965,14 @@ class PopulationLoop:
         held: dict[str, Any],
         pair: str,
         timing: Timing,
-    ) -> TrainReport:
-        """Load one member's own stream, train its learner on it and write its train report."""
+        judge: Callable[[dict[str, Any]], str | None],
+    ) -> tuple[TrainReport, str | None]:
+        """Load one member's own stream, train its learner on it and write its train report.
+
+        ``judge`` gives the health stop of the report, if any (:func:`health.stop_cause`); a
+        stopped member's update is undone before the learner is parked (the pre-update weights,
+        Adam moments and generator come back), and the stop is returned with the report.
+        """
         learner = self._learners[label]
         path = member_dir(work, label)
         with timing.phase("load"):
@@ -864,12 +989,17 @@ class PopulationLoop:
                 fit_processes(self.load_processes, self.load_memory_mb),
             )
         bring_up(learner, self.device)
+        guard = health.Guard(learner)
+        cause: str | None = None
         try:
             if self.device.type == "cuda":
                 torch.cuda.reset_peak_memory_stats(self.device)
             with timing.phase("train"):
                 report = learner.train(found)
             del found
+            cause = judge(report.as_dict())
+            if cause is not None:
+                guard.restore(learner)
             if self.device.type == "cuda":
                 peak = int(torch.cuda.max_memory_allocated(self.device))
                 reserved = int(torch.cuda.max_memory_reserved(self.device))
@@ -881,8 +1011,8 @@ class PopulationLoop:
             if self.device.type == "cuda":
                 torch.cuda.empty_cache()
         with timing.phase("write"):
-            layout.write_json(path / "train-report.json", report.as_dict())
-        return report
+            layout.write_json(path / "train-report.json", health.sanitize(report.as_dict()))
+        return report, cause
 
     @staticmethod
     def _summary_member(summary: dict[str, Any], label: str) -> dict[str, Any]:

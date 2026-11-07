@@ -103,8 +103,11 @@ def _check_copy(
         _fail("a copy needs a lower bound above 500000 plus its margin")
     _check_settings(first["settings"])
     by_id = {member["member"]: member for member in raw["members"]}
+    quarantined = {entry["member"] for entry in rest}
     if any(
-        m["strength"]["strength"] > by_id[donor]["strength"]["strength"] for m in raw["members"]
+        m["strength"]["strength"] > by_id[donor]["strength"]["strength"]
+        for m in raw["members"]
+        if m["member"] not in quarantined
     ):
         _fail("a copy's donor must have the highest strength among the members")
     cell = next(
