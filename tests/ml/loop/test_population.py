@@ -953,9 +953,9 @@ def test_a_member_whose_games_all_forfeited_fails_the_generation(tmp_path: Path)
 @pytest.mark.parametrize(
     "command",
     [
-        ["inspect"],
         ["report"],
-        ["replay", "--generation", "1"],
+        ["inspect", "--resimulate", "1:0"],
+        ["replay", "--generation", "1", "--progress-dir", "progress"],
     ],
 )
 def test_the_single_lineage_views_refuse_a_population_run_by_name(
