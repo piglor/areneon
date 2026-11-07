@@ -488,13 +488,16 @@ def build_ladder_record(  # noqa: PLR0913, PLR0917
     anchors: Mapping[str, int],
     previous: Mapping[str, Any] | None = None,
     last_copy: Mapping[str, int] | None = None,
+    stopped: Mapping[str, str] | None = None,
     pool: Sequence[Snapshot] = (),
 ) -> dict[str, Any]:
     """The generation's ``ladder.json``, with the copy test's outcome (slice 8).
 
     ``previous`` is the committed record of the generation before: the members' roots and effective
     settings are its state with its copy applied (:func:`selection.slot_state`). ``last_copy`` maps
-    a member to the generation of its last copy, from every committed record.
+    a member to the generation of its last copy, from every committed record. ``stopped`` maps the
+    members a health stop quarantined in this generation to the cause (slice 9): each is a
+    ``health`` selection after the copy test's outcome, and is neither loser nor donor of a copy.
 
     ``pool`` is the past pool the generation played (empty without a past-pool share). A snapshot
     listed in ``previous`` and still in the pool keeps its strength and bounds untouched and is a
@@ -543,6 +546,7 @@ def build_ladder_record(  # noqa: PLR0913, PLR0917
         settings=settings,
         last_copy=last_copy or {},
         bootstrap=plan,
+        excluded=frozenset(stopped or ()),
     )
     listed = dict(frozen)
     fixed = {**references, **{m: strengths[m].strength for m in members}}
@@ -589,7 +593,13 @@ def build_ladder_record(  # noqa: PLR0913, PLR0917
             if kind != "snapshot" or opponent in listed
         ],
         "cyclic_triples": triples,
-        "selections": [outcome],
+        "selections": [
+            outcome,
+            *(
+                {"kind": "health", "member": m, "cause": c}
+                for m, c in sorted((stopped or {}).items())
+            ),
+        ],
     }
     read_ladder_record(record, previous, config)
     return record
