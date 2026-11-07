@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
-from areneon_contracts.contracts import jcs, sha256_hex
+from areneon_contracts.contracts import ContractError, jcs, sha256_hex, validate
 
 from areneon_ml.checkpoint.record import CheckpointRecord, read_record
 from areneon_ml.learner.config import RunConfig
@@ -30,6 +30,7 @@ def policy_id(  # noqa: PLR0913, PLR0917
     truncation: dict[str, Any] | None = None,
     features: str | None = None,
     search: str | None = None,
+    preview_solve: str | None = None,
 ) -> str:
     """``policy:`` + SHA-256 of ``JCS({preview, battle, mode, temperature, precision})``.
 
@@ -38,6 +39,11 @@ def policy_id(  # noqa: PLR0913, PLR0917
 
     The loop plays ``sample`` (the default); the progress evaluation also plays ``argmax``,
     which is a different policy with a different id.
+
+    A pair whose Team Preview is chosen by the solver (ADR-029 §4) adds
+    ``preview_solve: <solver identity hash>``, independently of ``search`` (a pair with the solver,
+    with search, or with both are three different policies); ``preview_solve`` is None for every
+    other policy, whose id is unchanged.
 
     A pair played with decision-time search (ADR-026 §5) adds ``search: <search identity hash>``
     (label "learned pair with decision-time search (one-ply re-rank)"); ``search`` is None for every
@@ -55,14 +61,15 @@ def policy_id(  # noqa: PLR0913, PLR0917
         "temperature": TEMPERATURE,
         "precision": PRECISION,
     }
-    if search is not None:
-        if len(search) != DIGEST_CHARS or search.strip("0123456789abcdef"):
-            raise ValueError("search is a search identity hash: 64 lowercase hex digits")
-        body["search"] = search
-    if features is not None:
-        if len(features) != DIGEST_CHARS or features.strip("0123456789abcdef"):
-            raise ValueError("features is a feature_set_hash: 64 lowercase hex digits")
-        body["features"] = features
+    for key, value, what in (
+        ("preview_solve", preview_solve, "a Team Preview solver identity hash"),
+        ("search", search, "a search identity hash"),
+        ("features", features, "a feature_set_hash"),
+    ):
+        if value is not None:
+            if len(value) != DIGEST_CHARS or value.strip("0123456789abcdef"):
+                raise ValueError(f"{key} is {what}: 64 lowercase hex digits")
+            body[key] = value
     if temperature_ppm is not None or truncation is not None:
         if mode != "sample":
             raise ValueError("a temperature or a truncation applies to sample mode only")
@@ -117,6 +124,66 @@ def search_identity_hash(identity: dict[str, Any]) -> str:
     if identity.keys() != SEARCH_IDENTITY_KEYS:
         raise ValueError("a search identity holds exactly its thirteen inputs")
     for key in SEARCH_HASH_KEYS:
+        value = identity[key]
+        if (
+            not isinstance(value, str)
+            or len(value) != DIGEST_CHARS
+            or value.strip("0123456789abcdef")
+        ):
+            raise ValueError(f"{key} is a SHA-256: 64 lowercase hex digits")
+    return sha256_hex(jcs(identity))
+
+
+PREVIEW_SOLVE_IDENTITY_KEYS = frozenset(
+    {
+        "preview_solve_config_hash",
+        "belief_identity_hash",
+        "reader_sha256",
+        "version_manifest",
+        "solver_format",
+        "leaf_format",
+        "hypothetical_battle_format",
+    }
+)
+PREVIEW_SOLVE_HASH_KEYS = ("preview_solve_config_hash", "belief_identity_hash", "reader_sha256")
+ITERATIVE_SOLVERS = frozenset({"regret-matching", "regret-matching-plus"})
+
+
+def read_preview_solve_config(value: object) -> dict[str, Any]:
+    """A ``PreviewSolveConfig`` (ADR-029 §4): the schema, then the rules it cannot say.
+
+    ``min_valid`` may not exceed ``n``, and ``iterations`` is present exactly for the iterative
+    solvers; the TS ``readPreviewSolveConfig`` applies the same rules.
+    """
+    try:
+        validate("preview-solve-config", value)
+    except ContractError as error:
+        raise ValueError(f"invalid PreviewSolveConfig: {error}") from error
+    config = cast("dict[str, Any]", value)
+    if config["worlds"]["min_valid"] > config["worlds"]["n"]:
+        raise ValueError("min_valid exceeds the worlds per decision")
+    solver = config["solver"]
+    if (solver["kind"] in ITERATIVE_SOLVERS) != ("iterations" in solver):
+        raise ValueError("iterations is present exactly for the iterative solvers")
+    return config
+
+
+def preview_solve_config_hash(config: dict[str, Any]) -> str:
+    """SHA-256 of a ``PreviewSolveConfig``'s JCS bytes (``preview_solve_config_hash``)."""
+    return sha256_hex(jcs(config))
+
+
+def preview_solve_identity_hash(identity: dict[str, Any]) -> str:
+    """SHA-256 of the JCS of a Team Preview solver identity (ADR-029 §4).
+
+    It is the ``preview_solve`` member of a policy id.
+
+    ``identity`` holds exactly the seven inputs that change what the solver plays; the TS
+    ``previewSolveIdentityHash`` computes the same.
+    """
+    if identity.keys() != PREVIEW_SOLVE_IDENTITY_KEYS:
+        raise ValueError("a solver identity holds exactly its seven inputs")
+    for key in PREVIEW_SOLVE_HASH_KEYS:
         value = identity[key]
         if (
             not isinstance(value, str)

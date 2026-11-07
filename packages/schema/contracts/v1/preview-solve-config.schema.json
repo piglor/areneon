@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:preview-solve-config",
+  "title": "PreviewSolveConfig",
+  "description": "The reviewed configuration of the Team Preview solver (ADR-029 section 4): reviewed data in config/preview/<format>/, never code. Every value that changes what the solver plays is here or in an input the solver identity names. Integers only. Its RFC 8785 SHA-256 is preview_solve_config_hash, a part of the solver identity. The values committed first are ADR-029's defaults; S0-P freezes them. A change of any value is a new record (a new file), never an edit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "format_id",
+    "algorithm",
+    "k_own",
+    "k_opp",
+    "selection_rule",
+    "worlds",
+    "belief_identity_hash",
+    "leaf",
+    "solver",
+    "budget_ms",
+    "a2_clock_floor_ms",
+    "seed_derivation"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "format_id": {
+      "description": "The target format the solver is configured for.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "algorithm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "description": "The simultaneous-game solve of the Team Preview payoff table.",
+          "const": "preview-solve-1"
+        }
+      }
+    },
+    "k_own": {
+      "description": "How many of the pair's own Preview strategies (ordered lead pair, unordered back set) are rows of the table.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 180
+    },
+    "k_opp": {
+      "description": "How many of the opponent's ordered lead pairs are columns of the table.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 30
+    },
+    "selection_rule": {
+      "description": "prior-top-k takes the k_own most probable strategies, ties in canonical order; distinct-leads takes the next strategy only if its ordered lead pair is new.",
+      "enum": [
+        "prior-top-k",
+        "distinct-leads"
+      ]
+    },
+    "worlds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "n",
+        "min_valid",
+        "prior"
+      ],
+      "properties": {
+        "n": {
+          "description": "Opponent teams drawn from the belief per decision (N_w).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "min_valid": {
+          "description": "A solve needs at least this many worlds whose every table entry was produced; fewer plays the pair's own Preview.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "prior": {
+          "description": "The prior arm the worlds are drawn from and the label every result of the arm carries.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "label"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "generator-matched",
+                "role-sets"
+              ]
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        }
+      }
+    },
+    "belief_identity_hash": {
+      "description": "ADR-025's belief_identity_hash of the belief the worlds are drawn from: 64 lower-case hex digits. The solver identity names the same value and the reader refuses a different one.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "leaf": {
+      "description": "How an entry of the table is valued: the worker's value at our first move request, or after a rollout of the given number of turns by the pair's Battle network.",
+      "$ref": "#/$defs/Leaf"
+    },
+    "solver": {
+      "description": "The matrix solve. iterations is present exactly for the iterative kinds (regret-matching, regret-matching-plus); exact-support is declared by the ADR and not built.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "regret-matching",
+            "regret-matching-plus",
+            "exact-support"
+          ]
+        },
+        "iterations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      }
+    },
+    "budget_ms": {
+      "description": "The per-decision guard in milliseconds that an overrun is a latency forfeit against; not a cut-off inside the solve, whose work is fixed by k_own, k_opp, N_w and the leaf. Nothing in the solve enforces it: the caller must give the seat a guardActor Team Preview budget of at least this value (previewSolveBudgetMs reads it).",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600000
+    },
+    "a2_clock_floor_ms": {
+      "description": "A2 only: below this remaining bank the solve is skipped and the pair's own Preview is played.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3600000
+    },
+    "seed_derivation": {
+      "description": "The draw from the solver's mixture: u is the first 53 bits of SHA-256 over the JCS of {seed, game, player, policy_id, request_seq, purpose: 'preview-solve/1'}.",
+      "const": "preview-solve/1"
+    }
+  },
+  "$defs": {
+    "Leaf": {
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/FirstRequestLeaf"
+        },
+        {
+          "$ref": "#/$defs/RolloutLeaf"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "FirstRequestLeaf": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "value-at-first-request"
+        }
+      }
+    },
+    "RolloutLeaf": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "turns"
+      ],
+      "properties": {
+        "kind": {
+          "const": "rollout"
+        },
+        "turns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        }
+      }
+    }
+  }
+}

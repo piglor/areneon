@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "format_id": "gen9championsvgc2026regmc",
+  "algorithm": {
+    "kind": "preview-solve-1"
+  },
+  "k_own": 4,
+  "k_opp": 4,
+  "selection_rule": "distinct-leads",
+  "worlds": {
+    "n": 4,
+    "min_valid": 5,
+    "prior": {
+      "kind": "generator-matched",
+      "label": "belief matched to the synthetic generator: an upper bound for this evaluation"
+    }
+  },
+  "belief_identity_hash": "90766053ba050deaa09b8f6d70702f81dbec7a2d9699d3ce901bc58d1cdda9ed",
+  "leaf": {
+    "kind": "value-at-first-request"
+  },
+  "solver": {
+    "kind": "regret-matching",
+    "iterations": 4096
+  },
+  "budget_ms": 30000,
+  "a2_clock_floor_ms": 30000,
+  "seed_derivation": "preview-solve/1"
+}
