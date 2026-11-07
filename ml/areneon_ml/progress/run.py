@@ -150,6 +150,9 @@ class VersusSpec:
     games: int
     #: The other run's encoder version (from its own config): its worker is checked against it.
     encoder_version: str
+    #: The other run's engine-data table when its checkpoints were made for another one than the
+    #: evaluated run's (#1306); None: the evaluated run's table, and no argument is passed.
+    engine_data: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -169,6 +172,8 @@ class RunPair:
     games: int
     #: The other run's candidate-features hash (None: its pair reads none), for its policy ids.
     features: str | None = None
+    #: The other run's own engine-data table (None: the evaluated run's).
+    engine_data: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -296,6 +301,11 @@ class NodeProgressPlayer(NodePlayer):
                 f"{versus.battle},{versus.policy_id_sample},{versus.policy_id_argmax}",
                 *("--versus-dir", str(versus.run_dir)),
                 *("--versus-encoder-version", versus.encoder_version),
+                *(
+                    ()
+                    if versus.engine_data is None
+                    else ("--versus-engine-data", str(versus.engine_data))
+                ),
                 *("--versus-team-set", str(versus.team_set)),
                 *("--run-games", str(versus.games)),
             )
@@ -699,6 +709,7 @@ def _versus_pair(
         spec.encoder_version,
         spec.games,
         features_hash(other),
+        spec.engine_data,
     )
 
 

@@ -60,6 +60,8 @@ const FLAGS = {
   versus: { type: "string" },
   "versus-dir": { type: "string" },
   "versus-encoder-version": { type: "string" },
+  // The other run's engine-data table when its checkpoints were made for another one than --engine-data (#1306).
+  "versus-engine-data": { type: "string" },
   "versus-team-set": { type: "string" },
   "run-games": { type: "string" },
   // The Preview ablation (#940): `--ablation-preview <generation>,<preview-checkpoint>,<policy-id-argmax>` (this
@@ -251,14 +253,25 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   const runTeams = evalDataset === undefined ? new Set<string>() : readRunTeams(engine, config);
   const dataFile = need("engine-data");
   const dataHash = engineDataHash(readEngineDataAny(JSON.parse(readFileSync(dataFile, "utf8"))));
+  // The other run's table (absent: the evaluated run's, as before); a bad file is a usage error before any worker.
+  let versusData: { file: string; hash: string } | undefined;
+  if (values["versus-engine-data"] !== undefined) {
+    if (versusParts === undefined) throw new UsageError("--versus-engine-data needs --versus");
+    const file = values["versus-engine-data"];
+    try {
+      versusData = { file, hash: engineDataHash(readEngineDataAny(JSON.parse(readFileSync(file, "utf8")))) };
+    } catch {
+      throw new UsageError("--versus-engine-data is not a readable engine-data table");
+    }
+  }
   const { max_line_bytes, handshake_timeout_ms } = config.generation;
   // The candidate features of the run's pair (none: nothing below changes) and, for another run's pair, of ITS config.
   const features = pairFeatureSetup(engine, config, ports.belief_worlds);
   const preview = need("preview");
   const battle = need("battle");
   // One worker session holds one frozen pair, so the previous generation's pair gets a worker of its own.
-  const workerFor = (pair: { preview: string; battle: string }, runDir: string = need("run-dir"), encoderVersion: string = need("encoder-version"), setup: FeatureSetup | null = features ?? null): PolicyWorkerClient =>
-    frozenPairClient({ python: need("worker-python"), runDir, pair, encoderVersion, engineDataFile: dataFile, engineDataHash: dataHash, max_line_bytes, handshake_timeout_ms, ...(setup === null ? {} : { features: setup.statement }) });
+  const workerFor = (pair: { preview: string; battle: string }, runDir: string = need("run-dir"), encoderVersion: string = need("encoder-version"), setup: FeatureSetup | null = features ?? null, data: { file: string; hash: string } = { file: dataFile, hash: dataHash }): PolicyWorkerClient =>
+    frozenPairClient({ python: need("worker-python"), runDir, pair, encoderVersion, engineDataFile: data.file, engineDataHash: data.hash, max_line_bytes, handshake_timeout_ms, ...(setup === null ? {} : { features: setup.statement }) });
   const client = workerFor({ preview, battle });
   const previousPair = given.length === 0 ? undefined : { preview: need("previous-preview"), battle: need("previous-battle") };
   let previousClient: PolicyWorkerClient | undefined;
@@ -293,7 +306,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
     versusRunTeams = readRunTeams(engine, versusConfig);
   }
   const versusFeatures = versusConfig === undefined ? undefined : pairFeatureSetup(engine, versusConfig, ports.belief_worlds);
-  const versusClient = versus === undefined ? undefined : workerFor(versus.checkpoints, need("versus-dir"), need("versus-encoder-version"), versusFeatures ?? null);
+  const versusClient = versus === undefined ? undefined : workerFor(versus.checkpoints, need("versus-dir"), need("versus-encoder-version"), versusFeatures ?? null, versusData);
   try {
     previousClient = previousPair === undefined ? undefined : workerFor(previousPair);
     const pool = poolSource(engine, withEvalDataset(config, evalDataset)); // the evaluation dataset, hash-checked by the pool; `config` stays the run's own
