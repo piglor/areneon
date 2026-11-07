@@ -46,6 +46,8 @@ export function readSearchConfig(value: unknown): SearchConfig {
   if (!validConfig(value)) throw new SearchConfigError(`invalid SearchConfig: ${JSON.stringify(validConfig.errors)}`);
   const config = structuredClone(value) as unknown as SearchConfig;
   if (config.min_valid_worlds > config.worlds.n) throw new SearchConfigError("min_valid_worlds exceeds the worlds per decision");
+  if ((config.top_k_rule === "slot-cover") !== (config.k_max !== undefined)) throw new SearchConfigError("k_max is present exactly when top_k_rule is slot-cover");
+  if (config.top_k_rule === "slot-cover" && config.top_k !== config.k_max) throw new SearchConfigError("with slot-cover top_k equals k_max (top_k is not otherwise read)");
   const { max_damage_ppm, uniform_draws } = config.replies;
   if (uniform_draws === 0 && max_damage_ppm !== 1_000_000) throw new SearchConfigError("with no uniform draw the max-damage reply must carry the whole weight");
   if (uniform_draws > 0 && (1_000_000 - max_damage_ppm) % uniform_draws !== 0) throw new SearchConfigError("the uniform replies must share the rest of the weight in exact millionths");

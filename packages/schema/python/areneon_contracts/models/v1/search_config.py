@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
+from pydantic import MISSING, BaseModel, ConfigDict, Field, StrictInt, StrictStr
 
 
 class Algorithm(BaseModel):
@@ -92,9 +92,13 @@ class SearchConfig(BaseModel):
     """
     How many of the pair's non-pending candidates are searched (k).
     """
-    top_k_rule: Literal["prior-top-k", "distinct-slot"]
+    top_k_rule: Literal["prior-top-k", "distinct-slot", "slot-cover"]
     """
-    prior-top-k takes the k highest, ties in canonical order; distinct-slot takes the next candidate only if it adds a slot action not yet covered.
+    prior-top-k takes the k highest, ties in canonical order; distinct-slot takes the next candidate only if it adds a slot action not yet covered; slot-cover (labelling, ADR-026 erratum E2 decision 2) searches every move and switch of each active slot once, at most k_max candidates, and needs k_max.
+    """
+    k_max: Annotated[StrictInt | MISSING, Field(ge=2, le=64)] = MISSING
+    """
+    Present exactly when top_k_rule is slot-cover: the most candidates the slot-cover set keeps, cut by the prior order of the slot actions.
     """
     worlds: Worlds
     belief_identity_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]

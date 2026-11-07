@@ -711,6 +711,8 @@ export {
   type SearchSetup,
   type SearchSetupInput,
 } from "./search-actor.ts";
+export { type LabelDecision, type LabelInput, qPpm, type SearchDecisionDeps, searchDecision, searchLabel } from "./search-decision.ts";
+export { searchedIndices, slotCover } from "./search-set.ts";
 export { hpKoDifferential, outcomeScore } from "./search-leaf.ts";
 export { playerView } from "./search-turn.ts";
 export { goldenWorldFactsData, readWorldFactsData, type FactsTable } from "./world-facts-data.ts";

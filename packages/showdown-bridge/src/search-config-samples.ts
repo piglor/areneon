@@ -15,9 +15,12 @@ function mutated(value: unknown, change: (copy: any) => void): Record<string, un
 export function searchConfigSamples(formatId: string): { valid: Cases; invalid: Cases; readerInvalid: Cases } {
   const base = loadSearchConfig(formatId);
   const change = (fn: (copy: any) => void) => mutated(base, fn);
+  const label = loadSearchConfig(formatId, "rerank-1-label.v1");
+  const labelChange = (fn: (copy: any) => void) => mutated(label, fn);
   return {
     valid: {
       "search-config/rerank-1": base,
+      "search-config/slot-cover": label,
       "search-config/uniform-replies-hp-leaf": change((c) => {
         c.replies = { max_damage_ppm: 0, uniform_draws: 4 };
         c.leaf = { kind: "hp-ko-differential" };
@@ -34,9 +37,13 @@ export function searchConfigSamples(formatId: string): { valid: Cases; invalid: 
       "search-config/bad-seed-derivation": change((c) => (c.seed_derivation = "search/2")),
       "search-config/short-belief-hash": change((c) => (c.belief_identity_hash = "abc")),
       "search-config/missing-replies": change((c) => delete c.replies),
+      "search-config/k-max-too-small": labelChange((c) => (c.k_max = 1)),
       "search-config/next-version": change((c) => (c.schema_version = 2)),
     },
     readerInvalid: {
+      "search-config/slot-cover-without-k-max": labelChange((c) => delete c.k_max),
+      "search-config/k-max-without-slot-cover": change((c) => (c.k_max = 4)),
+      "search-config/slot-cover-top-k-differs": labelChange((c) => (c.top_k = 4)),
       "search-config/min-worlds-over-n": change((c) => (c.min_valid_worlds = c.worlds.n + 1)),
       "search-config/inexact-uniform-share": change((c) => (c.replies = { max_damage_ppm: 500000, uniform_draws: 3 })),
       "search-config/no-uniform-without-full-weight": change((c) => (c.replies = { max_damage_ppm: 500000, uniform_draws: 0 })),
