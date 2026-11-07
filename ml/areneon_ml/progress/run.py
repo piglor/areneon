@@ -36,6 +36,7 @@ from areneon_ml.loop.driver import sources_registry
 from areneon_ml.loop.play import NodePlayer, PlayError
 from areneon_ml.loop.records import features_hash, policy_id
 from areneon_ml.loop.sheet_counts import read_sheet_counts
+from areneon_ml.model.gamedata import GameData
 from areneon_ml.model.network import ROLES
 from areneon_ml.progress import evaluation_key as ekey
 from areneon_ml.progress.ablation import ablation_summary, expected_ablation_matches
@@ -1529,7 +1530,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
             }
             | _gap_part(record)
             | _ablation_part(record)
-            | _versus_part(record, relation)
+            | _versus_part(record, relation, versus)
             | _warned(sheet_status(record))
         )
 
@@ -1588,7 +1589,7 @@ def _skipped(  # noqa: PLR0913, PLR0917
         | _gap_part(record)
         | _modes_status(record, modes)
         | _ablation_part(record)
-        | _versus_part(record, held)
+        | _versus_part(record, held, versus)
         | sheet_status(record)
     )
 
@@ -1624,8 +1625,14 @@ def _ablation_spec(run_dir: Path, config: RunConfig, source: _Source) -> Ablatio
     )
 
 
-def _versus_part(record: dict[str, Any], relation: dict[str, str] | None = None) -> dict[str, Any]:
-    """The head-to-head header: the other run, the games, the label and the lineage relation."""
+def _versus_part(
+    record: dict[str, Any],
+    relation: dict[str, str] | None = None,
+    spec: VersusSpec | None = None,
+) -> dict[str, Any]:
+    """The head-to-head header: the other run, the games, the label and the lineage relation.
+
+    With ``--versus-engine-data`` it also names that table's hash (display only, #1306)."""
     found = [m for m in record["matches"] if m["opponent"]["kind"] == "run"]
     if not found:
         return {}
@@ -1638,6 +1645,15 @@ def _versus_part(record: dict[str, Any], relation: dict[str, str] | None = None)
             "games_per_match": record["plan"]["run_games_per_match"],
             "lineage": relation,
         }
+        | (
+            {}
+            if spec is None or spec.engine_data is None
+            else {
+                "engine_data_hash": GameData.from_table(
+                    json.loads(spec.engine_data.read_text(encoding="utf-8"))
+                ).engine_data_hash
+            }
+        )
     }
 
 

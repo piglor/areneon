@@ -4,6 +4,7 @@
 // and the real policy worker. It needs the project's Python environment (`make setup`, uv sync); without it the file
 // is skipped, unless ARENEON_REQUIRE_PYTHON_WORKER=1 (the typescript CI job sets it).
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -265,10 +266,13 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     // Without the option the other run's worker is given the evaluated run's table and its checkpoints are refused.
     const refused = spawnSync(PYTHON, ["-I", "-m", "areneon_ml.loop", ...flagsFor(join(dir, "t0.progress"))], { encoding: "utf8", env, cwd: ROOT });
     expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toMatch(/engine.data|encoder.version|handshake/i);
     expect(existsSync(join(dir, "t0.progress", gen(1)))).toBe(false);
     const a = join(dir, "t1.progress");
     const printed = JSON.parse(execFileSync(PYTHON, ["-I", "-m", "areneon_ml.loop", ...flagsFor(a, "--versus-engine-data", DATA2)], { encoding: "utf8", env, cwd: ROOT })) as { generations: { matches: { match_id: string }[] }[] };
     expect((printed.generations[0] as { matches: { match_id: string }[] }).matches.map((m) => m.match_id)).toEqual(expect.arrayContaining(["run-argmax", "run-sample"]));
+    const tableHash = createHash("sha256").update(jcs(JSON.parse(readFileSync(DATA2, "utf8")) as Json)).digest("hex");
+    expect((printed.generations[0] as unknown as { head_to_head: { engine_data_hash: string } }).head_to_head.engine_data_hash).toBe(tableHash);
     const record = readProgressEvaluationRecordV2(json<ProgressEvaluationRecordV2>(a, gen(1), "progress.json"));
     for (const m of record.matches.filter((x) => x.opponent.kind === "run")) expect(m.opponent).toMatchObject({ kind: "run", run_id: "v2-table-run" });
     const b = join(dir, "t2.progress");
