@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 from areneon_contracts.contracts import sha256_hex
+from areneon_ml.learner.trainer import Learner
 from areneon_ml.loop import ladder_write, layout
 from areneon_ml.loop.__main__ import EXIT_REFUSED, main
 from areneon_ml.report.command import report_run
@@ -23,6 +24,7 @@ from areneon_ml.report.ladder_view import events, rating, shown
 from areneon_ml.report.model import ReportError, read_report_model
 from areneon_ml.report.render import build_report
 
+from tests.ml.loop import test_population_health as health
 from tests.ml.loop.test_past_pool import loop_config_edit
 from tests.ml.loop.test_population import (
     gen_path,
@@ -637,3 +639,26 @@ def test_events_and_the_tree_without_a_played_generation(plain: Path, tmp_path: 
     text = page(run)
     assert "No generation has played yet" in text
     assert "Copy tree" not in text
+
+
+# -- a real quarantine written by the loop (slice 9) ---
+
+
+def test_a_real_quarantine_run_is_reported(tmp_path: Path) -> None:
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(Learner, "train", health.forced_train)
+        run = tmp_path / "health"
+        health.run_to(run, health.reset())
+    model = read_report_model(run, None)
+    assert model.population is not None
+    text = build_report(model)
+    found = events(model.population)
+    assert [(e["kind"], e["at"], e["member"]) for e in found if e["kind"] == "health"] == [
+        ("health", health.BAD_GENERATION, "m1")
+    ]
+    stopped = next(m for m in model.population.generations[2].members if m.member == "m1")
+    assert stopped.training_set_hash is None
+    assert stopped.nulls
+    assert "not finite" in text
+    assert "update discarded (no training set)" in text
+    assert "quarantine and replacement" in text
