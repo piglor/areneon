@@ -62,21 +62,21 @@ SCRIPT = """
 """.strip()
 
 
-def csp() -> str:
+def csp(style: str = STYLE) -> str:
     return (
-        f"default-src 'none'; script-src {sha256_source(SCRIPT)}; style-src {sha256_source(STYLE)}; "
+        f"default-src 'none'; script-src {sha256_source(SCRIPT)}; style-src {sha256_source(style)}; "
         "img-src 'none'; base-uri 'none'; form-action 'none'"
     )
 
 
-def document(title: str, body: str, tips: list[str], footer: str) -> str:
+def document(title: str, body: str, tips: list[str], footer: str, style: str = STYLE) -> str:
     data: dict[str, Any] = {"tips": tips}
     return (
         '<!doctype html>\n<html lang="en">\n<head>\n'
-        f'<meta http-equiv="Content-Security-Policy" content="{esc(csp())}">\n'
+        f'<meta http-equiv="Content-Security-Policy" content="{esc(csp(style))}">\n'
         '<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
-        f"<title>{esc(title)}</title>\n<style>{STYLE}</style>\n</head>\n<body>\n"
+        f"<title>{esc(title)}</title>\n<style>{style}</style>\n</head>\n<body>\n"
         f"<main>\n{body}\n</main>\n"
         f"<footer>{footer}</footer>\n{json_block(data)}\n<script>{SCRIPT}</script>\n</body>\n</html>\n"
     )

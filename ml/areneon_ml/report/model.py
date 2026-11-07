@@ -26,7 +26,7 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from areneon_contracts.contracts import sha256_hex
 
@@ -64,6 +64,9 @@ from areneon_ml.progress.records import (
 from areneon_ml.progress.run import summary_of
 from areneon_ml.report.dominated import config_file, progress_diagnostics
 from areneon_ml.report.move_use import class_files
+
+if TYPE_CHECKING:
+    from areneon_ml.report.population import PopulationFacts
 
 NOT_RECORDED = "not recorded"
 ROLES = ("battle", "preview")
@@ -267,6 +270,9 @@ class ReportModel:
     #: The situational move-use summary (#1283; ``report.situational.summarise``) given with
     #: ``--situational``; None when none was given. Its file is among ``inputs``.
     situational: dict[str, Any] | None = None
+    #: A population run's ladder facts (ADR-021 slice 11, ``report.population``); None for a
+    #: single-lineage run, which renders exactly as before.
+    population: PopulationFacts | None = None
 
 
 def _json(path: Path) -> Any:
@@ -608,6 +614,8 @@ def read_metrics(
     for path in sorted(base.iterdir()):
         if path.name.startswith("."):
             continue  # a write that was interrupted
+        if path.name == "members" and path.is_dir() and not path.is_symlink():
+            continue  # a population run's per-member counts (report.population reads them)
         match = _METRICS_FILE.fullmatch(path.name)
         if match is None or not path.is_file() or path.is_symlink():
             raise ReportError(f"{METRICS_DIR}/{path.name} is not a metrics file of this run")
@@ -625,21 +633,33 @@ def read_metrics(
 
 
 def read_report_model(run_dir: Path, progress_dir: Path | None) -> ReportModel:
-    """Read ``run_dir`` (and ``progress_dir`` if given) read-only; refuse anything inconsistent."""
+    """Read ``run_dir`` (and ``progress_dir`` if given) read-only; refuse anything inconsistent.
+
+    A population run (ADR-021) is read by ``report.population``: the ladder view. Its members'
+    progress evaluation is the existing per-pair command, so a progress root is refused for it.
+    """
     if progress_dir is not None and not progress_dir.is_dir():
         raise ReportError("the progress directory does not exist")
-    config = read_run_dir_config(run_dir)
+    config = read_run_dir_config(run_dir, allow_population=True)
     refuse_non_public(config)
+    population = isinstance(config.raw.get("population"), dict)
+    if population and progress_dir is not None:
+        raise ReportError(
+            "a progress root does not belong to a population run: "
+            "evaluate its members' pairs with the progress command"
+        )
     inputs: dict[str, str] = {layout.CONFIG: sha256_hex((run_dir / layout.CONFIG).read_bytes())}
     generations = []
     shas: dict[int, str] = {}
-    for number in generation_numbers(run_dir):
+    numbers = generation_numbers(run_dir)
+    for number in numbers:
         path = layout.generation_dir(run_dir, number)
         try:
             layout.verify_generation(path, number)
         except (layout.RunDirError, OSError, json.JSONDecodeError) as exc:
             raise ReportError(str(exc)) from exc
-        _check_synthetic(path, number)
+        if not population:
+            _check_synthetic(path, number)
         shas[number] = sha256_hex((path / layout.MANIFEST).read_bytes())
         inputs[f"generations/g{number:06d}/{layout.MANIFEST}"] = shas[number]
         if number == 0:
@@ -648,8 +668,14 @@ def read_report_model(run_dir: Path, progress_dir: Path | None) -> ReportModel:
                     0, shas[0], None, None, None, None, None, None, None, {}, None, None
                 )
             )
-        else:
+        elif not population:
             generations.append(_played_generation(number, path, config, shas[number], inputs))
+    facts = None
+    if population:
+        from areneon_ml.report.population import read_population_model  # noqa: PLC0415
+
+        built, facts = read_population_model(run_dir, config, numbers, shas, inputs)
+        generations = list(built)
     metrics = read_metrics(run_dir, config, sorted(shas), inputs)
     progress = (
         {} if progress_dir is None else read_progress_root(progress_dir, config, shas, inputs)
@@ -664,4 +690,5 @@ def read_report_model(run_dir: Path, progress_dir: Path | None) -> ReportModel:
         progress_dir is not None,
         dict(sorted(inputs.items())),
         family=family_label(config),
+        population=facts,
     )
