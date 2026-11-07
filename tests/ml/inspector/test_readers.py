@@ -97,6 +97,19 @@ def test_the_plan_refuses(change: Any, message: str) -> None:
         readers.read_plan({})
 
 
+def block(**change: Any) -> dict[str, Any]:
+    found: dict[str, Any] = {
+        "search_config_hash": "a" * 64,
+        "search_identity_hash": "b" * 64,
+        "selected": 2,
+        "labelled": 1,
+        "refused": [{"reason": "spread_below_min", "count": 1}],
+        "recomputed": 0,
+    }
+    found.update(change)
+    return found
+
+
 @pytest.mark.parametrize(
     ("change", "message"),
     [
@@ -113,22 +126,23 @@ def test_the_plan_refuses(change: Any, message: str) -> None:
         ),
         (lambda g: g.update(episode_hashes=["x"]), "SHA-256"),
         (lambda g: g.update(forfeit_causes=[]), "forfeit_causes"),
-        (lambda g: g.update(search_labels={"search_config_hash": "a" * 64}), "lacks"),
         (
-            lambda g: g.update(
-                search_labels={"search_config_hash": "a" * 64, "search_identity_hash": "x"}
-            ),
-            "SHA-256",
+            lambda g: g.update(search_labels={"search_config_hash": "a" * 64}),
+            "keys are not exactly",
         ),
+        (lambda g: g.update(search_labels=block(search_identity_hash="x")), "not a SHA-256"),
+        (lambda g: g.update(search_labels=block(extra=1)), "keys are not exactly"),
+        (lambda g: g.update(search_labels=block(selected=3, labelled=1)), "is not selected"),
+        (lambda g: g.update(search_labels=block(recomputed=-1)), "non-negative"),
         (
             lambda g: g.update(
-                search_labels={
-                    "search_config_hash": "a" * 64,
-                    "search_identity_hash": "b" * 64,
-                    "extra": 1,
-                }
+                search_labels=block(
+                    selected=3,
+                    labelled=1,
+                    refused=[{"reason": "b", "count": 1}, {"reason": "a", "count": 1}],
+                )
             ),
-            "extra",
+            "sorted",
         ),
         (lambda g: g.update(examples=True), "examples"),
         (lambda g: g.update(training_set_hash="x"), "training_set_hash"),
@@ -143,7 +157,7 @@ def test_the_generation_refuses(change: Any, message: str) -> None:
 
 def test_the_search_labels_block_of_a_labelled_generation_is_read() -> None:
     generation = load("generation.json")
-    generation["search_labels"] = {"search_config_hash": "a" * 64, "search_identity_hash": "b" * 64}
+    generation["search_labels"] = block()
     assert readers.read_generation(generation, 1).games
 
 

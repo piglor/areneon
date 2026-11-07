@@ -193,7 +193,9 @@ export async function labelEpisode(context: LabelContext, episode: Episode, hash
     const decision = await actor.label({ world, channel: observation.log, candidates, prior_ppm: prior.prior_ppm, stream });
     const refuse = (refused: LabelRefusal): void => void decisions.push({ request_seq, class: klass, refused });
     if (decision.kind === "refused") {
-      refuse(decision.reason === "belief_refused" ? "belief_refused" : "below_min_valid");
+      // Selection kept only requests with two or more non-pending candidates, so `too_few_candidates` cannot be the reason.
+      if (decision.reason === "too_few_candidates") throw new LabelError("the search found too few candidates in a decision the labeller selected");
+      refuse(decision.reason);
       continue;
     }
     if (dropped() > before) {
@@ -234,30 +236,68 @@ export interface LabelEpisodeRef {
   game: number;
 }
 
+const errorFile = (dir: string, hash: string): string => join(dir, `${hash}.search.error`);
+
+/** The class of the error a labeller left for an Episode (`<hash>.search.error`), or undefined. */
+export function readLabelError(dir: string, hash: string): string | undefined {
+  try {
+    return readFileSync(errorFile(dir, hash), "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+/** One labeller worker (a started policy client); a process labels with all of its workers, one Episode per worker at a time. */
+type LabelClient = LabelContext["client"];
+
+/** Spread `refs` over `clients` (Episode i to client i mod n) and run `each` on every one, the clients in parallel, a client's Episodes one after another. */
+async function spread<T extends LabelEpisodeRef>(clients: readonly LabelClient[], refs: readonly T[], each: (client: LabelClient, ref: T) => Promise<boolean>, stopped: () => boolean): Promise<number> {
+  const done = await Promise.all(
+    clients.map(async (client, worker) => {
+      let n = 0;
+      for (const [index, ref] of refs.entries()) {
+        if (index % clients.length !== worker) continue;
+        if (stopped()) break;
+        if (await each(client, ref)) n += 1;
+      }
+      return n;
+    }),
+  );
+  return done.reduce((a, b) => a + b, 0);
+}
+
 /**
- * Label each Episode and leave its file in `dir`. An Episode that cannot be read or labelled gets no file (and a line on stderr that
- * names no content): the stream writer recomputes it, and fails the generation if it fails again or too many are missing.
+ * Label each Episode with every worker of the process (Episodes spread over `clients`, default the context's one; the files are the
+ * same whatever the spread, because a label is a pure function of its Episode) and leave its file in `dir`. An Episode that cannot
+ * be read or labelled gets no file but a `.search.error` file naming the error class (never content) and a line on stderr: the
+ * stream writer recomputes it, and fails the generation if that fails again or too many are missing.
  */
 export async function writeLabelFiles(
   context: LabelContext & { known_synthetic: SyntheticTeamHashes; behaviour_policy_id: string },
   episodes: readonly LabelEpisodeRef[],
   dir: string,
   stopped: () => boolean = () => false,
+  clients: readonly LabelClient[] = [context.client],
 ): Promise<number> {
-  let written = 0;
   const { identity_hash } = labelPolicy(context.labels, context.client);
-  for (const ref of episodes) {
-    if (stopped()) break;
-    try {
-      if (readEpisodeLabels(dir, ref.hash, identity_hash) !== undefined) continue;
-      const episode = await readStored(context, ref);
-      writeEpisodeLabels(dir, await labelEpisode(context, episode, ref.hash, ref.game));
-      written += 1;
-    } catch (error) {
-      process.stderr.write(`search labels skipped for game ${ref.game}: ${(error as Error).name}\n`);
-    }
-  }
-  return written;
+  return spread(
+    clients,
+    episodes,
+    async (client, ref) => {
+      try {
+        if (readEpisodeLabels(dir, ref.hash, identity_hash) !== undefined) return false;
+        const episode = await readStored(context, ref);
+        writeEpisodeLabels(dir, await labelEpisode({ ...context, client }, episode, ref.hash, ref.game));
+        return true;
+      } catch (error) {
+        process.stderr.write(`search labels skipped for game ${ref.game}: ${(error as Error).name}\n`);
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(errorFile(dir, ref.hash), (error as Error).name);
+        return false;
+      }
+    },
+    stopped,
+  );
 }
 
 async function readStored(context: { known_synthetic: SyntheticTeamHashes; behaviour_policy_id: string }, ref: LabelEpisodeRef): Promise<Episode> {
@@ -291,6 +331,8 @@ export interface LabelStreamInput {
   /** The label stream's file. */
   path: string;
   limits?: ChunkLimits;
+  /** The process's workers, over which missing files are recomputed (default the context's one). */
+  clients?: readonly LabelClient[];
   /** The share of missing files that fails the generation (default `MAX_MISSING_PERCENT`; a test seam). */
   max_missing_percent?: number;
   /** The run's candidate features, for the examples' rows (as the PPO stream carries them). */
@@ -310,18 +352,24 @@ export async function writeLabelStream(input: LabelStreamInput): Promise<LabelSt
   const missing = ordered.filter((ref) => readEpisodeLabels(dir, ref.hash, identity_hash) === undefined);
   const allowed = input.max_missing_percent ?? MAX_MISSING_PERCENT;
   if (missing.length * 100 > ordered.length * allowed) {
-    throw new LabelError(`${missing.length} of ${ordered.length} Episodes have no search label file: more than ${allowed}% missing is a harness incident`);
+    const first = missing.map((ref) => readLabelError(dir, ref.hash)).find((name) => name !== undefined);
+    throw new LabelError(`${missing.length} of ${ordered.length} Episodes have no search label file: more than ${allowed}% missing is a harness incident${first === undefined ? "" : ` (first labeller error: ${first})`}`);
   }
   const totals: LabelTotals = { selected: 0, labelled: 0, refused: {}, classes: {}, recomputed: missing.length };
   const found = new Map<string, EpisodeLabels>();
-  for (const ref of ordered) {
-    let labels = readEpisodeLabels(dir, ref.hash, identity_hash);
-    if (labels === undefined) {
-      labels = await labelEpisode(context, await readStored(context, ref), ref.hash, ref.game);
+  // The missing files are made again by all of the process's workers (a failure here is the generation's: it propagates).
+  await spread(
+    input.clients ?? [context.client],
+    missing,
+    async (client, ref) => {
+      const labels = await labelEpisode({ ...context, client }, await readStored(context, ref), ref.hash, ref.game);
       writeEpisodeLabels(dir, labels);
-    }
-    found.set(ref.hash, labels);
-  }
+      found.set(ref.hash, labels);
+      return true;
+    },
+    () => false,
+  );
+  for (const ref of ordered) if (!found.has(ref.hash)) found.set(ref.hash, readEpisodeLabels(dir, ref.hash, identity_hash) as EpisodeLabels);
   const writer = new ChunkedFileWriter(path, limits);
   const digest = createHash("sha256");
   const withLabels: string[] = [];
@@ -361,8 +409,7 @@ export async function writeLabelStream(input: LabelStreamInput): Promise<LabelSt
     return { set: null, totals };
   }
   totals.labelled = count;
-  // `LABEL_REFUSALS` is sorted by code unit, which is the order the manifest's reader requires.
-  const refused = LABEL_REFUSALS.filter((reason) => (totals.refused[reason] ?? 0) > 0).map((reason) => ({ reason, count: totals.refused[reason] as number }));
+  const { refused } = labelCounts(totals);
   const set = readTrainingSet({
     schema_version: 1,
     data_class: "synthetic",
@@ -375,4 +422,14 @@ export async function writeLabelStream(input: LabelStreamInput): Promise<LabelSt
     search_labels: { search_identity_hash: identity_hash, labelled: count, refused },
   });
   return { set, totals };
+}
+
+/**
+ * The generation's counts as `generation.json` states them (`search_labels`): how many decisions were selected, labelled and refused
+ * (by reason, sorted) and how many Episodes the writer had to label again. Counts only; the diagnostic classes stay out.
+ */
+export function labelCounts(totals: LabelTotals): { selected: number; labelled: number; refused: { reason: string; count: number }[]; recomputed: number } {
+  // `LABEL_REFUSALS` is sorted by code unit, the order the manifest's reader requires.
+  const refused = LABEL_REFUSALS.filter((reason) => (totals.refused[reason] ?? 0) > 0).map((reason) => ({ reason, count: totals.refused[reason] as number }));
+  return { selected: totals.selected, labelled: totals.labelled, refused, recomputed: totals.recomputed };
 }

@@ -69,18 +69,29 @@ class LabelPlayer(FakePlayer):
         if generation < START:
             return
         out = request.out_dir
-        summary = layout.read_json(out / "generation.json")
-        summary["search_labels"] = {
-            "search_config_hash": LABEL_CONFIG,
-            "search_identity_hash": self.identity_for(generation),
-        }
-        layout.write_json(out / "generation.json", summary)
+        identity = self.identity_for(generation)
+
+        def state(selected: int, labelled: int, refused: list[dict[str, Any]]) -> None:
+            summary = layout.read_json(out / "generation.json")
+            summary["search_labels"] = {
+                "search_config_hash": LABEL_CONFIG,
+                "search_identity_hash": identity,
+                "selected": selected,
+                "labelled": labelled,
+                "refused": refused,
+                "recomputed": 0,
+            }
+            layout.write_json(out / "generation.json", summary)
+
         if self.skip:
             # One of the two label files only: an incomplete stream.
+            state(1, 1, [])
             layout.write_json(out / "label-set.json", {})
             return
         if self.empty:
-            return  # a generation in which nothing was labelled writes no label files
+            # Nothing was labelled: the counts say so, and there are no label files.
+            state(5, 0, [{"reason": "spread_below_min", "count": 5}])
+            return
         picker, rng = random.Random(generation), random.Random(100 + generation)
         examples = []
         for player in ("p1", "p2"):
@@ -102,10 +113,11 @@ class LabelPlayer(FakePlayer):
                 examples.append(base)
         text, manifest = stream_of(examples, request.policy_id)
         manifest["search_labels"] = {
-            "search_identity_hash": self.identity_for(generation),
+            "search_identity_hash": identity,
             "labelled": len(examples),
             "refused": [],
         }
+        state(len(examples), len(examples), [])
         (out / "labels.jsonl").write_text(text, encoding="utf-8")
         layout.write_json(out / "label-set.json", manifest)
 
@@ -237,8 +249,42 @@ def test_a_generation_with_no_label_files_has_no_labels(tmp_path: Path, clone_di
     distill_loop(run_dir, config, empty=True).run(RUN_GENERATIONS)
     last = layout.generation_dir(run_dir, RUN_GENERATIONS)
     assert not (last / "labels.jsonl").exists()
+    stated = layout.read_json(last / "generation.json")["search_labels"]
+    assert (stated["selected"], stated["labelled"]) == (5, 0)
     report = layout.read_json(last / "train-report.json")
     assert report["battle"]["search_labels"] == 0
+
+
+def test_the_counts_must_agree_with_the_files(tmp_path: Path, clone_dir: Path) -> None:
+    config = distilling_config(clone_ids(clone_dir))
+    from tests.ml.loop.support import make_loop  # noqa: PLC0415
+
+    class Lies(LabelPlayer):
+        def play(self, request: PlayRequest) -> None:
+            super().play(request)
+            summary = layout.read_json(request.out_dir / "generation.json")
+            if "search_labels" not in summary:
+                return
+            block = summary["search_labels"]
+            if self.mode == "files-for-none":
+                block.update(selected=block["selected"] - block["labelled"], labelled=0)
+                block["refused"] = []
+            else:  # "other count"
+                block.update(selected=block["selected"] + 1, labelled=block["labelled"] + 1)
+            layout.write_json(request.out_dir / "generation.json", summary)
+
+        mode = "other count"
+
+    for mode, message in (
+        ("files-for-none", "label files exist for a generation with no label"),
+        ("other count", "counts other labels than the manifest"),
+    ):
+        run_dir = tmp_path / mode.replace(" ", "-")
+        import_clone(clone_dir, run_dir)
+        lies = Lies(config)
+        lies.mode = mode
+        with pytest.raises(LoopError, match=message):
+            make_loop(run_dir, config, lies).run(RUN_GENERATIONS)
 
 
 def test_a_missing_label_stream_or_summary_block_stops_the_generation(
@@ -257,7 +303,7 @@ def test_a_missing_label_stream_or_summary_block_stops_the_generation(
 
     from tests.ml.loop.support import make_loop  # noqa: PLC0415
 
-    with pytest.raises(LoopError, match="does not state the run's label search config"):
+    with pytest.raises(LoopError, match="search_labels is not an object"):
         make_loop(other, config, NoBlock(config=config)).run(RUN_GENERATIONS)
 
 

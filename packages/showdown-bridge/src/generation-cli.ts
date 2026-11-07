@@ -19,6 +19,7 @@ import { ChunkedFileWriter, readFileLines } from "./chunked-file.ts";
 import { resolveFormat } from "./formats.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
 import { type BeliefFeaturesFactory, SheetTotals } from "./belief-features.ts";
+import { labelCounts } from "./search-labeller.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import { PastPoolError, readPastPool } from "./past-pool.ts";
 import { leaveFigures, printProfile, startProfile, stopProfile, timed } from "./profile.ts";
@@ -301,6 +302,8 @@ export async function runGenerationCli(
     mkdirSync(need("out"), { recursive: true });
     const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, stream_path: join(need("out"), "stream.jsonl"), episodes_dir: episodesDir, ...labelArgs, ...(labelling ? { labels_path: join(need("out"), "labels.jsonl") } : {}), belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, features_dir: featuresDir, ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()), live_children: () => children.filter((child) => child.alive()).length });
     timed("merge", () => writeGeneration(need("out"), result));
+    // The labelling counts of this generation (also in generation.json): a generation with no label is told from a broken labeller by them.
+    if (result.labels !== undefined) process.stderr.write(`search labels: ${jcs(labelCounts(result.labels.totals) as unknown as Json)}\n`);
     sheetArgs.report();
     print(jcs({ generation, run_config_hash: await runConfigHash(config), training_set_hash: result.training_set_hash, examples: result.set.examples }));
     // After the summary line, so a reader of the first line is unchanged: the peak memory of this process, its workers and the further game processes.

@@ -13,7 +13,9 @@ import {
   GenerationError,
   jcs,
   type Json,
+  labelCounts,
   labelEpisode,
+  readLabelError,
   labelPolicy,
   labelSetup,
   labelSelected,
@@ -267,8 +269,14 @@ describe("a generation that labels", () => {
       // every file of the generation: the label manifest and the summary's block
       writeGeneration(single.base, result);
       expect(JSON.parse(text(join(single.base, "label-set.json")))).toEqual(set);
-      const summary = JSON.parse(text(join(single.base, "generation.json"))) as { search_labels: Record<string, string> };
-      expect(summary.search_labels).toEqual({ search_config_hash: searchConfigHash(label), search_identity_hash: result.labels?.search_identity_hash });
+      const summary = JSON.parse(text(join(single.base, "generation.json"))) as { search_labels: Record<string, unknown> };
+      // the counts are in the summary: how many were selected, labelled and refused (by reason), none of the diagnostic classes
+      const counts = labelCounts(result.labels?.totals as NonNullable<typeof result.labels>["totals"]);
+      expect(summary.search_labels).toEqual({ search_config_hash: searchConfigHash(label), search_identity_hash: result.labels?.search_identity_hash, ...counts });
+      expect(counts.labelled).toBe(set.examples);
+      expect(counts.labelled + counts.refused.reduce((a, r) => a + r.count, 0)).toBe(counts.selected);
+      expect(counts.refused.map((r) => r.reason)).toEqual([...counts.refused.map((r) => r.reason)].sort());
+      expect(JSON.stringify(summary)).not.toContain("unseen_brought");
       const noLabels = dirsFor(root, "plain-written");
       writeGeneration(noLabels.base, await playGeneration(labelled(undefined, noLabels)));
       const { search_labels: _block, ...rest } = summary as Record<string, unknown>;
@@ -320,10 +328,32 @@ describe("a generation that labels", () => {
       expect(text(split.labelsPath)).toBe(text(single.labelsPath));
       expect(jcs(parent.labels?.set as unknown as Json)).toBe(jcs(set as unknown as Json));
       expect(parent.labels?.totals.recomputed).toBe(0);
+
+      // every worker of a process labels (Episodes spread over them): the same files
+      const peered = dirsFor(root, "peered");
+      const withPeers = await playGeneration(labelled(labels, peered, { peers: [new Worker() as never, new Worker() as never] }));
+      expect(text(peered.stream)).toBe(text(single.stream));
+      expect(text(peered.labelsPath)).toBe(text(single.labelsPath));
+      expect(jcs(withPeers.labels?.set as unknown as Json)).toBe(jcs(set as unknown as Json));
+      // and the writer's own recomputation, over several workers, is the same too
+      const recomputed = dirsFor(root, "recomputed");
+      const again2 = await writeLabelStream({ context: { ...contextFor(labels), known_synthetic: known, behaviour_policy_id: POLICY }, clients: [new Worker(), new Worker()], episodes: withGames, dir: recomputed.labels, path: recomputed.labelsPath, max_missing_percent: 100 });
+      expect(text(recomputed.labelsPath)).toBe(text(single.labelsPath));
+      expect(again2.totals.recomputed).toBe(withGames.length);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   }, 1_800_000);
+
+  it("requires labels_dir up front, with a clear error, not a fallback that fails later", async () => {
+    const root = tmp();
+    try {
+      const dirs = dirsFor(root, "no-dir");
+      await expect(playGeneration({ ...labelled(labelsFor(400_000), dirs), labels_dir: undefined })).rejects.toThrow("labels need labels_dir");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 300_000);
 
   it("is not labelled before its start generation, and a generation without a spill directory is refused", async () => {
     const root = tmp();
@@ -402,6 +432,10 @@ describe("every reason a selected decision has no label", () => {
       const identity = labelPolicy(labels, context.client).identity_hash;
       expect(await writeLabelFiles(context, [{ hash: "0".repeat(64), path: join(root, "missing.json"), game: 0 }], dir)).toBe(0);
       expect(readEpisodeLabels(dir, "0".repeat(64), identity)).toBeUndefined();
+      // the error class is left for the writer, which names it when too many files are missing
+      expect(readLabelError(dir, "0".repeat(64))).toBe("Error");
+      expect(readLabelError(dir, "1".repeat(64))).toBeUndefined();
+      await expect(writeLabelStream({ context, episodes: [{ hash: "0".repeat(64), path: join(root, "missing.json"), game: 0 }], dir, path: join(root, "e.jsonl") })).rejects.toThrow("first labeller error: Error");
       expect(await writeLabelFiles(context, [{ hash, path, game: 0 }], dir, () => true)).toBe(0);
       expect(readEpisodeLabels(dir, hash, identity)).toBeUndefined();
       expect(await writeLabelFiles(context, [{ hash, path, game: 0 }], dir)).toBe(1);

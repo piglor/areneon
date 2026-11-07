@@ -14,6 +14,7 @@ from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Any
 
+from areneon_ml.loop.label_counts import LabelCountsError, read_label_counts
 from areneon_ml.loop.sheet_counts import SheetCounts, SheetCountsError, read_sheet_counts
 
 HEX64 = re.compile(r"[0-9a-f]{64}")
@@ -51,7 +52,6 @@ GENERATION_KEYS = (
     ),
     frozenset({"forfeit_causes", "search_labels"}),
 )
-SEARCH_LABELS_KEYS = (frozenset({"search_config_hash", "search_identity_hash"}), frozenset[str]())
 VERSION_MANIFEST_KEYS = (
     frozenset({"format_id", "format_rules_hash", "regulation", "ruleset_hash", "showdown_commit"}),
     frozenset[str](),
@@ -274,11 +274,11 @@ def read_generation(raw: object, generation: int) -> GenerationFile:
             text(k, "forfeit_causes key"): integer(v, "forfeit_causes value")
             for k, v in causes.items()
         }
-    labels = body.get("search_labels")
-    if labels is not None:
-        block = closed(labels, SEARCH_LABELS_KEYS, "generation.json search_labels")
-        for key in SEARCH_LABELS_KEYS[0]:
-            hash64(block[key], f"search_labels {key}")
+    if "search_labels" in body:
+        try:
+            read_label_counts(body["search_labels"], "generation.json search_labels")
+        except LabelCountsError as exc:
+            raise InspectError(str(exc)) from exc
     for name in ("episode_hashes", "team_hashes"):
         for item in array(body[name], name):
             hash64(item, f"{name} entry")

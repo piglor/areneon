@@ -10,8 +10,7 @@
 // generator is not built yet, and this pool is the interim. Every team drawn
 // is reported by its hash, which becomes the team-set manifest of the run.
 
-import { closeSync, fsyncSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { jcs, type Json } from "./canonical-json.ts";
@@ -51,7 +50,7 @@ import type { TrainingRunConfig } from "./training-run-config.ts";
 import type { Episode } from "./episode.ts";
 import { loadSearchConfig, type SearchConfig, searchConfigHash } from "./search-config.ts";
 import type { SearchSetup } from "./search-actor.ts";
-import { type LabelContext, type LabelEpisodeRef, LabelError, labelPolicy, type LabelSetup, type LabelTotals, writeLabelFiles, writeLabelStream } from "./search-labeller.ts";
+import { type LabelContext, type LabelEpisodeRef, LabelError, labelCounts, labelPolicy, type LabelSetup, type LabelTotals, writeLabelFiles, writeLabelStream } from "./search-labeller.ts";
 
 /** The teams a run may draw: synthetic by source, in a fixed order. */
 export interface TrainingPool {
@@ -386,7 +385,7 @@ export interface GenerationOptions {
    * about the PPO stream, the Episodes or any other file changes.
    */
   labels?: LabelSetup;
-  /** The scratch directory the game processes leave their label files in (default: one made and removed by `playGeneration`). */
+  /** The scratch directory the game processes leave their label files in; required with `labels` (at or after its start generation). */
   labels_dir?: string | undefined;
   /** Where the label stream is written; `writeGeneration` expects `<dir>/labels.jsonl`. */
   labels_path?: string;
@@ -745,7 +744,13 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
   if (labelsActive(options) && options.labels_dir !== undefined && options.episodes_dir !== undefined) {
     const dir = options.episodes_dir;
     const own = labelRefs(entries, policy_id, dir);
-    await writeLabelFiles(labelContext(withRecords, client), own, options.labels_dir, () => options.signal?.aborted === true);
+    // All of this process's workers label (Episodes spread over them); the idle watchdog sees the process busy meanwhile.
+    activity.busy++;
+    try {
+      await writeLabelFiles(labelContext(withRecords, client), own, options.labels_dir, () => options.signal?.aborted === true, workers as LabelContext["client"][]);
+    } finally {
+      activity.busy--;
+    }
   }
   return entries;
 }
@@ -848,6 +853,7 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
   let episodeHashes: string[];
   let labelled: GenerationResult["labels"];
   if (labelsActive(options) && options.episodes_dir === undefined) throw new GenerationError("labels need episodes_dir");
+  if (labelsActive(options) && options.labels_dir === undefined) throw new GenerationError("labels need labels_dir: the scratch directory the game processes leave their label files in");
   if (options.episodes_dir !== undefined) {
     if (options.stream_path === undefined) throw new GenerationError("episodes_dir needs stream_path");
     const dir = options.episodes_dir;
@@ -859,12 +865,12 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
     if (labelsActive(options)) {
       if (options.labels_path === undefined) throw new GenerationError("labels need labels_path");
       const labels = options.labels as LabelSetup;
-      const scratch = options.labels_dir ?? mkdtempSync(join(tmpdir(), "areneon-labels-"));
       try {
         const written = await writeLabelStream({
           context: labelContext(options, options.client),
+          clients: [options.client, ...(options.peers ?? [])] as LabelContext["client"][],
           episodes: labelRefs(entries, policy_id, dir),
-          dir: scratch,
+          dir: options.labels_dir as string,
           path: options.labels_path,
           limits,
           ...(options.features === undefined ? {} : { features: { engine, configs: options.features, ...(options.features_dir === undefined ? {} : { precomputed: readFeatureRows(engine, options.features, options.features_dir) }) } }),
@@ -873,8 +879,6 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
       } catch (error) {
         if (error instanceof LabelError) throw new GenerationError(error.message);
         throw error;
-      } finally {
-        if (options.labels_dir === undefined) rmSync(scratch, { recursive: true, force: true });
       }
     }
   } else {
@@ -954,7 +958,7 @@ export function writeGeneration(dir: string, result: GenerationResult): void {
     manifest: result.manifest,
     team_hashes: result.team_hashes,
     // Present only in a labelled generation, so every other run writes the bytes it always did.
-    ...(result.labels === undefined ? {} : { search_labels: { search_config_hash: result.labels.search_config_hash, search_identity_hash: result.labels.search_identity_hash } }),
+    ...(result.labels === undefined ? {} : { search_labels: { search_config_hash: result.labels.search_config_hash, search_identity_hash: result.labels.search_identity_hash, ...labelCounts(result.labels.totals) } }),
   });
   syncDir(episodes);
   syncDir(dir);

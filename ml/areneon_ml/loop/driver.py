@@ -42,6 +42,7 @@ from areneon_ml.learner.parallel import fit_processes
 from areneon_ml.learner.state import pack_state, restore_state
 from areneon_ml.learner.trainer import Learner, configure_learner
 from areneon_ml.loop import layout
+from areneon_ml.loop.label_counts import LabelCountsError, read_label_counts
 from areneon_ml.loop.league import (
     LeagueRecordError,
     LeagueRunRecord,
@@ -467,10 +468,12 @@ class Loop:
         (``ppo.search_distill``, ADR-026 erratum E2), and the hashes of the label sets read.
 
         ``None`` without the block. Before ``generation.search_labels.start_generation`` there are
-        none yet (an empty list). From it, each generation's ``labels.jsonl`` and ``label-set.json``
-        must exist and be made under the search identity that generation's own ``generation.json``
-        states, whose label config hash must be the run config's. An older generation is read only
-        after its manifest verifies.
+        none yet (an empty list). From it, each generation's ``generation.json`` must state a
+        ``search_labels`` block (hashes and counts) whose label config hash is the run config's.
+        A generation in which nothing was labelled has no label files (the contract holds at least
+        one example) and its block says ``labelled`` 0; one that labelled has both files, made under
+        the identity its block states, and its count is the manifest's. An older generation is read
+        only after its manifest verifies.
         """
         settings = self.config.ppo.search_distill
         if settings is None:
@@ -495,27 +498,34 @@ class Loop:
                 layout.verify_generation(where, g)
                 stated = layout.read_json(where / "generation.json")
                 played_by = layout.read_json(where / "league-run.json")["pair_policy_id"]
-            block = stated.get("search_labels")
-            if (
-                not isinstance(block, dict)
-                or block.get("search_config_hash") != generation_settings.search_config_hash
-                or not isinstance(block.get("search_identity_hash"), str)
-            ):
+            try:
+                block = read_label_counts(stated.get("search_labels"))
+            except LabelCountsError as exc:
+                raise LoopError(f"generation {g}: {exc}") from exc
+            if block.search_config_hash != generation_settings.search_config_hash:
                 raise LoopError(
                     f"generation {g}: generation.json does not state the run's label search "
                     "config hash and identity"
                 )
             present = (where / "label-set.json").is_file(), (where / "labels.jsonl").is_file()
-            if present == (False, False):
-                # No decision was labelled: the label contract holds at least one example, so a
-                # generation with none writes no label files (its summary still states the block).
+            if block.labelled == 0:
+                # Nothing was labelled (the counts show how many decisions were selected and why
+                # they were refused): no label files, and none may be there.
+                if any(present):
+                    raise LoopError(
+                        f"generation {g}: label files exist for a generation with no label"
+                    )
                 continue
             if not all(present):
                 raise LoopError(f"generation {g}: its label stream is missing")
             manifest = layout.read_json(where / "label-set.json")
             found = reader.read(
-                where / "labels.jsonl", manifest, played_by, block["search_identity_hash"]
+                where / "labels.jsonl", manifest, played_by, block.search_identity_hash
             )
+            if manifest["examples"] != block.labelled:
+                raise LoopError(
+                    f"generation {g}: generation.json counts other labels than the manifest"
+                )
             steps.extend(found.steps)
             hashes.add(sha256_hex(jcs(manifest)))
         return steps, tuple(sorted(hashes))
