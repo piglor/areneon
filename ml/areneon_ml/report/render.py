@@ -25,6 +25,7 @@ from areneon_ml.progress.records import (
     SOLVE_CONTROL_LABEL,
     SOLVE_EVIDENCE_NOTE,
     SOLVE_LABEL,
+    SOLVE_LATENCY_INVALID,
     SOLVE_PRIOR_LABEL,
 )
 from areneon_ml.report.charts import Pt, Series, Stack, Tips, line_chart, stacked_chart
@@ -326,7 +327,12 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:  # noqa: PLR0915
                     esc(m.match_id)
                     + (f' <span class="muted">({esc(m.seen_label)})</span>' if m.seen_label else "")
                     + (f' <span class="muted">({esc(SEARCH_LABEL)})</span>' if m.search else "")
-                    + (f' <span class="muted">({esc(SOLVE_LABEL)})</span>' if m.solve else ""),
+                    + (f' <span class="muted">({esc(SOLVE_LABEL)})</span>' if m.solve else "")
+                    + (
+                        f' <span class="muted">({esc(SOLVE_LATENCY_INVALID)})</span>'
+                        if _solve_latency_invalid(m)
+                        else ""
+                    ),
                     esc(_mode(m)),
                     str(m.games),
                     f"{m.wins} / {m.ties} / {m.losses}",
@@ -1206,6 +1212,13 @@ def _search_section(model: ReportModel, done: list[int]) -> str:
     )
 
 
+def _solve_latency_invalid(m: Any) -> bool:
+    """A solver match whose solver seat lost a game to the latency budget (shown, never a stop)."""
+    return m.solve is not None and any(
+        side == "candidate" and cause == "latency_overrun" for side, cause, _ in m.forfeits
+    )
+
+
 def _solve_section(model: ReportModel, done: list[int]) -> str:
     """The Team Preview solver's counts per match (ADR-029 section 8), summed over its games, and
     the no-solve control's beside them (solved 0). Labelled, never held-out evidence; wall time is
@@ -1229,6 +1242,9 @@ def _solve_section(model: ReportModel, done: list[int]) -> str:
                         str(c["worlds_asked"]),
                         str(c["worlds_refused"] + c["worlds_unstarted"]),
                         str(c["payoff"]["value_queries"]),
+                        esc(SOLVE_LATENCY_INVALID if _solve_latency_invalid(m) else "valid")
+                        if who == "solver"
+                        else "",
                         f'<span class="m">{esc(block["identity_hash"][:16])}</span>',
                     ]
                 )
@@ -1251,6 +1267,7 @@ def _solve_section(model: ReportModel, done: list[int]) -> str:
                 ("Worlds asked", True),
                 ("Worlds lost", True),
                 ("Value queries", True),
+                ("Status", False),
                 ("Solver identity (first 16 hex)", False),
             ],
             rows,

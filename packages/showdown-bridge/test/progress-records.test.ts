@@ -361,6 +361,7 @@ describe("the Team Preview solver candidate's counts and the self-no-solve contr
     ["psolve-misnamed", "named psolve-<opponent>-<mode> exactly when"],
     ["psolve-on-plain-match", "named psolve-<opponent>-<mode> exactly when"],
     ["psolve-mixed-with-plain", "solver matches only"],
+    ["psolve-budget-below-preview", "at least latency_budget_ms.preview_ms"],
     ["psolve-no-budget", "preview_solve_budget_ms is present exactly when"],
     ["budget-on-plain-record", "preview_solve_budget_ms is present exactly when"],
     ["psolve-with-search", "never both"],

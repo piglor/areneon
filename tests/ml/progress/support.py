@@ -582,7 +582,11 @@ def progress_files(  # noqa: PLR0912, PLR0915
                 if request.evaluation_key is not None
                 else {}
             ),
-            **({"preview_solve_budget_ms": 30000} if solving else {}),
+            **(
+                {"preview_solve_budget_ms": max(30000, config.generation.preview_ms)}
+                if solving
+                else {}
+            ),
             "max_turns": config.generation.max_turns,
             "latency_budget_ms": {
                 "preview_ms": config.generation.preview_ms,

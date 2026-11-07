@@ -666,7 +666,7 @@ class Plan(BaseModel):
         StrictInt | MISSING, Field(ge=1, le=9007199254740991)
     ] = MISSING
     """
-    The Team Preview latency budget the solver's config declares (ADR-029 section 4), in ms. Present exactly when the record has solver matches: every game of those matches runs with a Team Preview budget of at least this, the control's included; latency_budget_ms stays the run config's.
+    The Team Preview latency budget the games of the solver matches ran with (ADR-029 section 8), in ms: the larger of the run config's latency_budget_ms.preview_ms and the solver config's budget_ms, for every seat of those matches, the control's included. Present exactly when the record has solver matches. Reader rule: at least latency_budget_ms.preview_ms (the solver config is not named by the record, so its budget_ms is not checked there; the command raises the budget to it before the games). latency_budget_ms itself stays the run config's.
     """
     max_turns: Annotated[StrictInt, Field(ge=1, le=9007199254740991)]
     """

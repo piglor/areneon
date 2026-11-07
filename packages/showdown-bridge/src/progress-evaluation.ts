@@ -766,7 +766,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       recorded_games_per_match: record_games,
       ...(anchors.length === 0 ? {} : { anchor_games_per_match: anchorGames }),
       ...(versus === undefined ? {} : { run_games_per_match: runGames }),
-      ...(solveBudgetMs === undefined ? {} : { preview_solve_budget_ms: solveBudgetMs }),
+      ...(solveBudgetMs === undefined ? {} : { preview_solve_budget_ms: gameBudget.preview_ms }),
       ...(evaluationKey === undefined ? {} : { evaluation_key: evaluationKey }),
       max_turns: config.generation.max_turns,
       latency_budget_ms: budget,

@@ -365,6 +365,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/progress-evaluation-record-2/reader-invalid/pair-is-game.json",
       "v1/progress-evaluation-record-2/reader-invalid/pairs-used-wrong.json",
       "v1/progress-evaluation-record-2/reader-invalid/plan-label-is-run-id.json",
+      "v1/progress-evaluation-record-2/reader-invalid/psolve-budget-below-preview.json",
       "v1/progress-evaluation-record-2/reader-invalid/psolve-control-counts-on-baseline.json",
       "v1/progress-evaluation-record-2/reader-invalid/psolve-control-mode-differs.json",
       "v1/progress-evaluation-record-2/reader-invalid/psolve-control-other-identity.json",

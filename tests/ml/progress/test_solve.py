@@ -6,23 +6,28 @@ import copy
 import dataclasses
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from areneon_ml.loop import layout
 from areneon_ml.loop.records import policy_id
+from areneon_ml.progress import run as run_module
 from areneon_ml.progress.records import (
     SOLVE_CONTROL_LABEL,
     SOLVE_EVIDENCE_NOTE,
     SOLVE_LABEL,
+    SOLVE_LATENCY_INVALID,
     SOLVE_PRIOR_LABEL,
     ProgressRecordError,
     read_game_record,
     read_progress_record,
+    solve_latency_invalid,
     sum_solve_counts,
 )
-from areneon_ml.progress.run import ProgressError, summary_of, verify_progress_dir
+from areneon_ml.progress.run import ProgressError, solve_status, summary_of, verify_progress_dir
 from areneon_ml.progress.run import progress_generation as _progress_generation
+from areneon_ml.report.render import _solve_latency_invalid
 
 from tests.ml.progress.support import (
     SOLVE_IDENTITY,
@@ -224,6 +229,7 @@ def test_the_corpus_samples_read_and_the_reader_invalid_ones_do_not() -> None:
         "psolve-on-plain-match",
         "psolve-mixed-with-plain",
         "psolve-no-budget",
+        "psolve-budget-below-preview",
         "budget-on-plain-record",
         "psolve-with-search",
         "psolve-solved-over-previews",
@@ -295,3 +301,71 @@ def test_summing_counts_merges_the_belief_refusals_by_key() -> None:
         {"key": "species_not_in_prior", "count": 2},
     ]
     assert total["fallbacks"]["belief_refusal"] == 3
+
+
+def test_a_latency_forfeit_of_the_solver_seat_marks_the_match_invalid() -> None:
+    record = sample(f"{V2}/valid/psolve-match")
+    assert solve_status(record) == {"solve_status": {"valid": True, "invalid_matches": []}}
+    assert summary_of(record)[0]["solve"]["status"] == "valid"
+    match = record["matches"][0]
+    match["forfeits"] = [{"side": "candidate", "cause": "latency_overrun", "count": 1}]
+    assert solve_latency_invalid(match)
+    assert summary_of(record)[0]["solve"]["status"] == SOLVE_LATENCY_INVALID
+    assert solve_status(record) == {
+        "solve_status": {"valid": False, "invalid_matches": [match["match_id"]]}
+    }
+    # The opponent's latency forfeit, or another cause of the candidate's, does not mark it.
+    for forfeits in (
+        [{"side": "opponent", "cause": "latency_overrun", "count": 1}],
+        [{"side": "candidate", "cause": "crash", "count": 1}],
+    ):
+        match["forfeits"] = forfeits
+        assert not solve_latency_invalid(match)
+    assert solve_status(sample(f"{V2}/valid/search-match")) == {}
+
+
+def test_the_command_warns_on_stderr_and_keeps_the_status(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    record = sample(f"{V2}/valid/psolve-match")
+    assert run_module._warned(solve_status(record)) == solve_status(record)
+    assert capsys.readouterr().err == ""
+    record["matches"][0]["forfeits"] = [
+        {"side": "candidate", "cause": "latency_overrun", "count": 1}
+    ]
+    status = run_module._warned(solve_status(record))
+    assert status["solve_status"]["valid"] is False
+    assert SOLVE_LATENCY_INVALID in capsys.readouterr().err
+
+
+def test_the_solver_is_refused_for_a_pair_that_reads_features_or_the_sheet(
+    run: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(run_module, "features_hash", lambda config: "a" * 64)
+    with pytest.raises(ProgressError, match="candidate features or the opponent sheet"):
+        evaluate(run, tmp_path / "f", player(run), preview_solve="argmax")
+    monkeypatch.undo()
+    monkeypatch.setattr(run_module, "sheet_set", lambda options: object())
+    with pytest.raises(ProgressError, match="candidate features or the opponent sheet"):
+        evaluate(run, tmp_path / "s", player(run), preview_solve="argmax")
+    assert not (tmp_path / "f" / "g000001").exists()
+
+
+def test_a_budget_below_the_run_s_preview_budget_is_refused() -> None:
+    record = sample(f"{V2}/valid/psolve-match")
+    record["plan"]["preview_solve_budget_ms"] = (
+        record["plan"]["latency_budget_ms"]["preview_ms"] - 1
+    )
+    with pytest.raises(ProgressRecordError, match="at least latency_budget_ms"):
+        read_progress_record(record)
+    record["plan"]["preview_solve_budget_ms"] = record["plan"]["latency_budget_ms"]["preview_ms"]
+    read_progress_record(record)
+
+
+def test_the_dashboard_marks_a_solver_match_with_a_latency_forfeit() -> None:
+    late = SimpleNamespace(solve={"counts": {}}, forfeits=(("candidate", "latency_overrun", 1),))
+    other = SimpleNamespace(solve={"counts": {}}, forfeits=(("opponent", "latency_overrun", 1),))
+    plain = SimpleNamespace(solve=None, forfeits=(("candidate", "latency_overrun", 1),))
+    assert _solve_latency_invalid(late)
+    assert not _solve_latency_invalid(other)
+    assert not _solve_latency_invalid(plain)

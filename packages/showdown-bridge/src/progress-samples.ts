@@ -535,6 +535,7 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/psolve-row-missing": v2Solve((e) => delete e.games[0].solve),
       "progress-evaluation-record-2/psolve-misnamed": v2Solve((e) => renameMatch(e, "actor-rule-argmax")),
       "progress-evaluation-record-2/psolve-on-plain-match": withV2((e) => ((e.plan.preview_solve_budget_ms = 30000), (e.matches[0].solve = { identity_hash: solveHash, counts: solveCountsOf(5) }))),
+      "progress-evaluation-record-2/psolve-budget-below-preview": v2Solve((e) => (e.plan.preview_solve_budget_ms = e.plan.latency_budget_ms.preview_ms - 1)),
       "progress-evaluation-record-2/psolve-no-budget": v2Solve((e) => delete e.plan.preview_solve_budget_ms),
       "progress-evaluation-record-2/budget-on-plain-record": withV2((e) => (e.plan.preview_solve_budget_ms = 30000)),
       "progress-evaluation-record-2/psolve-mixed-with-plain": v2Solve((e) => {

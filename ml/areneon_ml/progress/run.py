@@ -39,6 +39,7 @@ from areneon_ml.loop.records import features_hash, policy_id
 from areneon_ml.loop.sheet_counts import read_sheet_counts
 from areneon_ml.model.gamedata import GameData
 from areneon_ml.model.network import ROLES
+from areneon_ml.model.options import sheet_set
 from areneon_ml.progress import evaluation_key as ekey
 from areneon_ml.progress.ablation import ablation_summary, expected_ablation_matches
 from areneon_ml.progress.eval_dataset import EvalDataset, EvalDatasetError, validation_teams
@@ -56,6 +57,7 @@ from areneon_ml.progress.records import (
     SOLVE_CONTROL_LABEL,
     SOLVE_EVIDENCE_NOTE,
     SOLVE_LABEL,
+    SOLVE_LATENCY_INVALID,
     SOLVE_PREFIX,
     SOLVE_PRIOR_LABEL,
     ProgressRecordError,
@@ -67,6 +69,7 @@ from areneon_ml.progress.records import (
     read_game_record,
     read_progress_record,
     record_hash,
+    solve_latency_invalid,
 )
 from areneon_ml.progress.seeds import check_not_training_seeds
 from areneon_ml.progress.stats import (
@@ -146,6 +149,16 @@ def sheet_status(record: dict[str, Any]) -> dict[str, Any]:
         return {}
     bad = [m["match_id"] for m in counted if not read_sheet_counts(m["sheet"]).valid]
     return {"sheet_status": {"valid": not bad, "invalid_matches": bad}}
+
+
+def solve_status(record: dict[str, Any]) -> dict[str, Any]:
+    """The solver matches of a record that lost a candidate-seat game to the latency budget;
+    empty without solver matches. Shown and warned, never a stop: the files are kept."""
+    counted = [m for m in record["matches"] if "solve" in m]
+    if not counted:
+        return {}
+    bad = [m["match_id"] for m in counted if solve_latency_invalid(m)]
+    return {"solve_status": {"valid": not bad, "invalid_matches": bad}}
 
 
 class ProgressError(ValueError):
@@ -1274,6 +1287,9 @@ def summary_of(record: dict[str, Any]) -> list[dict[str, Any]]:
                         "note": SOLVE_EVIDENCE_NOTE,
                         "identity_hash": match["solve"]["identity_hash"],
                         "counts": match["solve"]["counts"],
+                        "status": SOLVE_LATENCY_INVALID
+                        if solve_latency_invalid(match)
+                        else "valid",
                     }
                 }
                 if "solve" in match
@@ -1313,6 +1329,9 @@ def _warned(status: dict[str, Any]) -> dict[str, Any]:
     bad = status.get("sheet_status", {}).get("invalid_matches", [])
     if bad:
         print(f"progress: {INVALID_SHEET} in {', '.join(bad)}", file=sys.stderr)
+    late = status.get("solve_status", {}).get("invalid_matches", [])
+    if late:
+        print(f"progress: {SOLVE_LATENCY_INVALID} in {', '.join(late)}", file=sys.stderr)
     return status
 
 
@@ -1567,6 +1586,13 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
             "--previous-matches, --preview-ablation, --versus-run-dir, --search-mode "
             "or --preview-solve"
         )
+    if preview_solve is not None and (
+        features_hash(config) is not None or sheet_set(config.model.encoder.options) is not None
+    ):
+        raise ProgressError(
+            "the Team Preview solver is not played for a pair that reads candidate features or "
+            "the opponent sheet: the run's config names one"
+        )
     modes = _with_run_mode(
         config, modes, preview_ablation or search_mode is not None or preview_solve is not None
     )
@@ -1716,7 +1742,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
             | _gap_part(record)
             | _ablation_part(record)
             | _versus_part(record, relation, versus)
-            | _warned(sheet_status(record))
+            | _warned(sheet_status(record) | solve_status(record))
         )
 
 
@@ -1793,6 +1819,7 @@ def _skipped(  # noqa: PLR0913, PLR0917
         | _ablation_part(record)
         | _versus_part(record, held, versus)
         | sheet_status(record)
+        | solve_status(record)
     )
 
 

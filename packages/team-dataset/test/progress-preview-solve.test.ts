@@ -94,7 +94,8 @@ describe("the Team Preview solver candidate of the progress evaluation", () => {
     const named = previewSolvePolicy(setupFor(), manifest, checkpoints, "argmax");
     const { record } = first;
     expect(record.matches.map((m) => m.match_id)).toEqual(["psolve-actor-rule-argmax", "psolve-random-legal-argmax", "psolve-self-no-solve-argmax"]);
-    expect(record.plan.preview_solve_budget_ms).toBe(smallConfig().budget_ms);
+    // The effective budget the games ran with: the larger of the run's Team Preview budget and the solver config's.
+    expect(record.plan.preview_solve_budget_ms).toBe(Math.max(config.generation.latency_budget_ms.preview_ms, smallConfig().budget_ms));
     expect(record.plan.latency_budget_ms).toEqual({ preview_ms: config.generation.latency_budget_ms.preview_ms, battle_ms: config.generation.latency_budget_ms.battle_ms });
     for (const match of record.matches) {
       expect(match.policy_id).toBe(named.policy_id);
@@ -125,7 +126,9 @@ describe("the Team Preview solver candidate of the progress evaluation", () => {
   it("runs the games with a Team Preview budget of at least the config's, and leaves a plain record's plan as it was", async () => {
     // A config budget below the run's own leaves the run's preview budget in force; the record still names the solver's.
     const small = await playProgress(options({ preview_solve: { setup: setupFor((c) => (c.budget_ms = 1)), mode: "argmax" }, games: 2, record_games: 0 }));
-    expect(small.record.plan.preview_solve_budget_ms).toBe(1);
+    expect(small.record.plan.preview_solve_budget_ms).toBe(config.generation.latency_budget_ms.preview_ms);
+    const raised = await playProgress(options({ preview_solve: { setup: setupFor((c) => (c.budget_ms = 12_345_678)), mode: "argmax" }, games: 2, record_games: 0 }));
+    expect(raised.record.plan.preview_solve_budget_ms).toBe(12_345_678);
     const without = options({ games: 2, record_games: 0 });
     delete without.preview_solve;
     const plain = await playProgress(without);

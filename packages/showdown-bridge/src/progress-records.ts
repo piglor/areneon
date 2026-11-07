@@ -268,6 +268,7 @@ export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluati
   if (new Set(matches.map((match) => match.solve === undefined)).size > 1) fail("a solver record holds solver matches only: the Team Preview solver candidate is evaluated alone");
   if (matches.some((match) => match.solve !== undefined) && matches.some((match) => match.search !== undefined)) fail("a record holds search matches or solver matches, never both");
   if (matches.some((match) => match.solve !== undefined) !== (plan.preview_solve_budget_ms !== undefined)) fail("plan.preview_solve_budget_ms is present exactly when the record has solver matches");
+  if (plan.preview_solve_budget_ms !== undefined && plan.preview_solve_budget_ms < plan.latency_budget_ms.preview_ms) fail("plan.preview_solve_budget_ms is the Team Preview budget the games ran with: at least latency_budget_ms.preview_ms");
   const flat = ids.flatMap((id) => rowsOf.get(id) as RowV2[]);
   if (flat.some((row, index) => row !== games[index])) fail("game rows must be in match then game order");
   const identities = new Set<string>();

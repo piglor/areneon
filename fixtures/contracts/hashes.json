@@ -1137,6 +1137,7 @@
   "v1/progress-evaluation-record-2/reader-invalid/psolve-row-missing.json": "3e7fc019c44cb26df8f28254a49169a613ec7fb2ee7a847e41598e36872784bb",
   "v1/progress-evaluation-record-2/reader-invalid/psolve-misnamed.json": "005930eb5ef22d91b1284683cd3d0155f77d42f7b0a40f65a2195ed28a1e6edf",
   "v1/progress-evaluation-record-2/reader-invalid/psolve-on-plain-match.json": "bb0a2e107e584f6abe0002fd83b6fedce8b3b0762c4a3d4d13e178e24c9349d4",
+  "v1/progress-evaluation-record-2/reader-invalid/psolve-budget-below-preview.json": "30bd8671c9d6e6eee20f9a7c3ad2be64679380669608ffbcd9aff3b593dbf371",
   "v1/progress-evaluation-record-2/reader-invalid/psolve-no-budget.json": "0ab147b7ab1ba149f7a6f05349859bbe0a1f7859b8c3756040aea3c87ae3b768",
   "v1/progress-evaluation-record-2/reader-invalid/budget-on-plain-record.json": "ccfeeeb2373b0de5d7a3c3fd509bfa43539d58f33db502b706ddf2827f53b7ec",
   "v1/progress-evaluation-record-2/reader-invalid/psolve-mixed-with-plain.json": "d50e164bd096c9519228ba6aab5fa724cc164847f7c112ab94ccffb937790e69",

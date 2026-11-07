@@ -139,6 +139,18 @@ SOLVE_PAYOFF_KEYS = (
 )
 
 
+#: A solver match whose solver seat lost a game to the latency budget is not a measurement of the
+#: solver's play (E4's validity rule for sheet counts is the pattern): shown, never a stop.
+SOLVE_LATENCY_INVALID = "INVALID: latency forfeit of the solver seat"
+
+
+def solve_latency_invalid(match: dict[str, Any]) -> bool:
+    """Whether a solver match has a candidate-seat forfeit of cause ``latency_overrun``."""
+    return "solve" in match and any(
+        f["side"] == "candidate" and f["cause"] == "latency_overrun" for f in match["forfeits"]
+    )
+
+
 def sum_solve_counts(counts: list[dict[str, Any]]) -> dict[str, Any]:
     """The per-game solver counts summed, key by key (the belief refusals merged, sorted by key)."""
     total: dict[str, Any] = {key: sum(c[key] for c in counts) for key in SOLVE_COUNT_KEYS}
@@ -756,6 +768,14 @@ def _check_plan_v2(raw: dict[str, Any]) -> None:
     if any("solve" in m for m in matches) != ("preview_solve_budget_ms" in plan):
         raise ProgressRecordError(
             "plan.preview_solve_budget_ms is present exactly when the record has solver matches"
+        )
+    if (
+        plan.get("preview_solve_budget_ms", plan["latency_budget_ms"]["preview_ms"])
+        < (plan["latency_budget_ms"]["preview_ms"])
+    ):
+        raise ProgressRecordError(
+            "plan.preview_solve_budget_ms is the Team Preview budget the games ran with: "
+            "at least latency_budget_ms.preview_ms"
         )
     run_games = plan.get("run_games_per_match")
     if any(m["opponent"]["kind"] == "run" for m in matches) != (run_games is not None):
