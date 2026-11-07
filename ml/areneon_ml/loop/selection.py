@@ -192,7 +192,8 @@ def slot_state(
     """Each member's root and effective settings at the start of a generation.
 
     ``previous`` is the committed record of the generation before (``None`` at generation 1, where
-    the config decides): its members' state with its copy, if it made one, applied.
+    the config decides): its members' state with its replacements (the copy and the health
+    replacements, :func:`replacements`) applied. Every donor is read as it was at the decision.
     """
     if previous is None:
         labels = [f"m{k}" for k in range(config.raw["population"]["members"])]
@@ -200,13 +201,84 @@ def slot_state(
             {label: label for label in labels},
             {label: member_settings(config, k) for k, label in enumerate(labels)},
         )
-    roots = {m["member"]: m["root"] for m in previous["members"]}
-    settings = {m["member"]: copy.deepcopy(m["settings"]) for m in previous["members"]}
-    first = previous["selections"][0]
-    if first["kind"] == "copy":
-        roots[first["loser"]] = roots[first["donor"]]
-        settings[first["loser"]] = copy.deepcopy(first["settings"])
+    base_roots = {m["member"]: m["root"] for m in previous["members"]}
+    base_settings = {m["member"]: copy.deepcopy(m["settings"]) for m in previous["members"]}
+    roots, settings = dict(base_roots), copy.deepcopy(base_settings)
+    for found in replacements(config, previous):
+        roots[found.loser] = base_roots[found.donor]
+        settings[found.loser] = copy.deepcopy(found.settings)
     return roots, settings
+
+
+# -- health replacements (slice 9) ---------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class Replacement:
+    """A slot that takes a donor's frozen state at the start of the generation after a decision.
+
+    ``cause`` is ``copy`` for the Figure 2 copy and the health cause for a quarantined member.
+    """
+
+    loser: str
+    donor: str
+    settings: Settings
+    seed_index: int
+    cause: str
+
+
+def quarantined(record: Mapping[str, Any]) -> dict[str, str]:
+    """The members a ladder record quarantined, with their causes (its ``health`` selections)."""
+    return {e["member"]: e["cause"] for e in record["selections"][1:]}
+
+
+def replaced_slots(record: Mapping[str, Any]) -> tuple[str, ...]:
+    """The slots a ladder record's decisions replace: the copy's loser and the quarantined."""
+    first = record["selections"][0]
+    return (*((first["loser"],) if first["kind"] == "copy" else ()), *quarantined(record))
+
+
+def _member_number(member: str) -> int:
+    return int(member[1:])
+
+
+def health_donor(record: Mapping[str, Any]) -> str:
+    """The top member that is not quarantined: greatest strength, ties to the lower index."""
+    held = quarantined(record)
+    live = [m for m in record["members"] if m["member"] not in held]
+    return str(
+        min(live, key=lambda m: (-m["strength"]["strength"], _member_number(m["member"])))["member"]
+    )
+
+
+def replacements(config: RunConfig, record: Mapping[str, Any]) -> list[Replacement]:
+    """The replacements a committed ladder record asks for: its copy, then its health slots.
+
+    A quarantined member's slot takes the top live member's frozen state with no statistical test
+    (ADR-021 section 6); its explored settings are drawn from ``population-seed/1`` ``explore``
+    for (this generation, the slot), exactly as a copy's, and its learner generator from the same
+    ``member-learner`` draw. They are derived from the record, which stores only the cause.
+    """
+    out: list[Replacement] = []
+    first = record["selections"][0]
+    if first["kind"] == "copy":
+        out.append(
+            Replacement(
+                first["loser"],
+                first["donor"],
+                copy.deepcopy(first["settings"]),
+                first.get("learner_seed_index", LEARNER_SEED_INDEX),
+                "copy",
+            )
+        )
+    held = quarantined(record)
+    if held:
+        donor = health_donor(record)
+        by_member = {m["member"]: m for m in record["members"]}
+        for member, cause in held.items():
+            settings = explore(config, record["generation"], member, by_member[donor]["settings"])
+            out.append(Replacement(member, donor, settings, LEARNER_SEED_INDEX, cause))
+    return out
 
 
 # -- the decision --------------------------------------------------------------------------------
@@ -232,22 +304,26 @@ def decide(  # noqa: PLR0913
     settings: Mapping[str, Settings],
     last_copy: Mapping[str, int],
     bootstrap: rating.BootstrapPlan,
+    excluded: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     """The first entry of the record's ``selections``: Figure 2 on this generation's results.
 
     ``strengths`` and ``roots`` are keyed by every member (in member order); ``last_copy`` maps a
     member to the generation of its last copy (absent: never copied); ``settings`` are the members'
-    effective settings, of which the donor's seeds the explore step.
+    effective settings, of which the donor's seeds the explore step. ``excluded`` are the members a
+    health stop quarantined in this generation: they are neither loser nor donor (their slots are
+    replaced by the health rule, :func:`replacements`).
     """
     selection = config.raw["population"]["selection"]
     members = list(strengths)
+    eligible = [m for m in members if m not in excluded]
     ready = [
-        m for m in members if generation - last_copy.get(m, 0) >= selection["ready_generations"]
+        m for m in eligible if generation - last_copy.get(m, 0) >= selection["ready_generations"]
     ]
     if not ready:
         return {"kind": "none", "failed": "no_ready_member"}
     loser = min(ready, key=lambda m: (strengths[m], members.index(m)))
-    donor = min(members, key=lambda m: (-strengths[m], members.index(m)))
+    donor = min(eligible, key=lambda m: (-strengths[m], members.index(m)))
     scores = table.get((donor, "member", loser)) if donor != loser else None
     pairs = 0 if scores is None else rating.cell_totals(scores)[0]
     if scores is None or pairs < selection["n_min"]:
