@@ -86,7 +86,7 @@ const FLAGS = {
   // run's pair's policy id in that mode, given exactly with `--versus`.
   "extra-mode": { type: "string", multiple: true },
 } as const;
-const OPTIONAL = new Set<string>(["extra-mode", "previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games", "ablation-preview", "ablation-random-policy-id", "damage-aware-budget-ms", "damage-aware-version", "eval-dataset-dir", "eval-dataset-hash", "evaluation-key", "search-mode"]);
+const OPTIONAL = new Set<string>(["extra-mode", "previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "versus", "versus-dir", "versus-encoder-version", "versus-team-set", "versus-engine-data", "run-games", "ablation-preview", "ablation-random-policy-id", "damage-aware-budget-ms", "damage-aware-version", "eval-dataset-dir", "eval-dataset-hash", "evaluation-key", "search-mode"]);
 const VERSUS = ["versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games"] as const;
 const PREVIOUS = ["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax"] as const;
 
