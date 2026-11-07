@@ -501,10 +501,15 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "--game",
         help="game numbers, e.g. 3 or 2,5-7 (default: every played game of the generation)",
     )
+    replay.add_argument(
+        "--member",
+        help="a population run: only the games where this learning member (e.g. m1) holds a seat",
+    )
     replay.add_argument("--out", type=Path, help="default: <run-dir>.inspect/, beside the run")
     replay.add_argument(
         "--engine-data", type=Path, help="default: the committed export for the run's format"
     )
+    replay.add_argument("--node", default="node", help="the node executable (a population run)")
     return parser
 
 
@@ -651,14 +656,24 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
     return result.as_dict(loop.frozen)
 
 
-#: Commands that read a run directory with a single lineage's layout (ADR-021 slices 11 and 12
-#: add the population views): a population run is refused by name, before anything is read.
-_SINGLE_LINEAGE_ONLY = ("inspect", "report", "replay")
+#: Commands that read a run directory with a single lineage's layout (ADR-021 slice 11 adds the
+#: dashboard's population views): a population run is refused by name, before anything is read.
+#: ``inspect`` and ``replay`` read a population run themselves (slice 12b), except for the
+#: engine re-simulation (``inspect --resimulate``) and the progress-game replay (``--progress-dir``)
+_SINGLE_LINEAGE_ONLY = ("report",)
+
+
+def _single_lineage_command(args: argparse.Namespace) -> bool:
+    if args.command in _SINGLE_LINEAGE_ONLY:
+        return True
+    if args.command == "inspect":
+        return bool(args.resimulate is not None)
+    return bool(args.command == "replay" and args.progress_dir is not None)
 
 
 def _refuse_population_dir(args: argparse.Namespace) -> None:
     run_dir: Path | None = getattr(args, "run_dir", None)
-    if args.command not in _SINGLE_LINEAGE_ONLY or run_dir is None:
+    if run_dir is None or not _single_lineage_command(args):
         return
     try:
         stored = json.loads((run_dir / layout.CONFIG).read_text(encoding="utf-8"))
@@ -813,9 +828,10 @@ def main(argv: list[str] | None = None) -> int:
             out = replay_games(
                 args.run_dir,
                 args.out,
-                Selection(args.generation, parse_games(args.game)),
+                Selection(args.generation, parse_games(args.game), args.member),
                 repo=REPO,
                 engine_data=args.engine_data,
+                node=args.node,
             )
         else:
             out = _records(args)

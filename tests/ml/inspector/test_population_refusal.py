@@ -1,4 +1,7 @@
-"""The inspector and the dashboard refuse a population run in fixed words."""
+"""The single-lineage readers and the dashboard refuse a population run in fixed words.
+
+The inspector reads a population run through its own readers (``test_population_*.py``).
+"""
 
 from __future__ import annotations
 

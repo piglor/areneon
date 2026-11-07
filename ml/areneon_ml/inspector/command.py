@@ -17,6 +17,12 @@ from typing import Any
 
 from areneon_ml.inspector.model import build_model, read_run_dir_config
 from areneon_ml.inspector.pool import Pool, load_pool
+from areneon_ml.inspector.population_model import (
+    build_population_model,
+    read_population_config,
+    run_is_population,
+)
+from areneon_ml.inspector.population_render import build_population_pages
 from areneon_ml.inspector.readers import InspectError
 from areneon_ml.inspector.render import build_pages
 from areneon_ml.inspector.replay import GAME_FILE, GEN_DIR
@@ -69,9 +75,16 @@ def inspect_run(
     if target == run_dir or run_dir in target.parents:
         raise InspectError("the output directory must not be inside the run directory")
     check_target(target)
-    config = read_run_dir_config(run_dir)
-    pool = pool_loader(repo, node, run_dir / layout.CONFIG)
-    pages = build_pages(build_model(run_dir, pool, config), existing_replays(target))
+    if run_is_population(run_dir):  # ADR-021: members, ladder and past pool
+        population = read_population_config(run_dir)
+        pool = pool_loader(repo, node, run_dir / layout.CONFIG)
+        pages = build_population_pages(
+            build_population_model(run_dir, pool, population), existing_replays(target)
+        )
+    else:
+        config = read_run_dir_config(run_dir)
+        pool = pool_loader(repo, node, run_dir / layout.CONFIG)
+        pages = build_pages(build_model(run_dir, pool, config), existing_replays(target))
     total = write_pages(target, pages)
     return {"out": str(target), "pages": len(pages), "bytes": total}
 

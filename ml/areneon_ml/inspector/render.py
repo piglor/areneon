@@ -9,12 +9,13 @@ names and hex ids. Nothing here depends on the clock, so the same run gives the 
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
+from typing import Protocol
 
 from areneon_ml.inspector import charts
 from areneon_ml.inspector.model import RESULTS, Game, Generation, InspectModel, TeamUse
 from areneon_ml.inspector.page import document, esc, link_id
-from areneon_ml.inspector.pool import PoolSet, PoolTeam
+from areneon_ml.inspector.pool import Pool, PoolSet, PoolTeam
 from areneon_ml.inspector.replay_page import page_path as replay_path
 
 CHUNK = 500
@@ -34,6 +35,48 @@ INDEX = "index.html"
 DISTRIBUTIONS = "distributions.html"
 
 
+class DrawnGame(Protocol):
+    """What the team and distribution pages read of a game: the teams its seats played."""
+
+    @property
+    def hashes(self) -> dict[str, str]: ...
+
+
+class DrawnGeneration(Protocol):
+    """What the team and distribution pages read of a generation (single lineage or population)."""
+
+    @property
+    def number(self) -> int: ...
+
+    @property
+    def games(self) -> Sequence[DrawnGame]: ...
+
+    @property
+    def team_set_size(self) -> int: ...
+
+
+class TeamModel(Protocol):
+    """What the team and distribution pages read of a run's model."""
+
+    @property
+    def run_key(self) -> str: ...
+
+    @property
+    def config_hash(self) -> str: ...
+
+    @property
+    def pool(self) -> Pool: ...
+
+    @property
+    def generations(self) -> Sequence[DrawnGeneration]: ...
+
+    @property
+    def use(self) -> dict[str, TeamUse]: ...
+
+    @property
+    def cumulative_drawn(self) -> Counter[str]: ...
+
+
 def games_page(generation: int) -> str:
     return f"games-g{generation:06d}.html"
 
@@ -50,7 +93,7 @@ def team_anchor(team_hash: str) -> str:
     return "t-" + link_id(team_hash)
 
 
-def _nav(model: InspectModel) -> str:
+def _nav(model: TeamModel) -> str:
     return (
         f'<a href="{INDEX}">Overview</a><a href="{DISTRIBUTIONS}">Distributions</a>'
         f'<a href="{teams_page(0)}">Teams</a>'
@@ -73,7 +116,7 @@ def _short(value: str, size: int = 8) -> str:
     return value[:size]
 
 
-def _page_of(model: InspectModel) -> dict[str, int]:
+def _page_of(model: TeamModel) -> dict[str, int]:
     return {team.hash: index // CHUNK for index, team in enumerate(model.pool.teams)}
 
 
@@ -81,7 +124,7 @@ def _team_link(pages: dict[str, int], team_hash: str) -> str:
     return f'<a class="m" href="{teams_page(pages[team_hash])}#{team_anchor(team_hash)}">{_short(team_hash)}</a>'
 
 
-def _footer(model: InspectModel) -> str:
+def _footer(model: TeamModel) -> str:
     return (
         f"Run config hash <code>{esc(model.config_hash)}</code>. Every generation's files were checked against "
         "its manifest before they were read. Counts are descriptive."
@@ -159,7 +202,7 @@ def index_page(model: InspectModel) -> str:
     return document(f"Training data of {model.run_key}", _nav(model), body, footer=_footer(model))
 
 
-def distributions_page(model: InspectModel) -> str:
+def distributions_page(model: TeamModel) -> str:
     pool_dist = charts.distribution((t, 1) for t in model.pool.teams)
     drawn_dist = charts.distribution(
         (team, model.cumulative_drawn[team.hash])
@@ -182,7 +225,7 @@ def distributions_page(model: InspectModel) -> str:
     return document("Distributions", _nav(model), body, footer=_footer(model))
 
 
-def drawn_generation_page(model: InspectModel, gen: Generation) -> str:
+def drawn_generation_page(model: TeamModel, gen: DrawnGeneration) -> str:
     counts: Counter[str] = Counter()
     for game in gen.games:
         counts.update(game.hashes.values())
@@ -323,7 +366,7 @@ def _results_table(use: TeamUse) -> str:
     return _table(head, rows)
 
 
-def _team_card(model: InspectModel, team: PoolTeam, index: int) -> str:
+def _team_card(model: TeamModel, team: PoolTeam, index: int) -> str:
     use = model.use[team.hash]
     chips = "".join(f'<span class="chip">{esc(a)} = {esc(b)}</span>' for a, b in team.labels)
     if team.split:
@@ -357,7 +400,7 @@ def _team_card(model: InspectModel, team: PoolTeam, index: int) -> str:
     )
 
 
-def teams_chunk_page(model: InspectModel, chunk: int) -> str:
+def teams_chunk_page(model: TeamModel, chunk: int) -> str:
     teams = model.pool.teams
     start, stop = chunk * CHUNK, min(len(teams), (chunk + 1) * CHUNK)
     chunks = (len(teams) + CHUNK - 1) // CHUNK

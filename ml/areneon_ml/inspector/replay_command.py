@@ -11,11 +11,15 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from areneon_ml.inspector.command import default_out, existing_replays
+from areneon_ml.inspector.pool import Pool, load_pool
+from areneon_ml.inspector.population_model import run_is_population
+from areneon_ml.inspector.population_replay import read_population_games
 from areneon_ml.inspector.readers import InspectError
 from areneon_ml.inspector.replay import read_games
 from areneon_ml.inspector.replay_page import (
@@ -68,22 +72,35 @@ class Selection:
 
     generation: int
     games: list[int] | None = None
+    #: A population run only: keep the games in which this learning member holds a seat.
+    member: str | None = None
 
 
-def replay_games(
+def replay_games(  # noqa: PLR0913
     run_dir: Path,
     out: Path | None,
     selection: Selection,
     *,
     repo: Path,
     engine_data: Path | None = None,
+    node: str = "node",
+    pool_loader: Callable[[Path, str, Path], Pool] = load_pool,
 ) -> dict[str, Any]:
     """Build the pages of ``games`` (None: every played game of the generation) and the index."""
     run_dir = run_dir.resolve()
     target = (out if out is not None else default_out(run_dir)).resolve()
     if target == run_dir or run_dir in target.parents:
         raise InspectError("the output directory must not be inside the run directory")
-    config, replays = read_games(run_dir, selection.generation, selection.games)
+    if run_is_population(run_dir):
+        # The pool resolves each seat's team: the two halves of a self-play pair swap their teams.
+        pool = pool_loader(repo, node, run_dir / layout.CONFIG)
+        config, replays = read_population_games(
+            run_dir, selection.generation, selection.games, pool, selection.member
+        )
+    else:
+        if selection.member is not None:
+            raise InspectError("--member applies to a population run only")
+        config, replays = read_games(run_dir, selection.generation, selection.games)
     table = read_engine_data(
         engine_data or repo / "fixtures" / "showdown" / config.format_id / "engine-data.json",
         config.format_id,
