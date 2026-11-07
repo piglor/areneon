@@ -18,6 +18,6 @@
     "hyparquet-compressors": "1.1.2"
   },
   "devDependencies": {
-    "hyparquet-writer": "0.17.0"
+    "hyparquet-writer": "0.18.0"
   }
 }
