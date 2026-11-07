@@ -78,6 +78,8 @@ export interface PayoffInput {
   max_rollout_steps?: number;
   /** The harness's per-decision stream (32 bytes); it reaches only the back-pair draw. */
   stream: Uint8Array;
+  /** An accumulator the counts are written into as the table is built (default a fresh one): a build that throws keeps the work it counted. */
+  counts?: PayoffCounts;
 }
 
 export interface PayoffCounts {
@@ -129,7 +131,7 @@ export interface PayoffTable {
   readonly counts: PayoffCounts;
 }
 
-const emptyCounts = (): PayoffCounts => ({
+export const emptyCounts = (): PayoffCounts => ({
   worlds_asked: 0,
   worlds_used: 0,
   preview_queries: 0,
@@ -240,8 +242,8 @@ export async function buildPayoffTable(input: PayoffInput): Promise<PayoffTable>
   const max_steps = input.max_rollout_steps;
   checkConfig(config);
   if (worlds.length === 0) throw new PayoffError("no worlds");
-  const counts = emptyCounts();
-  counts.worlds_asked = worlds.length;
+  const counts = input.counts ?? emptyCounts();
+  counts.worlds_asked += worlds.length;
 
   const first = (worlds[0] as PayoffWorld).preview;
   // Our side must see the real Team Preview request in every world (fail closed): the caller starts each world with `own_request`, which
