@@ -10,7 +10,8 @@ import { GenerationError, type TrainingPool } from "./league-generation.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
 import { playCalibration, writeCalibration } from "./population-calibration.ts";
 import { calibrationAnchors } from "./population-plan.ts";
-import { checkPopulationConfig, type PopulationMember, playPopulationGeneration, writePopulationGeneration } from "./population-generation.ts";
+import { checkPopulationConfig, type PopulationMember, playPopulationGeneration, type SnapshotSession, writePopulationGeneration } from "./population-generation.ts";
+import type { PastPoolFile, PastSnapshot } from "./past-pool.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import { runConfigHash, type TrainingRunConfig } from "./training-run-config.ts";
 
@@ -41,8 +42,12 @@ export interface PopulationCliInput {
   engine_data_hash: string;
   encoder_version: string;
   belief_worlds?: BeliefWorldsFactory | undefined;
+  /** The committed past pool of the generation before, for a config with a past-pool share. */
+  past?: PastPoolFile;
   /** A test seam: the client of a member (default: a `PolicyWorkerClient` on the Python worker). */
   make_client?: (entry: MemberFlag) => MemberClient;
+  /** A test seam: the client of a snapshot (default: a `PolicyWorkerClient` on its frozen pair). */
+  make_snapshot_client?: (snapshot: PastSnapshot) => MemberClient;
 }
 
 /** What the CLI needs of a member's worker client. */
@@ -54,37 +59,41 @@ export async function runPopulationCli(input: PopulationCliInput, print: (line: 
   const { max_line_bytes, n_parallel, handshake_timeout_ms } = config.generation;
   // A refused config costs no worker: each session is about 445 MB.
   try {
-    checkPopulationConfig(config, input.members, generation);
+    checkPopulationConfig(config, input.members, generation, 1, input.past);
   } catch (error) {
     if (!(error instanceof GenerationError)) throw error;
     console.error(`play-generation: ${error.message}`);
     return 1;
   }
-  const clients: MemberClient[] = input.members.map(
-    (entry) =>
-      input.make_client?.(entry) ??
-      new PolicyWorkerClient({
-        command: input.worker_python,
-        args: ["-I", "-m", "areneon_ml.worker", "--run-dir", input.run_dir, "--preview", entry.preview, "--battle", entry.battle, "--engine-data", input.engine_data, "--max-line-bytes", String(max_line_bytes)],
-        env: {},
-        max_line_bytes,
-        n_parallel,
-        handshake_timeout_ms,
-        expect: {
-          encoder_version: input.encoder_version,
-          engine_data_hash: input.engine_data_hash,
-          checkpoints: [
-            { role: "battle", checkpoint_id: entry.battle },
-            { role: "preview", checkpoint_id: entry.preview },
-          ],
-        },
-      }),
-  );
+  const workerFor = (pair: { preview: string; battle: string }): MemberClient =>
+    new PolicyWorkerClient({
+      command: input.worker_python,
+      args: ["-I", "-m", "areneon_ml.worker", "--run-dir", input.run_dir, "--preview", pair.preview, "--battle", pair.battle, "--engine-data", input.engine_data, "--max-line-bytes", String(max_line_bytes)],
+      env: {},
+      max_line_bytes,
+      n_parallel,
+      handshake_timeout_ms,
+      expect: {
+        encoder_version: input.encoder_version,
+        engine_data_hash: input.engine_data_hash,
+        checkpoints: [
+          { role: "battle", checkpoint_id: pair.battle },
+          { role: "preview", checkpoint_id: pair.preview },
+        ],
+      },
+    });
+  const clients: MemberClient[] = input.members.map((entry) => input.make_client?.(entry) ?? workerFor(entry));
+  // A snapshot's session starts when the generation first needs it and is closed after its last wave (the generation closes it).
+  const openSnapshot = async (snapshot: PastSnapshot): Promise<SnapshotSession> => {
+    const client = input.make_snapshot_client?.(snapshot) ?? workerFor(snapshot);
+    await client.start();
+    return { client, close: () => client.close() };
+  };
   try {
     mkdirSync(input.out, { recursive: true });
     await Promise.all(clients.map((client) => client.start()));
     const members: PopulationMember[] = input.members.map((entry, index) => ({ member: entry.member, policy_id: entry.policy_id, checkpoints: { preview: entry.preview, battle: entry.battle }, client: clients[index] as MemberClient }));
-    const result = await playPopulationGeneration({ engine: input.engine, config, generation, members, pool: input.pool, out_dir: input.out, belief_worlds: input.belief_worlds });
+    const result = await playPopulationGeneration({ engine: input.engine, config, generation, members, pool: input.pool, out_dir: input.out, belief_worlds: input.belief_worlds, ...(input.past === undefined ? {} : { past: { pool: input.past, open: openSnapshot } }) });
     writePopulationGeneration(input.out, result);
     print(jcs({ generation, run_config_hash: await runConfigHash(config), members: result.members.map((entry) => ({ member: entry.member, training_set_hash: entry.training_set_hash, examples: entry.set.examples })) } as unknown as Json));
     return 0;

@@ -724,6 +724,16 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const leagueRunWith = (change: (r: Record<string, unknown>) => void) => mutated(leagueRun, change);
   const runConfigWith = (change: (c: Record<string, unknown>) => void) => mutated(runConfig, change);
   const runSection = (c: Record<string, unknown>, name: string) => c[name] as Record<string, unknown>;
+  // ADR-026 erratum E2 (#1291): a search-distilling run's two blocks, on a warm start with a value warm-up.
+  const distilling = (edit?: (c: Record<string, unknown>) => void) =>
+    runConfigWith((c) => {
+      c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
+      c.team_dataset = { path: ".tmp/datasets/train-v1", dataset_hash: hexOf("5") };
+      runSection(c, "ppo").value_warmup = { generations: 2 };
+      runSection(c, "ppo").search_distill = { coef_micro: 1000000, c_scale_micro: 4000000, min_spread_ppm: 20000, aggregate_generations: 4 };
+      runSection(c, "generation").search_labels = { search_config_hash: hexOf("d"), label_share_ppm: 40000, start_generation: 3 };
+      edit?.(c);
+    });
   // ADR-021: a population block for the tiny run's PPO values (learning rate 1000, entropy 10000, 2 epochs, clip 200000).
   const range = (min: number, max: number) => ({ min, max });
   const populationBlock = (): Record<string, unknown> => ({
@@ -855,6 +865,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "training-run-config/team-dataset": runConfigWith((c) => (c.team_dataset = { path: ".tmp/datasets/train-v1", dataset_hash: hexOf("5") })),
     "training-run-config/warm-start": runConfigWith((c) => (c.warm_start = { preview: hexOf("a"), battle: hexOf("b") })),
+    "training-run-config/search-distill": distilling(),
     "training-run-config/value-warmup": runConfigWith((c) => {
       c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
       runSection(c, "ppo").value_warmup = { generations: 2 };
@@ -1097,6 +1108,25 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       runSection(c, "model").options = { shared_trunk: true };
       c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
     }),
+    "training-run-config/search-distill-labels-only": distilling((c) => delete runSection(c, "ppo").search_distill),
+    "training-run-config/search-distill-config-only": distilling((c) => delete runSection(c, "generation").search_labels),
+    "training-run-config/search-distill-no-warm-start": distilling((c) => {
+      delete c.warm_start;
+      delete runSection(c, "ppo").value_warmup;
+    }),
+    "training-run-config/search-distill-no-value-warmup": distilling((c) => delete runSection(c, "ppo").value_warmup),
+    "training-run-config/search-distill-start-in-warmup": distilling((c) => (runSection(c, "generation").search_labels = { search_config_hash: hexOf("d"), label_share_ppm: 40000, start_generation: 2 })),
+    "training-run-config/search-distill-opponent-sheet": distilling((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { opponent_sheet: { feature_set: "opponent-sheet/1", feature_set_hash: hexOf("c") } };
+    }),
+    "training-run-config/search-distill-features-2": distilling((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/2", feature_set_hash: hexOf("c") } };
+    }),
+    "training-run-config/search-distill-population": distilling((c) => {
+      c.warm_start = { battle: hexOf("b") };
+      c.population = populationBlock();
+    }),
+    "training-run-config/search-distill-no-team-dataset": distilling((c) => delete c.team_dataset),
     "training-run-config/value-warmup-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").value_warmup = { generations: 2 })),
     "training-run-config/anchor-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").anchor = { kl_micro: 100000, schedule: { kind: "constant" } })),
     "training-run-config/population-warm-start-both": populated((_p, c) => (c.warm_start = { preview: hexOf("a"), battle: hexOf("b") })),
@@ -1453,6 +1483,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/warm-start-upper-case": runConfigWith((c) => (c.warm_start = { preview: "A".repeat(64), battle: hexOf("b") })),
     "training-run-config/warm-start-missing-battle": runConfigWith((c) => (c.warm_start = { preview: hexOf("a") })),
     "training-run-config/warm-start-extra-field": runConfigWith((c) => (c.warm_start = { preview: hexOf("a"), battle: hexOf("b"), anchor: hexOf("c") })),
+    "training-run-config/search-distill-zero-share": distilling((c) => (runSection(c, "generation").search_labels = { search_config_hash: hexOf("d"), label_share_ppm: 0, start_generation: 3 })),
+    "training-run-config/search-distill-zero-aggregate": distilling((c) => (runSection(c, "ppo").search_distill = { coef_micro: 1000000, c_scale_micro: 4000000, min_spread_ppm: 20000, aggregate_generations: 0 })),
+    "training-run-config/search-distill-extra-field": distilling((c) => (runSection(c, "ppo").search_distill = { coef_micro: 1000000, c_scale_micro: 4000000, min_spread_ppm: 20000, aggregate_generations: 4, anneal: 1 })),
+    "training-run-config/search-distill-short-hash": distilling((c) => (runSection(c, "generation").search_labels = { search_config_hash: "abc", label_share_ppm: 40000, start_generation: 3 })),
     "training-run-config/value-warmup-zero": runConfigWith((c) => {
       c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
       runSection(c, "ppo").value_warmup = { generations: 0 };

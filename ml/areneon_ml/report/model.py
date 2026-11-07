@@ -81,6 +81,8 @@ OPTIONAL_INTEGER_KEYS = (
     (ENTROPY_SCHEDULE_KEY, 0),
     (TEMPERATURE_KEY, 1),
 )
+#: Battle role only, and only under ppo.search_distill (ADR-026 erratum E2, ADR-010 A10).
+SEARCH_KEYS = ("search_labels", "search_kl_before", "search_kl_after")
 VALUE_KEYS = ("explained_variance", "value_calibration")  # value-head diagnostics (ADR-010 A4)
 CALIBRATION_BINS = 10
 CALIBRATION_KEYS = (frozenset({"count", "mean_value", "mean_score"}), frozenset[str]())
@@ -94,6 +96,7 @@ TRAIN_ROLE_KEYS = (
             ENTROPY_SCHEDULE_KEY,
             PREVIEW_BOOTSTRAP_KEY,
             TEMPERATURE_KEY,
+            *SEARCH_KEYS,
             *VALUE_KEYS,
         }
     ),
@@ -296,6 +299,18 @@ def _calibration(raw: object, role: str) -> tuple[tuple[int, float, float], ...]
     return tuple(bins)
 
 
+def _check_search_keys(values: dict[str, Any], role: str) -> None:
+    """The search-distillation keys come together, on the Battle role, with sane values."""
+    if not set(SEARCH_KEYS) & set(values):
+        return
+    if set(SEARCH_KEYS) - set(values) or role != "battle":
+        raise ReportError(f"{role} search_labels and both search KLs come together (Battle)")
+    integer(values["search_labels"], f"{role} search_labels")
+    for key in SEARCH_KEYS[1:]:
+        if _number(values[key], f"{role} {key}") < 0:
+            raise ReportError(f"{role} {key} is a KL divergence and cannot be negative")
+
+
 def read_train_report(raw: object) -> TrainFacts:
     """``train-report.json`` with closed key sets: both roles, each with exactly the known keys."""
     body = closed(raw, TRAIN_KEYS, "train-report.json")
@@ -318,6 +333,7 @@ def read_train_report(raw: object) -> TrainFacts:
         for key, minimum in OPTIONAL_INTEGER_KEYS:
             if key in values:
                 integer(values[key], f"{role} {key}", minimum)
+        _check_search_keys(values, role)
         if set(VALUE_KEYS) & set(values):
             if set(VALUE_KEYS) - set(values):
                 raise ReportError(f"{role} explained_variance and value_calibration come together")

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { jcs, type Json } from "../src/canonical-json.ts";
 import { leagueGameStreams } from "../src/league-seed.ts";
-import { EXPLOITER_REFUSAL, memberLabel, ODD_ANCHOR_REFUSAL, PAST_POOL_REFUSAL, planPopulation, PopulationPlanError, seatCounts } from "../src/population-plan.ts";
+import { EXPLOITER_REFUSAL, memberLabel, ODD_ANCHOR_REFUSAL, PAST_POOL_MISSING, planPopulation, PopulationPlanError, seatCounts } from "../src/population-plan.ts";
 import { planGeneration } from "../src/league-generation.ts";
 import { readTrainingRunConfig, type TrainingRunConfig } from "../src/training-run-config.ts";
 import { populationConfig, populationOf, sample } from "./population-support.ts";
@@ -93,9 +93,9 @@ describe("planPopulation", () => {
     expect(planPopulation(other, 1, 50).map((g) => g.seed)).not.toEqual(plan.map((g) => g.seed));
   });
 
-  it("refuses a past-pool share, exploiter seats, an odd anchor count, no population and bad numbers, in fixed words", () => {
-    expect(() => planPopulation(populationConfig(2, 4, [500_000, 250_000, 250_000]), 1, 50)).toThrow(new PopulationPlanError(PAST_POOL_REFUSAL));
-    expect(PAST_POOL_REFUSAL).toBe("population: a non-zero past_pool_ppm is refused until the past pool is built (ADR-021 slice 10)");
+  it("refuses a past-pool share without its pool, exploiter seats, an odd anchor count, no population and bad numbers, in fixed words", () => {
+    expect(() => planPopulation(populationConfig(2, 4, [500_000, 250_000, 250_000]), 1, 50)).toThrow(new PopulationPlanError(PAST_POOL_MISSING));
+    expect(PAST_POOL_MISSING).toBe("population: a non-zero past_pool_ppm needs the committed past pool of the generation before");
     const withExploiter = { ...config, population: { ...populationOf(config), exploiters: 1 } } as TrainingRunConfig;
     expect(() => planPopulation(withExploiter, 1, 50)).toThrow(new PopulationPlanError(EXPLOITER_REFUSAL));
     expect(() => planPopulation(populationConfig(2, 4, [500_000, 500_000, 0], 3), 1, 50)).toThrow(new PopulationPlanError(ODD_ANCHOR_REFUSAL));
