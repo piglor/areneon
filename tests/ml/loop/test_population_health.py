@@ -1,0 +1,368 @@
+"""A population run with a diverging member (ADR-021 sections 6 and 12, slice 9).
+
+The learner of ``m1`` is forced to a non-finite loss at one generation. Its update is discarded
+(its pair stays the one it had), the ladder records the ``health`` outcome, and the next
+generation gives its slot a copy of the top live member.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
+
+import pytest
+import torch
+from areneon_ml.checkpoint.files import checkpoint_bytes, checkpoint_id
+from areneon_ml.checkpoint.provenance import ProvenanceGraph
+from areneon_ml.checkpoint.record import read_record
+from areneon_ml.learner.trainer import Learner, TrainReport
+from areneon_ml.loop import health, layout, selection
+from areneon_ml.loop.driver import LoopError
+from areneon_ml.loop.health import HealthIncident
+from areneon_ml.loop.ladder import read_ladder_record
+from areneon_ml.loop.population import PopulationLoop
+from areneon_ml.model.network import ROLES
+
+from tests.ml.loop.support import Killed, killer, reseal
+from tests.ml.loop.test_past_pool import SETTINGS
+from tests.ml.loop.test_population import (
+    FakePopulationPlayer,
+    gen_path,
+    ladder_of,
+    make_population,
+    population_config,
+    tree_bytes,
+)
+from tests.ml.model.support import game
+
+GENERATIONS = 3
+BAD_GENERATION = 2
+MEMBERS = 4
+
+
+def config_four() -> Any:
+    return population_config(members=MEMBERS)
+
+
+STATE: dict[str, Any] = {}
+
+
+def reset() -> dict[str, Any]:
+    STATE.clear()
+    STATE.update(loop=None, members={"m1"}, generation=BAD_GENERATION)
+    return STATE
+
+
+def forced_train(self: Learner, trajectories: Any) -> TrainReport:
+    """The real update, then (for the named members at the named generation) a NaN loss.
+
+    The weights are filled with NaN too, so a pair frozen from this update would be unusable.
+    """
+    report = REAL_TRAIN(self, trajectories)
+    loop = STATE["loop"]
+    names = [m for m, learner in loop._learners.items() if learner is self]
+    if names and names[0] in STATE["members"] and self.generation == STATE["generation"]:
+        with torch.no_grad():
+            for role in ROLES:
+                for parameter in self.networks[role].parameters():
+                    parameter.fill_(float("nan"))
+        roles = dict(report.roles)
+        roles["battle"] = dataclasses.replace(roles["battle"], policy_loss=float("nan"))
+        return TrainReport(roles)
+    return report
+
+
+REAL_TRAIN = Learner.train
+
+
+@pytest.fixture(scope="module", autouse=True)
+def forced() -> Iterator[None]:
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(Learner, "train", forced_train)
+        yield
+
+
+@pytest.fixture
+def diverge() -> dict[str, Any]:
+    """The knobs of the forced divergence, reset for each test: members and generation."""
+    return reset()
+
+
+def run_to(
+    run_dir: Path, state: dict[str, Any], generations: int = GENERATIONS, on_stage: Any = None
+) -> PopulationLoop:
+    config = config_four()
+    loop = make_population(run_dir, config, FakePopulationPlayer(config), on_stage)
+    state["loop"] = loop
+    loop.run(generations)
+    return loop
+
+
+def manifest_of(run_dir: Path, generation: int) -> dict[str, Any]:
+    raw = layout.read_json(gen_path(run_dir, generation) / "manifest.json")
+    assert isinstance(raw, dict)
+    return raw
+
+
+def frozen_of(run_dir: Path, generation: int, member: str) -> dict[str, str]:
+    found = manifest_of(run_dir, generation)["members"][member]["checkpoints"]
+    assert isinstance(found, dict)
+    return found
+
+
+@pytest.fixture(scope="module")
+def finished(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    run_dir = tmp_path_factory.mktemp("health")
+    run_to(run_dir, reset())
+    return run_dir
+
+
+def test_the_ladder_records_the_health_outcome_beside_the_copy_test(finished: Path) -> None:
+    config = config_four()
+    before = None
+    for g in range(1, GENERATIONS + 1):
+        record = ladder_of(finished, g)
+        read_ladder_record(record, before, config)
+        before = record
+        expected = [{"kind": "health", "member": "m1", "cause": "non_finite_loss"}]
+        assert record["selections"][1:] == (expected if g == BAD_GENERATION else [])
+    # The next record starts from the replacement: m1 descends from the top live member.
+    donor = selection.health_donor(ladder_of(finished, BAD_GENERATION))
+    assert donor != "m1"
+    third = {m["member"]: m for m in ladder_of(finished, BAD_GENERATION + 1)["members"]}
+    assert (
+        third["m1"]["root"]
+        == ladder_of(finished, BAD_GENERATION)["members"][int(donor[1:])]["root"]
+    )
+    (found,) = selection.replacements(config, ladder_of(finished, BAD_GENERATION))
+    assert third["m1"]["settings"] == found.settings
+
+
+def test_the_discarded_update_leaves_the_pair_and_the_records_it_had(finished: Path) -> None:
+    assert frozen_of(finished, BAD_GENERATION, "m1") == frozen_of(
+        finished, BAD_GENERATION - 1, "m1"
+    )
+    for role in ROLES:
+        now = gen_path(finished, BAD_GENERATION) / "members" / "m1" / "records" / f"{role}.json"
+        then = (
+            gen_path(finished, BAD_GENERATION - 1) / "members" / "m1" / "records" / f"{role}.json"
+        )
+        assert now.read_bytes() == then.read_bytes()
+    # The other members trained on and froze new pairs.
+    for member in ("m0", "m2", "m3"):
+        assert frozen_of(finished, BAD_GENERATION, member) != frozen_of(
+            finished, BAD_GENERATION - 1, member
+        )
+    assert manifest_of(finished, BAD_GENERATION)["members"]["m1"]["training_set_hash"] is None
+    # The stored report carries no NaN (null where the loss was not a number).
+    report = layout.read_json(
+        gen_path(finished, BAD_GENERATION) / "members" / "m1" / "train-report.json"
+    )
+    assert report["battle"]["policy_loss"] is None
+    assert isinstance(report["battle"]["value_loss"], float)
+
+
+def test_the_slot_takes_a_copy_of_the_top_member_at_the_next_generation(
+    tmp_path: Path, diverge: dict[str, Any]
+) -> None:
+    seen: dict[str, Any] = {}
+    box: dict[str, PopulationLoop] = {}
+
+    def hook(generation: int, stage: str) -> None:
+        loop = box["loop"]
+        if (generation, stage) != (BAD_GENERATION + 1, "copied"):
+            return
+        loser = loop._learners["m1"]
+        seen["ids"] = {r: checkpoint_id(checkpoint_bytes(loser.networks[r], game())) for r in ROLES}
+        seen["flag"] = loser.value_only
+        seen["finite"] = all(
+            bool(torch.isfinite(p).all()) for r in ROLES for p in loser.networks[r].parameters()
+        )
+
+    config = config_four()
+    loop = make_population(tmp_path, config, FakePopulationPlayer(config), hook)
+    box["loop"] = loop
+    diverge["loop"] = loop
+    loop.run(GENERATIONS)
+    donor = selection.health_donor(ladder_of(tmp_path, BAD_GENERATION))
+    assert seen["ids"] == frozen_of(tmp_path, BAD_GENERATION, donor)
+    assert seen["flag"] is True
+    assert seen["finite"] is True
+    # Its records name the donor's frozen checkpoints as parent; the first update is value-only.
+    for role in ROLES:
+        path = gen_path(tmp_path, GENERATIONS) / "members" / "m1" / "records" / f"{role}.json"
+        assert (
+            read_record(layout.read_json(path)).parent
+            == (frozen_of(tmp_path, BAD_GENERATION, donor)[role])
+        )
+    report = layout.read_json(
+        gen_path(tmp_path, GENERATIONS) / "members" / "m1" / "train-report.json"
+    )
+    assert all(report[role].get("value_warmup") is True for role in report)
+    # The weights of the following generations are finite.
+    assert not loop._learners["m1"].value_only
+
+
+def test_classify_accepts_the_records_and_sees_the_donor_in_the_ancestry(finished: Path) -> None:
+    records: dict[str, Any] = {}
+    sources: dict[str, list[str]] = {}
+    for g in range(GENERATIONS + 1):
+        facts = manifest_of(finished, g)["members"]
+        for member, entry in facts.items():
+            for role in ROLES:
+                path = gen_path(finished, g) / "members" / member / "records" / f"{role}.json"
+                record = read_record(layout.read_json(path))
+                records[record.checkpoint_id] = record  # the frozen-again pair has one record
+            if g >= 1 and entry["training_set_hash"] is not None:
+                played = frozen_of(finished, g - 1, member)
+                sources[entry["training_set_hash"]] = sorted(played.values())
+    graph = ProvenanceGraph(list(records.values()), sources)
+    donor = selection.health_donor(ladder_of(finished, BAD_GENERATION))
+    now = list(frozen_of(finished, GENERATIONS, "m1").values())
+    then = list(frozen_of(finished, BAD_GENERATION, donor).values())
+    assert set(then) <= graph.ancestry(now).checkpoints
+
+
+def test_an_independent_rerun_is_byte_identical(
+    finished: Path, tmp_path: Path, diverge: dict[str, Any]
+) -> None:
+    run_to(tmp_path, diverge)
+    assert tree_bytes(tmp_path) == tree_bytes(finished)
+
+
+@pytest.mark.parametrize(
+    ("generation", "stage"),
+    [
+        (BAD_GENERATION, "trained:m1"),
+        (BAD_GENERATION, "trained"),
+        (BAD_GENERATION, "rated"),
+        (BAD_GENERATION, "written"),
+        (BAD_GENERATION, "committed"),  # the quarantine is committed; the resume applies it
+        (BAD_GENERATION + 1, "played"),
+        (BAD_GENERATION + 1, "copied"),
+    ],
+)
+def test_a_kill_at_any_stage_around_a_quarantine_resumes_to_the_same_bytes(
+    finished: Path, tmp_path: Path, diverge: dict[str, Any], generation: int, stage: str
+) -> None:
+    with pytest.raises(Killed):
+        run_to(tmp_path, diverge, on_stage=killer(generation, stage))
+    run_to(tmp_path, diverge)
+    assert tree_bytes(tmp_path) == tree_bytes(finished)
+
+
+def test_half_the_members_quarantined_commits_nothing_and_the_partial_is_discarded(
+    tmp_path: Path, diverge: dict[str, Any]
+) -> None:
+    diverge["members"] = {"m1", "m2"}
+    with pytest.raises(HealthIncident, match="half or more"):
+        run_to(tmp_path, diverge)
+    newest = layout.latest_complete(tmp_path)
+    assert newest is not None
+    assert newest.generation == BAD_GENERATION - 1
+    assert layout.partial_dir(tmp_path, BAD_GENERATION).is_dir()
+    assert not gen_path(tmp_path, BAD_GENERATION).exists()
+    # The next start deletes the partial and plays the generation again; nothing diverges now.
+    diverge["members"] = set()
+    result = run_to(tmp_path, diverge, BAD_GENERATION)
+    assert result.frozen.generation == BAD_GENERATION
+    assert not layout.partial_dir(tmp_path, BAD_GENERATION).exists()
+    assert ladder_of(tmp_path, BAD_GENERATION)["selections"][1:] == []
+
+
+def test_a_single_quarantine_below_half_is_not_an_incident(
+    tmp_path: Path, diverge: dict[str, Any]
+) -> None:
+    diverge["members"] = {"m2"}
+    run_to(tmp_path, diverge, BAD_GENERATION)
+    assert ladder_of(tmp_path, BAD_GENERATION)["selections"][1] == {
+        "kind": "health",
+        "member": "m2",
+        "cause": "non_finite_loss",
+    }
+
+
+def test_a_slot_replaced_in_this_generation_is_not_judged_on_its_old_pairs_forfeits(
+    tmp_path: Path, diverge: dict[str, Any]
+) -> None:
+    config = config_four()
+    loop = make_population(tmp_path, config, FakePopulationPlayer(config))
+    rows = [
+        {
+            "member": "m1",
+            "outcome": "forfeit",
+            "seats": {"p1": "m1", "p2": "m0"},
+            "forfeit": {"loser": "p1", "cause": "invalid_reply"},
+        }
+        for _ in range(4)
+    ]
+    limits = health.Limits(clip_ppm=500_000, kl_ppm=100_000, forfeit_ppm=50_000)
+    healthy = {"battle": {"clip_fraction": 0.0, "approx_kl": 0.0}}
+    # The old pair forfeits again at the generation the slot is replaced: not judged ...
+    assert loop._judge(3, "m1", {}, rows, limits, True)(healthy) is None
+    # ... but an ordinary slot with those games is stopped.
+    assert loop._judge(3, "m1", {}, rows, limits, False)(healthy) == "forfeits"
+
+
+def test_resume_refuses_a_quarantined_members_records_that_differ_from_the_generation_before(
+    tmp_path: Path, diverge: dict[str, Any]
+) -> None:
+    run_to(tmp_path, diverge, BAD_GENERATION)
+    path = gen_path(tmp_path, BAD_GENERATION) / "members" / "m1" / "records" / "battle.json"
+    raw = layout.read_json(path)
+    raw["learner_state_hash"] = "f" * 64
+    layout.write_json(path, raw)
+    reseal(tmp_path, BAD_GENERATION)
+    with pytest.raises(LoopError, match="m1 is quarantined but its battle record"):
+        run_to(tmp_path, diverge, BAD_GENERATION)
+
+
+def pool_config() -> Any:
+    """Four members, a snapshot every generation and a quarter of the seats against the pool."""
+
+    def edit(raw: dict[str, Any]) -> None:
+        raw["population"]["shares"] = {
+            "ladder_ppm": 500_000,
+            "self_play_ppm": 250_000,
+            "past_pool_ppm": 250_000,
+        }
+        raw["population"]["seats_per_member"] = 4
+        bounds = raw["population"]["explore"]["bounds"]
+        bounds["self_play_ppm"] = {"min": 200_000, "max": 300_000}
+        bounds["past_pool_ppm"] = {"min": 200_000, "max": 300_000}
+        raw["population"]["past_pool"] = {
+            **SETTINGS,
+            "snapshot_every": 1,
+            "max_size": 16,
+            "max_past_per_member": 2,
+        }
+        raw["population"]["selection"]["n_min"] = 2
+
+    return population_config(members=MEMBERS, key="pop-health-pool", edit=edit)
+
+
+def test_a_quarantined_members_snapshot_is_the_pair_it_kept_and_the_records_validate(
+    tmp_path: Path, diverge: dict[str, Any]
+) -> None:
+    """The past pool snapshots what the generation froze: for a stopped member, its earlier pair."""
+    config = pool_config()
+    loop = make_population(tmp_path, config, FakePopulationPlayer(config))
+    diverge["loop"] = loop
+    loop.run(GENERATIONS)
+    pool = layout.read_json(gen_path(tmp_path, BAD_GENERATION) / "past-pool.json")
+    snapshot = next(s for s in pool["snapshots"] if s["id"] == f"m1@g{BAD_GENERATION}")
+    kept = frozen_of(tmp_path, BAD_GENERATION - 1, "m1")
+    assert (snapshot["preview"], snapshot["battle"]) == (kept["preview"], kept["battle"])
+    # The earlier snapshot of the same pair stays a separate entry (another id, same checkpoints).
+    earlier = next(s for s in pool["snapshots"] if s["id"] == f"m1@g{BAD_GENERATION - 1}")
+    assert earlier["battle"] == snapshot["battle"]
+    # The health selection validates beside the frozen-rated snapshots, record after record.
+    before = None
+    for g in range(1, GENERATIONS + 1):
+        record = ladder_of(tmp_path, g)
+        read_ladder_record(record, before, config)
+        before = record
+    kinds = [s["kind"] for s in ladder_of(tmp_path, BAD_GENERATION)["selections"]]
+    assert "health" in kinds
