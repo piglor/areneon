@@ -656,11 +656,11 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
     return result.as_dict(loop.frozen)
 
 
-#: Commands that read a run directory with a single lineage's layout (ADR-021 slice 11 adds the
-#: dashboard's population views): a population run is refused by name, before anything is read.
-#: ``inspect`` and ``replay`` read a population run themselves (slice 12b), except for the
-#: engine re-simulation (``inspect --resimulate``) and the progress-game replay (``--progress-dir``)
-_SINGLE_LINEAGE_ONLY = ("report",)
+#: Commands that read a run directory with a single lineage's layout. Slice 11 gave the dashboard
+#: (``report``) and slice 12b the inspector (``inspect``, ``replay``) their population views, so
+#: none is refused as a whole; only the engine re-simulation (``inspect --resimulate``) and the
+#: progress-game replay (``replay --progress-dir``) read one lineage's files and are refused.
+_SINGLE_LINEAGE_ONLY: tuple[str, ...] = ()
 
 
 def _single_lineage_command(args: argparse.Namespace) -> bool:

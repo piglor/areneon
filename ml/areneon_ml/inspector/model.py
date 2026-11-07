@@ -119,10 +119,12 @@ class InspectModel:
     cumulative_drawn: Counter[str]
 
 
-def read_run_dir_config(run_dir: Path) -> RunConfig:
+def read_run_dir_config(run_dir: Path, *, allow_population: bool = False) -> RunConfig:
+    """The run's config; a population run is refused unless the caller reads it (the dashboard)."""
     try:
         raw = layout.read_json(run_dir / CONFIG_NAME)
-        refuse_population(raw)
+        if not allow_population:
+            refuse_population(raw)
         return read_run_config(raw)
     except (layout.RunDirError, RunConfigError, OSError, json.JSONDecodeError) as exc:
         raise InspectError(f"{CONFIG_NAME}: {exc}") from exc

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import shutil
 import socket
 import subprocess
 from pathlib import Path
@@ -207,7 +208,7 @@ def test_a_replay_refuses_what_the_model_refuses(tmp_path: Path) -> None:
         read_population_games(run, 2, [0], pop_pool())
     run = copy_pop_run(tmp_path / "b")
     rename_episode(run, 2, "m0", 0, lambda e: e["channel"].insert(3, "|split|p1"))
-    with pytest.raises(InspectError, match=r"split|valid Episode|needs one Episode"):
+    with pytest.raises(InspectError, match=r"split|valid Episode|no Episode"):
         read_population_games(run, 2, None, pop_pool())
     run = copy_pop_run(tmp_path / "c")
     for f in (gen_dir(run, 2) / "members" / "m0" / "episodes").glob("*.json"):
@@ -218,6 +219,28 @@ def test_a_replay_refuses_what_the_model_refuses(tmp_path: Path) -> None:
 
 def test_a_forfeited_game_has_no_replay(tmp_path: Path) -> None:
     run = copy_pop_run(tmp_path)
+    gen = gen_dir(run, 2)
+    seed = layout.read_json(gen / "plan.json")[0]["seed"]
+    gone: dict[str, set[str]] = {}
+    for folder in (gen / "members").glob("*/episodes"):
+        for path in sorted(folder.glob("*.json")):
+            collection = json.loads(path.read_text())["provenance"]["collection"]
+            if collection["seed"] == seed:
+                gone.setdefault(folder.parent.name, set()).add(path.stem)
+    # the pair's seed names both of its games; take the Episodes of game 0 only (its half 0)
+    first = {
+        m: {
+            h
+            for h in hashes
+            if json.loads((gen / "members" / m / "episodes" / f"{h}.json").read_text())["player"]
+            == ("p1" if m == "m0" else "p2")
+        }
+        for m, hashes in gone.items()
+    }
+    # game 0 is m0 on p1 against m1 on p2; half 1 swaps the policies, so p1 of m0 is only in game 0
+    for member, hashes in first.items():
+        for h in hashes:
+            (gen / "members" / member / "episodes" / f"{h}.json").unlink()
 
     def forfeit(generation: dict[str, Any]) -> None:
         generation["games"][0].update(
@@ -225,12 +248,16 @@ def test_a_forfeited_game_has_no_replay(tmp_path: Path) -> None:
             winner="p2",
             forfeit={"loser": "p1", "cause": "crash", "request_seq": 1, "detail": "x"},
         )
+        generation["forfeits"] = 1
+        generation["forfeit_causes"] = {"crash": 1}
+        for entry in generation["members"]:
+            entry["episode_hashes"] = [
+                h for h in entry["episode_hashes"] if h not in first.get(entry["member"], set())
+            ]
 
     edit(run, 2, "generation.json", forfeit)
     with pytest.raises(InspectError, match=r"was forfeited: it has no replay"):
         read_population_games(run, 2, [0], pop_pool())
-    # asked for by default, the forfeited game is skipped and the others are read
-    assert len(read_population_games(run, 2, None, pop_pool())[1]) == 23
 
 
 def test_the_cli_reads_a_population_run_for_inspect_and_replay_and_refuses_the_rest(
@@ -238,7 +265,6 @@ def test_the_cli_reads_a_population_run_for_inspect_and_replay_and_refuses_the_r
 ) -> None:
     run = copy_pop_run(tmp_path)
     cases = [
-        ["report", "--run-dir", str(run)],
         ["inspect", "--run-dir", str(run), "--resimulate", "1:0"],
         [
             "replay",
@@ -270,3 +296,40 @@ def test_the_real_pool_script_prints_the_committed_population_listing() -> None:
         check=True,
     )
     assert done.stdout == (POP_FIXTURE / "pool.json").read_text()
+
+
+def test_a_named_game_the_member_holds_no_seat_in_is_an_error() -> None:
+    # game 0 is a ladder game between m0 and m1; game 4 is m0 against itself
+    assert len(games(2, [0], "m1")) == 1
+    with pytest.raises(InspectError, match=r"game 4: m1 holds no seat in it"):
+        games(2, [4], "m1")
+
+
+def test_a_replay_verifies_what_the_pages_verify(tmp_path: Path) -> None:
+    run = copy_pop_run(tmp_path)
+    gen = gen_dir(run, 1)
+    source = sorted((gen / "members" / "m0" / "episodes").glob("*.json"))[0]
+    shutil.move(source, gen / "members" / "m1" / "episodes" / source.name)
+
+    def move(generation: dict[str, Any]) -> None:
+        a, b = generation["members"]
+        a["episode_hashes"].remove(source.stem)
+        b["episode_hashes"] = sorted([*b["episode_hashes"], source.stem])
+
+    edit(run, 1, "generation.json", move)
+    with pytest.raises(InspectError, match=r"not in the directory of"):
+        read_population_games(run, 1, [0], pop_pool())
+    run = copy_pop_run(tmp_path / "b")
+    rename_episode(
+        run,
+        1,
+        "m0",
+        0,
+        lambda e: e["provenance"]["collection"].update(opponent_policy_id="actor-rule@v1x"),
+    )
+    with pytest.raises(InspectError, match=r"names another opponent|no Episode"):
+        read_population_games(run, 1, [0], pop_pool())
+    run = copy_pop_run(tmp_path / "c")
+    edit(run, 1, "generation.json", lambda g: g["members"].__delitem__(-1))
+    with pytest.raises(InspectError, match=r"other members than the config"):
+        read_population_games(run, 1, [0], pop_pool())

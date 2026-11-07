@@ -62,6 +62,7 @@ from areneon_ml.loop.league import (
     check_population_plan,
     read_league_run_record_v2,
 )
+from areneon_ml.loop.selection import quarantined
 
 ROLES = ("preview", "battle")
 
@@ -155,6 +156,11 @@ class MemberState:
     examples: int
     root: str | None
     strength: tuple[int, int, int] | None
+    #: The cause when the ladder record quarantines the member in this generation (ADR-021
+    #: section 12): its update was discarded and its sealed training set is null.
+    quarantined: str | None = None
+    #: A quarantined member froze the very records of the generation before (no new checkpoint).
+    held: bool = False
 
 
 @dataclass(frozen=True)
@@ -448,6 +454,21 @@ def _origin(
     return found.pop()
 
 
+def _held(
+    previous: Mapping[str, Mapping[str, CheckpointRecord]] | None,
+    records: Mapping[str, Mapping[str, CheckpointRecord]],
+    member: str,
+) -> bool:
+    """Whether the member's records are the generation before's, byte for byte (a discarded update
+    freezes the pair the member already had). A quarantined member that was replaced by a copy in
+    the very generation keeps the copy's ordinary records and is not held."""
+    if previous is None:
+        return False
+    return all(
+        records[member][role].record_hash == previous[member][role].record_hash for role in ROLES
+    )
+
+
 def _states(  # noqa: PLR0913, PLR0917
     members: tuple[str, ...],
     record: LeagueRunRecordV2 | None,
@@ -461,6 +482,7 @@ def _states(  # noqa: PLR0913, PLR0917
     entries = {m.member: m for m in (record.members if record else ())}
     files = {m.member: m for m in (gen_file.members if gen_file else ())}
     rated = {m["member"]: m for m in (ladder["members"] if ladder else ())}
+    stopped = quarantined(ladder) if ladder else {}
     out = []
     for member in members:
         sealed = manifest_member(manifest, member)["checkpoints"]
@@ -468,10 +490,17 @@ def _states(  # noqa: PLR0913, PLR0917
         if sealed != ids:
             raise InspectError(f"g{number:06d}: {member}'s records are not the checkpoints sealed")
         entry = entries.get(member)
-        copied = _origin(previous, records, entry, member)
+        cause = stopped.get(member)
+        held = cause is not None and _held(previous, records, member)
+        copied = None if held else _origin(previous, records, entry, member)
         file = files.get(member)
         sealed_set = manifest_member(manifest, member).get("training_set_hash")
-        if file is not None and sealed_set != file.training_set_hash:
+        if file is not None and (sealed_set is None) != (cause is not None):
+            raise InspectError(
+                f"g{number:06d}: {member}'s sealed training set is null exactly when the ladder "
+                "record quarantines it"
+            )
+        if file is not None and sealed_set is not None and sealed_set != file.training_set_hash:
             raise InspectError(f"g{number:06d}: {member}'s training set is not the one sealed")
         mine = rated.get(member)
         strength = mine["strength"] if mine else None
@@ -492,6 +521,8 @@ def _states(  # noqa: PLR0913, PLR0917
                 None
                 if strength is None
                 else (strength["lower"], strength["strength"], strength["upper"]),
+                cause,
+                held,
             )
         )
     return tuple(out)

@@ -167,6 +167,10 @@ def _members_table(gen: PopGeneration | None, model: PopulationModel) -> str:
     rows = []
     for m in states:
         origin = f"copy of {esc(m.copied_from)}" if m.copied_from else "own"
+        if m.quarantined is not None:
+            origin = f"quarantined ({esc(m.quarantined)}), update discarded" + (
+                "; pair held" if m.held else f"; {origin}"
+            )
         pair = (
             esc(_short(m.pair_policy_id.removeprefix("policy:"), 10))
             if m.pair_policy_id
@@ -198,14 +202,22 @@ def _members_table(gen: PopGeneration | None, model: PopulationModel) -> str:
 def _selection(gen: PopGeneration) -> str:
     s = gen.selection
     if s is None:
-        return "no decision"
-    if s["kind"] == "copy":
-        return (
+        text = "no decision"
+    elif s["kind"] == "copy":
+        text = (
             f"copy: {esc(s['donor'])} into {esc(s['loser'])}; {s['pairs']} pairs, lower bound "
             f"{s['lower_bound_ppm']} ppm, margin {s['margin_ppm']} ppm; roots {s['roots_before']} to {s['roots_after']}; "
             f"applied at the start of generation {gen.number + 1}"
         )
-    return f"none: {esc(s.get('failed', 'no reason'))}"
+    else:
+        text = f"none: {esc(s.get('failed', 'no reason'))}"
+    health = [m for m in gen.members if m.quarantined is not None]
+    if health:
+        text += "; quarantined, update discarded: " + ", ".join(
+            f"{esc(m.member)} ({esc(m.quarantined)})" for m in health
+        )
+        text += f"; each slot is replaced at the start of generation {gen.number + 1}"
+    return text
 
 
 def _snapshot_names(snapshots: tuple[Snapshot, ...] | tuple[str, ...]) -> str:

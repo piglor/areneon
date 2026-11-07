@@ -80,3 +80,45 @@ def rename_episode(
                 )
 
     edit(run, generation, "generation.json", fix)
+
+
+def set_ladder(run: Path, generation: int, change: Callable[[dict[str, Any]], None]) -> None:
+    """Edit a generation's ladder.json and keep the manifest's ladder_hash in step."""
+    edit(run, generation, "ladder.json", change)
+    ladder = layout.read_json(gen_dir(run, generation) / "ladder.json")
+    edit(
+        run,
+        generation,
+        "manifest.json",
+        lambda m: m.update(ladder_hash=sha256_hex(jcs(ladder))),
+    )
+
+
+def quarantine(
+    run: Path, generation: int, member: str, *, held: bool, cause: str = "approx_kl"
+) -> None:
+    """Make the ladder quarantine ``member`` at ``generation`` as the loop writes it: a ``health``
+    selection, a null sealed training set and, when ``held``, the records of the generation before
+    byte for byte (a discarded update freezes the pair the member already had)."""
+    set_ladder(
+        run,
+        generation,
+        lambda ladder: ladder["selections"].append(
+            {"cause": cause, "kind": "health", "member": member}
+        ),
+    )
+    before = gen_dir(run, generation - 1)
+    if held:
+        for role in ("preview", "battle"):
+            name = f"members/{member}/records/{role}.json"
+            shutil.copyfile(before / name, gen_dir(run, generation) / name)
+        sealed = layout.read_json(before / layout.MANIFEST)["members"][member]["checkpoints"]
+    else:
+        sealed = layout.read_json(gen_dir(run, generation) / layout.MANIFEST)["members"][member][
+            "checkpoints"
+        ]
+
+    def seal(manifest: dict[str, Any]) -> None:
+        manifest["members"][member].update(checkpoints=sealed, training_set_hash=None)
+
+    edit(run, generation, "manifest.json", seal)

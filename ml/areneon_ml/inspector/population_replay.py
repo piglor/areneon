@@ -19,11 +19,11 @@ from areneon_contracts.contracts import ContractError, validate
 from areneon_ml.inspector.model import refuse_non_public
 from areneon_ml.inspector.pool import Pool
 from areneon_ml.inspector.population_model import (
-    _Episode,
+    _check_episodes,
     _episodes,
+    _join,
     _members_of,
     _past_file,
-    _policies,
     read_population_config,
 )
 from areneon_ml.inspector.population_readers import (
@@ -76,42 +76,6 @@ def _read_seat(
     )
 
 
-def _agree(where: str, entry: PopPlanEntry, row: PopGameRow) -> dict[str, str]:
-    """The seat labels, once plan.json and generation.json tell one story about the game."""
-    labels = {s: entry.seats[s].label for s in SEATS}
-    if (row.seed, row.pair, row.half, row.kind, row.member, row.seats) != (
-        entry.seed,
-        entry.pair,
-        entry.half,
-        entry.kind,
-        entry.member,
-        labels,
-    ):
-        raise InspectError(f"{where}: plan.json and generation.json differ")
-    return labels
-
-
-def _views(  # noqa: PLR0913, PLR0917
-    where: str,
-    entry: PopPlanEntry,
-    row: PopGameRow,
-    policies: dict[str, str],
-    found: dict[tuple[str, str, str, str], _Episode],
-    pool: Pool,
-) -> tuple[SeatView, ...]:
-    """Each seat's Episode, found by seed, seat, own team and the policy that played the seat."""
-    views = []
-    for seat in SEATS:
-        if entry.teams[seat] >= len(pool.teams):
-            raise InspectError(f"{where}: a team index is outside the pool")
-        key = (row.seed, seat, pool.teams[entry.teams[seat]].hash, policies[seat])
-        episode = found.get(key)
-        if episode is None:
-            raise InspectError(f"{where}: it needs one Episode per seat")
-        views.append(_read_seat(episode.path, entry, seat, row.winner, row.turns))
-    return tuple(views)
-
-
 def read_population_games(
     run_dir: Path,
     generation: int,
@@ -121,8 +85,12 @@ def read_population_games(
 ) -> tuple[RunConfig, list[GameReplay]]:
     """The replays of ``games`` (None: every played game) of one population generation.
 
-    ``member`` keeps the games in which that learning member holds a seat. The pool resolves each
-    seat's team, which tells the two teams of a self-play pair (swapped between its halves) apart.
+    The generation is checked as ``inspect`` checks it (plan against ``generation.json`` against
+    the league record, the join of every Episode by seed, seat, team and playing policy, the
+    owner directory, the opponent policy, every Episode claimed, the members against the config).
+    ``member`` keeps the games in which that learning member holds a seat; naming a game that
+    member holds no seat in is an error. The pool resolves each seat's team, which tells the two
+    teams of a self-play pair (swapped between its halves) apart.
     """
     config = read_population_config(run_dir)
     refuse_non_public(config)
@@ -145,28 +113,44 @@ def read_population_games(
         played_pool = _past_file(previous, generation - 1, config)
     except (layout.RunDirError, LeagueRecordError, OSError, json.JSONDecodeError) as exc:
         raise InspectError(f"g{generation:06d}: {exc}") from exc
+    if record.generation != generation:
+        raise InspectError(f"g{generation:06d}: its league-run.json is another generation's")
+    if tuple(m.member for m in gen_file.members) != members:
+        raise InspectError(
+            f"g{generation:06d}: generation.json lists other members than the config"
+        )
     plan = read_population_plan(plan_raw)
-    if record.generation != generation or len(plan) != len(gen_file.games):
-        raise InspectError(f"g{generation:06d}: plan.json and generation.json differ in game count")
-    wanted = list(range(len(plan))) if games is None else games
-    for index in wanted:
-        if not 0 <= index < len(plan):
-            raise InspectError(f"g{generation:06d} has no game {index} (it has {len(plan)})")
+    every = _join(generation, plan, gen_file, pool, record, played_pool)
     found = _episodes(path, gen_file.members, config)
+    _check_episodes(generation, every, found)
+    wanted = list(range(len(every))) if games is None else games
+    for index in wanted:
+        if not 0 <= index < len(every):
+            raise InspectError(f"g{generation:06d} has no game {index} (it has {len(every)})")
     replays = []
     for index in wanted:
-        entry, row = plan[index], gen_file.games[index]
+        game = every[index]
         where = f"g{generation:06d} game {index}"
-        labels = _agree(where, entry, row)
-        if member is not None and member not in labels.values():
+        held = {s.label for s in game.plan.seats.values()}
+        if member is not None and member not in held:
+            if games is not None:
+                raise InspectError(f"{where}: {member} holds no seat in it")
             continue
-        if row.outcome == "forfeit":
+        if game.row.outcome == "forfeit":
             if games is None:
                 continue
             raise InspectError(f"{where} was forfeited: it has no replay")
-        policies = _policies(entry, record, played_pool)
-        views = _views(where, entry, row, policies, found, pool)
-        replays.append(_game(config, generation, entry, row, views))
+        views = tuple(
+            _read_seat(
+                found[(game.row.seed, seat, game.hashes[seat], game.policies[seat])].path,
+                game.plan,
+                seat,
+                game.row.winner,
+                game.row.turns,
+            )
+            for seat in SEATS
+        )
+        replays.append(_game(config, generation, game.plan, game.row, views))
     return config, replays
 
 

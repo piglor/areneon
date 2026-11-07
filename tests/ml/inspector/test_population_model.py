@@ -28,8 +28,10 @@ from tests.ml.inspector.population_support import (
     gen_dir,
     pop_model,
     pop_pool,
+    quarantine,
     rename_episode,
     reseal,
+    set_ladder,
 )
 from tests.ml.inspector.support import FIXTURE
 
@@ -361,3 +363,70 @@ def test_the_generations_must_be_numbered_without_gaps(tmp_path: Path) -> None:
     shutil.rmtree(gen_dir(run, 1))
     with pytest.raises(InspectError, match=r"no gap"):
         build(run)
+
+
+def test_a_quarantined_member_is_held_and_not_a_copy(tmp_path: Path) -> None:
+    run = copy_pop_run(tmp_path)
+    quarantine(run, 2, "m0", held=True, cause="non_finite_loss")
+    model = build(run)
+    one, two = model.generations
+    assert [m.quarantined for m in one.members] == [None, None]
+    m0, m1 = two.members
+    assert (m0.quarantined, m0.held, m0.copied_from) == ("non_finite_loss", True, None)
+    assert (m0.preview, m0.battle) == (one.members[0].preview, one.members[0].battle)
+    assert (m1.quarantined, m1.copied_from) == (None, "m0")  # the generation 1 copy still shows
+    assert two.selection == {"failed": "lower_bound", "kind": "none"}
+
+
+def test_a_member_quarantined_in_the_generation_it_was_replaced_keeps_the_copy(
+    tmp_path: Path,
+) -> None:
+    run = copy_pop_run(tmp_path)
+    quarantine(run, 2, "m1", held=False, cause="forfeits")
+    m1 = build(run).generations[1].members[1]
+    assert (m1.quarantined, m1.held, m1.copied_from) == ("forfeits", False, "m0")
+
+
+def test_nulls_are_accepted_only_for_the_members_the_ladder_quarantines(tmp_path: Path) -> None:
+    run = copy_pop_run(tmp_path)
+
+    def null(manifest: dict[str, Any]) -> None:
+        manifest["members"]["m0"]["training_set_hash"] = None
+
+    edit(run, 2, "manifest.json", null)
+    with pytest.raises(InspectError, match=r"null exactly when the ladder record quarantines it"):
+        build(run)
+    run = copy_pop_run(tmp_path / "b")
+    set_ladder(
+        run,
+        2,
+        lambda ladder: ladder["selections"].append(
+            {"cause": "approx_kl", "kind": "health", "member": "m0"}
+        ),
+    )
+    with pytest.raises(InspectError, match=r"null exactly when the ladder record quarantines it"):
+        build(run)  # quarantined by the ladder, but the manifest still seals a training set
+
+
+def test_a_quarantined_member_must_still_name_a_parent_somebody_froze(tmp_path: Path) -> None:
+    run = copy_pop_run(tmp_path)
+    quarantine(run, 2, "m1", held=False)
+    edit(run, 2, "members/m1/records/battle.json", lambda r: r.update(parent="2" * 64))
+    with pytest.raises(InspectError, match=r"names a parent no member froze"):
+        build(run)
+
+
+def test_the_two_halves_of_a_self_play_pair_never_share_a_join_key() -> None:
+    """The plan nudges equal draws apart for a pool of more than one team, and a half swaps the
+    two teams, so the seat's team differs between the halves (a pool of one team would repeat the
+    game: the model refuses it as two Episodes for one key)."""
+    model = pop_model()
+    for gen in model.generations:
+        pairs: dict[int, list[Any]] = {}
+        for game in gen.games:
+            if game.kind == "self":
+                pairs.setdefault(game.plan.pair, []).append(game)
+        assert pairs
+        for first, second in pairs.values():
+            for seat in ("p1", "p2"):
+                assert first.hashes[seat] != second.hashes[seat]

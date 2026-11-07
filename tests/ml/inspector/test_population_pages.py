@@ -6,16 +6,27 @@ import dataclasses
 import json
 import re
 import socket
+from pathlib import Path
 from typing import Any
 
 import pytest
 from areneon_ml.inspector import population_render as pages
 from areneon_ml.inspector.pool import read_pool
-from areneon_ml.inspector.population_model import PopulationModel
+from areneon_ml.inspector.population_model import (
+    PopulationModel,
+    build_population_model,
+    read_population_config,
+)
 from areneon_ml.inspector.population_readers import PopSeat
 from areneon_ml.inspector.readers import Forfeit
 
-from tests.ml.inspector.population_support import POP_FIXTURE, pop_model
+from tests.ml.inspector.population_support import (
+    POP_FIXTURE,
+    copy_pop_run,
+    pop_model,
+    pop_pool,
+    quarantine,
+)
 from tests.ml.inspector.test_pages import (
     CANARIES,
     HOSTILE_ATTR,
@@ -190,3 +201,19 @@ def test_teams_results_are_listed_by_kind_and_holder() -> None:
     assert "Opponent kind" in text
     assert "past" in text
     assert "baseline actor-rule@v1" in text
+
+
+def test_a_quarantined_member_is_shown_as_discarded_and_held(tmp_path: Path) -> None:
+    run = copy_pop_run(tmp_path)
+    quarantine(run, 2, "m0", held=True, cause="non_finite_loss")
+    model = build_population_model(run, pop_pool(), read_population_config(run))
+    raw = pages.build_population_pages(model)["index.html"]
+    assert problems(raw) == []
+    text = " ".join("".join(audit(raw).text).split())
+    assert "quarantined (non_finite_loss), update discarded; pair held" in text
+    assert "quarantined, update discarded: m0 (non_finite_loss)" in text
+    assert "each slot is replaced at the start of generation 3" in text
+    plain = " ".join(
+        "".join(audit(pages.build_population_pages(pop_model())["index.html"]).text).split()
+    )
+    assert "quarantined" not in plain

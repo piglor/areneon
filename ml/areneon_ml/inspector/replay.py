@@ -80,7 +80,8 @@ class PopulationInfo:
     member: str
     pair: int
     half: int
-    #: seat -> (``member``, ``snapshot`` or ``baseline``, the member / snapshot / policy label).
+    #: seat -> (kind, label): the kind is ``member``, ``snapshot`` or ``baseline``; the label is the
+    #: member id, the past-pool snapshot id or the baseline's policy id.
     holders: dict[str, tuple[str, str]]
 
 

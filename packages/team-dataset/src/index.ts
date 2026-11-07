@@ -14,6 +14,7 @@ export { groupKey, manifestPlan, planQuotas, PlanError, type QuotaPlan, type Spl
 export { drawStatPoints, Proposal, ProposalError } from "./proposal.ts";
 export { type BeliefWorldsFiles, BeliefWorldsError, beliefWorldsFactory, beliefWorldsFiles, createBeliefWorlds } from "./damage-aware-worlds.ts";
 export { createOpponentTeams, type OpponentTeamCounts, type OpponentTeamPort, type TeamDraw, type TeamSourceResult } from "./opponent-teams.ts";
+export { createPreviewSolvePorts, previewSolverPort } from "./preview-solver-port.ts";
 export { createSearchWorlds, SearchWorldsError, type SearchWorldsContext, type SearchWorldsFiles, searchWorldsFiles } from "./search-worlds.ts";
 export { type GeneratorSpreadSampler, generatorSpreadSampler, type StatPointSpread } from "./spread-sampler.ts";
 export { fillQuantile, provision, type Provision } from "./provision.ts";

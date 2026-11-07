@@ -264,9 +264,8 @@ def read_population_generation(raw: object, generation: int) -> PopGenerationFil
                 integer(entry["examples"], f"{member} examples"),
             )
         )
-    for name in ("team_hashes",):
-        for item in array(body[name], name):
-            hash64(item, f"{name} entry")
+    for item in array(body["team_hashes"], "team_hashes"):
+        hash64(item, "team_hashes entry")
     manifest = closed(body["manifest"], VERSION_MANIFEST_KEYS, "generation.json manifest")
     return PopGenerationFile(
         generation,
