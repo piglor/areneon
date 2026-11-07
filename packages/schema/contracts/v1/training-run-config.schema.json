@@ -216,6 +216,35 @@
               "maximum": 1000000
             }
           }
+        },
+        "search_labels": {
+          "description": "Optional (a minor change within v1, ADR-026 erratum E2 decisions 3 and 5, #1291): the frozen pair's own Battle move decisions are also LABELLED by the decision-time search after the game, from the stored Episode, into a separate label stream (labels.jsonl with its manifest label-set.json); nothing the search does is played or enters an Episode or the PPO stream. search_config_hash is the SHA-256 of the JCS bytes of the label search config (config/search/rerank-1-label.v1.json). An eligible decision (a Battle move request of the pair's own seat with two or more non-pending candidates) is selected when the first 8 bytes of SHA-256 over the JCS of {run_key, generation, game, player, request_seq, purpose: \"search-label/1\"}, read big-endian as n, satisfy n * 10^6 < label_share_ppm * 2^64. Labels start at start_generation. Comes with ppo.search_distill (both or neither) and needs warm_start, ppo.value_warmup (start_generation at least value_warmup.generations + 1), a team_dataset, and no opponent_sheet and no candidate feature set whose value reads candidate rows (probe-damage/1 and probe-damage-belief/1 are allowed). Absent keeps every byte and run_config_hash; a config that carries it is a new run from generation 0.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "search_config_hash",
+            "label_share_ppm",
+            "start_generation"
+          ],
+          "properties": {
+            "search_config_hash": {
+              "description": "SHA-256 of the JCS bytes of the label search config.",
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "label_share_ppm": {
+              "description": "Share of the eligible decisions that are selected for a label, in parts per million (1 to 1,000,000).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "start_generation": {
+              "description": "First generation whose games are labelled; at least ppo.value_warmup.generations + 1 (a reader rule), because a cloned value head is untrained until the warm-up ends.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            }
+          }
         }
       }
     },
@@ -368,6 +397,43 @@
             },
             "schedule": {
               "$ref": "#/$defs/AnchorSchedule"
+            }
+          }
+        },
+        "search_distill": {
+          "description": "Optional (a minor change within v1, ADR-026 erratum E2 decisions 5 and 8, ADR-010 erratum A10, #1291): the Battle role's loss gains lambda * mean over the labelled decisions of a minibatch of KL(pi' || pi_theta), both over every real candidate (pending included, padding masked) at the run's play temperature tau (generation.play, else 1). The target is a function of the stored label alone: z(c) = ln(max(prior_ppm(c), 1) / 10^6); q_hat(c) = q(c) for a searched candidate and, for every other one, the prior-weighted mean of the searched q (weights prior_ppm); x(c) = (q_hat(c) - q_min) / (q_max - q_min) over the searched set; a label whose q_max - q_min is below min_spread_ppm is not used; pi' = softmax(z / tau + c_scale * x). Play-time truncation is ignored. lambda = coef_micro / 10^6 and c_scale = c_scale_micro / 10^6. The learner reads the label streams of the current and the previous aggregate_generations - 1 generations. Battle role only; under shared_trunk the gradient reaches the trunk. Comes with generation.search_labels (both or neither). Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "coef_micro",
+            "c_scale_micro",
+            "min_spread_ppm",
+            "aggregate_generations"
+          ],
+          "properties": {
+            "coef_micro": {
+              "description": "lambda in millionths.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000000
+            },
+            "c_scale_micro": {
+              "description": "c_scale in millionths: the logit gap the best searched candidate gains over the worst (4,000,000 is the ADR's 4).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000000
+            },
+            "min_spread_ppm": {
+              "description": "A label whose q_max - q_min (ppm) is below this is not used (0 keeps every label).",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "aggregate_generations": {
+              "description": "Label streams of this many generations (the current one and the previous ones) feed each update; at least 1.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
             }
           }
         }

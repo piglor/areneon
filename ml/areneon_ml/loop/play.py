@@ -56,6 +56,8 @@ class PopulationPlayRequest:
     generation: int
     members: tuple[MemberPair, ...]
     out_dir: Path
+    #: The committed ``past-pool.json`` of the generation before (a run with a past-pool share).
+    past_pool: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -234,6 +236,7 @@ class NodePlayer:
                 for m in request.members
                 for arg in ("--member", f"{m.member},{m.preview},{m.battle},{m.policy_id}")
             ),
+            *(() if request.past_pool is None else ("--past-pool", str(request.past_pool))),
             heap_mb=self.node_heap_mb,
             timeout_s=self.generation_timeout_s,
         )

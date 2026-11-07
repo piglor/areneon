@@ -31,6 +31,15 @@ export type EvaluateQueryInput = PolicyQueryInput & { sampling: { kind: "evaluat
 /** The policy's prior and value for one request, in integer ppm (the rounding rule is the contract's). */
 export type Evaluation = Extract<EvaluationReply["reply"], { kind: "evaluation" }>["evaluation"];
 
+/**
+ * A query whose `sampling` is `value` (ADR-026 erratum E2 decision 7): no candidates, no `candidate_features`, no `opponent_sheet`;
+ * answered by an `EvaluationReply` holding the policy's value of the state alone.
+ */
+export type ValueQueryInput = Omit<PolicyQueryInput, "candidates" | "candidate_features" | "opponent_sheet"> & { candidates: []; sampling: { kind: "value" } };
+
+/** The policy's value for one request, in integer ppm (the same rounding as `Evaluation.value_ppm`). */
+export type ValueEvaluation = Extract<EvaluationReply["reply"], { kind: "value" }>["value"];
+
 /** The message does not match its contract, or breaks one of its reader rules. */
 export class PolicyProtocolError extends Error {
   override name = "PolicyProtocolError";
@@ -66,6 +75,14 @@ export function readPolicyQuery(value: unknown): PolicyQuery {
   if (jcs(query.identity as unknown as Json) !== jcs(query.observation.identity as unknown as Json)) {
     throw new PolicyProtocolError("the query's identity differs from its observation's identity");
   }
+  if (query.sampling.kind === "value") {
+    if (query.candidates.length > 0) throw new PolicyProtocolError("a value query carries no candidates");
+    if (query.candidate_features !== undefined || query.opponent_sheet !== undefined) {
+      throw new PolicyProtocolError("a value query carries no candidate_features and no opponent_sheet");
+    }
+    return query;
+  }
+  if (query.candidates.length === 0) throw new PolicyProtocolError("only a value query may have no candidates");
   const seen = new Set<string>();
   for (const { choice } of query.candidates) {
     if (seen.has(choice)) throw new PolicyProtocolError(`the candidate "${choice}" is listed twice`);
@@ -141,7 +158,7 @@ export function readPolicyReply(value: unknown): PolicyReply {
   return value as unknown as PolicyReply;
 }
 
-/** `value` as an EvaluationReply (the worker's answer to an `evaluate` query), or a `PolicyProtocolError`. */
+/** `value` as an EvaluationReply (the worker's answer to an `evaluate` or a `value` query), or a `PolicyProtocolError`. */
 export function readEvaluationReply(value: unknown): EvaluationReply {
   if (!validEvaluationReply(value)) throw new PolicyProtocolError(`not an EvaluationReply: ${describe(validEvaluationReply.errors)}`);
   return value as unknown as EvaluationReply;

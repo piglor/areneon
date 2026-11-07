@@ -69,6 +69,10 @@ export interface Ready {
   checkpoints: [Checkpoint, ...Checkpoint[]];
   feature_set?: FeatureSetStatement;
   opponent_sheet?: FeatureSetStatement1;
+  /**
+   * True when the worker answers value queries (PolicyQuery sampling kind value): its checkpoints' encoder layout does not fill any token or field column from candidate_features arrays or opponent_sheet, so the value head needs no candidate rows (ADR-026 erratum E2 decision 7). Omitted otherwise, and then a value query is refused.
+   */
+  value_query?: true;
 }
 /**
  * A loaded checkpoint: its role and id (the SHA-256 of its safetensors file bytes).

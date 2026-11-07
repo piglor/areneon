@@ -18,20 +18,111 @@ import {
   syntheticTeamHashes,
   teamHash,
   type WorldSamplePort,
+  configuredSetHash,
   createReplyModel,
+  FEATURE_SET_BELIEF,
+  type Actor,
+  type FeatureConfigs,
+  type SearchActor,
   loadMechanicsConfig,
   loadDamageAwareConfig,
+  MechanicsProbeError,
 } from "@areneon/showdown-bridge";
 import { describe, expect, it } from "vitest";
 import { firstLegal } from "../../showdown-bridge/src/golden.ts";
 import { loadRandomCorpus, type RandomBattleFile } from "../../showdown-bridge/src/random-corpus.ts";
 import { comparable, mutated, withGenders } from "../../showdown-bridge/test/damage-aware-invariance-support.ts";
 import { engine, FORMAT } from "./support.ts";
-import { manifest, playSearch, portFor, setupFor, snapshot, StandInWorker, vocabulary } from "./search-actor-support.ts";
+import { manifest, playSearch, portFor, setupFor, snapshot, StandInWorker, ValueStandInWorker, vocabulary } from "./search-actor-support.ts";
 
 const corpus = loadRandomCorpus();
 const battles = corpus.slice(0, 3);
 const toId = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const configsOf = (): FeatureConfigs => ({ vocabulary, config: loadDamageAwareConfig("v1", vocabulary), mechanics: loadMechanicsConfig(FORMAT), snapshot, data_class: "synthetic" });
+
+describe("value-only leaves (ADR-026 erratum E2 decision 7)", () => {
+  const battle = battles[0] as RandomBattleFile;
+
+  it("asks value queries for its leaves, with no candidates and no rows, and plays what the evaluate leaves play", async () => {
+    const plain = await playSearch(battle);
+    const valued = await playSearch(battle, { worker: new ValueStandInWorker() });
+    expect(valued.record.choices).toEqual(plain.record.choices);
+    expect(valued.actor.report().counts).toEqual(plain.actor.report().counts);
+    const counts = valued.actor.report().counts;
+    expect(counts.searched_decisions).toBeGreaterThan(0);
+    const leaves = valued.worker.queries.filter((q) => q.kind === "value");
+    expect(leaves).toHaveLength(counts.leaf_queries);
+    expect(leaves.every((q) => q.candidates === 0 && !q.rows)).toBe(true);
+    // the root keeps its candidates: one evaluate per searched decision, the leaves are not evaluate queries
+    const roots = valued.worker.queries.filter((q) => q.kind === "evaluate");
+    expect(roots).toHaveLength(counts.searched_decisions + counts.fallbacks.belief_refused + counts.fallbacks.below_min_valid);
+    expect(roots.every((q) => q.candidates > 0)).toBe(true);
+    // a worker that does not state value_query is asked evaluate for its leaves, as before
+    expect(plain.worker.queries.filter((q) => q.kind === "value")).toHaveLength(0);
+    expect(plain.worker.queries.filter((q) => q.kind === "evaluate").length).toBe(roots.length + counts.leaf_queries);
+  }, 300_000);
+
+  it("searches a pair that reads probe-damage/1 rows: the root carries them, the leaves do not", async () => {
+    const configs = configsOf();
+    const stated = { feature_set: "probe-damage/1", feature_set_hash: configuredSetHash(engine, configs) };
+    const worker = Object.assign(new ValueStandInWorker(), { featureSet: stated });
+    const { actor, record } = await playSearch(battle, { worker, options: { features: { configs } } });
+    const counts = actor.report().counts;
+    expect(counts.searched_decisions).toBeGreaterThan(0);
+    expect(record.choices.length).toBeGreaterThan(0);
+    const leaves = worker.queries.filter((q) => q.kind === "value");
+    expect(leaves.length).toBe(counts.leaf_queries);
+    expect(leaves.every((q) => q.candidates === 0 && !q.rows)).toBe(true);
+    // every root and every fallback query of the pair carries the rows of its candidates
+    const withCandidates = worker.queries.filter((q) => q.kind !== "value");
+    expect(withCandidates.length).toBeGreaterThan(0);
+    expect(withCandidates.every((q) => q.rows)).toBe(true);
+  }, 300_000);
+
+  it("forfeits as the pair's own actor does when the root's rows cannot be built", async () => {
+    const configs = configsOf();
+    const stated = { feature_set: "probe-damage/1", feature_set_hash: configuredSetHash(engine, configs) };
+    const worker = Object.assign(new ValueStandInWorker(), { featureSet: stated });
+    const refusing: FeatureConfigs = { ...configs, probe: () => { throw new MechanicsProbeError("refused"); } };
+    const { record } = await playSearch(battle, { worker, options: { features: { configs: refusing } } });
+    expect(record.forfeit).toMatchObject({ player: "p1", cause: "crash", detail: "no candidate features: probe_refused" });
+  }, 300_000);
+
+  it("checks the rows it builds against the feature set the worker states now, and the policy id against the stated set", async () => {
+    const configs = configsOf();
+    const stated = { feature_set: "probe-damage/1", feature_set_hash: configuredSetHash(engine, configs) };
+    // the worker changes its statement after Team Preview: the root's rows are of another set than it states
+    const flipping = Object.assign(new ValueStandInWorker(), { flip: false });
+    Object.defineProperty(flipping, "featureSet", { get: () => (flipping.flip ? { ...stated, feature_set_hash: "e".repeat(64) } : stated) });
+    const wrap = (actor: SearchActor): Actor => async (request, context) => {
+      if (request.phase !== "preview") flipping.flip = true;
+      return actor(request, context);
+    };
+    await expect(playSearch(battle, { worker: flipping, wrap, options: { features: { configs } } })).rejects.toThrow(/another feature set/);
+    // a policy id made without the stated set's hash (or for another one) is refused at construction
+    const worker = Object.assign(new ValueStandInWorker(), { featureSet: stated });
+    const setup = setupFor();
+    const pair = { preview: "a".repeat(64), battle: "b".repeat(64) };
+    for (const features of [undefined, "f".repeat(64)]) {
+      const { policy_id, identity_hash } = searchPolicy(setup, manifest, pair, "argmax", {}, features);
+      const error = await playSearch(battle, { worker, options: { features: { configs }, policy_id, identity_hash } }).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(SearchError);
+      expect((error as SearchError).code).toBe("policy_mismatch");
+    }
+    // ... and the checkpoint ids are needed to check it
+    await expect(playSearch(battle, { worker, options: { features: { configs }, pair: undefined as never } })).rejects.toThrow(/checkpoint ids/);
+  }, 300_000);
+
+  it("names a features pair by its own policy id", () => {
+    const setup = setupFor();
+    const pair = { preview: "a".repeat(64), battle: "b".repeat(64) };
+    const plain = searchPolicy(setup, manifest, pair, "argmax");
+    const featured = searchPolicy(setup, manifest, pair, "argmax", {}, "d".repeat(64));
+    expect(featured.identity_hash).toBe(plain.identity_hash);
+    expect(featured.policy_id).not.toBe(plain.policy_id);
+  });
+});
 
 describe("the setup", () => {
   it("refuses a config for another format, another belief, another prior arm and a prior of another format", () => {
@@ -182,6 +273,19 @@ describe("refusals and drops", () => {
     await expect(actor(request, { player: "p1", channel: [] })).rejects.toThrow(SearchError);
   });
 
+  it("refuses a pair that reads the opponent sheet, the belief feature set, and a features pair that cannot be searched value-only", async () => {
+    const sheet = Object.assign(Object.create(new ValueStandInWorker()) as ValueStandInWorker, { sheetSource: { feature_set: "opponent-sheet/1", feature_set_hash: "c".repeat(64) } });
+    await expect(playSearch(battle, { worker: sheet })).rejects.toThrow(/opponent sheet/);
+    const belief = Object.assign(Object.create(new ValueStandInWorker()) as ValueStandInWorker, { featureSet: { feature_set: FEATURE_SET_BELIEF, feature_set_hash: "c".repeat(64) } });
+    await expect(playSearch(battle, { worker: belief })).rejects.toThrow(/belief feature set/);
+    // a first-set pair whose worker answers value queries still needs the configs that build the root's rows
+    const stated = Object.assign(Object.create(new ValueStandInWorker()) as ValueStandInWorker, { featureSet: { feature_set: "probe-damage/1", feature_set_hash: "c".repeat(64) } });
+    await expect(playSearch(battle, { worker: stated })).rejects.toThrow(/needs the feature configs/);
+    // ... and a set this side cannot build is refused
+    const unknown = Object.assign(Object.create(new ValueStandInWorker()) as ValueStandInWorker, { featureSet: { feature_set: "probe-damage/9", feature_set_hash: "c".repeat(64) } });
+    await expect(playSearch(battle, { worker: unknown, options: { features: { configs: configsOf() } } })).rejects.toThrow(/cannot build/);
+  });
+
   it("drops a world whose reply model fails or whose reply the engine refuses, counts it, and plays the pair when too few worlds remain", async () => {
     const failing: ReplyModel = { ...real(), reply: () => { throw new ReplyModelError("no reply"); } };
     const a = await playSearch(battle, { options: { reply_model: failing } });
@@ -234,6 +338,22 @@ describe("refusals and drops", () => {
     const { counts } = actor.report();
     expect(counts.fallbacks.belief_refused).toBeGreaterThan(0);
     expect(counts.belief_refusals).toEqual({ evidence_has_no_support: counts.fallbacks.belief_refused });
+  }, 300_000);
+});
+
+describe("the actor's decision and label members", () => {
+  const battle = battles[0] as RandomBattleFile;
+  it("answer through the shared decision: a refused belief is a fallback, and a lone candidate is no label", async () => {
+    const port: WorldSamplePort = { ...portFor(), open: () => ({ kind: "refused", code: "evidence_has_no_support" }) };
+    const { actor } = await playSearch(battle, { maxTurns: 1, setup: setupFor(port, { config: loadSearchConfig(FORMAT) }) });
+    const side = { roster: [], conditions: {}, teamsize: 6 };
+    const world = { request: {}, team: [], state: { own: side, opponent: side, weather: null, terrain: null, field_conditions: [] }, flags: [], facts: null } as never;
+    const stream = new Uint8Array(32);
+    expect(await actor.decide({ world, channel: [], top: [], stream })).toEqual({ kind: "fallback", reason: "belief_refused" });
+    const one = [{ choice: "default", pending: false }] as never;
+    expect(await actor.label({ world, channel: [], candidates: one, prior_ppm: [1_000_000], stream })).toEqual({ kind: "refused", reason: "too_few_candidates", prior_ppm: [1_000_000] });
+    const two = [{ choice: "move 1", pending: false }, { choice: "move 2", pending: false }] as never;
+    expect(await actor.label({ world, channel: [], candidates: two, prior_ppm: [500_000, 500_000], stream })).toMatchObject({ kind: "refused", reason: "belief_refused" });
   }, 300_000);
 });
 

@@ -10,6 +10,7 @@
 // `planGeneration` is untouched: a config without `population` plans as it always did.
 
 import { GenerationError } from "./league-generation.ts";
+import { drawPast, type PastPoolFile } from "./past-pool.ts";
 import { calibrationGameStreams, leagueGameStreams } from "./league-seed.ts";
 import { populationDraw } from "./population-seed.ts";
 import type { Player } from "./runner.ts";
@@ -24,14 +25,14 @@ export class PopulationPlanError extends GenerationError {
 }
 
 /** Fixed words of the refusals, so a caller and a test can name them. */
-export const PAST_POOL_REFUSAL = "population: a non-zero past_pool_ppm is refused until the past pool is built (ADR-021 slice 10)";
+export const PAST_POOL_MISSING = "population: a non-zero past_pool_ppm needs the committed past pool of the generation before";
 export const EXPLOITER_REFUSAL = "population: exploiter seats are refused until they are built";
 export const ODD_ANCHOR_REFUSAL = "population: every baseline's games are team pairs played twice, so each count must be even";
 
 /** What takes a seat: a learning member `m<k>`, or a scripted baseline. */
-export type PopulationSeat = { member: string } | { actor: "actor-rule" | "random-legal" | "damage-aware"; policy_id: string };
+export type PopulationSeat = { member: string } | { snapshot: string; policy_id: string } | { actor: "actor-rule" | "random-legal" | "damage-aware"; policy_id: string };
 
-export type PopulationGameKind = "ladder" | "self" | "anchor";
+export type PopulationGameKind = "ladder" | "self" | "past" | "anchor";
 
 export interface PopulationGamePlan {
   /** The game's index within the generation (2 * pair + half): the sampler's `game`. */
@@ -79,17 +80,25 @@ export function seatCounts(population: NonNullable<TrainingRunConfig["population
 
 export const memberLabel = (k: number): string => `m${k}`;
 
+/** What a plan with a past-pool share reads (ADR-021 section 3): the committed pool of the generation before and each member's current pair. */
+export interface PastPlanInput {
+  pool: PastPoolFile;
+  /** member label -> the `policy_id` of the pair it plays this generation (a snapshot equal to it is never drawn). */
+  current: Readonly<Record<string, string>>;
+}
+
 /**
- * The generation's plan, in game order: member 0's ladder pairs, self-play pairs and anchor pairs (one block per
- * baseline, in the config's order), then member 1's, and so on. Refused: a past-pool share above 0, exploiter
- * seats, an odd baseline count, or a config without `population`.
+ * The generation's plan, in game order: member 0's ladder pairs, self-play pairs, past-pool pairs and anchor pairs
+ * (one block per baseline, in the config's order), then member 1's, and so on. A past pair meets a snapshot drawn by
+ * PFSP (`drawPast`); a member with no snapshot to meet gives its past pairs to self-play. Refused: a past-pool share
+ * above 0 with no `past` input, exploiter seats, an odd baseline count, or a config without `population`.
  */
-export function planPopulation(config: TrainingRunConfig, generation: number, poolSize: number): PopulationGamePlan[] {
+export function planPopulation(config: TrainingRunConfig, generation: number, poolSize: number, past?: PastPlanInput): PopulationGamePlan[] {
   const population = config.population;
   if (population === undefined) throw new PopulationPlanError("population: the config has no population section");
   if (!Number.isInteger(generation) || generation < 1) throw new RangeError("a generation is numbered from 1");
   if (!Number.isInteger(poolSize) || poolSize < 1) throw new RangeError("the team pool is empty");
-  if (population.shares.past_pool_ppm !== 0) throw new PopulationPlanError(PAST_POOL_REFUSAL);
+  if (population.shares.past_pool_ppm !== 0 && past === undefined) throw new PopulationPlanError(PAST_POOL_MISSING);
   if (population.exploiters !== 0) throw new PopulationPlanError(EXPLOITER_REFUSAL);
   if (config.generation.baseline_games.some((baseline) => baseline.games % 2 !== 0)) throw new PopulationPlanError(ODD_ANCHOR_REFUSAL);
   const counts = seatCounts(population);
@@ -128,7 +137,9 @@ export function planPopulation(config: TrainingRunConfig, generation: number, po
       const opponent = others[Number(draw % BigInt(others.length))] as number;
       addPair("ladder", member, { member }, { member: memberLabel(opponent) });
     }
-    for (let i = 0; i < counts.self; i++) addPair("self", member, { member }, { member });
+    const snapshots = past === undefined ? [] : drawPast(config, generation, member, counts.past, past.current[member] ?? "", past.pool);
+    for (let i = 0; i < counts.self + (counts.past - snapshots.length); i++) addPair("self", member, { member }, { member });
+    for (const snapshot of snapshots) addPair("past", member, { member }, { snapshot: snapshot.id, policy_id: snapshot.policy_id });
     for (const baseline of config.generation.baseline_games) {
       for (let i = 0; i < baseline.games / 2; i++) addPair("anchor", member, { member }, { actor: baseline.actor, policy_id: baseline.policy_id });
     }

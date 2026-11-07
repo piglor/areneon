@@ -23,10 +23,11 @@ export const SEARCH_POLICY_LABEL = "learned pair with decision-time search (one-
 
 /**
  * Bumped when the hypothetical-channel construction for the value-head leaf, or the non-learned HP and
- * knock-out leaf (`search-actor.ts`, `search-leaf.ts`), changes (ADR-026 section 5). The constant starts at 1 and is
- * the identity's `leaf_format`.
+ * knock-out leaf (`search-actor.ts`, `search-leaf.ts`), changes (ADR-026 section 5). It is the identity's `leaf_format`.
+ * 1: the value-head leaf asks `evaluate` with the hypothetical request's candidates. 2: the value-head leaf asks a `value` query
+ * (no candidates, no rows) of a worker that states `value_query` (ADR-026 erratum E2 decision 7).
  */
-export const LEAF_FORMAT = 1;
+export const LEAF_FORMAT = 2;
 
 export class SearchConfigError extends Error {
   override name = "SearchConfigError";
@@ -45,6 +46,8 @@ export function readSearchConfig(value: unknown): SearchConfig {
   if (!validConfig(value)) throw new SearchConfigError(`invalid SearchConfig: ${JSON.stringify(validConfig.errors)}`);
   const config = structuredClone(value) as unknown as SearchConfig;
   if (config.min_valid_worlds > config.worlds.n) throw new SearchConfigError("min_valid_worlds exceeds the worlds per decision");
+  if ((config.top_k_rule === "slot-cover") !== (config.k_max !== undefined)) throw new SearchConfigError("k_max is present exactly when top_k_rule is slot-cover");
+  if (config.top_k_rule === "slot-cover" && config.top_k !== config.k_max) throw new SearchConfigError("with slot-cover top_k equals k_max (top_k is not otherwise read)");
   const { max_damage_ppm, uniform_draws } = config.replies;
   if (uniform_draws === 0 && max_damage_ppm !== 1_000_000) throw new SearchConfigError("with no uniform draw the max-damage reply must carry the whole weight");
   if (uniform_draws > 0 && (1_000_000 - max_damage_ppm) % uniform_draws !== 0) throw new SearchConfigError("the uniform replies must share the rest of the weight in exact millionths");

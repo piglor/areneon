@@ -344,6 +344,13 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const replyOf = (reply: unknown) => ({ schema_version: 1, query_id: 1, reply });
   // ADR-026 section 5: an evaluate query is answered by an EvaluationReply, one prior entry per candidate (invented numbers).
   const evalQuery = queryOf("battle", { kind: "evaluate" });
+  // ADR-026 erratum E2 decision 7: a value query has no candidate and no rows; its reply is a value.
+  const valueQuery = { ...queryOf("battle", { kind: "value" }), candidates: [] };
+  const valueOf = (value_ppm: number) => ({
+    schema_version: 1,
+    query_id: 1,
+    reply: { kind: "value", value: { identity: battleQuery.identity, value_ppm } },
+  });
   const evaluationOf = (prior_ppm: number[], value_ppm: number) => ({
     schema_version: 1,
     query_id: 1,
@@ -717,6 +724,16 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const leagueRunWith = (change: (r: Record<string, unknown>) => void) => mutated(leagueRun, change);
   const runConfigWith = (change: (c: Record<string, unknown>) => void) => mutated(runConfig, change);
   const runSection = (c: Record<string, unknown>, name: string) => c[name] as Record<string, unknown>;
+  // ADR-026 erratum E2 (#1291): a search-distilling run's two blocks, on a warm start with a value warm-up.
+  const distilling = (edit?: (c: Record<string, unknown>) => void) =>
+    runConfigWith((c) => {
+      c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
+      c.team_dataset = { path: ".tmp/datasets/train-v1", dataset_hash: hexOf("5") };
+      runSection(c, "ppo").value_warmup = { generations: 2 };
+      runSection(c, "ppo").search_distill = { coef_micro: 1000000, c_scale_micro: 4000000, min_spread_ppm: 20000, aggregate_generations: 4 };
+      runSection(c, "generation").search_labels = { search_config_hash: hexOf("d"), label_share_ppm: 40000, start_generation: 3 };
+      edit?.(c);
+    });
   // ADR-021: a population block for the tiny run's PPO values (learning rate 1000, entropy 10000, 2 epochs, clip 200000).
   const range = (min: number, max: number) => ({ min, max });
   const populationBlock = (): Record<string, unknown> => ({
@@ -848,6 +865,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "training-run-config/team-dataset": runConfigWith((c) => (c.team_dataset = { path: ".tmp/datasets/train-v1", dataset_hash: hexOf("5") })),
     "training-run-config/warm-start": runConfigWith((c) => (c.warm_start = { preview: hexOf("a"), battle: hexOf("b") })),
+    "training-run-config/search-distill": distilling(),
     "training-run-config/value-warmup": runConfigWith((c) => {
       c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
       runSection(c, "ppo").value_warmup = { generations: 2 };
@@ -1006,6 +1024,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-query/battle-evaluate": evalQuery,
     "policy-query/preview-evaluate": queryOf("preview", { kind: "evaluate" }),
     "policy-query/battle-features-evaluate": withFeatures(evalQuery, featureRows),
+    "policy-query/battle-value": valueQuery,
+    "evaluation-reply/value": valueOf(620000),
     // ADR-027 section 2, ADR-025 erratum E4: the optional opponent_sheet (absent in every sample above, so their digests are unchanged).
     "opponent-sheet/belief": beliefSheet,
     "opponent-sheet/refused": sheetOf("belief", unknownSlot, { refusal: "disguise_unsettled" }),
@@ -1029,6 +1049,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-handshake/ready-features-2": readyWith((m) => (m.feature_set = feature2Ref)),
     "policy-handshake/ready-features-3": readyWith((m) => (m.feature_set = feature3Ref)),
     "policy-handshake/ready-sheet": readyWith((m) => (m.opponent_sheet = sheetSetRef)),
+    "policy-handshake/ready-value-query": readyWith((m) => (m.value_query = true)),
     "training-run-config/opponent-sheet": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { opponent_sheet: sheetSetRef };
     }),
@@ -1087,6 +1108,25 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       runSection(c, "model").options = { shared_trunk: true };
       c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
     }),
+    "training-run-config/search-distill-labels-only": distilling((c) => delete runSection(c, "ppo").search_distill),
+    "training-run-config/search-distill-config-only": distilling((c) => delete runSection(c, "generation").search_labels),
+    "training-run-config/search-distill-no-warm-start": distilling((c) => {
+      delete c.warm_start;
+      delete runSection(c, "ppo").value_warmup;
+    }),
+    "training-run-config/search-distill-no-value-warmup": distilling((c) => delete runSection(c, "ppo").value_warmup),
+    "training-run-config/search-distill-start-in-warmup": distilling((c) => (runSection(c, "generation").search_labels = { search_config_hash: hexOf("d"), label_share_ppm: 40000, start_generation: 2 })),
+    "training-run-config/search-distill-opponent-sheet": distilling((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { opponent_sheet: { feature_set: "opponent-sheet/1", feature_set_hash: hexOf("c") } };
+    }),
+    "training-run-config/search-distill-features-2": distilling((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/2", feature_set_hash: hexOf("c") } };
+    }),
+    "training-run-config/search-distill-population": distilling((c) => {
+      c.warm_start = { battle: hexOf("b") };
+      c.population = populationBlock();
+    }),
+    "training-run-config/search-distill-no-team-dataset": distilling((c) => delete c.team_dataset),
     "training-run-config/value-warmup-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").value_warmup = { generations: 2 })),
     "training-run-config/anchor-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").anchor = { kl_micro: 100000, schedule: { kind: "constant" } })),
     "training-run-config/population-warm-start-both": populated((_p, c) => (c.warm_start = { preview: hexOf("a"), battle: hexOf("b") })),
@@ -1184,6 +1224,11 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     // The default temperature has one encoding: absent.
     "policy-query/temperature-explicit-default": queryOf("battle", { ...sampleBy, temperature_ppm: 1000000 }),
     "policy-query/evaluate-duplicate-candidate": mutated(evalQuery, (q) => ((q.candidates as unknown[])[1] = (evalQuery.candidates as unknown[])[0])),
+    // Empty candidates are for a value query alone; a value query is value-only (no candidates, no rows, no sheet).
+    "policy-query/no-candidates": { ...battleQuery, candidates: [] },
+    "policy-query/value-with-candidates": { ...valueQuery, candidates: battleQuery.candidates },
+    "policy-query/value-with-features": { ...valueQuery, candidate_features: { ...featureSetRef, rows: [] } },
+    "policy-query/value-with-sheet": { ...valueQuery, opponent_sheet: beliefSheet },
     "policy-query/duplicate-candidate": mutated(battleQuery, (q) => ((q.candidates as unknown[])[1] = (battleQuery.candidates as unknown[])[0])),
     "policy-handshake/unsorted-contracts": helloWith((m) => (m.contracts = contractsOf().reverse())),
     "policy-handshake/duplicate-contracts": helloWith((m) => (m.contracts = [contractsOf()[0], contractsOf()[0]])),
@@ -1438,6 +1483,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/warm-start-upper-case": runConfigWith((c) => (c.warm_start = { preview: "A".repeat(64), battle: hexOf("b") })),
     "training-run-config/warm-start-missing-battle": runConfigWith((c) => (c.warm_start = { preview: hexOf("a") })),
     "training-run-config/warm-start-extra-field": runConfigWith((c) => (c.warm_start = { preview: hexOf("a"), battle: hexOf("b"), anchor: hexOf("c") })),
+    "training-run-config/search-distill-zero-share": distilling((c) => (runSection(c, "generation").search_labels = { search_config_hash: hexOf("d"), label_share_ppm: 0, start_generation: 3 })),
+    "training-run-config/search-distill-zero-aggregate": distilling((c) => (runSection(c, "ppo").search_distill = { coef_micro: 1000000, c_scale_micro: 4000000, min_spread_ppm: 20000, aggregate_generations: 0 })),
+    "training-run-config/search-distill-extra-field": distilling((c) => (runSection(c, "ppo").search_distill = { coef_micro: 1000000, c_scale_micro: 4000000, min_spread_ppm: 20000, aggregate_generations: 4, anneal: 1 })),
+    "training-run-config/search-distill-short-hash": distilling((c) => (runSection(c, "generation").search_labels = { search_config_hash: "abc", label_share_ppm: 40000, start_generation: 3 })),
     "training-run-config/value-warmup-zero": runConfigWith((c) => {
       c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
       runSection(c, "ppo").value_warmup = { generations: 0 };
@@ -1599,7 +1648,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       runSection(runSection(c, "model"), "encoder").options = { opponent_sheet: { ...sheetSetRef, feature_set_hash: "abc" } };
     }),
     "policy-handshake/ready-short-feature-hash": readyWith((m) => (m.feature_set = { ...featureSetRef, feature_set_hash: "abc" })),
-    "policy-query/no-candidates": { ...battleQuery, candidates: [] },
+    "policy-query/value-with-u": queryOf("battle", { kind: "value", u: 1 }),
+    "evaluation-reply/value-float": valueOf(0.5),
+    "evaluation-reply/value-no-identity": mutated(valueOf(0), (r) => delete ((r.reply as Record<string, Record<string, unknown>>).value as Record<string, unknown>).identity),
+    "policy-handshake/ready-value-query-false": readyWith((m) => (m.value_query = false)),
     "policy-query/too-many-candidates": { ...battleQuery, candidates: candidatesOf(1025) },
     "policy-query/seed": { ...battleQuery, seed: record.seed },
     "policy-query/candidate-verdict": mutated(battleQuery, (q) => ((q.candidates as Record<string, unknown>[])[0] as Record<string, unknown>).legal = true),

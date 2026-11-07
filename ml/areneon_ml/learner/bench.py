@@ -21,7 +21,7 @@ import torch
 
 from areneon_ml.learner.config import RunConfig
 from areneon_ml.learner.data import trajectories
-from areneon_ml.learner.trainer import Learner, TrainReport, configure_learner
+from areneon_ml.learner.trainer import Learner, LearnerError, TrainReport, configure_learner
 from areneon_ml.model.encoder import Encoder
 from areneon_ml.model.gamedata import GameData
 from areneon_ml.model.network import ROLES, init_network
@@ -104,6 +104,8 @@ def benchmark(
     clock: Callable[[], float] = time.perf_counter,
 ) -> dict[str, Any]:
     """Time ``repeats`` PPO generations over the recorded stream on the config's device."""
+    if config.ppo.search_distill is not None:
+        raise LearnerError("bench times PPO on one stream: it does not read label streams")
     device = configure_learner(config)
     encoders = {role: Encoder(game, config.model.encoder) for role in ROLES}
     manifest = recorded.manifest

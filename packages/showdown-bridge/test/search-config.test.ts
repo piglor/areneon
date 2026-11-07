@@ -14,7 +14,7 @@ import { WORLD_BUILDER_FORMAT } from "../src/world-builder.ts";
 const FORMAT = "gen9championsvgc2026regmc";
 const SAMPLES = new URL("../../../fixtures/contracts/v1/search-config/", import.meta.url);
 const sample = (kind: string, name: string): unknown => JSON.parse(readFileSync(new URL(`${kind}/${name}.json`, SAMPLES), "utf8"));
-const names = (kind: string): string[] => ["rerank-1", "uniform-replies-hp-leaf"].filter(() => kind === "valid");
+const names = (kind: string): string[] => ["rerank-1", "uniform-replies-hp-leaf", "slot-cover"].filter(() => kind === "valid");
 
 const h = (c: string): string => c.repeat(64);
 const config = loadSearchConfig(FORMAT);
@@ -28,15 +28,15 @@ const inputs: SearchIdentityInputs = {
   world_builder_format: 2,
   world_facts_format: "world-facts/4",
   reply_model_format: 1,
-  leaf_format: 1,
+  leaf_format: 2,
   reader_sha256: h("4"),
   version_manifest: { showdown_commit: "c".repeat(40), format_id: FORMAT, regulation: "M-C", ruleset_hash: h("5"), format_rules_hash: h("6") },
 };
 // Computed with Python (areneon_ml.loop.records), outside the TS code.
 const CONFIG_HASH = "739f4b1f1a30411b3d5fb3d37749739a6673bcaf6195941f3a57f6dc1e70d49c";
 // Moved by #248's format bumps (WORLD_BUILDER_FORMAT 1 -> 2, world-facts/2 -> 3) and by #1282 (world-facts/3 -> 4); recomputed with Python hashlib over the
-// canonical JSON, sort_keys, separators (",", ":"), of the 13 inputs below with search_config_hash = CONFIG_HASH (world-facts/3 still gives 3508d46a...). The policy-id vectors below take a search hash as an opaque string, so they keep edd348bd....
-const SEARCH_HASH = "17e58d7cd228cefe6a6102a2f3eb2d24f959bb2f0de5f3c0581d74c3a46f99fa";
+// canonical JSON, sort_keys, separators (",", ":"), of the 13 inputs below with search_config_hash = CONFIG_HASH (world-facts/3 still gives 3508d46a...). #1287 moved it again with LEAF_FORMAT 2 (leaf_format 1 gave 17e58d7c...). The policy-id vectors below take a search hash as an opaque string, so they keep edd348bd....
+const SEARCH_HASH = "5eddc05daa1004b1a72ccc3deae10adfcc56b38ceba6a1d755344f2a77b53081";
 const ID_VECTOR_SEARCH = "edd348bdf8b9f5069ada74afae22d3ba99e1b349e2748b245de73384c9d666b9";
 
 describe("the committed SearchConfig", () => {
@@ -57,10 +57,10 @@ describe("the committed SearchConfig", () => {
 
   it("reads every valid sample and refuses the invalid and reader-invalid ones", () => {
     for (const name of names("valid")) expect(() => readSearchConfig(sample("valid", name))).not.toThrow();
-    for (const name of ["extra-field", "fractional-top-k", "zero-top-k", "unknown-algorithm", "unknown-leaf", "unknown-hp-rounding", "bad-seed-derivation", "short-belief-hash", "missing-replies", "next-version"]) {
+    for (const name of ["extra-field", "fractional-top-k", "zero-top-k", "unknown-algorithm", "unknown-leaf", "unknown-hp-rounding", "bad-seed-derivation", "short-belief-hash", "missing-replies", "next-version", "k-max-too-small"]) {
       expect(() => readSearchConfig(sample("invalid", name)), name).toThrow(/invalid SearchConfig/);
     }
-    for (const name of ["min-worlds-over-n", "inexact-uniform-share", "no-uniform-without-full-weight"]) {
+    for (const name of ["min-worlds-over-n", "inexact-uniform-share", "no-uniform-without-full-weight", "slot-cover-without-k-max", "k-max-without-slot-cover", "slot-cover-top-k-differs"]) {
       expect(() => readSearchConfig(sample("reader-invalid", name)), name).toThrow(SearchConfigError);
     }
   });
@@ -69,6 +69,43 @@ describe("the committed SearchConfig", () => {
     const alone = structuredClone(config);
     alone.replies = { max_damage_ppm: 1_000_000, uniform_draws: 0 };
     expect(readSearchConfig(alone).replies.uniform_draws).toBe(0);
+  });
+});
+
+// The label search config of the search distillation (ADR-026 erratum E2 decision 2, SD-b). Hashes computed with Python hashlib over the canonical
+// JSON (sort_keys, separators (",", ":")) of the file and, for the identity, of the same 13 inputs as above with search_config_hash = LABEL_CONFIG_HASH.
+const LABEL_CONFIG_HASH = "a542fed7b3b1c00b355bb62b1c7c220b85e987b919ce9f6e79489659fd69a037";
+const LABEL_SEARCH_HASH = "365867ec7b52fea46f1eb8b2340ed4fa5d0d81a10c32ad72458a404a338264dd";
+
+describe("the label search config", () => {
+  const label = loadSearchConfig(FORMAT, "rerank-1-label.v1");
+
+  it("is S0's search except the slot-cover set, 4 worlds, 2 replies and 2 valid worlds, with its own pinned hash and identity", () => {
+    expect(label).toMatchObject({ top_k_rule: "slot-cover", k_max: 16, worlds: { n: 4, redraws: 4 }, replies: { max_damage_ppm: 500000, uniform_draws: 1 }, min_valid_worlds: 2, leaf: { kind: "value-head" } });
+    const { top_k: _a, top_k_rule: _b, k_max: _c, worlds: lw, replies: _d, min_valid_worlds: _e, ...labelRest } = label;
+    const { top_k: _f, top_k_rule: _g, worlds: bw, replies: _h, min_valid_worlds: _i, ...baseRest } = config;
+    expect(labelRest).toEqual(baseRest);
+    expect({ ...lw, n: 0 }).toEqual({ ...bw, n: 0 });
+    expect(searchConfigHash(label)).toBe(LABEL_CONFIG_HASH);
+    expect(searchIdentityHash(label, inputs)).toBe(LABEL_SEARCH_HASH);
+    expect(LABEL_SEARCH_HASH).not.toBe(SEARCH_HASH);
+  });
+
+  it("leaves the evaluation search's config and its hash as they were", () => {
+    expect(config.top_k_rule).toBe("prior-top-k");
+    expect("k_max" in config).toBe(false);
+    expect(searchConfigHash(config)).toBe(CONFIG_HASH);
+  });
+
+  it("moves its identity with k_max and the rule", () => {
+    const other = structuredClone(label);
+    other.k_max = 12;
+    other.top_k = 12;
+    expect(searchIdentityHash(other, inputs)).not.toBe(LABEL_SEARCH_HASH);
+    const rule = structuredClone(label);
+    rule.top_k_rule = "prior-top-k";
+    delete rule.k_max;
+    expect(searchIdentityHash(rule, inputs)).not.toBe(LABEL_SEARCH_HASH);
   });
 });
 
@@ -90,7 +127,7 @@ describe("the search identity", () => {
       ["builder", { world_builder_format: 3 }],
       ["facts", { world_facts_format: "world-facts/5" }],
       ["reply model", { reply_model_format: 2 }],
-      ["leaf", { leaf_format: 2 }],
+      ["leaf", { leaf_format: 3 }],
       ["reader", { reader_sha256: h("9") }],
       ["manifest", { version_manifest: { ...inputs.version_manifest, format_rules_hash: h("9") } }],
     ];
@@ -131,7 +168,7 @@ describe("the search identity", () => {
   });
 
   it("names the formats the modules export today", () => {
-    expect({ WORLD_BUILDER_FORMAT, REPLY_MODEL_FORMAT, DAMAGE_VALUE_FORMAT, LEAF_FORMAT, WORLD_FACTS_FORMAT }).toEqual({ WORLD_BUILDER_FORMAT: 2, REPLY_MODEL_FORMAT: 1, DAMAGE_VALUE_FORMAT: 1, LEAF_FORMAT: 1, WORLD_FACTS_FORMAT: "world-facts/4" });
+    expect({ WORLD_BUILDER_FORMAT, REPLY_MODEL_FORMAT, DAMAGE_VALUE_FORMAT, LEAF_FORMAT, WORLD_FACTS_FORMAT }).toEqual({ WORLD_BUILDER_FORMAT: 2, REPLY_MODEL_FORMAT: 1, DAMAGE_VALUE_FORMAT: 1, LEAF_FORMAT: 2, WORLD_FACTS_FORMAT: "world-facts/4" });
   });
 });
 
@@ -157,7 +194,7 @@ describe("the policy id with search", () => {
       policyId(pair, "sample", {}, undefined, SEARCH_HASH),
       policyId(pair, "argmax", {}, undefined, ID_VECTOR_SEARCH),
       policyId(pair, "sample", { temperature_ppm: 500000 }, undefined, SEARCH_HASH),
-      policyId(pair, "sample", {}, undefined, searchIdentityHash(config, { ...inputs, leaf_format: 2 })),
+      policyId(pair, "sample", {}, undefined, searchIdentityHash(config, { ...inputs, leaf_format: 3 })),
     ];
     expect(new Set(ids).size).toBe(ids.length);
   });

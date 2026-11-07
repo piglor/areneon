@@ -64,7 +64,15 @@ from areneon_ml.learner.data import trajectories
 from areneon_ml.learner.parallel import fit_processes
 from areneon_ml.learner.state import pack_state, restore_state
 from areneon_ml.learner.trainer import Learner, TrainReport, configure_learner
-from areneon_ml.loop import health, ladder_write, layout, rating, selection, slot_copy
+from areneon_ml.loop import (
+    health,
+    ladder_write,
+    layout,
+    past_pool,
+    rating,
+    selection,
+    slot_copy,
+)
 from areneon_ml.loop.driver import LoopError, StageHook, Timing
 from areneon_ml.loop.ladder import LadderRecordError, read_ladder_record
 from areneon_ml.loop.league import (
@@ -243,6 +251,15 @@ class MemberSealing:
     records: dict[str, CheckpointRecord] | None = None
 
 
+@dataclass(frozen=True)
+class PastSeal:
+    """What the generation being sealed adds to ``past-pool.json`` (slice 10)."""
+
+    previous: tuple[past_pool.Snapshot, ...]
+    #: Each member's pair-score counts against each snapshot of the pool the next generation plays.
+    cells: dict[tuple[str, str], list[int]]
+
+
 def _learner_files(generation: int) -> tuple[str, str]:
     return f"learner-{generation}.safetensors", f"learner-{generation}.json"
 
@@ -262,8 +279,6 @@ class PopulationLoop:
             raise LoopError("this driver runs a population config; use Loop for a single lineage")
         if config.raw["population"]["exploiters"] != 0:
             raise LoopError("population: exploiter seats are refused until they are built")
-        if config.raw["population"]["shares"]["past_pool_ppm"] != 0:
-            raise LoopError("population: a non-zero past_pool_ppm is refused until the past pool")
         if features_hash(config) is not None:
             raise LoopError("population: a run that names candidate features is refused")
         try:
@@ -275,6 +290,8 @@ class PopulationLoop:
         self.game = game
         self.player = player
         self.members = config.raw["population"]["members"]
+        #: The run plays a frozen past pool (a past-pool share): ``past-pool.json`` per generation.
+        self._past = past_pool.enabled(config)
         #: The frozen anchor strengths (``anchors.json`` of generation 0); set by ``run``.
         self._anchors: dict[str, int] = {}
         self._anchors_digest = ""
@@ -353,6 +370,8 @@ class PopulationLoop:
         """Continue the run until ``generations`` are committed; returns what this call did."""
         if generations < 0:
             raise LoopError("the number of generations cannot be negative")
+        if self._past and (ladder_write.LANE_SNAPSHOT + 16 * generations + 15 >= rating.LANE_COPY):
+            raise LoopError("population: too many generations for the snapshots' bootstrap lanes")
         with layout.run_lock(self.run_dir):
             return self._run_locked(generations)
 
@@ -417,6 +436,7 @@ class PopulationLoop:
             manifest,
             timing,
             {"anchors_hash": self._anchors_digest},
+            PastSeal((), {}) if self._past else None,
         )
 
     # -- resume --------------------------------------------------------------
@@ -505,6 +525,8 @@ class PopulationLoop:
             )
             self._learners[label] = learner
             members.append(MemberFrozen(label, checkpoints, state_hash, ts_hash))
+        if self._past:
+            self._committed_past(newest.generation, newest.manifest)
         return PopulationFrozen(
             newest.generation,
             tuple(members),
@@ -522,6 +544,23 @@ class PopulationLoop:
         if held is None or not (path / name).is_file() or layout.sha256_file(path / name) != held:
             raise LoopError(f"generation {generation}: {name} differs from its manifest")
         return layout.read_json(path / name)
+
+    def _committed_past(
+        self, generation: int, manifest: dict[str, Any] | None = None
+    ) -> past_pool.PastPool:
+        """The committed ``past-pool.json`` of ``generation`` (the pool the next one plays)."""
+        raw = self._committed_json(generation, past_pool.FILE)
+        if manifest is not None and manifest.get("past_pool_hash") != ladder_write.json_hash(raw):
+            raise LoopError(
+                f"generation {generation}: its past-pool.json is not the one its manifest names"
+            )
+        try:
+            found = past_pool.read_file(raw, self.config)
+        except past_pool.PastPoolError as exc:
+            raise LoopError(f"generation {generation}: past-pool.json: {exc}") from exc
+        if found.generation != generation:
+            raise LoopError(f"generation {generation}: past-pool.json is of another generation")
+        return found
 
     def _load_anchors(self, newest: layout.Committed) -> dict[str, int]:
         """The frozen strengths of generation 0, tied to the newest generation's manifest."""
@@ -637,13 +676,14 @@ class PopulationLoop:
 
     # -- generation g --------------------------------------------------------
 
-    def _generation(
+    def _generation(  # noqa: PLR0915
         self, previous: PopulationFrozen, result: PopulationRunResult
     ) -> PopulationFrozen:
         generation = previous.generation + 1
         # The plan of this generation reads nothing but the committed ladder.json of the one before
         # (slice 10 draws the opponents' weights from it); a missing or forged one stops here.
         before = self._read_ladder(previous.generation) if previous.generation >= 1 else None
+        pool = self._committed_past(previous.generation) if self._past else None
         work = layout.partial_dir(self.run_dir, generation)
         work.mkdir(parents=True)
         timing = Timing(self.clock)
@@ -657,7 +697,16 @@ class PopulationLoop:
             for m in previous.members
         )
         with timing.phase("play"):
-            self.player.play_population(PopulationPlayRequest(generation, pairs, work))
+            self.player.play_population(
+                PopulationPlayRequest(
+                    generation,
+                    pairs,
+                    work,
+                    None
+                    if pool is None
+                    else layout.generation_dir(self.run_dir, previous.generation) / past_pool.FILE,
+                )
+            )
         timing.play_rss = dict(getattr(self.player, "resource_usage", None) or {})
         self._on_stage(generation, "played")
         by_label = {m.member: m for m in previous.members}
@@ -673,6 +722,8 @@ class PopulationLoop:
             ):
                 raise LoopError("the simulator side played another generation than asked")
             record = self._check_league_run(work, generation, pairs, summary)
+            if pool is not None:
+                self._check_past_plan(layout.read_json(work / "plan.json"), generation, pairs, pool)
         member_counts: dict[str, dict[str, int]] = {}
         reports: dict[str, dict[str, Any]] = {}
         sealings: dict[str, MemberSealing] = {}
@@ -710,6 +761,19 @@ class PopulationLoop:
                 if played > 0
                 for role in ROLES
             }
+            if pool is not None:
+                # A frozen snapshot met in a played game is an opponent too.
+                met = {
+                    g["opponent"]
+                    for g in summary["games"]
+                    if g["kind"] == "past" and g["member"] == label and g["outcome"] == "played"
+                }
+                others |= {
+                    getattr(snap, role)
+                    for snap in pool.snapshots
+                    if snap.id in met
+                    for role in ROLES
+                }
             sealings[label] = MemberSealing(
                 parents.get(label, by_label[label].checkpoints),
                 held["training_set_hash"],
@@ -728,7 +792,9 @@ class PopulationLoop:
         self._on_stage(generation, "trained")
         teams = tuple(sorted(set(previous.team_hashes) | set(summary["team_hashes"])))
         with timing.phase("write"):
-            ladder = self._write_ladder(work, generation, summary["games"], before, stopped)
+            ladder, past = self._write_ladder(
+                work, generation, summary["games"], before, stopped, pool
+            )
         self._on_stage(generation, "rated")
         frozen = self._seal(
             generation,
@@ -741,6 +807,7 @@ class PopulationLoop:
                 "anchors_hash": self._anchors_digest,
                 "ladder_hash": ladder_write.json_hash(ladder),
             },
+            past,
         )
         self._write_member_counts(generation, member_counts)
         return frozen
@@ -842,15 +909,20 @@ class PopulationLoop:
             found.append(raw if isinstance(raw, dict) else None)
         return found
 
-    def _write_ladder(
+    def _write_ladder(  # noqa: PLR0913, PLR0917
         self,
         work: Path,
         generation: int,
         rows: list[dict[str, Any]],
         before: dict[str, Any] | None,
         stopped: dict[str, str],
-    ) -> dict[str, Any]:
-        """Fit the window, count the cycles, decide the copy and write ``ladder.json``."""
+        pool: past_pool.PastPool | None = None,
+    ) -> tuple[dict[str, Any], PastSeal | None]:
+        """Fit the window, count the cycles and write ``ladder.json`` and the copy test's outcome.
+
+        Returns the record and, with a past pool, what the generation's ``past-pool.json`` adds
+        to the pool: its snapshots so far and the window counts against the next pool.
+        """
         window = self.config.raw["population"]["rating"]["window"]
         history: list[ladder_write.GenerationRows] = []
         for g in range(max(1, generation - window + 1), generation):
@@ -858,6 +930,7 @@ class PopulationLoop:
             games = self._committed_json(g, "generation.json")["games"]
             history.append(ladder_write.GenerationRows(g, games, replaced))
         history.append(ladder_write.GenerationRows(generation, rows))
+        held = () if pool is None else pool.snapshots
         try:
             record = ladder_write.build_ladder_record(
                 self.config,
@@ -867,11 +940,22 @@ class PopulationLoop:
                 before,
                 self._last_copies(generation - 1),
                 stopped,
+                held,
             )
         except (LadderRecordError, ladder_write.LadderBuildError, rating.RatingError) as exc:
             raise LoopError(f"generation {generation}: ladder.json: {exc}") from exc
         layout.write_json(work / ladder_write.LADDER_FILE, record)
-        return record
+        if pool is None:
+            return record, None
+        s = past_pool.settings(self.config)
+        ids = [
+            past_pool.snapshot_id(f"m{k}", g)
+            for g, k in past_pool.pool_keys(
+                self.members, s["snapshot_every"], s["max_size"], generation
+            )
+        ]
+        cells = ladder_write.snapshot_cells(self.config, generation, history, self._anchors, ids)
+        return record, PastSeal(held, cells)
 
     def _train_member(  # noqa: PLR0913, PLR0917
         self,
@@ -980,6 +1064,77 @@ class PopulationLoop:
 
     # -- freezing a generation -----------------------------------------------
 
+    def _write_past_pool(
+        self,
+        work: Path,
+        generation: int,
+        members: list[MemberFrozen],
+        past: PastSeal,
+    ) -> str:
+        """Write ``past-pool.json``: the pool the next generation plays; returns its hash."""
+        frozen = {
+            m.member: past_pool.Snapshot(
+                m.member,
+                generation,
+                policy_id(
+                    m.checkpoints["preview"],
+                    m.checkpoints["battle"],
+                    temperature_ppm=self.config.generation.temperature_ppm,
+                ),
+                m.checkpoints["preview"],
+                m.checkpoints["battle"],
+            )
+            for m in members
+        }
+        try:
+            snapshots = past_pool.next_snapshots(self.config, past.previous, generation, frozen)
+        except past_pool.PastPoolError as exc:
+            raise LoopError(f"generation {generation}: past-pool.json: {exc}") from exc
+        document = past_pool.build_file(self.config, generation, snapshots, past.cells)
+        layout.write_json(work / past_pool.FILE, document)
+        return ladder_write.json_hash(document)
+
+    def _check_past_plan(
+        self,
+        plan: Any,
+        generation: int,
+        pairs: tuple[MemberPair, ...],
+        pool: past_pool.PastPool,
+    ) -> None:
+        """Every past pair of the plan is the PFSP draw the committed pool gives."""
+        ids = {p.id: p for p in pool.snapshots}
+        for pair in pairs:
+            met = [
+                e["seats"]["p2"]
+                for e in plan
+                if e["kind"] == "past" and e["member"] == pair.member and e["half"] == 0
+            ]
+            if any(
+                set(seat) != {"snapshot", "policy_id"}
+                or ids.get(seat["snapshot"]) is None
+                or ids[seat["snapshot"]].policy_id != seat["policy_id"]
+                for seat in met
+            ):
+                raise LoopError(
+                    f"plan.json: {pair.member}'s past pairs name a snapshot outside the pool"
+                )
+            # With a snapshot to meet the member plays exactly its configured past pairs (a plan
+            # that swapped them for self-play or dropped them is refused); with none, it plays none.
+            candidates = [p for p in pool.snapshots if p.policy_id != pair.policy_id]
+            wanted = past_pool.past_pairs(self.config) if candidates else 0
+            if len(met) != wanted:
+                raise LoopError(
+                    f"plan.json: {pair.member} has {len(met)} past pairs, "
+                    f"the config schedules {wanted}"
+                )
+            expected = past_pool.draw_past(
+                self.config, generation, pair.member, wanted, pair.policy_id, pool
+            )
+            if [seat["snapshot"] for seat in met] != [p.id for p in expected]:
+                raise LoopError(
+                    f"plan.json: {pair.member}'s past pairs are not the PFSP draw of the pool"
+                )
+
     def _seal(  # noqa: PLR0913, PLR0917
         self,
         generation: int,
@@ -989,6 +1144,7 @@ class PopulationLoop:
         version_manifest: dict[str, Any],
         timing: Timing,
         facts: dict[str, Any],
+        past: PastSeal | None = None,
     ) -> PopulationFrozen:
         """Store every member's pair, write learner states, records and the team set, and commit."""
         manifest = team_set_manifest(teams)
@@ -1043,6 +1199,11 @@ class PopulationLoop:
                 members.append(
                     MemberFrozen(label, checkpoints, packed.hash, sealing.training_set_hash)
                 )
+            if past is not None:
+                facts = {
+                    **facts,
+                    "past_pool_hash": self._write_past_pool(work, generation, members, past),
+                }
         self._on_stage(generation, "written")
         with timing.phase("seal"):
             layout.commit_generation(

@@ -111,6 +111,26 @@ def anchor_kl(
     )
 
 
+def distill_kl(
+    logits: torch.Tensor,
+    mask: torch.Tensor,
+    log_target: torch.Tensor,
+    temperature_ppm: int | None = None,
+) -> torch.Tensor:
+    """``KL(pi' || pi_theta)`` [B] over each decision's real candidates (ADR-026 erratum E2).
+
+    ``log_target`` [B, C] holds ``ln pi'`` of the stored search target over the same candidates
+    (any finite value at padded places); ``pi_theta`` is the softmax of ``logits / tau`` over the
+    candidates ``mask`` keeps. ``sum_c pi'_c * (ln pi'_c - ln pi_theta_c)``; the gradient flows
+    through ``logits`` only.
+    """
+    floor = torch.finfo(logits.dtype).min
+    log_probs = torch.log_softmax(temper(logits, temperature_ppm).masked_fill(~mask, floor), dim=-1)
+    return torch.where(
+        mask, log_target.exp() * (log_target - log_probs), torch.zeros_like(log_probs)
+    ).sum(-1)
+
+
 @dataclass(frozen=True)
 class Targets:
     """What the update is measured against, per decision, from the frozen weights."""

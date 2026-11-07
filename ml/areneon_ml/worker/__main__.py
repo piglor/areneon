@@ -90,6 +90,7 @@ def build(argv: list[str]) -> Worker:
             None if stated is None else FeatureSupport(stated.as_dict(), damaging_moves(game))
         ),
         sheet=None if sheet is None else SheetSupport(sheet.as_dict(), args.diagnostic_sheet),
+        value_scorer=scorer if scorer.value_query else None,
         engine_data_hash=game.engine_data_hash,
         checkpoints=[
             {"role": "battle", "checkpoint_id": args.battle},

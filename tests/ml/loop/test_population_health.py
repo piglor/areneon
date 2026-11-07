@@ -26,6 +26,7 @@ from areneon_ml.loop.population import PopulationLoop
 from areneon_ml.model.network import ROLES
 
 from tests.ml.loop.support import Killed, killer, reseal
+from tests.ml.loop.test_past_pool import SETTINGS
 from tests.ml.loop.test_population import (
     FakePopulationPlayer,
     gen_path,
@@ -316,3 +317,52 @@ def test_resume_refuses_a_quarantined_members_records_that_differ_from_the_gener
     reseal(tmp_path, BAD_GENERATION)
     with pytest.raises(LoopError, match="m1 is quarantined but its battle record"):
         run_to(tmp_path, diverge, BAD_GENERATION)
+
+
+def pool_config() -> Any:
+    """Four members, a snapshot every generation and a quarter of the seats against the pool."""
+
+    def edit(raw: dict[str, Any]) -> None:
+        raw["population"]["shares"] = {
+            "ladder_ppm": 500_000,
+            "self_play_ppm": 250_000,
+            "past_pool_ppm": 250_000,
+        }
+        raw["population"]["seats_per_member"] = 4
+        bounds = raw["population"]["explore"]["bounds"]
+        bounds["self_play_ppm"] = {"min": 200_000, "max": 300_000}
+        bounds["past_pool_ppm"] = {"min": 200_000, "max": 300_000}
+        raw["population"]["past_pool"] = {
+            **SETTINGS,
+            "snapshot_every": 1,
+            "max_size": 16,
+            "max_past_per_member": 2,
+        }
+        raw["population"]["selection"]["n_min"] = 2
+
+    return population_config(members=MEMBERS, key="pop-health-pool", edit=edit)
+
+
+def test_a_quarantined_members_snapshot_is_the_pair_it_kept_and_the_records_validate(
+    tmp_path: Path, diverge: dict[str, Any]
+) -> None:
+    """The past pool snapshots what the generation froze: for a stopped member, its earlier pair."""
+    config = pool_config()
+    loop = make_population(tmp_path, config, FakePopulationPlayer(config))
+    diverge["loop"] = loop
+    loop.run(GENERATIONS)
+    pool = layout.read_json(gen_path(tmp_path, BAD_GENERATION) / "past-pool.json")
+    snapshot = next(s for s in pool["snapshots"] if s["id"] == f"m1@g{BAD_GENERATION}")
+    kept = frozen_of(tmp_path, BAD_GENERATION - 1, "m1")
+    assert (snapshot["preview"], snapshot["battle"]) == (kept["preview"], kept["battle"])
+    # The earlier snapshot of the same pair stays a separate entry (another id, same checkpoints).
+    earlier = next(s for s in pool["snapshots"] if s["id"] == f"m1@g{BAD_GENERATION - 1}")
+    assert earlier["battle"] == snapshot["battle"]
+    # The health selection validates beside the frozen-rated snapshots, record after record.
+    before = None
+    for g in range(1, GENERATIONS + 1):
+        record = ladder_of(tmp_path, g)
+        read_ladder_record(record, before, config)
+        before = record
+    kinds = [s["kind"] for s in ladder_of(tmp_path, BAD_GENERATION)["selections"]]
+    assert "health" in kinds

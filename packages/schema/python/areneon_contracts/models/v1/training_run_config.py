@@ -89,6 +89,28 @@ class Play(BaseModel):
     """
 
 
+class SearchLabels(BaseModel):
+    """
+    Optional (a minor change within v1, ADR-026 erratum E2 decisions 3 and 5, #1291): the frozen pair's own Battle move decisions are also LABELLED by the decision-time search after the game, from the stored Episode, into a separate label stream (labels.jsonl with its manifest label-set.json); nothing the search does is played or enters an Episode or the PPO stream. search_config_hash is the SHA-256 of the JCS bytes of the label search config (config/search/rerank-1-label.v1.json). An eligible decision (a Battle move request of the pair's own seat with two or more non-pending candidates) is selected when the first 8 bytes of SHA-256 over the JCS of {run_key, generation, game, player, request_seq, purpose: "search-label/1"}, read big-endian as n, satisfy n * 10^6 < label_share_ppm * 2^64. Labels start at start_generation. Comes with ppo.search_distill (both or neither) and needs warm_start, ppo.value_warmup (start_generation at least value_warmup.generations + 1), a team_dataset, and no opponent_sheet and no candidate feature set whose value reads candidate rows (probe-damage/1 and probe-damage-belief/1 are allowed). Absent keeps every byte and run_config_hash; a config that carries it is a new run from generation 0.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    search_config_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+    """
+    SHA-256 of the JCS bytes of the label search config.
+    """
+    label_share_ppm: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Share of the eligible decisions that are selected for a label, in parts per million (1 to 1,000,000).
+    """
+    start_generation: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    First generation whose games are labelled; at least ppo.value_warmup.generations + 1 (a reader rule), because a cloned value head is untrained until the warm-up ends.
+    """
+
+
 class ValueWarmup(BaseModel):
     """
     Optional (a minor change within v1, ADR-019 section 4, #1111): for a run that declares warm_start, the first `generations` learner updates (generation 1 up to generation `generations`) train the value head only, on the cloned pair's own rollouts, with every other parameter of both networks frozen (the policy heads and the shared trunk stay byte-identical); update `generations` + 1 and every later one is normal PPO. The learning-rate schedule's update index counts the warm-up updates too. Absent means normal PPO from generation 1. A config that carries it is a new run.
@@ -100,6 +122,32 @@ class ValueWarmup(BaseModel):
     generations: Annotated[StrictInt, Field(ge=1, le=1000000)]
     """
     Number of learner updates, counted from generation 1, that train the value head only.
+    """
+
+
+class SearchDistill(BaseModel):
+    """
+    Optional (a minor change within v1, ADR-026 erratum E2 decisions 5 and 8, ADR-010 erratum A10, #1291): the Battle role's loss gains lambda * mean over the labelled decisions of a minibatch of KL(pi' || pi_theta), both over every real candidate (pending included, padding masked) at the run's play temperature tau (generation.play, else 1). The target is a function of the stored label alone: z(c) = ln(max(prior_ppm(c), 1) / 10^6); q_hat(c) = q(c) for a searched candidate and, for every other one, the prior-weighted mean of the searched q (weights prior_ppm); x(c) = (q_hat(c) - q_min) / (q_max - q_min) over the searched set; a label whose q_max - q_min is below min_spread_ppm is not used; pi' = softmax(z / tau + c_scale * x). Play-time truncation is ignored. lambda = coef_micro / 10^6 and c_scale = c_scale_micro / 10^6. The learner reads the label streams of the current and the previous aggregate_generations - 1 generations. Battle role only; under shared_trunk the gradient reaches the trunk. Comes with generation.search_labels (both or neither). Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    coef_micro: Annotated[StrictInt, Field(ge=1, le=100000000)]
+    """
+    lambda in millionths.
+    """
+    c_scale_micro: Annotated[StrictInt, Field(ge=1, le=100000000)]
+    """
+    c_scale in millionths: the logit gap the best searched candidate gains over the worst (4,000,000 is the ADR's 4).
+    """
+    min_spread_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    A label whose q_max - q_min (ppm) is below this is not used (0 keeps every label).
+    """
+    aggregate_generations: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Label streams of this many generations (the current one and the previous ones) feed each update; at least 1.
     """
 
 
@@ -853,6 +901,10 @@ class Generation(BaseModel):
     """
     Optional (a minor change within v1, ADR-023 section 1, ADR-010 erratum A6 item 3, #1046): the play settings of the frozen pair's own seats. temperature_ppm is the sampling temperature in millionths: the pair samples softmax(logits * 10^6 / temperature_ppm) over the real candidates in self-play and baseline games, its behaviour_policy_id is the tempered pair's id, and the learner computes the old and new log-probabilities, the entropy, the approximate KL, the KL early stop and the anchor's KL (both policies) on the same tempered policy, so PPO stays on-policy. Absent means temperature 1 and today's bytes and run_config_hash; an explicit 1,000,000 is refused by the readers (one rule has one encoding, as in the policy query). The progress evaluation of a run that declares it adds this mode to argmax and temperature 1. A config that carries it is a new run from generation 0.
     """
+    search_labels: SearchLabels | MISSING = MISSING
+    """
+    Optional (a minor change within v1, ADR-026 erratum E2 decisions 3 and 5, #1291): the frozen pair's own Battle move decisions are also LABELLED by the decision-time search after the game, from the stored Episode, into a separate label stream (labels.jsonl with its manifest label-set.json); nothing the search does is played or enters an Episode or the PPO stream. search_config_hash is the SHA-256 of the JCS bytes of the label search config (config/search/rerank-1-label.v1.json). An eligible decision (a Battle move request of the pair's own seat with two or more non-pending candidates) is selected when the first 8 bytes of SHA-256 over the JCS of {run_key, generation, game, player, request_seq, purpose: "search-label/1"}, read big-endian as n, satisfy n * 10^6 < label_share_ppm * 2^64. Labels start at start_generation. Comes with ppo.search_distill (both or neither) and needs warm_start, ppo.value_warmup (start_generation at least value_warmup.generations + 1), a team_dataset, and no opponent_sheet and no candidate feature set whose value reads candidate rows (probe-damage/1 and probe-damage-belief/1 are allowed). Absent keeps every byte and run_config_hash; a config that carries it is a new run from generation 0.
+    """
 
 
 class LearningRateSchedule(RootModel[ConstantSchedule | LinearSchedule]):
@@ -973,6 +1025,10 @@ class Ppo(BaseModel):
     anchor: Anchor | MISSING = MISSING
     """
     Optional (a minor change within v1, ADR-019 section 4, ADR-010 erratum A2 item 3, #968): for a run that declares warm_start, a KL anchor to the warm-start pair. Per decision, beta * KL(pi_theta || pi_anchor) is added to the loss, with both policies the softmax over the real candidates and pi_anchor the frozen warm-start pair (the declared checkpoints of both roles), computed once per generation from its frozen weights with no gradient. beta, in millionths, is kl_micro for a constant schedule; for a linear one, with t the anchor update index from 0, beta(t) = kl_micro + trunc((final_micro - kl_micro) * min(t, generations) / generations) in exact integers, truncating toward zero (the rule of learning_rate_schedule). Both roles alike. With ppo.value_warmup the anchor is inactive (beta 0) while the policy is frozen and t counts from the first policy update, the update after the warm-up. Absent means no anchor. A config that carries it is a new run.
+    """
+    search_distill: SearchDistill | MISSING = MISSING
+    """
+    Optional (a minor change within v1, ADR-026 erratum E2 decisions 5 and 8, ADR-010 erratum A10, #1291): the Battle role's loss gains lambda * mean over the labelled decisions of a minibatch of KL(pi' || pi_theta), both over every real candidate (pending included, padding masked) at the run's play temperature tau (generation.play, else 1). The target is a function of the stored label alone: z(c) = ln(max(prior_ppm(c), 1) / 10^6); q_hat(c) = q(c) for a searched candidate and, for every other one, the prior-weighted mean of the searched q (weights prior_ppm); x(c) = (q_hat(c) - q_min) / (q_max - q_min) over the searched set; a label whose q_max - q_min is below min_spread_ppm is not used; pi' = softmax(z / tau + c_scale * x). Play-time truncation is ignored. lambda = coef_micro / 10^6 and c_scale = c_scale_micro / 10^6. The learner reads the label streams of the current and the previous aggregate_generations - 1 generations. Battle role only; under shared_trunk the gradient reaches the trunk. Comes with generation.search_labels (both or neither). Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.
     """
 
 
