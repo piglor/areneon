@@ -10,7 +10,8 @@
 // generator is not built yet, and this pool is the interim. Every team drawn
 // is reported by its hash, which becomes the team-set manifest of the run.
 
-import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
+import { closeSync, fsyncSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { jcs, type Json } from "./canonical-json.ts";
@@ -48,6 +49,9 @@ import { readFeatureRows, writeFeatureRows, writePlayRows } from "./feature-reco
 import type { AnyCandidateFeatures } from "./feature-build.ts";
 import type { TrainingRunConfig } from "./training-run-config.ts";
 import type { Episode } from "./episode.ts";
+import { loadSearchConfig, type SearchConfig, searchConfigHash } from "./search-config.ts";
+import type { SearchSetup } from "./search-actor.ts";
+import { type LabelContext, type LabelEpisodeRef, LabelError, labelPolicy, type LabelSetup, type LabelTotals, writeLabelFiles, writeLabelStream } from "./search-labeller.ts";
 
 /** The teams a run may draw: synthetic by source, in a fixed order. */
 export interface TrainingPool {
@@ -149,6 +153,41 @@ export function featureSetup(engine: Engine, config: TrainingRunConfig, beliefWo
     throw new GenerationError(`the run config names the candidate feature set ${named.feature_set} ${named.feature_set_hash}, which this checkout computes as ${found}`);
   }
   return { configs, statement: { feature_set: named.feature_set, feature_set_hash: found } };
+}
+
+/** The factory of the composition root (`packages/team-dataset`) that joins the search's records and the opponent model for a search config. */
+export type SearchSetupFactory = (engine: Engine, formatId: string, config: SearchConfig) => SearchSetup;
+
+/** The name of the label search config (`config/search/rerank-1-label.v1.json`) every run's `generation.search_labels` names. */
+export const LABEL_CONFIG_NAME = "rerank-1-label.v1";
+
+/**
+ * The labelling a run config asks for (`generation.search_labels`, ADR-026 erratum E2), set up through the composition root. None when
+ * the config has no block (nothing below changes). Refused (`GenerationError`) when there is no factory, or when the config's hash is
+ * not the one this checkout computes for the committed label config.
+ */
+export function labelSetup(engine: Engine, config: TrainingRunConfig, pair: { preview: string; battle: string }, factory?: SearchSetupFactory, features?: FeatureConfigs): LabelSetup | undefined {
+  const named = config.generation.search_labels;
+  if (named === undefined) return undefined;
+  const distill = config.ppo.search_distill;
+  if (distill === undefined) throw new GenerationError("generation.search_labels comes with ppo.search_distill");
+  if (config.format_id !== GOLDEN_FORMAT) throw new GenerationError(`the search labels have a vocabulary for ${GOLDEN_FORMAT} only, not ${config.format_id}`);
+  if (factory === undefined) throw new GenerationError("the run config asks for search labels, and this script has no search setup factory");
+  const searchConfig = loadSearchConfig(config.format_id, LABEL_CONFIG_NAME);
+  const found = searchConfigHash(searchConfig);
+  if (found !== named.search_config_hash) throw new GenerationError(`the run config names the label search config ${named.search_config_hash}, which this checkout computes as ${found}`);
+  const temperature = config.generation.play?.temperature_ppm;
+  return {
+    setup: factory(engine, config.format_id, searchConfig),
+    search_config_hash: found,
+    share_ppm: named.label_share_ppm,
+    start_generation: named.start_generation,
+    min_spread_ppm: distill.min_spread_ppm,
+    pair,
+    manifest: resolveFormat(engine, config.format_id).manifest,
+    ...(features === undefined ? {} : { features }),
+    ...(temperature === undefined ? {} : { play: { temperature_ppm: temperature } }),
+  };
 }
 
 /** The opponent sheet source a run reads and what builds its blocks (ADR-027 slice 4). */
@@ -341,6 +380,17 @@ export interface GenerationOptions {
    */
   features_dir?: string | undefined;
   /**
+   * The search labelling of the run (`generation.search_labels`, ADR-026 erratum E2, #1290): from `start_generation` the pair's own
+   * seats' Battle move decisions are labelled by the search after the game, from the stored Episode. Needs `episodes_dir` and
+   * `stream_path`. The labels go to `labels_path` (the generation's `labels.jsonl`) with their manifest in the result; nothing
+   * about the PPO stream, the Episodes or any other file changes.
+   */
+  labels?: LabelSetup;
+  /** The scratch directory the game processes leave their label files in (default: one made and removed by `playGeneration`). */
+  labels_dir?: string | undefined;
+  /** Where the label stream is written; `writeGeneration` expects `<dir>/labels.jsonl`. */
+  labels_path?: string;
+  /**
    * Ends this process's own games (#1100): checked before each wave and after each worker
    * restart, so a process whose generation has failed finishes its current wave and plays no further one and starts no
    * further worker. `playGeneration` aborts it when a game process fails.
@@ -423,6 +473,8 @@ export interface GenerationResult {
   manifest: VersionManifest;
   /** Hashes of the teams the plan drew, sorted and unique. */
   team_hashes: string[];
+  /** Only a labelled generation (`GenerationOptions.labels`, at or after its start): the label stream's manifest (null: nothing was labelled, no label file) and counts. */
+  labels?: { search_config_hash: string; search_identity_hash: string; set: TrainingSet | null; path: string; totals: LabelTotals };
 }
 
 /** A game that could not be played: a harness incident, which fails the generation. */
@@ -690,7 +742,32 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
     const own = entries.flatMap((entry) => entry.stored ?? []).filter((ref) => ref.behaviour_policy_id === policy_id);
     await writeFeatureRows({ engine: options.engine, configs: options.features, known_synthetic: pool.known_synthetic }, own.map(({ hash }) => ({ hash, path: join(dir, `${hash}.json`) })), options.features_dir, () => options.signal?.aborted === true);
   }
+  if (labelsActive(options) && options.labels_dir !== undefined && options.episodes_dir !== undefined) {
+    const dir = options.episodes_dir;
+    const own = labelRefs(entries, policy_id, dir);
+    await writeLabelFiles(labelContext(withRecords, client), own, options.labels_dir, () => options.signal?.aborted === true);
+  }
   return entries;
+}
+
+/** Whether this generation is labelled: the run asks for it and the generation is at or after its start. */
+const labelsActive = (options: Pick<GenerationOptions, "labels" | "generation">): boolean => options.labels !== undefined && options.generation >= options.labels.start_generation;
+
+/** The pair's own stored Episodes of played entries, with the game that played each. */
+function labelRefs(entries: readonly PlayedEntry[], policy_id: string, dir: string): LabelEpisodeRef[] {
+  return entries.flatMap((entry) => (entry.stored ?? []).filter((ref) => ref.behaviour_policy_id === policy_id).map(({ hash }) => ({ hash, path: join(dir, `${hash}.json`), game: entry.game })));
+}
+
+function labelContext(options: GenerationOptions, client: PolicyClient): LabelContext & { known_synthetic: TrainingPool["known_synthetic"]; behaviour_policy_id: string } {
+  return {
+    engine: options.engine,
+    labels: options.labels as LabelSetup,
+    client: client as LabelContext["client"],
+    run_key: options.config.seeds.run_key,
+    generation: options.generation,
+    known_synthetic: options.pool.known_synthetic,
+    behaviour_policy_id: options.policy_id,
+  };
 }
 
 /** How long a generation may stand with no live game process and no game in flight (#1100). */
@@ -769,6 +846,8 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
   let stream: string | null = null;
   let set: TrainingSet;
   let episodeHashes: string[];
+  let labelled: GenerationResult["labels"];
+  if (labelsActive(options) && options.episodes_dir === undefined) throw new GenerationError("labels need episodes_dir");
   if (options.episodes_dir !== undefined) {
     if (options.stream_path === undefined) throw new GenerationError("episodes_dir needs stream_path");
     const dir = options.episodes_dir;
@@ -777,6 +856,27 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
     const stored: StoredEpisode[] = ownRefs.map(({ hash }) => ({ hash, path: join(dir, `${hash}.json`) }));
     set = await writeStoredTrainingStream({ episodes: stored, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id, ...(options.features === undefined ? {} : { features: { engine, configs: options.features, ...(options.features_dir === undefined ? {} : { precomputed: readFeatureRows(engine, options.features, options.features_dir) }) } }), ...(options.sheet === undefined ? {} : { sheet: options.sheet }) }, { ...limits, path: options.stream_path });
     episodeHashes = refs.map((ref) => ref.hash);
+    if (labelsActive(options)) {
+      if (options.labels_path === undefined) throw new GenerationError("labels need labels_path");
+      const labels = options.labels as LabelSetup;
+      const scratch = options.labels_dir ?? mkdtempSync(join(tmpdir(), "areneon-labels-"));
+      try {
+        const written = await writeLabelStream({
+          context: labelContext(options, options.client),
+          episodes: labelRefs(entries, policy_id, dir),
+          dir: scratch,
+          path: options.labels_path,
+          limits,
+          ...(options.features === undefined ? {} : { features: { engine, configs: options.features, ...(options.features_dir === undefined ? {} : { precomputed: readFeatureRows(engine, options.features, options.features_dir) }) } }),
+        });
+        labelled = { search_config_hash: labels.search_config_hash, search_identity_hash: labelPolicy(labels, options.client).identity_hash, set: written.set, path: options.labels_path, totals: written.totals };
+      } catch (error) {
+        if (error instanceof LabelError) throw new GenerationError(error.message);
+        throw error;
+      } finally {
+        if (options.labels_dir === undefined) rmSync(scratch, { recursive: true, force: true });
+      }
+    }
   } else {
     const own = episodes.filter((episode) => episode.provenance.behaviour_policy_id === policy_id);
     if (own.length === 0) throw new GenerationError("no Episode of the frozen pair: every game was forfeited");
@@ -804,6 +904,7 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
     training_set_hash: await nodeSha256(new TextEncoder().encode(jcs(set as unknown as Json))),
     manifest: resolveFormat(engine, config.format_id).manifest,
     team_hashes: [...drawn].sort(),
+    ...(labelled === undefined ? {} : { labels: labelled }),
   };
   addSince("merge", mergeStart); // the serial tail after the games: stream, hashing, run record
   return result;
@@ -833,6 +934,10 @@ export function writeGeneration(dir: string, result: GenerationResult): void {
     throw new GenerationError(`the stream was written to ${result.stream_path}, not to ${streamPath}`);
   }
   put("training-set.json", result.set);
+  if (result.labels !== undefined) {
+    if (result.labels.path !== join(dir, "labels.jsonl")) throw new GenerationError(`the label stream was written to ${result.labels.path}, not to ${join(dir, "labels.jsonl")}`);
+    if (result.labels.set !== null) put("label-set.json", result.labels.set);
+  }
   put("plan.json", result.plan);
   put("league-run.json", result.run_record);
   // generation.json last: it is the file that says the rest is whole.
@@ -848,6 +953,8 @@ export function writeGeneration(dir: string, result: GenerationResult): void {
     examples: result.set.examples,
     manifest: result.manifest,
     team_hashes: result.team_hashes,
+    // Present only in a labelled generation, so every other run writes the bytes it always did.
+    ...(result.labels === undefined ? {} : { search_labels: { search_config_hash: result.labels.search_config_hash, search_identity_hash: result.labels.search_identity_hash } }),
   });
   syncDir(episodes);
   syncDir(dir);

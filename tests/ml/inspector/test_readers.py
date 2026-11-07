@@ -113,6 +113,23 @@ def test_the_plan_refuses(change: Any, message: str) -> None:
         ),
         (lambda g: g.update(episode_hashes=["x"]), "SHA-256"),
         (lambda g: g.update(forfeit_causes=[]), "forfeit_causes"),
+        (lambda g: g.update(search_labels={"search_config_hash": "a" * 64}), "lacks"),
+        (
+            lambda g: g.update(
+                search_labels={"search_config_hash": "a" * 64, "search_identity_hash": "x"}
+            ),
+            "SHA-256",
+        ),
+        (
+            lambda g: g.update(
+                search_labels={
+                    "search_config_hash": "a" * 64,
+                    "search_identity_hash": "b" * 64,
+                    "extra": 1,
+                }
+            ),
+            "extra",
+        ),
         (lambda g: g.update(examples=True), "examples"),
         (lambda g: g.update(training_set_hash="x"), "training_set_hash"),
     ],
@@ -122,6 +139,12 @@ def test_the_generation_refuses(change: Any, message: str) -> None:
     change(generation)
     with pytest.raises(InspectError, match=message):
         readers.read_generation(generation, 1)
+
+
+def test_the_search_labels_block_of_a_labelled_generation_is_read() -> None:
+    generation = load("generation.json")
+    generation["search_labels"] = {"search_config_hash": "a" * 64, "search_identity_hash": "b" * 64}
+    assert readers.read_generation(generation, 1).games
 
 
 def test_a_forfeit_row_is_read() -> None:

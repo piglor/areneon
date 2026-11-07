@@ -49,8 +49,9 @@ GENERATION_KEYS = (
             "team_hashes",
         }
     ),
-    frozenset({"forfeit_causes"}),
+    frozenset({"forfeit_causes", "search_labels"}),
 )
+SEARCH_LABELS_KEYS = (frozenset({"search_config_hash", "search_identity_hash"}), frozenset[str]())
 VERSION_MANIFEST_KEYS = (
     frozenset({"format_id", "format_rules_hash", "regulation", "ruleset_hash", "showdown_commit"}),
     frozenset[str](),
@@ -273,6 +274,11 @@ def read_generation(raw: object, generation: int) -> GenerationFile:
             text(k, "forfeit_causes key"): integer(v, "forfeit_causes value")
             for k, v in causes.items()
         }
+    labels = body.get("search_labels")
+    if labels is not None:
+        block = closed(labels, SEARCH_LABELS_KEYS, "generation.json search_labels")
+        for key in SEARCH_LABELS_KEYS[0]:
+            hash64(block[key], f"search_labels {key}")
     for name in ("episode_hashes", "team_hashes"):
         for item in array(body[name], name):
             hash64(item, f"{name} entry")

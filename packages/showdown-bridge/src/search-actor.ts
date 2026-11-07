@@ -282,6 +282,19 @@ export interface SearchActorOptions {
   reply_model?: ReplyModel;
 }
 
+/**
+ * The world request at the channel's last request: the player's own view only (the request, the reader's state and flags, the world
+ * facts of the own channel). The channel ends in the move request being answered (the observation checks it). Shared by the actor and
+ * the labeller, which reads the same view from a stored Episode.
+ */
+export function worldRequestOf(factsData: WorldFactsData, player: Player, context: { channel: readonly string[]; team: readonly Readonly<PokemonSet>[] }): WorldRequest {
+  const run = interpretChannel(player, context.channel, { terrains: [...factsData.terrains] });
+  const frame = run.frames.at(-1) as (typeof run.frames)[number];
+  const request = run.requests[frame.request - 1] as EngineRequest;
+  const facts = worldFactsAtRequests({ channel: ownChannel(player, context.channel), data: factsData }).find((r) => r.line === frame.index)?.facts ?? null;
+  return { request, team: context.team, state: frame.state, flags: run.flags.filter((flag) => flag.index <= frame.index), facts };
+}
+
 export type SearchActor = Actor & { report(): SearchReport; decide(input: SearchInput): Promise<SearchDecision>; label(input: LabelInput): Promise<LabelDecision> };
 
 export function searchActor(options: SearchActorOptions): SearchActor {
@@ -338,14 +351,7 @@ export function searchActor(options: SearchActorOptions): SearchActor {
   const deps: SearchDecisionDeps = { engine, config, sampler, replyModel, client, battle, player, team, manifest, channel_class, regime, policy_id, valueOnly, counts };
   const decide = (input: SearchInput): Promise<SearchDecision> => searchDecision(input, deps);
 
-  /** The world request at the channel's last request: the player's own view only. The channel ends in the move request being answered (checked by the observation). */
-  function worldRequest(context: { channel: readonly string[]; team: readonly Readonly<PokemonSet>[] }): WorldRequest {
-    const run = interpretChannel(player, context.channel, { terrains: [...setup.facts_data.terrains] });
-    const frame = run.frames.at(-1) as (typeof run.frames)[number];
-    const request = run.requests[frame.request - 1] as EngineRequest;
-    const facts = worldFactsAtRequests({ channel: ownChannel(player, context.channel), data: setup.facts_data }).find((r) => r.line === frame.index)?.facts ?? null;
-    return { request, team: context.team, state: frame.state, flags: run.flags.filter((flag) => flag.index <= frame.index), facts };
-  }
+  const worldRequest = (context: { channel: readonly string[]; team: readonly Readonly<PokemonSet>[] }): WorldRequest => worldRequestOf(setup.facts_data, player, context);
 
   const actor: Actor = async (request, context) => {
     counts.decisions += 1;

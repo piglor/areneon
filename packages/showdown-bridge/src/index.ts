@@ -89,7 +89,7 @@ export {
   PrivateTrainingLoaderError,
 } from "./private-training-loader.ts";
 export { interimPoolSource, type PoolSource, runGenerationCli, UsageError } from "./generation-cli.ts";
-export { DAMAGE_AWARE_V2_POLICY_ID, DAMAGE_AWARE_V3_POLICY_ID, type DamageAwareSetup, damageAwareSetup, damageAwareSetupV2, type FeatureSetup, featureSetup, GenerationError, type RunSheetSetup, sheetSetup, type PoolRequest, type TrainingPool as GenerationTeamPool, playGeneration } from "./league-generation.ts";
+export { DAMAGE_AWARE_V2_POLICY_ID, DAMAGE_AWARE_V3_POLICY_ID, type DamageAwareSetup, damageAwareSetup, damageAwareSetupV2, type FeatureSetup, featureSetup, GenerationError, LABEL_CONFIG_NAME, labelSetup, type RunSheetSetup, type SearchSetupFactory, sheetSetup, type PoolRequest, type TrainingPool as GenerationTeamPool, playGeneration } from "./league-generation.ts";
 export { readTrainingRunConfig, runConfigHash, type TrainingRunConfig, TrainingRunConfigError } from "./training-run-config.ts";
 export { type CloneRunConfig, CloneRunConfigError, cloneRunConfigHash, readCloneRunConfig } from "./clone-run-config.ts";
 export { EpisodeError, episodeFromRecord, type EpisodeOptions, readEpisode } from "./episode-io.ts";
@@ -712,6 +712,30 @@ export {
   type SearchSetupInput,
 } from "./search-actor.ts";
 export { type LabelDecision, type LabelInput, qPpm, type SearchDecisionDeps, searchDecision, searchLabel } from "./search-decision.ts";
+export {
+  type EpisodeLabels,
+  LABEL_FILE_FORMAT,
+  LABEL_PURPOSE,
+  LABEL_REFUSALS,
+  type LabelContext,
+  type LabelEpisodeRef,
+  LabelError,
+  labelEpisode,
+  labelPolicy,
+  type LabelRefusal,
+  labelSelected,
+  type LabelSetup,
+  type LabelStreamInput,
+  type LabelStreamResult,
+  type LabelTotals,
+  type LabelledDecision,
+  MAX_MISSING_PERCENT,
+  readEpisodeLabels,
+  writeEpisodeLabels,
+  writeLabelFiles,
+  writeLabelStream,
+} from "./search-labeller.ts";
+export { worldRequestOf } from "./search-actor.ts";
 export { searchedIndices, slotCover } from "./search-set.ts";
 export { hpKoDifferential, outcomeScore } from "./search-leaf.ts";
 export { playerView } from "./search-turn.ts";

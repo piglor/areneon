@@ -505,7 +505,12 @@ class Loop:
                     f"generation {g}: generation.json does not state the run's label search "
                     "config hash and identity"
                 )
-            if not (where / "label-set.json").is_file() or not (where / "labels.jsonl").is_file():
+            present = (where / "label-set.json").is_file(), (where / "labels.jsonl").is_file()
+            if present == (False, False):
+                # No decision was labelled: the label contract holds at least one example, so a
+                # generation with none writes no label files (its summary still states the block).
+                continue
+            if not all(present):
                 raise LoopError(f"generation {g}: its label stream is missing")
             manifest = layout.read_json(where / "label-set.json")
             found = reader.read(

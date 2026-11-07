@@ -52,10 +52,13 @@ def distilling_config(ids: dict[str, str], aggregate: int = 2) -> RunConfig:
 class LabelPlayer(FakePlayer):
     """The fake simulator side, writing a label stream for every generation from ``START``."""
 
-    def __init__(self, config: RunConfig, identity: str = IDENTITY, skip: bool = False) -> None:
+    def __init__(
+        self, config: RunConfig, identity: str = IDENTITY, skip: bool = False, empty: bool = False
+    ) -> None:
         super().__init__(config=config)
         self.identity = identity
         self.skip = skip
+        self.empty = empty
 
     def identity_for(self, generation: int) -> str:
         return self.identity
@@ -73,7 +76,11 @@ class LabelPlayer(FakePlayer):
         }
         layout.write_json(out / "generation.json", summary)
         if self.skip:
+            # One of the two label files only: an incomplete stream.
+            layout.write_json(out / "label-set.json", {})
             return
+        if self.empty:
+            return  # a generation in which nothing was labelled writes no label files
         picker, rng = random.Random(generation), random.Random(100 + generation)
         examples = []
         for player in ("p1", "p2"):
@@ -221,6 +228,17 @@ def test_a_label_stream_of_another_identity_stops_the_generation(
 
     with pytest.raises(Exception, match="another search identity"):
         make_loop(run_dir, config, Mixed(config)).run(RUN_GENERATIONS)
+
+
+def test_a_generation_with_no_label_files_has_no_labels(tmp_path: Path, clone_dir: Path) -> None:
+    run_dir = tmp_path / "run"
+    import_clone(clone_dir, run_dir)
+    config = distilling_config(clone_ids(clone_dir))
+    distill_loop(run_dir, config, empty=True).run(RUN_GENERATIONS)
+    last = layout.generation_dir(run_dir, RUN_GENERATIONS)
+    assert not (last / "labels.jsonl").exists()
+    report = layout.read_json(last / "train-report.json")
+    assert report["battle"]["search_labels"] == 0
 
 
 def test_a_missing_label_stream_or_summary_block_stops_the_generation(
