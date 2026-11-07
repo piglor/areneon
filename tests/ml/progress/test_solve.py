@@ -268,7 +268,7 @@ def test_a_record_with_two_solver_identities_and_a_summary_of_one_are_refused_or
     match["game_record_hashes"] = two["matches"][0]["game_record_hashes"]
     two["matches"].append(match)
     two["games"].extend(
-        {**copy.deepcopy(g), "match_id": "psolve-random-legal-argmax"} for g in two["games"]
+        [{**copy.deepcopy(g), "match_id": "psolve-random-legal-argmax"} for g in two["games"]]
     )
     with pytest.raises(ProgressRecordError, match="one solver identity hash"):
         read_progress_record(two)

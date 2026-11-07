@@ -133,6 +133,16 @@ describe("the Team Preview solver candidate of the progress evaluation", () => {
     expect(plain.record.matches.every((m) => m.solve === undefined && m.opponent.kind !== "self-no-solve")).toBe(true);
   }, 900_000);
 
+  it("plays a sampled solver with a temperature: another policy id, the same counts shape, both seats", async () => {
+    const play = { temperature_ppm: 500_000 };
+    const { record } = await playProgress(options({ preview_solve: { setup: setupFor(), mode: "sample", play }, games: 2, record_games: 0 }));
+    const named = previewSolvePolicy(setupFor(), manifest, checkpoints, "sample", play);
+    expect(record.matches.map((m) => m.match_id)).toEqual(["psolve-actor-rule-sample", "psolve-random-legal-sample", "psolve-self-no-solve-sample"]);
+    expect(record.matches[0]?.policy_id).toBe(named.policy_id);
+    expect(record.matches[2]?.opponent_solve?.counts.solved).toBe(0);
+    expect(record.matches[0]?.solve?.counts.solved).toBe(2);
+  }, 900_000);
+
   it("is refused beside the ablation, a search, anchors, a previous generation, extra modes, a features or sheet pair, and in an unknown mode", async () => {
     const other = { checkpoints, policy_ids: { sample: `policy:${"e".repeat(64)}`, argmax: `policy:${"f".repeat(64)}` }, client: new Worker() };
     const ablation = { generation: { generation: 0, checkpoint: "3".repeat(64), policy_id: `policy:${"e".repeat(64)}`, client: new Worker() }, random_policy_id: `policy:${"f".repeat(64)}` };
