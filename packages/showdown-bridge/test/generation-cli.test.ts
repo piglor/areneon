@@ -5,7 +5,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { jcs, type Json } from "../src/canonical-json.ts";
 import { spawn } from "node:child_process";
 import { PassThrough } from "node:stream";
-import { combinedLoad, combineUsage, exitWhenParentDies, featuresDirOf, interimPoolSource, MAX_COMBINED_LOAD, optionalFlag, readShardFile, runGenerationCli, runManifestCli, startShard, UsageError, writeShardFile } from "../src/generation-cli.ts";
+import { fileURLToPath } from "node:url";
+import { exitWhenParentDies, poolLine, vouchTo } from "../src/parent-link.ts";
+import { combinedLoad, combineUsage, featuresDirOf, interimPoolSource, MAX_COMBINED_LOAD, optionalFlag, readShardFile, runGenerationCli, runManifestCli, startShard, UsageError, writeShardFile } from "../src/generation-cli.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT } from "../src/golden.ts";
 import { loadEngine, readTrainingRunConfig } from "../src/index.ts";
 import { runConfigHash } from "../src/training-run-config.ts";
@@ -364,54 +366,89 @@ describe("the shard handoff file (#998)", () => {
 });
 
 describe("a further game process and its parent (#980)", () => {
-  it("is told to end when its parent's pipe closes, and only then", () => {
+  const DIGEST = "ab".repeat(32);
+
+  it("is told to end when its parent's pipe closes, and only then", async () => {
     const stdin = new PassThrough();
     const exits: number[] = [];
-    exitWhenParentDies(stdin, (code) => exits.push(code));
+    void exitWhenParentDies(stdin, (code) => exits.push(code));
     expect(exits).toEqual([]);
     stdin.end();
-    return new Promise<void>((resolve) => setImmediate(() => {
-      expect(exits).toEqual([1]);
-      resolve();
-    }));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(exits).toEqual([1]);
+  });
+
+  it("learns the digest of the pool file from the line its parent sends, however the bytes are cut, and ignores anything else", async () => {
+    const stdin = new PassThrough();
+    const digest = exitWhenParentDies(stdin, () => undefined);
+    stdin.write("noise\npool 1234\n");
+    stdin.write(poolLine(DIGEST).slice(0, 10));
+    stdin.write(poolLine(DIGEST).slice(10));
+    expect(await digest).toBe(DIGEST);
+  });
+
+  it("sends the digest to every further game process through the pipe it holds open", async () => {
+    const out = join(dir, "told");
+    const echo = join(dir, "echo.mjs");
+    writeFileSync(echo, `import { mkdirSync, writeFileSync } from "node:fs"; let seen = ""; process.stdin.on("data", (c) => { seen += c; if (seen.endsWith("\\n")) { mkdirSync(process.argv[2], { recursive: true }); writeFileSync(process.argv[2] + "/shard.jsonl", JSON.stringify({ game: 1, seen }) + "\\n"); process.exit(0); } });`);
+    const child = startShard(echo, [out], out, 1);
+    vouchTo([child])(DIGEST);
+    await expect(child.entries).resolves.toEqual([{ game: 1, seen: poolLine(DIGEST) }]);
+    child.tell("after it ended"); // a gone child is no failure
   });
 
   it("exits when its parent dies, and the processes it started end with it", async () => {
     const script = join(dir, "orphan.mjs");
-    const source = join(process.cwd(), "packages/showdown-bridge/src/generation-cli.ts");
+    const link = fileURLToPath(new URL("../src/parent-link.ts", import.meta.url));
     writeFileSync(
       script,
-      `import { exitWhenParentDies } from ${JSON.stringify(source)};
+      `import { exitWhenParentDies } from ${JSON.stringify(link)};
        import { spawn } from "node:child_process";
        const worker = spawn(process.execPath, ["-e", "process.stdin.on('end', () => process.exit(0)); process.stdin.resume(); setTimeout(() => {}, 60000)"], { stdio: ["pipe", "ignore", "ignore"] });
-       exitWhenParentDies();
+       void exitWhenParentDies();
        console.log(worker.pid);
        setTimeout(() => {}, 60000);`,
     );
     const child = spawn(process.execPath, [...process.execArgv, script], { stdio: ["pipe", "pipe", "inherit"] });
+    let pid = 0;
     try {
-      const pid = await new Promise<number>((resolve, reject) => {
+      pid = await new Promise<number>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("the game process did not report its worker")), 30_000);
         child.once("error", reject);
-        child.stdout.once("data", (chunk: Buffer) => resolve(Number(chunk.toString("utf8").trim())));
+        child.stdout.once("data", (chunk: Buffer) => {
+          clearTimeout(timer);
+          resolve(Number(chunk.toString("utf8").trim()));
+        });
       });
       expect(Number.isInteger(pid) && pid > 0).toBe(true);
       const exited = new Promise<number | null>((resolve) => child.once("exit", (code) => resolve(code)));
       child.stdin.end(); // the parent "dies": its end of the pipe closes
       expect(await exited).toBe(1);
-      const gone = async (): Promise<boolean> => {
-        for (let i = 0; i < 100; i++) {
-          try {
-            process.kill(pid, 0);
-          } catch {
-            return true;
-          }
-          await new Promise((resolve) => setTimeout(resolve, 50));
+      // Gone means no process, or a zombie nobody has reaped yet (state Z).
+      const gone = (): boolean => {
+        try {
+          process.kill(pid, 0);
+        } catch {
+          return true;
         }
-        return false;
+        try {
+          const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+          return stat.slice(stat.lastIndexOf(")") + 2, stat.lastIndexOf(")") + 3) === "Z";
+        } catch {
+          return true;
+        }
       };
-      expect(await gone()).toBe(true);
+      for (let i = 0; i < 100 && !gone(); i++) await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(gone()).toBe(true);
     } finally {
       child.kill("SIGKILL");
+      if (pid > 0) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // already gone
+        }
+      }
     }
   }, 60_000);
 

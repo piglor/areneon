@@ -26,7 +26,7 @@ import {
   writeTrainingStream,
   TrainingLoaderError,
 } from "../src/index.ts";
-import { decisionObservations } from "../src/episode-io.ts";
+import { decisionObservations, readEpisodeObserved } from "../src/episode-io.ts";
 import { examplesOf, readTrainingObserved } from "../src/training-loader.ts";
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
 
@@ -408,5 +408,17 @@ describe("the observations the check built are the ones the examples use (#1192)
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("hands back none, and the loader rebuilds them, when the engine's commit is not the manifest's", async () => {
+    const other = mutate(p1, (copy) => {
+      copy.provenance.manifest.showdown_commit = "0".repeat(40);
+    });
+    const { episode, observations } = await readEpisodeObserved(structuredClone(other), { known_synthetic: KNOWN });
+    expect(observations).toBeUndefined(); // the check ran under the engine's regime, which is not the one decisionObservations reads here
+    const hash = await episodeHash(episode, nodeSha256);
+    const rebuilt = await examplesOf(episode, hash, undefined, undefined, undefined, observations);
+    expect(rebuilt.map((example) => jcs(example as unknown as Json))).toEqual((await examplesOf(episode, hash, undefined, undefined)).map((example) => jcs(example as unknown as Json)));
+    expect(rebuilt).toHaveLength(p1.decisions.length);
   });
 });

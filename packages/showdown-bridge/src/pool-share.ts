@@ -6,13 +6,15 @@
 // private 0700 directory this process made); the others read it back instead. Operational only: the pool
 // is the same value (same teams, same order, same key order), so no seed, plan or hash moves.
 //
-// A pool read back is not taken on trust beyond that: its request key must be the one derived from this
-// process's own run config (so a file of another format, dataset or excluded-ability list is refused),
-// its hash list must be sorted and unique, and every team must hash to the hash listed for it. The
-// `known_synthetic` set is rebuilt from the verified hash list and nothing else.
+// A pool read back is checked, not trusted: the starter vouches for the file by sending its SHA-256 to each
+// child over the pipe it holds (`parent-link.ts`), and the child refuses bytes that do not hash to it, or a
+// file that is not owned by the invoking user with mode 0600. Beyond that its request key must be the one
+// derived from this process's own run config (so a file of another format, dataset or excluded-ability list
+// is refused), its hash list must be sorted and unique, and every team must hash to the hash listed for it.
+// The `known_synthetic` set is rebuilt from the verified hash list, which the starter vouched for.
 
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { type Json, jcs } from "./canonical-json.ts";
 import { GenerationError, type PoolRequest, type TrainingPool } from "./league-generation.ts";
 import type { PokemonSet } from "./engine.ts";
@@ -22,24 +24,44 @@ import { syntheticTeamHashes, teamHash } from "./team-class.ts";
 /** The version of the pool file's layout. */
 export const POOL_FILE_VERSION = 1;
 
-/** The key a pool file is bound to: SHA-256 of the JCS of what the pool is built from (format, dataset, excluded abilities). */
+/** The key a pool file is bound to: SHA-256 of the JCS of what the pool is built from (format, dataset, the excluded abilities as a sorted set). */
 export function poolRequestKey(request: PoolRequest): string {
-  const named = { format_id: request.format_id, team_dataset: request.team_dataset ?? null, excluded_abilities: [...request.generation.excluded_abilities] };
+  const named = { format_id: request.format_id, team_dataset: request.team_dataset ?? null, excluded_abilities: [...request.generation.excluded_abilities].sort() };
   return createHash("sha256").update(jcs(named as unknown as Json)).digest("hex");
 }
 
-/** Write the pool for the other game processes: to a temporary name first, then renamed, so a reader never sees half a file. Plain JSON, so the sets keep their key order. */
-export function writePoolFile(path: string, pool: TrainingPool, request: PoolRequest): void {
+/**
+ * Write the pool for the other game processes (mode 0600, to a temporary name first, then renamed, so a reader never sees half a file) and
+ * return the SHA-256 of the bytes written, which the caller sends to each of them. Plain JSON, so the sets keep their key order.
+ */
+export function writePoolFile(path: string, pool: TrainingPool, request: PoolRequest): string {
   const temporary = `${path}.partial`;
-  writeFileSync(temporary, JSON.stringify({ schema_version: POOL_FILE_VERSION, request: poolRequestKey(request), hashes: pool.hashes, teams: pool.teams }), { mode: 0o600 });
+  const bytes = JSON.stringify({ schema_version: POOL_FILE_VERSION, request: poolRequestKey(request), hashes: pool.hashes, teams: pool.teams });
+  writeFileSync(temporary, bytes, { mode: 0o600 });
+  chmodSync(temporary, 0o600); // whatever the umask said
   renameSync(temporary, path);
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
-/** Read a pool file back and check it as the module comment says; a refusal is a `GenerationError`. */
-export function readPoolFile(path: string, request: PoolRequest): TrainingPool {
+/**
+ * Read a pool file back and check it as the module comment says; a refusal is a `GenerationError`.
+ * The whole file is read as ONE string: a pool is a few megabytes (some thousand teams), far below Node's string limit.
+ * The bytes are hashed and parsed from the same read, so the file cannot change between the check and the use.
+ */
+export function readPoolFile(path: string, request: PoolRequest, digest: string, uid: number | undefined = process.getuid?.()): TrainingPool {
+  let bytes: Buffer;
+  try {
+    const status = statSync(path);
+    if ((uid !== undefined && status.uid !== uid) || (status.mode & 0o777) !== 0o600) throw new GenerationError("the shared team pool is not owned by this user with mode 0600");
+    bytes = readFileSync(path);
+  } catch (error) {
+    if (error instanceof GenerationError) throw error;
+    throw new GenerationError(`the shared team pool cannot be read: ${(error as Error).name}`);
+  }
+  if (createHash("sha256").update(bytes).digest("hex") !== digest) throw new GenerationError("the shared team pool is not the file its starter vouched for");
   let value: { schema_version?: unknown; request?: unknown; hashes?: unknown; teams?: unknown };
   try {
-    value = JSON.parse(readFileSync(path, "utf8")) as typeof value;
+    value = JSON.parse(bytes.toString("utf8")) as typeof value;
   } catch (error) {
     throw new GenerationError(`the shared team pool cannot be read: ${(error as Error).name}`);
   }
@@ -53,29 +75,22 @@ export function readPoolFile(path: string, request: PoolRequest): TrainingPool {
   return { teams: teams as PokemonSet[][], hashes: listed as string[], known_synthetic: syntheticTeamHashes(listed as string[]) };
 }
 
-/** Wait for the pool file to appear (the starting process writes it when its own load is done), then read it. */
-export async function waitForPoolFile(path: string, request: PoolRequest, { poll_ms = 100, timeout_ms = 30 * 60 * 1000 }: { poll_ms?: number; timeout_ms?: number } = {}): Promise<TrainingPool> {
-  const deadline = Date.now() + timeout_ms;
-  while (!existsSync(path)) {
-    if (Date.now() > deadline) throw new GenerationError("the shared team pool did not appear in time");
-    await new Promise((resolve) => setTimeout(resolve, poll_ms));
-  }
-  return readPoolFile(path, request);
-}
-
 /**
- * The pool of one game process. With `read` (a further game process) it waits for the file its starter writes;
- * otherwise it loads the pool with `load` (the load runs before this returns its promise, so a caller that
- * starts its workers after calling this starts them after the load, as before) and, with `write`, leaves it
- * in that file for the others. Both ways are timed as the `pool_load` phase.
+ * The pool of one game process, and the digest of the file that carries it. With `read` (a further game process:
+ * the file, and the digest its starter sends) it reads what its starter left once the digest arrives; otherwise it
+ * loads the pool with `load` (the load runs before this returns, so a caller that starts its workers after calling
+ * this starts them after the load, as before) and, with `write`, leaves it in that file and returns the digest to
+ * send (`vouch` is called with it at once). Both ways are timed as the `pool_load` phase. There is no polling: a reader waits for the digest, and ends
+ * with its starter if that dies (`parent-link.ts`).
  */
 export function obtainPool(
   config: PoolRequest,
   load: () => TrainingPool,
-  { read, write }: { read?: string | undefined; write?: string | undefined },
-): Promise<TrainingPool> {
-  if (read !== undefined) return timedAsync("pool_load", () => waitForPoolFile(read, config));
+  { read, write, vouch }: { read?: { file: string; digest: Promise<string> } | undefined; write?: string | undefined; vouch?: ((digest: string) => void) | undefined },
+): Promise<{ pool: TrainingPool; digest: string | undefined }> {
+  if (read !== undefined) return timedAsync("pool_load", async () => ({ pool: readPoolFile(read.file, config, await read.digest), digest: undefined }));
   const pool = timed("pool_load", load);
-  if (write !== undefined) timed("pool_load", () => writePoolFile(write, pool, config));
-  return Promise.resolve(pool);
+  const digest = write === undefined ? undefined : timed("pool_load", () => writePoolFile(write, pool, config));
+  if (digest !== undefined) vouch?.(digest); // right away, before the caller starts its workers
+  return Promise.resolve({ pool, digest });
 }

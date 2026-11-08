@@ -23,6 +23,7 @@ import { labelCounts } from "./search-labeller.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import { PastPoolError, readPastPool } from "./past-pool.ts";
 import { leaveFigures, printProfile, startProfile, stopProfile, timed } from "./profile.ts";
+import { exitWhenParentDies, vouchTo } from "./parent-link.ts";
 import { obtainPool } from "./pool-share.ts";
 import { type MemberFlag, parseMemberFlag, runCalibrationCli, runPopulationCli } from "./population-cli.ts";
 import { largest, ownPeakRss } from "./process-usage.ts";
@@ -103,17 +104,6 @@ export const MAX_COMBINED_LOAD = 256;
 export function combinedLoad(processes: number, workers: number, nParallel: number): { games: number; over: boolean } {
   const games = processes * workers * nParallel;
   return { games, over: games > MAX_COMBINED_LOAD };
-}
-
-/**
- * Make a further game process end when the process that started it does: its stdin is a pipe the starter
- * holds open, so it closes when the starter dies. The policy workers this process started have pipes to it
- * and end with it. Registered before anything slow (the pool, the workers), so it is heard during them (#980).
- */
-export function exitWhenParentDies(stdin: { once: (event: "end", listener: () => void) => unknown; resume: () => unknown; unref?: () => void } = process.stdin, exit: (code: number) => void = process.exit.bind(process)): void {
-  stdin.once("end", () => exit(1));
-  stdin.resume();
-  stdin.unref?.(); // an open pipe must not keep the finished process alive
 }
 
 /** Peak memory of the processes of one generation's play (bytes), for the run-metrics record; any part may be missing. */
@@ -302,7 +292,7 @@ export async function runGenerationCli(
   // The pool the further game processes read instead of loading it themselves (#1192).
   const poolFile = values["pool-file"] ?? (scratch !== undefined ? join(scratch, POOL_FILE) : undefined);
   try {
-    if (values.shard !== undefined) exitWhenParentDies(); // before the pool and the workers, which take long
+    const vouched = values.shard !== undefined ? exitWhenParentDies() : undefined; // before the pool and the workers, which take long; it also brings the digest of the pool file
     // Start the further game processes first: each loads its own pool while this one does.
     if (scratch !== undefined) {
       for (let index = 1; index < processes; index++) {
@@ -313,8 +303,12 @@ export async function runGenerationCli(
         children.push(startShard(shardScript as string, [...rest, "--out", out, "--shard", `${index}/${processes}`, "--episodes-dir", episodesDir, ...optionalFlag("--pool-file", poolFile), ...optionalFlag("--features-dir", featuresDir), ...optionalFlag("--labels-dir", labelsDir), ...optionalFlag("--profile-dir", profileDir)], out, index));
       }
     }
-    // A further game process waits for the pool its starter loads while its own workers start; the starter loads it and leaves it for them.
-    const [pool] = await Promise.all([obtainPool(config, () => poolSource(engine, config), { read: values["pool-file"], ...(scratch === undefined ? {} : { write: poolFile }) }), ...clients.map((client) => client.start())]);
+    // A further game process reads the pool its starter loaded, once the starter has sent the digest of the file, while its own workers start;
+    // the starter sends it as soon as the file is written. A worker that fails to start ends the wait.
+    const [{ pool }] = await Promise.all([
+      obtainPool(config, () => poolSource(engine, config), { read: vouched === undefined || values["pool-file"] === undefined ? undefined : { file: values["pool-file"], digest: vouched }, ...(scratch === undefined ? {} : { write: poolFile, vouch: vouchTo(children) }) }),
+      ...clients.map((client) => client.start()),
+    ]);
     const [client, ...peers] = clients as [PolicyWorkerClient, ...PolicyWorkerClient[]];
     if (values.shard !== undefined) {
       // A further game process (it ends with the process that started it, see above). It plays the slice and leaves it for the process that started this one.
@@ -402,6 +396,8 @@ export interface ShardProcess {
   usage: Promise<ResourceUsage>;
   /** Whether the process is still running. */
   alive: () => boolean;
+  /** Send the process one line over the pipe it ends with (a closed pipe is no failure: the process is gone and reports it). */
+  tell: (line: string) => void;
   stop: () => void;
 }
 
@@ -452,7 +448,8 @@ export function startShard(script: string, args: readonly string[], out: string,
     }
   });
   usage.catch(() => undefined);
-  return { entries, usage, alive: () => running, stop: () => void child.kill("SIGKILL") };
+  child.stdin.on("error", () => undefined); // a child that has gone leaves a broken pipe; its exit is reported through `entries`
+  return { entries, usage, alive: () => running, tell: (line) => void child.stdin.write(line), stop: () => void child.kill("SIGKILL") };
 }
 
 /** `scripts/format-manifest.ts --format <id>`: print the version manifest of a supported format as one canonical JSON line. */

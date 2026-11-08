@@ -499,8 +499,7 @@ describe("several workers and game processes (#957)", () => {
     try {
       const request = { format_id: config.format_id, generation: config.generation };
       const file = join(scratch, "pool.json");
-      writePoolFile(file, pool, request);
-      const shared = readPoolFile(file, request);
+      const shared = readPoolFile(file, request, writePoolFile(file, pool, request));
       const write = async (name: string, used: TrainingPool): Promise<string[]> => {
         const out = join(scratch, name);
         const episodes = join(out, "episodes");
