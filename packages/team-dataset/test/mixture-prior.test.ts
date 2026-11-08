@@ -9,6 +9,7 @@ import { join } from "node:path";
 import {
   deriveMixturePrior,
   jcs,
+  MIXTURE_DENOMINATOR,
   megaHolderAbilities,
   megaPreviewSpecies,
   readRoleSetTable,
@@ -110,66 +111,69 @@ describe("the usage component's moves against the real sampler", () => {
   });
 });
 
-describe("the mixture-u record against the proposal's frequencies", () => {
-  const prior = derive(configU);
-  const proposal = new Proposal(vocabulary, table, configU, roleSetsSource(engine, vocabulary, table, JSON.parse(JSON.stringify(roleTable))), usageSource(vocabulary, usage));
-  const TEAMS = 30_000;
-  const speciesOf = new Map(table.species.map((s) => [s.name, s.id]));
-  const generated = new Map<string, PokemonSet[]>();
-  for (let k = 0; k < TEAMS; k++) {
-    for (const set of proposal.propose(engineRng(engine, drawSeed(KEY, { config_hash: "f".repeat(64), plan_id: "mixture-prior" }, k)))) {
-      // The role-set component plays a Mega entry as its preview species holding the stone: that set is the stone holder (the Mega forme entry).
-      const base = speciesOf.get(set.species) as string;
-      const holder = vocabulary.roster.find((r) => r.required_item !== undefined && r.required_item === toId(set.item) && shows.get(r.id) === base);
-      const id = holder?.id ?? base;
-      generated.set(id, [...(generated.get(id) ?? []), set]);
-    }
-  }
-  const formes = prior.species.flatMap((s) => s.formes.map((f) => ({ preview: s.id, f, species: s })));
+/** Slack for what the record does not model (the Item Clause the proposal applies, the estimate of the usage species inclusion): absolute probability. */
+const SLACK = 0.012;
 
-  it("the within-species forme shares are the record's within 0.03 (measured 0.012 on a fixed seed)", () => {
-    let worst = 0;
-    let compared = 0;
-    for (const s of prior.species) {
-      if (s.formes.length < 2) continue;
-      const counts = s.formes.map((f) => generated.get(f.id)?.length ?? 0);
-      const total = counts.reduce((a, b) => a + b, 0);
-      if (total < 2000) continue;
-      s.formes.forEach((f, i) => {
-        worst = Math.max(worst, Math.abs((counts[i] as number) / total - f.weight / s.denominator));
+for (const [name, config] of [["mixture-u-v1", configU], ["mixture-r-v1", configR]] as const) {
+  describe(`the ${name} record against the proposal's frequencies`, () => {
+    const prior = derive(config);
+    const hasUsage = config.proposal?.components.some((c) => c.kind === "usage") === true;
+    const proposal = new Proposal(vocabulary, table, config, roleSetsSource(engine, vocabulary, table, JSON.parse(JSON.stringify(roleTable))), hasUsage ? usageSource(vocabulary, usage) : undefined);
+    const TEAMS = 30_000;
+    const speciesOf = new Map(table.species.map((s) => [s.name, s.id]));
+    const generated = new Map<string, PokemonSet[]>();
+    for (let k = 0; k < TEAMS; k++) {
+      for (const set of proposal.propose(engineRng(engine, drawSeed(KEY, { config_hash: "f".repeat(64), plan_id: `mixture-prior-${name}` }, k)))) {
+        // The role-set component plays a Mega entry as its preview species holding the stone: that set is the stone holder (the Mega forme entry).
+        const base = speciesOf.get(set.species) as string;
+        const holder = vocabulary.roster.find((r) => r.required_item !== undefined && r.required_item === toId(set.item) && shows.get(r.id) === base);
+        const id = holder?.id ?? base;
+        generated.set(id, [...(generated.get(id) ?? []), set]);
+      }
+    }
+    const formes = prior.species.flatMap((s) => s.formes.map((f) => ({ f, species: s })));
+    /** |observed - expected| within 5.5 binomial sigma of n draws, plus the stated slack for the unmodelled pieces. */
+    const near = (hits: number, n: number, p: number, what: string): void => {
+      const sd = Math.sqrt(n * p * (1 - p));
+      expect(Math.abs(hits - n * p), `${what}: ${hits} of ${n} against p=${p.toFixed(4)}`).toBeLessThanOrEqual(Z * Math.max(sd, 1) + SLACK * n);
+    };
+
+    it("the absolute inclusion of each roster entry is the record's forme weight over its denominator", () => {
+      let compared = 0;
+      for (const { f } of formes) {
+        const included = generated.get(f.id)?.length ?? 0; // an entry is on a team at most once
+        near(included, TEAMS, Math.min(1, f.weight / MIXTURE_DENOMINATOR), `${name} ${f.id} inclusion`);
         compared += 1;
-      });
-    }
-    expect(compared).toBeGreaterThan(10);
-    expect(worst).toBeLessThanOrEqual(0.03);
-  });
+      }
+      expect(compared).toBeGreaterThan(100);
+    });
 
-  it("per-entry ability, item, move and spread marginals are the record's within 0.06 (measured 0.033)", () => {
-    const worst = { ability: 0, item: 0, move: 0, spread: 0 };
-    let entries = 0;
-    for (const { f } of formes) {
-      const sets = generated.get(f.id) ?? [];
-      const n = sets.length;
-      if (n < 1500) continue;
-      entries += 1;
-      const entry = vocabulary.roster.find((r) => r.id === f.id) as (typeof vocabulary.roster)[number];
-      if (entry.required_item === undefined) {
-        for (const a of f.abilities.entries) worst.ability = Math.max(worst.ability, Math.abs(sets.filter((s) => toId(s.ability) === a.id).length / n - a.weight / f.abilities.denominator));
-        for (const i of f.items.entries) worst.item = Math.max(worst.item, Math.abs(sets.filter((s) => toId(s.item) === i.id).length / n - i.weight / f.items.denominator));
+    it("each entry's forme share, ability, item, move and spread marginals are the record's, per entry within binomial bounds", () => {
+      let entries = 0;
+      for (const { f, species } of formes) {
+        const sets = generated.get(f.id) ?? [];
+        const n = sets.length;
+        if (n < 400) continue;
+        entries += 1;
+        const entry = vocabulary.roster.find((r) => r.id === f.id) as (typeof vocabulary.roster)[number];
+        if (species.formes.length > 1) {
+          const total = species.formes.reduce((t, x) => t + (generated.get(x.id)?.length ?? 0), 0);
+          near(n, total, f.weight / species.denominator, `${f.id} share of ${species.id}`);
+        }
+        if (entry.required_item === undefined) {
+          for (const a of f.abilities.entries) near(sets.filter((s) => toId(s.ability) === a.id).length, n, a.weight / f.abilities.denominator, `${f.id} ability ${a.id}`);
+          for (const i of f.items.entries) near(sets.filter((s) => toId(s.item) === i.id).length, n, i.weight / f.items.denominator, `${f.id} item ${i.id}`);
+        }
+        for (const m of f.moves.entries) near(sets.filter((s) => s.moves.some((x) => toId(x) === m.id)).length, n, m.inclusion / f.moves.denominator, `${f.id} move ${m.id}`);
+        for (const sp of f.spreads.entries) {
+          const hit = sets.filter((s) => s.nature === vocabulary.natures.find((x) => x.id === sp.nature)?.name && (Object.keys(sp.stat_points) as (keyof typeof sp.stat_points)[]).every((k) => (s.evs as Record<string, number>)[k] === sp.stat_points[k])).length;
+          near(hit, n, sp.weight / f.spreads.denominator, `${f.id} spread`);
+        }
       }
-      for (const m of f.moves.entries) worst.move = Math.max(worst.move, Math.abs(sets.filter((s) => s.moves.some((x) => toId(x) === m.id)).length / n - m.inclusion / f.moves.denominator));
-      for (const sp of f.spreads.entries) {
-        const hit = sets.filter((s) => s.nature === vocabulary.natures.find((x) => x.id === sp.nature)?.name && (Object.keys(sp.stat_points) as (keyof typeof sp.stat_points)[]).every((k) => (s.evs as Record<string, number>)[k] === sp.stat_points[k])).length;
-        worst.spread = Math.max(worst.spread, Math.abs(hit / n - sp.weight / f.spreads.denominator));
-      }
-    }
-    expect(entries).toBeGreaterThan(20);
-    expect(worst.ability).toBeLessThanOrEqual(0.06);
-    expect(worst.item).toBeLessThanOrEqual(0.06);
-    expect(worst.move).toBeLessThanOrEqual(0.06);
-    expect(worst.spread).toBeLessThanOrEqual(0.06);
+      expect(entries).toBeGreaterThan(20);
+    });
   });
-});
+}
 
 describe("the usage-shaped evaluation config of the later month", () => {
   it("names the committed 2026-10 table, which is another month than the prior's and reads against the vocabulary", () => {
@@ -190,6 +194,8 @@ describe("refusals", () => {
     expect(() => deriveMixturePrior({ vocabulary, config: configU, generator_commit: COMMIT, shows_as: shows, holder_abilities: holders, usage })).toThrow(/no role-set table/);
     expect(() => deriveMixturePrior({ vocabulary, config: configU, generator_commit: COMMIT, shows_as: shows, holder_abilities: holders, role_sets: roleTable })).toThrow(/no usage table/);
     expect(() => deriveMixturePrior({ vocabulary, config: configR, generator_commit: COMMIT, shows_as: shows, holder_abilities: holders, role_sets: roleTable, usage })).toThrow(/no usage component|has no usage/);
+    const noFloor = { ...configU, proposal: { ...configU.proposal, components: configU.proposal?.components.map((c) => (c.kind === "usage" ? { ...c, floor_permille: 0 } : c)) } } as unknown as typeof configU;
+    expect(() => derive(noFloor)).toThrow(/floor_permille 0/);
     expect(() => deriveMixturePrior({ vocabulary, config: configR, generator_commit: "abc", shows_as: shows, holder_abilities: holders, role_sets: roleTable })).toThrow(/40/);
     const unknown = { ...configR, proposal: { ...configR.proposal, components: [{ kind: "gamble", share_permille: 1000 }] } } as unknown as typeof configR;
     expect(() => deriveMixturePrior({ vocabulary, config: unknown, generator_commit: COMMIT, shows_as: shows, holder_abilities: holders })).toThrow(/does not know/);

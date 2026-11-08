@@ -52,7 +52,7 @@ import type { TeamGeneratorConfig } from "@areneon/schema/types/v1/team-generato
 import type { UsagePrior } from "@areneon/schema/types/v1/usage-prior.ts";
 import { beliefIdentityHash, createSampler } from "@areneon/opponent-model";
 import { beliefConfigHash, createSetLegality, evidenceCheckFormats, usagePriorHash } from "@areneon/showdown-bridge";
-import { datasetValidationPool } from "./progress-pool.ts";
+import { datasetValidationPool, type ValidationPoolInput } from "./progress-pool.ts";
 import { generatorSpreadSampler } from "./spread-sampler.ts";
 
 export type Seat = "p1" | "p2";
@@ -138,8 +138,8 @@ export function qualityContextFor(engine: Engine, vocabulary: TeamVocabulary, se
 export const ORACLE_RUN_KEY = "prediction-quality-1";
 
 /** The VALIDATION split of a dataset as the sweep's pool (the hashes are the canonical hashes `datasetValidationPool` sorted by). */
-function validationPool(engine: Engine, named: Parameters<typeof datasetTeamPool>[1]): ReturnType<typeof datasetTeamPool> {
-  const pool = datasetValidationPool(engine, named as never);
+function validationPool(engine: Engine, named: ValidationPoolInput): ReturnType<typeof datasetTeamPool> {
+  const pool = datasetValidationPool(engine, named);
   return { teams: pool.teams.map((t) => t.sets), hashes: pool.teams.map((t) => t.canonical_team_hash), known_synthetic: pool.known_synthetic };
 }
 

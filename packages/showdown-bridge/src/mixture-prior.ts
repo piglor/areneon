@@ -16,7 +16,8 @@
 //   usage      species 1 by `w_species`, later species by teammate sums, each pick uniform with the floor
 //              probability. The inclusion used here is ESTIMATED by simulating the species draw with the
 //              component's own rule (`usageInclusions`: 200,000 teams on a fixed-seed generator, standard
-//              error about 0.0003 at an inclusion of 0.02); the records are reproducible byte for byte.
+//              error of at most sqrt(p / 200,000), so 7% relative at an inclusion of 0.001 and 22% at 0.0001,
+//              less after the Rao-Blackwell step); the records are reproducible byte for byte.
 //              Abilities, items and spreads are the table's lists under `set_root`, each
 //              draw uniform with probability `floor`; the moves are drawn without replacement by weight
 //              (uniform with probability `floor`, uniform once the listed moves run out), and their
@@ -91,6 +92,7 @@ export function apportion(masses: readonly number[], total: number): number[] {
 export function successiveInclusion(pool: readonly string[], listed: readonly { id: string; w: number }[], floor: number, slots: number): Map<string, number> {
   const count = Math.min(slots, pool.length);
   const ids = listed.map((l) => l.id);
+  // The listed moves are the bits of a mask held in a double (exact below 2^53); the table lists at most k_moves = 32, so 40 is a limit, not a rule.
   if (ids.length > 40) bad("more listed moves than the programme's mask holds");
   const pow = ids.map((_, j) => 2 ** j);
   const has = (mask: number, j: number): boolean => Math.floor(mask / (pow[j] as number)) % 2 === 1;
@@ -145,7 +147,10 @@ export const USAGE_INCLUSION_SEED = 0x5eed1134;
  * the summed teammate weights of the chosen species over the unchosen entries, falling back to `w_species` and
  * then to uniform, each pick uniform over the unchosen entries with probability `floor`) on a fixed-seed 32-bit
  * generator (Mulberry32). Only the species draw is simulated: the sets follow from the lists, exactly. The
- * estimate has a standard error of about sqrt(p / teams) per entry (0.0003 at p = 0.02).
+ * estimate is Rao-Blackwellized (each pick adds the probability, given the picks so far, that each open entry
+ * is the next one, instead of counting the chosen entry), so its standard error is at most the plain count's,
+ * sqrt(p / teams) per entry: 7% relative at p = 0.001, 22% at p = 0.0001. The floor must be positive (an entry
+ * the table lacks is then still drawn).
  */
 function usageInclusions(roster: readonly RosterEntry[], rows: ReadonlyMap<string, UsageWeightTable["species"][number]>, floor: number, teamSize: number): Map<string, number> {
   const n = roster.length;
@@ -177,8 +182,27 @@ function usageInclusions(roster: readonly RosterEntry[], rows: ReadonlyMap<strin
     sums.fill(0);
     for (let pick = 0; pick < teamSize; pick++) {
       const open = n - pick;
+      // The weighted branch's weights over the open entries (also the Rao-Blackwell contribution below).
+      let total = 0;
+      let byTeam = 0;
+      for (let e = 0; e < n; e++) byTeam += taken[e] === 1 ? 0 : (sums[e] as number);
+      const useTeam = pick > 0 && byTeam > 0;
+      for (let e = 0; e < n; e++) {
+        const v = taken[e] === 1 ? 0 : useTeam ? (sums[e] as number) : wTotal > 0 ? (w[e] as number) : 1;
+        weights[e] = v;
+        total += v;
+      }
+      if (total <= 0) {
+        total = 0;
+        for (let e = 0; e < n; e++) {
+          weights[e] = taken[e] === 1 ? 0 : 1;
+          total += weights[e] as number;
+        }
+      }
+      // Rao-Blackwellized count: the probability, given the picks so far, that each open entry is the next pick.
+      for (let e = 0; e < n; e++) if (taken[e] === 0) hits[e] = (hits[e] as number) + floor / open + ((1 - floor) * (weights[e] as number)) / total;
       let chosen = -1;
-      if (floor > 0 && unit() < floor) {
+      if (unit() < floor) {
         let skip = Math.floor(unit() * open);
         for (let e = 0; e < n; e++) {
           if (taken[e] === 1) continue;
@@ -189,22 +213,6 @@ function usageInclusions(roster: readonly RosterEntry[], rows: ReadonlyMap<strin
           skip--;
         }
       } else {
-        let total = 0;
-        let byTeam = 0;
-        for (let e = 0; e < n; e++) byTeam += taken[e] === 1 ? 0 : (sums[e] as number);
-        const useTeam = pick > 0 && byTeam > 0;
-        for (let e = 0; e < n; e++) {
-          const v = taken[e] === 1 ? 0 : useTeam ? (sums[e] as number) : wTotal > 0 ? (w[e] as number) : 1;
-          weights[e] = v;
-          total += v;
-        }
-        if (total <= 0) {
-          total = 0;
-          for (let e = 0; e < n; e++) {
-            weights[e] = taken[e] === 1 ? 0 : 1;
-            total += weights[e] as number;
-          }
-        }
         let u = unit() * total;
         for (let e = 0; e < n; e++) {
           if ((weights[e] as number) <= 0) continue;
@@ -214,7 +222,6 @@ function usageInclusions(roster: readonly RosterEntry[], rows: ReadonlyMap<strin
         }
       }
       taken[chosen] = 1;
-      hits[chosen] = (hits[chosen] as number) + 1;
       const row = mates[chosen] as Float64Array;
       for (let e = 0; e < n; e++) sums[e] = (sums[e] as number) + (row[e] as number);
     }
@@ -330,6 +337,7 @@ export function deriveMixturePrior(input: MixturePriorInput): UsagePrior {
 
   const usageBy = new Map<string, UsageWeightTable["species"][number]>((usage?.species ?? []).map((s): [string, UsageWeightTable["species"][number]] => [s.id, s]));
   const usageComponent = components.find((c) => c.kind === "usage");
+  if (usageComponent?.kind === "usage" && usageComponent.floor_permille === 0) bad("a usage component with floor_permille 0 is refused: an entry the table lacks would have no inclusion, and the belief would refuse a legal opponent");
   const floor = usageComponent?.kind === "usage" ? usageComponent.floor_permille / 1000 : 0;
   const setRoot = usageComponent?.kind === "usage" ? usageComponent.set_root : 1;
   const mixWith = (a: Map<string, number>, wa: number, b: Map<string, number>, wb: number): Map<string, number> => {
@@ -361,7 +369,8 @@ export function deriveMixturePrior(input: MixturePriorInput): UsagePrior {
     for (const { e, w } of rawSpreads) spreads.set(spreadKey(e.nature, e.stat_points as StatPoints), { nature: e.nature, stat_points: e.stat_points as StatPoints, p: ((1 - floor) * w) / spreadSum });
     return { abilities, items: itemsOut, moves, count: Math.min(slots, pool.length), spreads };
   };
-  const usageInclusionOf = usageInclusions(roster, usageBy, floor, teamSize);
+  // The simulation runs only for a config that has a usage component (a floor of 0 is refused above).
+  const usageInclusionOf = usageComponent === undefined ? new Map<string, number>() : usageInclusions(roster, usageBy, floor, teamSize);
   const usageInclusion = (entry: RosterEntry): number => usageInclusionOf.get(entry.id) ?? 0;
 
   const partsOf = (entry: RosterEntry): Parts[] => {
@@ -413,6 +422,7 @@ export function deriveMixturePrior(input: MixturePriorInput): UsagePrior {
     const inclusion = moveIds.map((id, k) => ({ id, inclusion: moveW[k] as number })).filter((e) => e.inclusion > 0);
     return {
       id: entry.id,
+      // At least 1: the contract wants a positive integer weight, and an entry kept in the record (total > 0) must not round to 0.
       weight: Math.max(1, Math.round(total * D)),
       abilities: { denominator: D, entries: abilityIds.map((id, k) => ({ id, weight: abilityW[k] as number })).filter((e) => e.weight > 0), residual: 0, unmapped: 0 },
       ...(holder === undefined
