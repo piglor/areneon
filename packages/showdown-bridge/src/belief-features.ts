@@ -157,7 +157,22 @@ export const sheetStatement = (setup: Pick<SheetSetup, "port">): { feature_set: 
 export const SHEET_FEATURE_SET = "opponent-sheet/1";
 
 /** Builds the port of the composition root for a vocabulary, reader and pin. */
-export type BeliefFeaturesFactory = (context: { readonly engine: Engine; readonly vocabulary: TeamVocabulary; readonly reader_sha256: string; readonly manifest: VersionManifest }) => BeliefFeaturesPort;
+export type BeliefFeaturesFactory = (context: BeliefFeaturesFactoryContext) => BeliefFeaturesPort;
+
+/** What the factory builds a port for; `evidence: "none"` selects the uninformative mode (#1309), which has its own hashes. */
+export interface BeliefFeaturesFactoryContext {
+  readonly engine: Engine;
+  readonly vocabulary: TeamVocabulary;
+  readonly reader_sha256: string;
+  readonly manifest: VersionManifest;
+  readonly evidence?: BeliefEvidenceMode;
+}
+
+/** The evidence modes a run config can name by the hash of its source: the informative belief (absent) and the prior alone. */
+export type BeliefEvidenceMode = "none";
+
+/** The modes to try, in order, when a run config names a hash: the informative belief first (undefined), then the uninformative one. */
+export const BELIEF_EVIDENCE_MODES: readonly (BeliefEvidenceMode | undefined)[] = [undefined, "none"];
 
 /** A channel that does not end in a request cannot be given a block. */
 export class SheetInputError extends Error {
