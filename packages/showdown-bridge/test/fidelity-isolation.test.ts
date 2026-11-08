@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 const ROOT = join(import.meta.dirname, "..", "..", "..");
 
 /** What only the oracle (test/fidelity/oracle.ts) may name. */
-export const ORACLE_IDENTIFIERS = ["copyRandomState", "captureDecisions", "translateChoice", "stateDelta", "OracleSpec", "prng.clone("] as const;
+export const ORACLE_IDENTIFIERS = ["copyRandomState", "captureDecisions", "translateChoice", "stateDelta", "OracleSpec", "prng.clone(", "oracleRollout", "oracleValues", "foeChannelAt", "rolloutSeed"] as const;
 
 /** Files outside tests that may rebuild a battle from JSON: each forks a battle IT built (a scenario world or a probe clone), reviewed here. */
 export const FROM_JSON_ALLOWED = ["choice-judge.ts", "mechanics-damage.ts", "reply-model.ts", "search-turn.ts"];
@@ -69,6 +69,16 @@ describe("the fork oracle and the random-state copy are reachable only from test
     expect(pkg.exports).toEqual({ ".": "./src/index.ts" });
     const index = readFileSync(join(ROOT, "packages/showdown-bridge/src/index.ts"), "utf8");
     expect(index).not.toMatch(/fidelity|oracle/i);
+  });
+
+  it("the S0 oracle tools (rollouts from the fork, the real opponent policy) live under test/ and no shipped file names them", () => {
+    for (const f of ["packages/team-dataset/test/s0/rollout.ts", "packages/team-dataset/test/s0/measure.ts", "packages/team-dataset/test/s0/s0-cli.ts"]) expect(statSync(join(ROOT, f)).isFile()).toBe(true);
+    const names = shipped().map((f) => relative(ROOT, f));
+    // the arithmetic and the cost sink ship (they read no oracle) and are inside the scan
+    for (const f of ["packages/showdown-bridge/src/s0-measures.ts", "packages/showdown-bridge/src/search-cost.ts", "packages/team-dataset/scripts/search-budget.ts"]) expect(names).toContain(f);
+    expect(names.some((n) => /(^|\/)test\/s0\//.test(n))).toBe(false);
+    const index = readFileSync(join(ROOT, "packages/showdown-bridge/src/index.ts"), "utf8");
+    expect(index).not.toMatch(/rollout/i);
   });
 
   it("negative controls: the scan flags each way the oracle could leak into shipped code", () => {

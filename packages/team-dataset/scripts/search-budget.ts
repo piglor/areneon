@@ -9,6 +9,9 @@
 //        [--model-config FILE] [--leaf value-head|hp-ko-differential] [--out FILE]
 //
 // `--python` is the interpreter of an environment that has `areneon-ml` installed (the worker runs as `python -I -m areneon_ml.worker`).
+// Per-component lines (ADR-026 section 8 S0 measure 5): for each searched decision the milliseconds spent in root prior, world building,
+// max-damage replies, turn simulations, observation building on this side and the leaves' worker round trips (the worker's reducer,
+// encoder and network are inside that round trip: it is the only place they run), as median, p95 and p99 over the searched decisions.
 // It prints one JSON object: per-decision median, p95, p99 and worst for the searched decisions and for all of them, the counts and the
 // load. Wall-clock figures are of one machine at one time (a shared one: other work running slows them), not a claim that they repeat.
 import { execFileSync } from "node:child_process";
@@ -19,6 +22,8 @@ import { fileURLToPath } from "node:url";
 import {
   type Actor,
   battleClass,
+  COST_COMPONENTS,
+  type CostComponent,
   engineDataHash,
   goldenWorldFactsData,
   loadEngine,
@@ -122,6 +127,9 @@ try {
   const searchedMs: number[] = [];
   const allMs: number[] = [];
   const gameMs: number[] = [];
+  const perComponent = Object.fromEntries(COST_COMPONENTS.map((c) => [c, [] as number[]])) as Record<CostComponent, number[]>;
+  let current = Object.fromEntries(COST_COMPONENTS.map((c) => [c, 0])) as Record<CostComponent, number>;
+  const cost = { add: (component: CostComponent, ms: number): void => void (current[component] += ms) };
   const totals: Record<string, number> = {};
   const fallbacks: Record<string, number> = {};
   const refusals: Record<string, number> = {};
@@ -144,16 +152,21 @@ try {
       policy_id,
       identity_hash,
       sampling: "argmax",
+      cost,
     });
     let searchedBefore = 0;
     const timed: Actor = async (request, context) => {
+      current = Object.fromEntries(COST_COMPONENTS.map((c) => [c, 0])) as Record<CostComponent, number>;
       const began = performance.now();
       const choice = await actor(request, context);
       const elapsed = performance.now() - began;
       if (request.phase !== "preview") {
         allMs.push(elapsed);
         const searched = actor.report().counts.searched_decisions;
-        if (searched > searchedBefore) searchedMs.push(elapsed);
+        if (searched > searchedBefore) {
+          searchedMs.push(elapsed);
+          for (const c of COST_COMPONENTS) perComponent[c].push(current[c]);
+        }
         searchedBefore = searched;
       }
       return choice;
@@ -172,6 +185,7 @@ try {
     machine: { node: process.version, cpus: cpus().length, model: cpus()[0]?.model, load_average_at_end: loadavg().map((x) => Number(x.toFixed(2))) },
     config: { search_policy: policy_id, identity_hash, leaf, games, start, max_turns: maxTurns, opponent: "random-legal", teams: "fixtures-v1 dataset", network: model, k: config.top_k, n: config.worlds.n, replies: config.replies },
     per_decision: { searched: summary(searchedMs), all_move_decisions: summary(allMs) },
+    per_component: Object.fromEntries(COST_COMPONENTS.map((c) => [c, summary(perComponent[c])])),
     per_game: summary(gameMs),
     counts_total: totals,
     fallbacks,

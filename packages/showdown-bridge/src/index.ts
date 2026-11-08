@@ -813,3 +813,5 @@ export { readPreviewChannel, startPreviewWorlds } from "./preview-worlds.ts";
 export { type BeliefFeaturesContext, BELIEF_REFUSAL_CODES, type BeliefMoveInclusion, type BeliefMoveInclusions, type BeliefRefusalCode, type BeliefThreatsPort, type BeliefFeaturesFactory, type BeliefFeaturesPort, BeliefFeaturesError, createSheetBuilder, SHEET_FEATURE_SET, SheetInputError, SheetTotals, sheetForChannel, sheetStatement, type SheetBuilder, type SheetCounts, type SheetInput, type SheetKValues, type SheetSetup } from "./belief-features.ts";
 export { OpponentSheetError, opponentSheetProblem, readOpponentSheet } from "./opponent-sheet.ts";
 export { MAX_REFUSED_PPM, refusedSharePpm, sheetCountsProblem, sheetCountsValid, sumSheetCounts } from "./sheet-counts.ts";
+export * from "./s0-measures.ts";
+export { type CostComponent, type CostSink, COST_COMPONENTS } from "./search-cost.ts";

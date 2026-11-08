@@ -42,6 +42,8 @@ export interface Decision {
   turn: number;
   request_seq: number;
   input: WorldInput;
+  /** The seat's own channel up to and including the request (a copy of what the actor was given), for S0's rollouts. */
+  channel: string[];
   /** `toJSON()` of the live battle at the request, before any choice of this turn was applied. */
   fork: object;
   /** The own and the opponent's accepted choice of this turn (null when the battle recorded none). */
@@ -181,7 +183,7 @@ export async function captureDecisions(engine: Engine, spec: OracleSpec): Promis
     }
   }
   const spy: Engine = { ...engine, sim: { ...engine.sim, BattleStream: Spy as never } };
-  const raw: { player: Player; turn: number; request_seq: number; input: WorldInput; fork: object }[] = [];
+  const raw: { player: Player; turn: number; request_seq: number; input: WorldInput; channel: string[]; fork: object }[] = [];
   const turns = new Map<string, number>();
   const kinds = spec.actors ?? { p1: "random-legal", p2: "random-legal" };
   const actorFor = (player: Player): Actor => {
@@ -193,7 +195,7 @@ export async function captureDecisions(engine: Engine, spec: OracleSpec): Promis
         const names = new Set(live.sides.find((s: any) => s.id === other(player)).pokemon.map((m: any) => m.name));
         const foeSets = (spec.teams[other(player)] as PokemonSet[]).filter((set) => names.has(set.name === "" ? set.species : set.name));
         const input = inputAtLastRequest(player, ctx.channel, spec.teams[player], foeSets);
-        if (input !== null) raw.push({ player, turn: live.turn, request_seq: request.request_seq, input, fork: JSON.parse(JSON.stringify(live.toJSON())) });
+        if (input !== null) raw.push({ player, turn: live.turn, request_seq: request.request_seq, input, channel: [...ctx.channel], fork: JSON.parse(JSON.stringify(live.toJSON())) });
       }
       return inner(request, ctx);
     };
@@ -217,7 +219,7 @@ export async function captureDecisions(engine: Engine, spec: OracleSpec): Promis
   const decisions = raw.filter((r, i) => last.get(`${r.player}:${r.turn}`) === i).map((r): Decision => {
     const own = final.get(`${r.player}:${r.turn}`);
     const foe = final.get(`${other(r.player)}:${r.turn}`);
-    return { battle_id: spec.id, player: r.player, turn: r.turn, request_seq: r.request_seq, input: r.input, fork: r.fork, recorded: own !== undefined && foe !== undefined ? { own, foe } : null };
+    return { battle_id: spec.id, player: r.player, turn: r.turn, request_seq: r.request_seq, input: r.input, channel: r.channel, fork: r.fork, recorded: own !== undefined && foe !== undefined ? { own, foe } : null };
   });
   return { decisions, record };
 }
