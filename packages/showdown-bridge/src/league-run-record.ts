@@ -60,6 +60,14 @@ function checkBaselines(baselines: BaselineEntry[] | undefined, opponents: reado
   }
 }
 
+/** The mixed-format fields (ADR-027 5a): both or neither, the regime counts sum to games, the manifests are sorted by JCS bytes and unique. */
+function checkRegimes(record: LeagueRunRecord): void {
+  if ((record.regimes === undefined) !== (record.game_manifests === undefined)) throw new LeagueRunRecordError("regimes and game_manifests come together or not at all");
+  if (record.regimes !== undefined && record.regimes.open + record.regimes.closed !== record.games) throw new LeagueRunRecordError("the regimes' counts must sum to games");
+  const keys = (record.game_manifests ?? []).map((manifest) => jcs(manifest as unknown as Json));
+  if (keys.some((key, index) => index > 0 && key <= (keys[index - 1] as string))) throw new LeagueRunRecordError("game_manifests must be sorted by their JCS bytes, each once");
+}
+
 /** Read a record: the schema (which fixes the derivation version), then the count and order rules. */
 export function readLeagueRunRecord(value: unknown): LeagueRunRecord {
   if (!validRecord(value)) throw new LeagueRunRecordError(`invalid LeagueRunRecord: ${JSON.stringify(validRecord.errors)}`);
@@ -83,6 +91,7 @@ export function readLeagueRunRecord(value: unknown): LeagueRunRecord {
     }
   }
   checkBaselines(record.baselines, record.opponents, "");
+  checkRegimes(record);
   return record;
 }
 
@@ -95,6 +104,7 @@ export async function checkLeagueRunRecord(record: LeagueRunRecord | LeagueRunRe
   if (record.schema_version === 2) return checkLeagueRunRecordV2(record, config);
   if (record.run_id !== config.seeds.run_key) throw new LeagueRunRecordError(`run_id ${record.run_id} is not the config's run key`);
   if (record.run_config_hash !== (await runConfigHash(config))) throw new LeagueRunRecordError("run_config_hash is not the config's hash");
+  if ((record.regimes !== undefined) !== (config.sheet_regimes !== undefined)) throw new LeagueRunRecordError("regimes and game_manifests exist exactly for a config with sheet_regimes");
   // `baselines` exists exactly for the config's damage-aware entries, with the same policy ids and games.
   const expected = config.generation.baseline_games.filter((baseline) => baseline.actor === "damage-aware" && baseline.games > 0).map((baseline) => `${baseline.policy_id}:${baseline.games}`).sort();
   const actual = (record.baselines ?? []).map((entry) => `${entry.policy_id}:${entry.games}`).sort();
@@ -127,7 +137,12 @@ export interface LeagueRunFacts {
   games: readonly { opponent: string; outcome: "played" | "forfeit"; forfeit?: { cause: ForfeitCause } }[];
   /** One report per game played against a damage-aware baseline (none for other runs: the record then has no `baselines`). */
   baseline_reports?: readonly BaselineGameReport[];
+  /** Only a run with `sheet_regimes` (ADR-027 5a): games per regime and the manifests of the run's formats, sorted by JCS bytes. */
+  regimes?: { open: number; closed: number };
+  game_manifests?: readonly VersionManifestRecord[];
 }
+
+type VersionManifestRecord = NonNullable<LeagueRunRecord["game_manifests"]>[number];
 
 const COUNT_KEYS = ["decisions", "preview_decisions", "scored_decisions", "queries", "probe_runs", "unsupported_queries", "reader_fallbacks", "assumed_set_fallbacks", "epsilon_plays"] as const;
 
@@ -179,6 +194,9 @@ export async function buildLeagueRunRecord(facts: LeagueRunFacts): Promise<Leagu
       .map(([opponent_policy_id, count]) => ({ opponent_policy_id, games: count })),
     // Present only for a damage-aware baseline, so every other run writes the bytes it always did.
     ...(facts.baseline_reports !== undefined && facts.baseline_reports.length > 0 ? { baselines: baselineEntries(facts.baseline_reports) } : {}),
+    // Present only for a run with sheet_regimes, so every other run writes the bytes it always did.
+    ...(facts.regimes === undefined ? {} : { regimes: facts.regimes }),
+    ...(facts.game_manifests === undefined ? {} : { game_manifests: facts.game_manifests }),
   });
 }
 

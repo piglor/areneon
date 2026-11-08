@@ -150,7 +150,8 @@ def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> Non
 
 
 def test_every_reader_invalid_sample_is_checked_above() -> None:
-    assert len(list((RECORDS / "reader-invalid").iterdir())) == 16
+    # 16 here, and the three mixed-format samples in tests/ml/loop/test_sheet_regimes.py
+    assert len(list((RECORDS / "reader-invalid").iterdir())) == 19
 
 
 @pytest.mark.parametrize("name", sorted(p.name for p in (RECORDS / "invalid").iterdir()))

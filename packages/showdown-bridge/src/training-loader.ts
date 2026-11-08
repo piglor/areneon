@@ -208,6 +208,13 @@ export interface TrainingInput {
    * game's). A builder refusal is the `unknown` block, as it was sent; a defect of the run is thrown.
    */
   sheet?: SheetSetup;
+  /**
+   * The formats the run's games may have (ADR-027 5a, only a run with `sheet_regimes`: the closed format and the open one): the loader
+   * reads each game's regime from its Episode's own version manifest and refuses an Episode of any other format. With `sheet`, the
+   * block is recomputed by the run's closed source, so an open-format Episode, whose block comes from the engine-sheet source that
+   * is not built yet, is refused rather than given a closed-source block. Absent: no format check (a single-format run).
+   */
+  formats?: readonly string[];
 }
 
 export interface TrainingStream {
@@ -281,6 +288,16 @@ function sheetOf(builder: ReturnType<typeof createSheetBuilder>, observation: Tr
   const block = sheetForChannel(builder, { player: observation.player, lines: observation.log, team: episode.team.team });
   if (block.source.kind === "oracle-diagnostic") throw new TrainingLoaderError("an oracle-diagnostic opponent sheet is never training data");
   return block as NonNullable<TrainingExample["opponent_sheet"]>;
+}
+
+/** A mixed-format run's Episode (ADR-027 5a): its manifest's format is one of the run's, and an open-format game has no closed-source block to recompute. */
+function checkRegime(episode: Episode, hash: string, formats: readonly string[] | undefined, sheet: TrainingInput["sheet"]): void {
+  if (formats === undefined) return;
+  const { showdown_commit, format_id } = episode.provenance.manifest;
+  if (!formats.includes(format_id)) throw new TrainingLoaderError(`Episode ${hash} was played in ${format_id}, which is none of the run's formats`);
+  if (sheet !== undefined && sheetRegimeOf(showdown_commit, format_id) === "open") {
+    throw new TrainingLoaderError(`Episode ${hash} is an open-format game: its opponent sheet block comes from the engine-sheet source, which is not built yet`);
+  }
 }
 
 /** The recomputed rows of every decision of an Episode, in decision order: what the stream carries, computed on their own (#1185). */
@@ -437,7 +454,7 @@ function fileFeed({ episodes, known_synthetic, behaviour_policy_id }: StoredTrai
 
 /** The checks, the examples in stream order and the TrainingSet; `each` gets every example and its line. */
 export async function streamTraining(
-  { evaluation_manifests, behaviour_policy_id, features, sheet }: Pick<TrainingInput, "evaluation_manifests" | "behaviour_policy_id" | "features" | "sheet">,
+  { evaluation_manifests, behaviour_policy_id, features, sheet, formats }: Pick<TrainingInput, "evaluation_manifests" | "behaviour_policy_id" | "features" | "sheet" | "formats">,
   feed: EpisodeFeed,
   limits: ChunkLimits,
   each: (example: TrainingExample, line: string) => void,
@@ -458,6 +475,7 @@ export async function streamTraining(
   let count = 0;
   for await (const [hash, episode] of feed(evaluated)) {
     hashes.push(hash);
+    checkRegime(episode, hash, formats, sheet);
     for (const example of await examplesOf(episode, hash, features, sheet)) {
       const line = `${jcs(example as unknown as Json)}\n`;
       checkStringLength(line, limits, "a stream line");

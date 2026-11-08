@@ -27,6 +27,7 @@ import { type BaselineGameReport, buildLeagueRunRecord, type LeagueRunRecord } f
 import { loadMechanicsConfig } from "./mechanics-config.ts";
 import { loadRulesSnapshot } from "./rules-load.ts";
 import { leagueGameStreams } from "./league-seed.ts";
+import { checkPlanRegimes, planFormats, regimeCounts, resolveRegimes } from "./sheet-regimes.ts";
 import { episodeFromRecord } from "./episode-io.ts";
 import { episodeHash } from "./episode.ts";
 import { addSince, countDecisions, profiling, startTimer, timedAsync } from "./profile.ts";
@@ -296,6 +297,11 @@ export interface GamePlan {
   policy_seat: Player | "both";
   /** Seeds a baseline's stream: random-legal's, or damage-aware's epsilon draws (an unsigned 32-bit integer). */
   baseline_seed: number;
+  /**
+   * Only a run with `sheet_regimes` (ADR-027 5a): the format this game is played and validated under, the closed `format_id` or the
+   * open format; both seats share it. Absent in every other run, so those plans keep their bytes.
+   */
+  format_id?: string;
 }
 
 /**
@@ -303,6 +309,7 @@ export interface GamePlan {
  * listed baseline's games. Every number comes from `leagueGameStreams` (league-seed/1: SHA-256
  * of the JCS of the run key, the generation and the game index), so the plan
  * is reproducible from the config alone. A baseline game alternates the policy's seat.
+ * With `sheet_regimes` each entry also names its game's format (`sheet-regime/1`, see `sheet-regimes.ts`).
  */
 export function planGeneration(config: TrainingRunConfig, generation: number, poolSize: number): GamePlan[] {
   const { games, baseline_games } = config.generation;
@@ -311,7 +318,11 @@ export function planGeneration(config: TrainingRunConfig, generation: number, po
   for (const baseline of baseline_games) {
     for (let i = 0; i < baseline.games; i++) opponents.push({ actor: baseline.actor, policy_id: baseline.policy_id });
   }
-  return planGames(config.seeds.run_key, generation, poolSize, opponents);
+  const plan = planGames(config.seeds.run_key, generation, poolSize, opponents);
+  const sheet = config.sheet_regimes;
+  if (sheet === undefined) return plan;
+  const formats = planFormats(config, sheet, generation);
+  return plan.map((entry) => ({ ...entry, format_id: formats[entry.game] as string }));
 }
 
 /**
@@ -492,6 +503,8 @@ export interface GenerationResult {
   /** SHA-256 of the TrainingSet's JCS bytes: what `CheckpointRecord.training_set_hashes` holds. */
   training_set_hash: string;
   manifest: VersionManifest;
+  /** Only a run with `sheet_regimes` (ADR-027 5a): the manifests of the run's two formats, sorted by their JCS bytes; `manifest` is the closed one. */
+  game_manifests?: VersionManifest[];
   /** Hashes of the teams the plan drew, sorted and unique. */
   team_hashes: string[];
   /** Only a labelled generation (`GenerationOptions.labels`, at or after its start): the label stream's manifest (null: nothing was labelled, no label file) and counts. */
@@ -594,12 +607,14 @@ async function playOne(options: GenerationOptions, plan: GamePlan, client: Polic
     rows[player] = kept;
     return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), features: { configs: options.features, memo, ...(keepRows ? { record: (seq: number, found: AnyCandidateFeatures) => void kept.set(seq, found) } : {}) }, ...sheetFor() };
   };
+  // The open regime's opponent-sheet block (engine-sheet) is a later slice: a run that reads blocks cannot play an open game yet.
+  if (options.sheet !== undefined && plan.format_id !== undefined && plan.format_id !== config.format_id) throw new GenerationError("an open-format game needs the engine-sheet source of the opponent sheet block, which is not built yet");
   const baseline = plan.opponent === "self" ? undefined : baselineActor(options, plan.opponent, plan, budget);
   const seats: PolicyGameOptions["seats"] =
     baseline === undefined ? { p1: seatFor("p1"), p2: seatFor("p2") } : plan.policy_seat === "p1" ? { p1: seatFor("p1"), p2: baseline.actor } : { p1: baseline.actor, p2: seatFor("p2") };
   const played = await policyGame({
     engine,
-    formatId: config.format_id,
+    formatId: plan.format_id ?? config.format_id,
     seed: plan.seed,
     game: plan.game,
     teams: { p1: pool.teams[plan.teams.p1] as PokemonSet[], p2: pool.teams[plan.teams.p2] as PokemonSet[] },
@@ -672,6 +687,18 @@ export async function seatEpisodes(record: BattleRecord, teams: Record<Player, n
   return episodes;
 }
 
+/** The loader's `formats` for a run with `sheet_regimes`: its two formats (nothing for any other run). */
+const formatsOf = (config: TrainingRunConfig): { formats?: string[] } => (config.sheet_regimes === undefined ? {} : { formats: [config.format_id, config.sheet_regimes.open_format] });
+
+/**
+ * A run with `sheet_regimes`: the plan follows the quota, and both formats are resolved once and checked against the engine
+ * (closed record, open record, sheet-variant check). Returns their manifests; undefined for every other run.
+ */
+function checkRegimes(options: GenerationOptions, plan: readonly GamePlan[]): ReturnType<typeof resolveRegimes> | undefined {
+  checkPlanRegimes(plan, options.config, options.generation);
+  return options.config.sheet_regimes === undefined ? undefined : resolveRegimes(options.engine, options.config);
+}
+
 /**
  * Play the games of `shard` (all of them without one) against `options.client` and
  * `options.peers` (started, with the frozen pair loaded) in waves, and write an
@@ -685,6 +712,7 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
   checkShard(shard);
   const { config, generation, policy_id, client } = options;
   const plan = planGeneration(config, generation, options.pool.teams.length);
+  checkRegimes(options, plan);
   // The damage-aware records are read once, and only when a game of this process needs them.
   const withRecords: GenerationOptions = { ...options, ...baselineRecords(options, config) };
   const { pool } = withRecords;
@@ -842,6 +870,7 @@ function watchIdle(live: (() => number) | undefined, activity: { busy: number },
 export async function playGeneration(options: GenerationOptions): Promise<GenerationResult> {
   const { engine, config, generation, policy_id, pool } = options;
   const plan = planGeneration(config, generation, pool.teams.length);
+  const regimes = checkRegimes(options, plan);
   const stop = new AbortController();
   const activity = options.activity ?? { busy: 0 };
   const here = playEntries({ ...options, signal: stop.signal, activity }, options.shard);
@@ -882,7 +911,7 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
     const ownRefs = refs.filter((ref) => ref.behaviour_policy_id === policy_id);
     if (ownRefs.length === 0) throw new GenerationError("no Episode of the frozen pair: every game was forfeited");
     const stored: StoredEpisode[] = ownRefs.map(({ hash }) => ({ hash, path: join(dir, `${hash}.json`) }));
-    set = await writeStoredTrainingStream({ episodes: stored, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id, ...(options.features === undefined ? {} : { features: { engine, configs: options.features, ...(options.features_dir === undefined ? {} : { precomputed: readFeatureRows(engine, options.features, options.features_dir) }) } }), ...(options.sheet === undefined ? {} : { sheet: options.sheet }) }, { ...limits, path: options.stream_path });
+    set = await writeStoredTrainingStream({ episodes: stored, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id, ...(options.features === undefined ? {} : { features: { engine, configs: options.features, ...(options.features_dir === undefined ? {} : { precomputed: readFeatureRows(engine, options.features, options.features_dir) }) } }), ...(options.sheet === undefined ? {} : { sheet: options.sheet }), ...formatsOf(config) }, { ...limits, path: options.stream_path });
     episodeHashes = refs.map((ref) => ref.hash);
     if (labelsActive(options)) {
       if (options.labels_path === undefined) throw new GenerationError("labels need labels_path");
@@ -906,7 +935,7 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
   } else {
     const own = episodes.filter((episode) => episode.provenance.behaviour_policy_id === policy_id);
     if (own.length === 0) throw new GenerationError("no Episode of the frozen pair: every game was forfeited");
-    const input = { episodes: own, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id, ...(options.features === undefined ? {} : { features: { engine, configs: options.features } }), ...(options.sheet === undefined ? {} : { sheet: options.sheet }) };
+    const input = { episodes: own, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id, ...(options.features === undefined ? {} : { features: { engine, configs: options.features } }), ...(options.sheet === undefined ? {} : { sheet: options.sheet }), ...formatsOf(config) };
     if (options.stream_path === undefined) {
       ({ stream, set } = await loadTrainingSet(input, limits));
     } else {
@@ -926,10 +955,11 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
     stream,
     stream_path: options.stream_path ?? null,
     set,
-    run_record: await buildLeagueRunRecord({ config, generation, pair_policy_id: policy_id, plan, games: rows, baseline_reports: entries.flatMap((entry) => (entry.baseline === undefined ? [] : [entry.baseline])) }),
+    run_record: await buildLeagueRunRecord({ config, generation, pair_policy_id: policy_id, plan, games: rows, ...(regimes === undefined ? {} : { regimes: regimeCounts(plan, config), game_manifests: regimes.sorted }), baseline_reports: entries.flatMap((entry) => (entry.baseline === undefined ? [] : [entry.baseline])) }),
     training_set_hash: await nodeSha256(new TextEncoder().encode(jcs(set as unknown as Json))),
     manifest: resolveFormat(engine, config.format_id).manifest,
     team_hashes: [...drawn].sort(),
+    ...(regimes === undefined ? {} : { game_manifests: regimes.sorted }),
     ...(labelled === undefined ? {} : { labels: labelled }),
   };
   addSince("merge", mergeStart); // the serial tail after the games: stream, hashing, run record
@@ -979,6 +1009,8 @@ export function writeGeneration(dir: string, result: GenerationResult): void {
     examples: result.set.examples,
     manifest: result.manifest,
     team_hashes: result.team_hashes,
+    // Present only in a mixed-format run, so every other run writes the bytes it always did.
+    ...(result.game_manifests === undefined ? {} : { game_manifests: result.game_manifests }),
     // Present only in a labelled generation, so every other run writes the bytes it always did.
     ...(result.labels === undefined ? {} : { search_labels: { search_config_hash: result.labels.search_config_hash, search_identity_hash: result.labels.search_identity_hash, ...labelCounts(result.labels.totals) } }),
   });
