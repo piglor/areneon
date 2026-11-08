@@ -189,6 +189,7 @@ export {
   replayActor,
   type RequestRecord,
   runBattle,
+  declareReadsLegal,
   validatePlayers,
 } from "./runner.ts";
 export {

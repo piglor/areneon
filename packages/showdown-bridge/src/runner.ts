@@ -1,5 +1,6 @@
 import {
   CloneJudge,
+  EnumeratorDefectError,
   judgeSubmission,
   type LegalChoiceSet,
   legalChoiceSet,
@@ -23,7 +24,19 @@ const PLAYERS: readonly Player[] = ["p1", "p2"];
  * refused as `[Unavailable choice]` brings a new request; any other
  * `|error|` aborts the battle rather than being retried.
  */
-export type Actor = (request: RequestRecord, context?: ActorContext) => string | Promise<string>;
+export type Actor = ((request: RequestRecord, context?: ActorContext) => string | Promise<string>) & {
+  /**
+   * Whether this actor reads `request.legal` (ADR-028 F4, #1194): a declaration made when the actor is built, never inferred.
+   * Absent means it may read it. Only an explicit `false` lets `runBattle` skip the CloneJudge for the seat, and only when
+   * `BattleOptions.skip_unread_judge` is set.
+   */
+  reads_legal?: boolean;
+};
+
+/** Declare whether `actor` reads `request.legal` (see `Actor.reads_legal`); returns the same actor. */
+export function declareReadsLegal<A extends Actor>(actor: A, reads: boolean): A {
+  return Object.assign(actor, { reads_legal: reads });
+}
 
 /**
  * What `runBattle` hands an actor besides the request: the actor's own
@@ -88,6 +101,13 @@ export interface BattleOptions {
    * `PlayersOptionError` unless valid (see `validatePlayers`).
    */
   players?: Record<Player, PlayerIdentity>;
+  /**
+   * Training self-play only (ADR-028 F4, #1194): do not judge the candidates on a battle clone for a seat whose actor declared
+   * `reads_legal: false`. The engine then judges at submission, as on A2: a refused non-pending candidate is still an
+   * `EnumeratorDefectError`, the `[Unavailable choice]` path is unchanged, and no hidden verdicts are recorded for that seat.
+   * Evaluation, corpora and every other caller leave it unset and keep full judging.
+   */
+  skip_unread_judge?: true;
 }
 
 export interface PlayerIdentity {
@@ -310,6 +330,9 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
     // The last submission if it was a pending candidate, until the engine
     // answers it with a new request.
     let pendingSubmission: BattleRecord["choices"][number] | null = null;
+    // The last choice submitted without a clone verdict, until the engine answers it with a new request.
+    let unjudgedSubmission: string | null = null;
+    const unjudged = options.skip_unread_judge === true && actors[player].reads_legal === false;
     for await (const chunk of stream) {
       for (const line of chunk.split("\n")) {
         if (!line.startsWith("|t:|")) record.channels[player].push(line);
@@ -324,9 +347,15 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
             pendingSubmission.refused = error;
             continue;
           }
+          if (unjudgedSubmission !== null) {
+            // The engine refuses, at submission, a candidate the enumerator called non-pending: the enumerator's defect (ADR-006).
+            abort(new EnumeratorDefectError([{ choice: unjudgedSubmission, legal: false, error }]));
+            continue;
+          }
           abort(new BattleAbortedError(`${player}: ${error}`));
         } else if (line.startsWith("|request|")) {
           pendingSubmission = null;
+          unjudgedSubmission = null;
           const request: RequestRecord = {
             ...timed("o_obs", () => decodeRequest(line.slice("|request|".length))),
             request_seq: 0,
@@ -339,10 +368,10 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
             // forced tie) asks for nothing.
             if (battle.ended) continue;
             const judged = startTimer();
-            const judge = new CloneJudge(engine, battle, player);
+            const judge = unjudged ? null : new CloneJudge(engine, battle, player);
             const legal = legalChoiceSet({ request, showdown_commit: engine.commit, judge });
             request.legal = legal;
-            if (legal.pending.length > 0) {
+            if (judge !== null && legal.pending.length > 0) {
               const verdicts = judge.judge(request.request_hash, legal.pending);
               record.hidden_verdicts.push({ player, request_seq: request.request_seq, verdicts });
             }
@@ -355,6 +384,7 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
             const entry = { player, request_seq: request.request_seq, choice };
             record.choices.push(entry);
             if (legal.pending.includes(choice)) pendingSubmission = entry;
+            else if (unjudged) unjudgedSubmission = choice;
             timed("e_sim", () => stream.write(choice));
           } catch (error) {
             if (error instanceof ForfeitSignal) {
