@@ -494,6 +494,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   if (search !== undefined) {
     if (ablation !== undefined) throw new ProgressError("the search candidate is evaluated alone: no Preview ablation");
     if (options.sheet !== undefined) throw new ProgressError("a pair that reads opponent_sheet is not searched: the search refuses it");
+    if (client.featureSet != null && client.featureSet.feature_set !== "probe-damage/1") throw new ProgressError("the search plays a pair that reads no candidate features or probe-damage/1 only");
     if (!PROGRESS_MODES.includes(search.mode)) throw new ProgressError("the search mode is argmax or sample");
     opponents.push({
       id: "self-no-search",

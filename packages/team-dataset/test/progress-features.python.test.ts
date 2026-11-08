@@ -117,6 +117,7 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     expect(control.opponent.kind === "self-no-search" && control.opponent.policy_id).toBe(policyId(own, "argmax", {}, hash));
     expect(control.opponent_search?.counts.searched_decisions).toBe(0);
     expect(control.search?.counts.searched_decisions).toBeGreaterThan(0);
+    expect(control.search?.counts.leaf_queries).toBeGreaterThan(0);
     expect(record.games.filter((r) => r.outcome.kind === "forfeit")).toEqual([]);
     const files = tree(join(a, gen(1)));
     expect(tree(join(b, gen(1)))).toEqual(files);
