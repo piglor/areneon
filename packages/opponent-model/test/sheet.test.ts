@@ -80,6 +80,16 @@ describe("revealed facts are 1,000,000 ppm with source revealed", () => {
     expect(slot(sheetOf([SWITCH("a", "Alp", "Alpha"), "|move|p2a: Alp|Mb|[from]Copycat"]), "alpha").moves.slots_known).toBe(0);
   });
 
+  it("a revealed move the belief does not place is skipped: not counted in slots_known, so the entries at 1,000,000 cover it (Transform's copies)", () => {
+    // gm1 is in no pool of alpha's: the belief skips it, as it skips a move copied by Transform or Struggle.
+    const mixed = slot(sheetOf([SWITCH("a", "Alp", "Alpha"), "|move|p2a: Alp|Mb", "|move|p2a: Alp|Gm1"]), "alpha").moves;
+    expect(mixed.slots_known).toBe(1);
+    const full = mixed.entries.filter((e) => e.inclusion_ppm === 1_000_000).length;
+    expect(full).toBeGreaterThanOrEqual(mixed.slots_known);
+    const only = slot(sheetOf([SWITCH("a", "Alp", "Alpha"), "|move|p2a: Alp|Gm1"]), "alpha").moves;
+    expect(only.slots_known).toBe(0);
+  });
+
   it("an evolved Mega holds its stone as a revealed item", () => {
     const more = [SWITCH("a", "Bet", "Beta"), "|detailschange|p2a: Bet|Beta-Mega, L50, M", "|-mega|p2a: Bet|Beta|Betite"];
     expect(slot(sheetOf(more), "beta").item).toEqual({ source: "revealed", entries: [{ id: "betite", ppm: 1_000_000 }], other_ppm: 0 });
@@ -241,7 +251,7 @@ describe("the feature set hash", () => {
     expect(sheetFeatureSetHash("b".repeat(64))).not.toBe(h);
     expect(sheetFeatureSetHash(HASH, { ...SHEET_K, item: 5 })).not.toBe(h);
     expect(() => sheetFeatureSetHash("zz")).toThrow(RangeError);
-    expect(OPPONENT_SHEET_FORMAT).toBe("opponent-sheet-builder/1");
+    expect(OPPONENT_SHEET_FORMAT).toBe("opponent-sheet-builder/2");
   });
 });
 
