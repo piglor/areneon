@@ -63,6 +63,9 @@
     "device": "cpu",
     "threads": 1
   },
+  "warm_start": {
+    "battle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
   "population": {
     "members": 4,
     "exploiters": 0,
@@ -131,8 +134,5 @@
     "exploiter": {
       "reset_every": 10
     }
-  },
-  "warm_start": {
-    "battle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   }
 }
