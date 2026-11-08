@@ -3,7 +3,8 @@
 Opt-in: after the evaluation, run ``situational-move-use.ts`` (engine re-simulation of every
 stored game, minutes) at ``nice -n 19`` on the committed generation, summarise the raw counts
 with :mod:`areneon_ml.report.situational` and write the summary to
-``<progress root>.situational/g<NNNNNN>.json``, a sibling of the root (outside its manifest and
+``<progress root>.situational/g<NNNNNN>.json`` (``g<NNNNNN>.max<M>.json`` for a capped
+run), a sibling of the root (outside its manifest and
 every hash, like the look log). The printed result carries the Protect and switch rates in ppm.
 A rerun with the same counts leaves the file's bytes as they were.
 
@@ -63,7 +64,8 @@ def situational_generation(  # noqa: PLR0913
     if out_dir == run_dir.resolve() or run_dir.resolve() in out_dir.parents:
         raise SituationalError("the situational summary must not be inside the run directory")
     out_dir.mkdir(parents=True, exist_ok=True)
-    raw_path = out_dir / f".g{generation:06d}.raw.json"
+    cap = "" if max_games is None else f".max{max_games}"
+    raw_path = out_dir / f".g{generation:06d}{cap}.raw.json"
     command = [
         "nice",
         "-n",
@@ -88,7 +90,8 @@ def situational_generation(  # noqa: PLR0913
     finally:
         raw_path.unlink(missing_ok=True)
     summary = summarise(raw)
-    target = out_dir / f"g{generation:06d}.json"
+    # A capped run is a different summary: it never overwrites the full one.
+    target = out_dir / f"g{generation:06d}{cap}.json"
     data = jcs(summary) + b"\n"
     if not target.exists() or target.read_bytes() != data:
         partial = target.with_name(target.name + ".partial")

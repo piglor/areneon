@@ -40,17 +40,17 @@ def test_writes_summary_beside_root_and_prints_rates(tmp_path: Path) -> None:
     command = seen[0]
     assert command[:4] == ["nice", "-n", "19", "node"]
     assert command[command.index("--max-games") + 1] == "5"
-    target = tmp_path / "run.progress.situational" / "g000020.json"
+    target = tmp_path / "run.progress.situational" / "g000020.max5.json"
     assert out["summary"] == str(target)
     assert out["label"] == s.LABEL
     body = out["matches"]["m"]["policy:aa"]
     assert body["pairs"] == 8
     assert body["protect_threatened"] == 333333
     assert set(r.PRINTED) <= set(body)
-    assert [p.name for p in target.parent.iterdir()] == ["g000020.json"]  # no raw leftover
+    assert [p.name for p in target.parent.iterdir()] == ["g000020.max5.json"]  # no raw leftover
     first = target.read_bytes()
     r.situational_generation(
-        root, 20, tmp_path / "run", repo=tmp_path, node="node", run=_fake(_raw())
+        root, 20, tmp_path / "run", repo=tmp_path, node="node", max_games=5, run=_fake(_raw())
     )
     assert target.read_bytes() == first
     assert not (root / "g000020.json").exists()  # nothing inside the progress root
@@ -71,3 +71,21 @@ def test_failures(tmp_path: Path) -> None:
 def test_default_runner_returns_exit_code() -> None:
     assert r._run(["true"]) == 0
     assert r._run(["false"]) == 1
+
+
+def test_a_capped_run_never_overwrites_the_full_summary(tmp_path: Path) -> None:
+    root = tmp_path / "p"
+    root.mkdir()
+    run = tmp_path / "run"
+    full = r.situational_generation(root, 3, run, repo=tmp_path, node="n", run=_fake(_raw()))
+    before = Path(full["summary"]).read_bytes()
+    capped = r.situational_generation(
+        root, 3, run, repo=tmp_path, node="n", max_games=2, run=_fake(_raw())
+    )
+    assert Path(full["summary"]).name == "g000003.json"
+    assert Path(capped["summary"]).name == "g000003.max2.json"
+    assert Path(full["summary"]).read_bytes() == before
+    assert sorted(p.name for p in Path(full["summary"]).parent.iterdir()) == [
+        "g000003.json",
+        "g000003.max2.json",
+    ]

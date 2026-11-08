@@ -371,12 +371,15 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         action="store_true",
         help="also run the situational move-use diagnostic (engine re-simulation of every stored "
         "game, minutes, nice 19): the summary goes to <progress root>.situational/ and its "
-        "Protect and switch rates into the printed result",
+        "Protect and switch rates into the printed result. It runs after the generation is "
+        "committed: a failure exits 3 with the progress record already in place, "
+        "and a rerun is safe",
     )
     progress.add_argument(
         "--situational-max-games",
         type=int,
-        help="at most this many stored games per match for --situational",
+        help="at most this many stored games per match for --situational (the summary is "
+        "g<N>.max<M>.json, so a capped run never overwrites a full one)",
     )
     which = progress.add_mutually_exclusive_group(required=True)
     which.add_argument("--generation", type=int, help="the generation to evaluate")
