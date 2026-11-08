@@ -7,6 +7,7 @@ import {
   type BattleOptions,
   type BattleRecord,
   type ForfeitCause,
+  declareReadsLegal,
   ForfeitSignal,
   InvalidTeamError,
   type Player,
@@ -100,7 +101,7 @@ export function guardActor(actor: Actor, options: GuardOptions): Actor {
   for (const ms of [latency_budget.preview_ms, latency_budget.battle_ms]) {
     if (!Number.isFinite(ms) || ms <= 0) throw new RangeError("latency budget must be a positive number of ms");
   }
-  return async (request, context) => {
+  const guarded: Actor = async (request, context) => {
     const started = performance.now();
     const budget = request.phase === "preview" ? latency_budget.preview_ms : latency_budget.battle_ms;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -138,6 +139,8 @@ export function guardActor(actor: Actor, options: GuardOptions): Actor {
     }
     return reply;
   };
+  // The guard reads the legal set itself, but the actor's own declaration is what the runner needs (ADR-028 F4).
+  return actor.reads_legal === undefined ? guarded : declareReadsLegal(guarded, actor.reads_legal);
 }
 
 export type IncidentClass =
