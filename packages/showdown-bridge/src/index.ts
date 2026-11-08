@@ -89,7 +89,7 @@ export {
   PrivateTrainingLoaderError,
 } from "./private-training-loader.ts";
 export { interimPoolSource, type PoolSource, runGenerationCli, UsageError } from "./generation-cli.ts";
-export { DAMAGE_AWARE_V2_POLICY_ID, DAMAGE_AWARE_V3_POLICY_ID, type DamageAwareSetup, damageAwareSetup, damageAwareSetupV2, type FeatureSetup, featureSetup, GenerationError, LABEL_CONFIG_NAME, labelSetup, type RunSheetSetup, type SearchSetupFactory, sheetSetup, type PoolRequest, type TrainingPool as GenerationTeamPool, playGeneration } from "./league-generation.ts";
+export { DAMAGE_AWARE_V2_POLICY_ID, DAMAGE_AWARE_V3_POLICY_ID, type DamageAwareSetup, damageAwareSetup, damageAwareSetupV2, type FeatureSetup, featureSetup, GenerationError, LABEL_CONFIG_NAME, labelSetup, type RunSheetSetup, type SearchSetupFactory, sheetSetup, type PoolRequest, type TrainingPool as GenerationTeamPool, playGeneration, planGeneration } from "./league-generation.ts";
 export { readTrainingRunConfig, runConfigHash, type TrainingRunConfig, TrainingRunConfigError } from "./training-run-config.ts";
 export { type CloneRunConfig, CloneRunConfigError, cloneRunConfigHash, readCloneRunConfig } from "./clone-run-config.ts";
 export { EpisodeError, episodeFromRecord, type EpisodeOptions, readEpisode } from "./episode-io.ts";
@@ -397,6 +397,7 @@ export {
   readLeagueRunRecord,
   readLeagueRunRecordV2,
 } from "./league-run-record.ts";
+export { isSafeRelativePath, readRunInputManifest, type RunInputFile, type RunInputManifest, RunInputManifestError, runInputManifestBytes, runInputManifestHash } from "./run-input-manifest.ts";
 export { checkLadderRecord, type LadderRecord, LadderRecordError, LADDER_REFERENCE_ANCHOR, LADDER_REFERENCE_STRENGTH, ladderRecordHash, readLadderRecord } from "./ladder-record.ts";
 export { type AssumedSet, type AssumedSetContext, AssumedSetError, assumedHp, buildAssumedSet, buildWorldAssumedSet, WorldMismatchError, type WorldSetLike } from "./damage-aware-assumed-set.ts";
 export { type LegalityWorldSet, type SetLegalityPort, createSetLegality } from "./set-legality.ts";

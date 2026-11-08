@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "run_key": "tiny-run",
+  "commit": "1111111111111111111111111111111111111111",
+  "run_config_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "dataset_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "config_file": "run-config.json",
+  "dataset_dir": "dataset",
+  "files": [
+    {
+      "path": "dataset/manifest.json",
+      "size": 812,
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    {
+      "path": "dataset/records.dev.jsonl",
+      "size": 40960,
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    {
+      "path": "dataset/records.training.jsonl",
+      "size": 262144,
+      "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    {
+      "path": "dataset/records.validation.jsonl",
+      "size": 40960,
+      "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    {
+      "path": "run-config.json",
+      "size": 2048,
+      "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+    }
+  ],
+  "note": "x"
+}
