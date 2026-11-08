@@ -26,6 +26,8 @@ import {
   writeTrainingStream,
   TrainingLoaderError,
 } from "../src/index.ts";
+import { decisionObservations } from "../src/episode-io.ts";
+import { examplesOf, readTrainingObserved } from "../src/training-loader.ts";
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
 
 const KNOWN = syntheticFixtureHashes(loadEngine());
@@ -371,5 +373,40 @@ describe("writeStoredTrainingStream (#1069)", () => {
     await refusal(writeStoredTrainingStream(stored([{ hash: a.hash, path: join(dir, "missing.json") }]), { path: out }), /cannot be read from its file/);
     const other = await store(p2);
     await refusal(writeStoredTrainingStream(stored([{ hash: a.hash, path: other.path }]), { path: out }), "stored under a hash that is not its own");
+  });
+});
+
+describe("the observations the check built are the ones the examples use (#1192)", () => {
+  it("hands back exactly decisionObservations, and the examples built from them are the ones built without them", async () => {
+    const { episode, observations } = await readTrainingObserved(structuredClone(p1), 0, KNOWN, POLICY);
+    expect(observations).toEqual(await decisionObservations(episode));
+    const hash = await episodeHash(episode, nodeSha256);
+    const reused = await examplesOf(episode, hash, undefined, undefined, undefined, observations);
+    const rebuilt = await examplesOf(episode, hash, undefined, undefined);
+    expect(reused.map((example) => jcs(example as unknown as Json))).toEqual(rebuilt.map((example) => jcs(example as unknown as Json)));
+    expect(reused).toHaveLength(p1.decisions.length);
+  });
+
+  it("writes the stream a loader that builds every observation twice would write", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "areneon-reuse-"));
+    try {
+      const { stream } = await load([p1, p2]);
+      const hashes = await Promise.all([p1, p2].map((episode) => episodeHash(episode, nodeSha256)));
+      const rebuilt = (await Promise.all([p1, p2].map(async (episode, i) => (await examplesOf(episode, hashes[i] as string, undefined, undefined)).map((example) => `${jcs(example as unknown as Json)}\n`))))
+        .map((lines, i) => ({ hash: hashes[i] as string, lines }))
+        .sort((a, b) => (a.hash < b.hash ? -1 : 1))
+        .flatMap(({ lines }) => lines)
+        .join("");
+      expect(stream).toBe(rebuilt);
+      const files = [p1, p2].map((episode, i) => {
+        const path = join(dir, `${hashes[i]}.json`);
+        writeFileSync(path, JSON.stringify(episode));
+        return { hash: hashes[i] as string, path };
+      });
+      await writeStoredTrainingStream({ episodes: files, evaluation_manifests: [], known_synthetic: KNOWN, behaviour_policy_id: POLICY }, { path: join(dir, "stream.jsonl") });
+      expect(readFileSync(join(dir, "stream.jsonl"), "utf8")).toBe(rebuilt);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

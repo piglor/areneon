@@ -3,7 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { jcs, type Json } from "../src/canonical-json.ts";
-import { combineUsage, featuresDirOf, interimPoolSource, optionalFlag, readShardFile, runGenerationCli, runManifestCli, startShard, UsageError, writeShardFile } from "../src/generation-cli.ts";
+import { spawn } from "node:child_process";
+import { PassThrough } from "node:stream";
+import { combinedLoad, combineUsage, exitWhenParentDies, featuresDirOf, interimPoolSource, MAX_COMBINED_LOAD, optionalFlag, readShardFile, runGenerationCli, runManifestCli, startShard, UsageError, writeShardFile } from "../src/generation-cli.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT } from "../src/golden.ts";
 import { loadEngine, readTrainingRunConfig } from "../src/index.ts";
 import { runConfigHash } from "../src/training-run-config.ts";
@@ -336,7 +338,7 @@ describe("a further game process", () => {
     await expect(startShard(silent, [], out, 4, join(dir, "no-such-node")).entries).rejects.toThrow(/game process 4 did not start/);
     const child = startShard(script("slow.mjs", "setTimeout(() => {}, 60000);"), [], out, 5);
     child.stop();
-    await expect(child.entries).rejects.toThrow(/game process 5 failed/);
+    await expect(child.entries).rejects.toThrow(/game process 5 failed \(signal SIGKILL\)/);
   });
 });
 
@@ -358,5 +360,75 @@ describe("the shard handoff file (#998)", () => {
     writeShardFile(path, entries);
     expect(readFileSync(path, "utf8")).toBe(entries.map((entry) => `${jcs(entry as unknown as Json)}\n`).join(""));
     expect(readShardFile(path)).toEqual(entries);
+  });
+});
+
+describe("a further game process and its parent (#980)", () => {
+  it("is told to end when its parent's pipe closes, and only then", () => {
+    const stdin = new PassThrough();
+    const exits: number[] = [];
+    exitWhenParentDies(stdin, (code) => exits.push(code));
+    expect(exits).toEqual([]);
+    stdin.end();
+    return new Promise<void>((resolve) => setImmediate(() => {
+      expect(exits).toEqual([1]);
+      resolve();
+    }));
+  });
+
+  it("exits when its parent dies, and the processes it started end with it", async () => {
+    const script = join(dir, "orphan.mjs");
+    const source = join(process.cwd(), "packages/showdown-bridge/src/generation-cli.ts");
+    writeFileSync(
+      script,
+      `import { exitWhenParentDies } from ${JSON.stringify(source)};
+       import { spawn } from "node:child_process";
+       const worker = spawn(process.execPath, ["-e", "process.stdin.on('end', () => process.exit(0)); process.stdin.resume(); setTimeout(() => {}, 60000)"], { stdio: ["pipe", "ignore", "ignore"] });
+       exitWhenParentDies();
+       console.log(worker.pid);
+       setTimeout(() => {}, 60000);`,
+    );
+    const child = spawn(process.execPath, [...process.execArgv, script], { stdio: ["pipe", "pipe", "inherit"] });
+    try {
+      const pid = await new Promise<number>((resolve, reject) => {
+        child.once("error", reject);
+        child.stdout.once("data", (chunk: Buffer) => resolve(Number(chunk.toString("utf8").trim())));
+      });
+      expect(Number.isInteger(pid) && pid > 0).toBe(true);
+      const exited = new Promise<number | null>((resolve) => child.once("exit", (code) => resolve(code)));
+      child.stdin.end(); // the parent "dies": its end of the pipe closes
+      expect(await exited).toBe(1);
+      const gone = async (): Promise<boolean> => {
+        for (let i = 0; i < 100; i++) {
+          try {
+            process.kill(pid, 0);
+          } catch {
+            return true;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        return false;
+      };
+      expect(await gone()).toBe(true);
+    } finally {
+      child.kill("SIGKILL");
+    }
+  }, 60_000);
+
+  it("warns about game processes x workers x games in flight past a stated bound, and refuses --pool-file outside a further game process", async () => {
+    expect(combinedLoad(2, 3, 4)).toEqual({ games: 24, over: false });
+    expect(combinedLoad(MAX_COMBINED_LOAD, 1, 1).over).toBe(false);
+    expect(combinedLoad(MAX_COMBINED_LOAD, 1, 2)).toEqual({ games: MAX_COMBINED_LOAD * 2, over: true });
+    const file = join(dir, "pool-flag.json");
+    writeFileSync(file, JSON.stringify(tiny));
+    await expect(runGenerationCli([...flags(file), "--pool-file", join(dir, "x")])).rejects.toThrow(/--pool-file is for a further game process only/);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      // 8 processes x 64 workers is far past the bound; the run is not refused for that (it stops here only for lack of a script to start again).
+      await expect(runGenerationCli(flags(file, { "policy-workers": "64", "game-processes": "8" }))).rejects.toThrow(/script to start again/);
+      expect(error).toHaveBeenCalledWith(expect.stringContaining("may be oversubscribed"));
+    } finally {
+      error.mockRestore();
+    }
   });
 });

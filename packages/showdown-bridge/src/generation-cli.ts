@@ -22,7 +22,8 @@ import { type BeliefFeaturesFactory, SheetTotals } from "./belief-features.ts";
 import { labelCounts } from "./search-labeller.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import { PastPoolError, readPastPool } from "./past-pool.ts";
-import { leaveFigures, printProfile, startProfile, stopProfile, timed } from "./profile.ts";
+import { leaveFigures, printProfile, startProfile, stopProfile, timed, timedAsync } from "./profile.ts";
+import { waitForPoolFile, writePoolFile } from "./pool-share.ts";
 import { type MemberFlag, parseMemberFlag, runCalibrationCli, runPopulationCli } from "./population-cli.ts";
 import { largest, ownPeakRss } from "./process-usage.ts";
 import { readTrainingRunConfig, runConfigHash } from "./training-run-config.ts";
@@ -73,6 +74,8 @@ const FLAGS = {
   "features-dir": { type: "string" },
   // Internal: the scratch directory the game processes leave their search label files in (only with `generation.search_labels`, from its start generation).
   "labels-dir": { type: "string" },
+  // Internal: the file the process that started this one leaves the team pool in once it has loaded it (#1192); a game process reads it instead of loading the pool itself.
+  "pool-file": { type: "string" },
   // Operational: time the phases of this generation (ADR-028 section 1, #1191) and print the figures as one more output line; no file the manifest hashes changes.
   profile: { type: "boolean" },
   // Internal: the directory the game processes and policy workers leave their profile figures in (made by the process that starts the others when --profile is given).
@@ -85,9 +88,33 @@ const FLAGS = {
   calibrate: { type: "boolean" },
 } as const;
 
-const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "shard", "episodes-dir", "features-dir", "labels-dir", "profile", "profile-dir", "member", "calibrate", "past-pool"];
+const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "shard", "episodes-dir", "features-dir", "labels-dir", "pool-file", "profile", "profile-dir", "member", "calibrate", "past-pool"];
 /** The flags a population run gives per member instead. */
 const PER_MEMBER: readonly (keyof typeof FLAGS)[] = ["preview", "battle", "policy-id"];
+
+/**
+ * An upper bound on game processes x policy workers x games in flight per worker: past it the machine is
+ * oversubscribed (every one is an operating system process or a live battle), so the generation warns on
+ * stderr. A sanity bound for the operator, not a rule: nothing is refused (#980).
+ */
+export const MAX_COMBINED_LOAD = 256;
+
+/** The most games the processes of a generation can have in flight at once, and whether that is past `MAX_COMBINED_LOAD`. */
+export function combinedLoad(processes: number, workers: number, nParallel: number): { games: number; over: boolean } {
+  const games = processes * workers * nParallel;
+  return { games, over: games > MAX_COMBINED_LOAD };
+}
+
+/**
+ * Make a further game process end when the process that started it does: its stdin is a pipe the starter
+ * holds open, so it closes when the starter dies. The policy workers this process started have pipes to it
+ * and end with it. Registered before anything slow (the pool, the workers), so it is heard during them (#980).
+ */
+export function exitWhenParentDies(stdin: { once: (event: "end", listener: () => void) => unknown; resume: () => unknown; unref?: () => void } = process.stdin, exit: (code: number) => void = (code) => process.exit(code)): void {
+  stdin.once("end", () => exit(1));
+  stdin.resume();
+  stdin.unref?.(); // an open pipe must not keep the finished process alive
+}
 
 /** Peak memory of the processes of one generation's play (bytes), for the run-metrics record; any part may be missing. */
 export interface ResourceUsage {
@@ -187,6 +214,9 @@ export async function runGenerationCli(
   };
   const workerCount = count("policy-workers");
   const processes = count("game-processes");
+  if (values["pool-file"] !== undefined && values.shard === undefined) throw new UsageError("--pool-file is for a further game process only");
+  const load = combinedLoad(processes, workerCount, n_parallel);
+  if (load.over && values.shard === undefined) console.error(`play-generation: ${processes} game processes x ${workerCount} workers x ${n_parallel} games in flight is ${load.games} at once, over ${MAX_COMBINED_LOAD}: the machine may be oversubscribed`);
   let own: Shard | undefined;
   if (values.shard !== undefined) {
     const match = /^(\d+)\/(\d+)$/.exec(values.shard);
@@ -269,26 +299,30 @@ export async function runGenerationCli(
   const labelArgs = labels === undefined || !labelling ? {} : { labels, labels_dir: labelsDir };
   const children: ShardProcess[] = [];
   let closed = false;
+  // The pool the further game processes read instead of loading it themselves (#1192).
+  const poolFile = values["pool-file"] ?? (scratch !== undefined ? join(scratch, POOL_FILE) : undefined);
   try {
+    if (values.shard !== undefined) exitWhenParentDies(); // before the pool and the workers, which take long
     // Start the further game processes first: each loads its own pool while this one does.
     if (scratch !== undefined) {
       for (let index = 1; index < processes; index++) {
         const out = join(scratch, String(index));
         const rest = Object.entries(values).flatMap(([name, value]) =>
-          value === undefined || typeof value !== "string" || ["out", "game-processes", "shard", "episodes-dir", "features-dir", "labels-dir", "profile", "profile-dir"].includes(name) ? [] : [`--${name}`, value],
+          value === undefined || typeof value !== "string" || ["out", "game-processes", "shard", "episodes-dir", "features-dir", "labels-dir", "pool-file", "profile", "profile-dir"].includes(name) ? [] : [`--${name}`, value],
         );
-        children.push(startShard(shardScript as string, [...rest, "--out", out, "--shard", `${index}/${processes}`, "--episodes-dir", episodesDir, ...optionalFlag("--features-dir", featuresDir), ...optionalFlag("--labels-dir", labelsDir), ...optionalFlag("--profile-dir", profileDir)], out, index));
+        children.push(startShard(shardScript as string, [...rest, "--out", out, "--shard", `${index}/${processes}`, "--episodes-dir", episodesDir, ...optionalFlag("--pool-file", poolFile), ...optionalFlag("--features-dir", featuresDir), ...optionalFlag("--labels-dir", labelsDir), ...optionalFlag("--profile-dir", profileDir)], out, index));
       }
     }
-    const pool = timed("pool_load", () => poolSource(engine, config));
+    // A further game process waits for the pool its starter loads while its own workers start; the starter loads it and leaves it for them.
+    const shared = values["pool-file"] === undefined ? undefined : timedAsync("pool_load", () => waitForPoolFile(poolFile as string, config));
+    shared?.catch(() => undefined); // reported where it is awaited
+    const loaded = shared === undefined ? timed("pool_load", () => poolSource(engine, config)) : undefined;
+    if (loaded !== undefined && scratch !== undefined) timed("pool_load", () => writePoolFile(poolFile as string, loaded, config));
     await Promise.all(clients.map((client) => client.start()));
+    const pool = loaded ?? (await (shared as Promise<TrainingPool>));
     const [client, ...peers] = clients as [PolicyWorkerClient, ...PolicyWorkerClient[]];
     if (values.shard !== undefined) {
-      // A further game process: it ends if the process that started it dies (its stdin closes).
-      process.stdin.once("end", () => process.exit(1));
-      process.stdin.resume();
-      (process.stdin as unknown as { unref?: () => void }).unref?.(); // an open pipe must not keep the finished process alive
-      // It plays the slice and leaves it for the process that started this one.
+      // A further game process (it ends with the process that started it, see above). It plays the slice and leaves it for the process that started this one.
       const entries = await playEntries({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, episodes_dir: episodesDir, belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, ...labelArgs, features_dir: featuresDir }, own);
       mkdirSync(need("out"), { recursive: true });
       writeShardFile(join(need("out"), SHARD_FILE), entries);
@@ -339,6 +373,9 @@ export function featuresDirOf(given: string | undefined, scratch: string | undef
 export function optionalFlag(name: string, value: string | undefined): string[] {
   return value === undefined ? [] : [name, value];
 }
+
+/** The team pool the starting process leaves in the shard scratch directory. */
+const POOL_FILE = "pool.json";
 
 /** The game process's result: one canonical JSON entry per line, so no string holds them all (#998). */
 const SHARD_FILE = "shard.jsonl";

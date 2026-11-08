@@ -27,6 +27,7 @@ import { UnsupportedCandidateError } from "../src/evaluation-harness.ts";
 import { loadTrainingSet, readTrainingSet, TrainingLoaderError } from "../src/training-loader.ts";
 import { SAMPLES_DIR } from "../src/samples.ts";
 import { startShard } from "../src/generation-cli.ts";
+import { readPoolFile, writePoolFile } from "../src/pool-share.ts";
 import { teamHash } from "../src/team-class.ts";
 import { fakePort } from "./damage-aware-world-support.ts";
 
@@ -491,6 +492,30 @@ describe("several workers and game processes (#957)", () => {
     expect(workers.map((w) => w.asked > 0)).toEqual([true, true, true]);
     expect(seen.size).toBeGreaterThan(0);
     for (const ids of seen.values()) expect(ids.size).toBe(1);
+  });
+
+  it("gives the same generation, file for file, from the pool a further game process reads back as from the pool it loads itself (#1192)", async () => {
+    const scratch = mkdtempSync(join(tmpdir(), "areneon-shared-pool-"));
+    try {
+      const request = { format_id: config.format_id, generation: config.generation };
+      const file = join(scratch, "pool.json");
+      writePoolFile(file, pool, request);
+      const shared = readPoolFile(file, request);
+      const write = async (name: string, used: TrainingPool): Promise<string[]> => {
+        const out = join(scratch, name);
+        const episodes = join(out, "episodes");
+        mkdirSync(episodes, { recursive: true });
+        // A slice played from the shared pool and the rest from it too, as the processes of one generation are.
+        const there = playEntries(opts({ pool: used, episodes_dir: episodes, peers: [actorClient()] }), { index: 1, of: 2 });
+        writeGeneration(out, await playGeneration(opts({ pool: used, episodes_dir: episodes, stream_path: join(out, "stream.jsonl"), shard: { index: 0, of: 2 }, others: there })));
+        return ["stream.jsonl", "training-set.json", "plan.json", "league-run.json", "generation.json", ...readdirSync(episodes).sort().map((n) => `episodes/${n}`)].map((n) => `${n}\n${readFileSync(join(out, n), "utf8")}`);
+      };
+      const own = await write("own", pool);
+      expect(await write("shared", shared)).toEqual(own);
+      expect(own.length).toBeGreaterThan(10);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
   });
 
   it("gives the same generation when game processes each play a slice, in whatever order they finish", async () => {
