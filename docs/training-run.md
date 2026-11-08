@@ -947,3 +947,51 @@ but a game process's `cpu_ms` still includes Node and engine start-up, which sta
 (it is not play); the wall readings of the game processes include any time the
 operating system did not schedule them, which an idle machine keeps small; the load split is summed
 over the load workers, so it can exceed the load phase's wall time.
+
+## 10. Batched self-play inference (`generation.inference`, ADR-028 section 2 F2)
+
+By default the policy worker scores one query per forward pass (batch 1), as evaluation requires. A run
+may ask for the forward pass of its training self-play and scripted-baseline games to be batched on the
+CPU:
+
+```json
+"generation": { ..., "n_parallel": 8, "inference": { "kind": "batched", "max_batch": 4 } }
+```
+
+`max_batch` is 2 to `n_parallel`; a population run cannot set it. The run is a new run from
+generation 0 (the field enters `run_config_hash`).
+
+What batches, and what does not. The game processes still send one query per decision; the worker
+(`--inference-max-batch`, which the play script gives it from the config) reads the queries that are queued,
+up to `max_batch`, reduces and encodes each alone, and runs the network once over the padded batch of each
+role (`NetworkScorer.score_batch`). Float32, CPU torch from the shipped closure, deterministic algorithms on;
+there is no GPU inference. Only `W_fwd` batches.
+
+Identity. The pair's `behaviour_policy_id` gains `inference: {kind, max_batch}` in its preimage (TS
+`policyId`, Python `policy_id`; the vectors are pinned on both sides), so a stream played this way is
+refused by a learner that expects the unbatched id and the reverse. The worker states its batching in the
+handshake (`ready.inference`), the client puts what it expects in the `hello`, and each side refuses a
+difference: a client that asks for batch 1 refuses a batching worker, and a batching worker refuses a hello
+that expects another batching. Only the generation play script gives a client the option; the progress
+evaluation, the head to head, the private test, the scripted head to head, the best-response command and
+every other client are built with none, so they score batch 1 (a source scan tests this).
+
+Claims. For a batched run these hold, and tests check them: the plan, seeds, teams and policy ids are the
+same on a rerun; every committed generation verifies; retraining from a committed stream reproduces the
+learner-state hash; a generation killed at any stage resumes to a valid generation. These do NOT hold:
+a byte-identical rerun of a generation, the same bytes for any `--game-processes` and `--policy-workers`,
+and the SIGKILL-resumes-to-equal-bytes claim (what is grouped into a batch depends on timing, and a padded
+batch is not bit-identical to batch 1, so a choice can differ and the game then goes differently).
+
+Divergence measure. Each game process keeps a deterministic share (about 1.5 percent, chosen by a hash of the
+decision's own request and sampling draw `u`) of the decisions the pair plays. When its games are done it
+scores the smallest-keyed of them, at least 1 percent of its decisions and at least 256 (all of them when
+fewer were played), again at batch 1 on a worker of its own with each decision's own `u`, and asks the
+batched worker and the batch-1 worker for the prior (temperature 1) of the same queries. The play script prints
+`{"inference_divergence": ...}` and the driver stores it as the optional `inference_divergence` of
+`metrics/g<N>.json` (outside every hash): `decisions` played, `sampled`, `differing` (the sampled decisions
+whose choice differs from the played one), `max_prior_diff_ppm` (the largest absolute difference of any
+candidate's prior) and `target_met` (false when fewer were kept than the target, as in a tiny run).
+It adds one worker start and a few thousand queries to the end of the play phase, which the play time
+includes. Before and after play times on an idle machine are measured as for section 9 and journaled on the
+ticket.

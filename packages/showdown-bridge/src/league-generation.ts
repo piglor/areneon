@@ -35,6 +35,7 @@ import { firstLegal, GOLDEN_FORMAT, goldenTeamVocabulary, syntheticTeam, TEAMS_D
 import { resolveFormat, type VersionManifest } from "./formats.ts";
 import { nodeSha256 } from "./player-channel.ts";
 import { type PolicyClient } from "./policy-worker.ts";
+import type { PolicyQueryInput } from "./policy-protocol.ts";
 import { type PolicyGameOptions, policyGame, type PolicySeat } from "./policy-actor.ts";
 import { readerSha256 } from "@areneon/public-state";
 import { loadRandomCorpus } from "./random-corpus.ts";
@@ -372,6 +373,11 @@ export interface GenerationOptions {
    * worker that stated the source, and to the training loader, which recomputes it for every example.
    */
   sheet?: SheetSetup;
+  /**
+   * Called with each decision the pair's own seats play: its query and the answered choice (batched-inference divergence, #1195;
+   * `inference-divergence.ts`). Observes only; never changes a byte.
+   */
+  on_answer?: (query: PolicyQueryInput, choice: string) => void;
   /** Called after each game with the counts of each of the pair's seats' sheet builders (blocks built, refusals by code). */
   on_sheet_counts?: (game: number, counts: readonly SheetCounts[]) => void;
   /** The belief port factory of the composition root (`packages/team-dataset`); without it a plan that names `damage-aware@v2` is refused. */
@@ -586,13 +592,14 @@ async function playOne(options: GenerationOptions, plan: GamePlan, client: Polic
     builders.push(builder);
     return { sheet: { builder } };
   };
+  const observed = options.on_answer === undefined ? {} : { on_answer: options.on_answer };
   const seatFor = (player: Player): PolicySeat => {
-    if (options.features === undefined) return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), ...sheetFor() };
+    if (options.features === undefined) return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), ...observed, ...sheetFor() };
     const memo = createFeatureMemo();
     memos[player] = memo;
     const kept = new Map<number, AnyCandidateFeatures>();
     rows[player] = kept;
-    return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), features: { configs: options.features, memo, ...(keepRows ? { record: (seq: number, found: AnyCandidateFeatures) => void kept.set(seq, found) } : {}) }, ...sheetFor() };
+    return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), features: { configs: options.features, memo, ...(keepRows ? { record: (seq: number, found: AnyCandidateFeatures) => void kept.set(seq, found) } : {}) }, ...observed, ...sheetFor() };
   };
   const baseline = plan.opponent === "self" ? undefined : baselineActor(options, plan.opponent, plan, budget);
   const seats: PolicyGameOptions["seats"] =

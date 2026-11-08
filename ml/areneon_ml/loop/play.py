@@ -122,6 +122,9 @@ class NodePlayer:
     #: The profile of the last ``play`` call when ``profile`` is set and the script reported
     #: one: its ``profile`` line, validated later as part of the run-metrics record.
     last_profile: dict[str, Any] = field(default_factory=dict, compare=False)
+    #: The ``inference_divergence`` line of the last ``play`` call (a run whose config says
+    #: ``generation.inference``): validated later as part of the run-metrics record.
+    last_divergence: dict[str, Any] = field(default_factory=dict, compare=False)
 
     def _run(
         self,
@@ -174,6 +177,7 @@ class NodePlayer:
     def play(self, request: PlayRequest) -> None:
         self.resource_usage.clear()
         self.last_profile.clear()
+        self.last_divergence.clear()
         out = self._run(
             self.play_script,
             *("--config", str(self.config_path)),
@@ -194,6 +198,7 @@ class NodePlayer:
             timeout_s=self.generation_timeout_s,
         )
         self.resource_usage.update(_resource_usage(out))
+        self.last_divergence.update(_divergence_line(out))
         if self.profile:
             self.last_profile.update(_profile_line(out))
 
@@ -306,6 +311,19 @@ def _profile_line(stdout: str) -> dict[str, Any]:
         except ValueError:
             continue
         found = value.get("profile") if isinstance(value, dict) else None
+        if isinstance(found, dict):
+            return found
+    return {}
+
+
+def _divergence_line(stdout: str) -> dict[str, Any]:
+    """The ``inference_divergence`` line of the play script's output; empty when there is none."""
+    for line in stdout.splitlines():
+        try:
+            value = json.loads(line)
+        except ValueError:
+            continue
+        found = value.get("inference_divergence") if isinstance(value, dict) else None
         if isinstance(found, dict):
             return found
     return {}

@@ -59,6 +59,9 @@ class GenerationSettings:
     #: first generation whose games are labelled; ``None`` when absent.
     search_config_hash: str | None = None
     search_start_generation: int | None = None
+    #: ``generation.inference.max_batch`` (ADR-028 section 2 F2): the policy worker answers up to
+    #: this many queued queries in one forward pass; ``None`` is batch 1 (the field absent).
+    inference_max_batch: int | None = None
 
 
 @dataclass(frozen=True)
@@ -317,6 +320,23 @@ def _check_population(raw: dict[str, Any]) -> None:
         within(name, shares[name], bounds.get(name))
 
 
+def _check_inference(raw: dict[str, Any]) -> None:
+    """The rules of ``generation.inference`` the profile cannot say (ADR-028 section 2 F2)."""
+    inference = raw["generation"].get("inference")
+    if inference is None:
+        return
+    if inference["max_batch"] > raw["generation"]["n_parallel"]:
+        raise RunConfigError(
+            f"training-run-config: generation.inference.max_batch {inference['max_batch']} "
+            f"cannot exceed generation.n_parallel {raw['generation']['n_parallel']}"
+        )
+    if "population" in raw:
+        raise RunConfigError(
+            "training-run-config: generation.inference cannot be combined with a population "
+            "(the population run plays batch 1)"
+        )
+
+
 def read_run_config(raw: object) -> RunConfig:
     """Validate ``raw`` against the contract and the reader rules; copy nothing mutable out."""
     try:
@@ -360,6 +380,7 @@ def read_run_config(raw: object) -> RunConfig:
             )
         _check_population(raw)
     _check_search_distillation(raw)
+    _check_inference(raw)
     gen, ppo, seeds = raw["generation"], raw["ppo"], raw["seeds"]
     play = gen.get("play")
     labels = gen.get("search_labels")
@@ -391,6 +412,7 @@ def read_run_config(raw: object) -> RunConfig:
             temperature_ppm=None if play is None else play["temperature_ppm"],
             search_config_hash=None if labels is None else labels["search_config_hash"],
             search_start_generation=None if labels is None else labels["start_generation"],
+            inference_max_batch=(None if "inference" not in gen else gen["inference"]["max_batch"]),
         ),
         ppo=PPOSettings(
             epochs=ppo["epochs"],
