@@ -59,6 +59,8 @@ export interface ProgressGameRecord {
   };
   search?: SearchSeat;
   opponent_search?: SearchSeat1;
+  solve?: SolveSeat;
+  opponent_solve?: SolveSeat1;
 }
 /**
  * Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.
@@ -375,6 +377,89 @@ export interface SearchSeat1 {
   counts: SearchCounts;
 }
 /**
+ * Only a game of a Team Preview solver candidate.
+ */
+export interface SolveSeat {
+  seat: "p1" | "p2";
+  identity_hash: string;
+  counts: SolveCounts;
+}
+/**
+ * The integer counts of one game of a Team Preview solver policy (ADR-029 section 8), or the sums of several games'. Wall time is printed, never stored. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+ *
+ * This interface was referenced by `ProgressGameRecord`'s JSON-Schema
+ * via the `definition` "SolveCounts".
+ */
+export interface SolveCounts {
+  /**
+   * Requests answered, every phase.
+   */
+  decisions: number;
+  /**
+   * Team Preview requests answered (the one phase the solver acts in; the no-solve control counts them too).
+   */
+  previews: number;
+  /**
+   * Team Preview decisions the solver chose (0 for the self-no-solve control).
+   */
+  solved: number;
+  /**
+   * Team Previews the pair played itself, by reason (ADR-029 section 4); all 0 for the control.
+   */
+  fallbacks: {
+    belief_refusal: number;
+    clock_floor: number;
+    engine_failure: number;
+    too_few_worlds: number;
+    worker_failure: number;
+  };
+  /**
+   * Belief refusals behind belief_refusal fallbacks, by the opponent model's code, sorted and unique by key.
+   */
+  belief_refusals: CountEntry[];
+  worlds_asked: number;
+  worlds_refused: number;
+  worlds_unstarted: number;
+  /**
+   * The payoff table builder's counts, summed over the solves tried.
+   */
+  payoff: {
+    back_draws: number;
+    clamped: number;
+    clamped_high: number;
+    clamped_low: number;
+    engine_refusals: number;
+    entries: number;
+    entry_attempts: number;
+    game_end_entries: number;
+    missing_entries: number;
+    not_move_request: number;
+    preview_queries: number;
+    rollout_capped: number;
+    rollout_choices: number;
+    value_queries: number;
+    worlds_asked: number;
+    worlds_dropped: number;
+    worlds_used: number;
+  };
+  /**
+   * Sum over the solved decisions of the matrix exploitability in ppm (divide by solved).
+   */
+  exploitability_ppm: number;
+  /**
+   * Sum over the solved decisions of the support size of our mixture (divide by solved).
+   */
+  support_size: number;
+}
+/**
+ * Only a game against the self-no-solve control.
+ */
+export interface SolveSeat1 {
+  seat: "p1" | "p2";
+  identity_hash: string;
+  counts: SolveCounts;
+}
+/**
  * The search policy's seat in this game, the search identity hash and that seat's integer counts (ADR-026 section 5); for the self-no-search control the seat of the pair played without search and the same identity hash, with searched_decisions 0. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
  *
  * This interface was referenced by `ProgressGameRecord`'s JSON-Schema
@@ -384,4 +469,15 @@ export interface SearchSeat2 {
   seat: "p1" | "p2";
   identity_hash: string;
   counts: SearchCounts;
+}
+/**
+ * The Team Preview solver policy's seat in this game, the solver identity hash and that seat's integer counts (ADR-029 section 8); for the self-no-solve control the seat of the pair played without the solver and the same identity hash, with solved 0. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+ *
+ * This interface was referenced by `ProgressGameRecord`'s JSON-Schema
+ * via the `definition` "SolveSeat".
+ */
+export interface SolveSeat2 {
+  seat: "p1" | "p2";
+  identity_hash: string;
+  counts: SolveCounts;
 }

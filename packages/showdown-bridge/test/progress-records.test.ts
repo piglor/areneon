@@ -341,3 +341,76 @@ describe("the search candidate's counts and the self-no-search control (ADR-026 
     expect(() => readProgressEvaluationRecordV2(two)).toThrow(/one search identity hash/);
   });
 });
+
+describe("the Team Preview solver candidate's counts and the self-no-solve control (ADR-029 section 8)", () => {
+  const V2 = "progress-evaluation-record-2";
+  it("reads the valid samples, the control's with its own counts", () => {
+    const against = readProgressEvaluationRecordV2(sample(`${V2}/valid/psolve-match`));
+    expect(against.matches[0]).toMatchObject({ match_id: "psolve-actor-rule-argmax", solve: { identity_hash: "c".repeat(64) } });
+    expect(against.plan.preview_solve_budget_ms).toBe(30000);
+    const control = readProgressEvaluationRecordV2(sample(`${V2}/valid/psolve-self-no-solve-match`));
+    expect(control.matches[0]?.opponent).toMatchObject({ kind: "self-no-solve", mode: "argmax" });
+    expect(control.matches[0]?.opponent_solve?.counts.solved).toBe(0);
+    expect(readProgressGameRecord(sample(`${GAME}/valid/psolve`)).solve?.seat).toBe("p1");
+    expect(readProgressGameRecord(sample(`${GAME}/valid/psolve-control`)).opponent_solve?.seat).toBe("p2");
+  });
+
+  it.each([
+    ["psolve-counts-disagree", "solve.counts must be the sum"],
+    ["psolve-row-missing", "carries solver counts in its summary and in every game row"],
+    ["psolve-misnamed", "named psolve-<opponent>-<mode> exactly when"],
+    ["psolve-on-plain-match", "named psolve-<opponent>-<mode> exactly when"],
+    ["psolve-mixed-with-plain", "solver matches only"],
+    ["psolve-budget-below-preview", "at least latency_budget_ms.preview_ms"],
+    ["psolve-no-budget", "preview_solve_budget_ms is present exactly when"],
+    ["budget-on-plain-record", "preview_solve_budget_ms is present exactly when"],
+    ["psolve-with-search", "never both"],
+    ["psolve-solved-over-previews", "cannot exceed Team Previews"],
+    ["psolve-unsorted-refusals", "belief_refusals must be sorted by key"],
+    ["psolve-refusals-over-fallbacks", "cannot exceed the belief_refusal fallbacks"],
+    ["psolve-control-without-solve", "only a solver match carries solver counts"],
+    ["psolve-control-row-missing", "carries the control's counts in its summary and in every game row"],
+    ["psolve-control-solves", "the no-solve control solves nothing"],
+    ["psolve-control-other-identity", "the control's identity hash"],
+    ["psolve-control-mode-differs", "plays the pair in the match's mode"],
+    ["psolve-control-counts-on-baseline", "only a self-no-solve match carries the control's counts"],
+  ])("refuses the reader-invalid sample %s", (name, message) => {
+    expect(() => readProgressEvaluationRecordV2(sample(`${V2}/reader-invalid/${name}`))).toThrow(message);
+  });
+
+  it.each(["psolve-fractional-count", "psolve-no-fallbacks", "psolve-unknown-payoff-field", "self-no-solve-no-mode"])("refuses the schema-invalid sample %s", (name) => {
+    expect(() => readProgressEvaluationRecordV2(sample(`${V2}/invalid/${name}`))).toThrow(/invalid ProgressEvaluationRecordV2/);
+  });
+
+  it.each([
+    ["psolve-decisions-differ", "solver seat's decisions"],
+    ["psolve-control-same-seat", "seat the solver does not hold"],
+    ["psolve-control-other-identity", "the control's identity hash"],
+    ["psolve-control-without-solve", "belongs to a game that carries solve"],
+    ["psolve-control-solves", "the no-solve control solves nothing"],
+  ])("refuses the stored game %s", (name, message) => {
+    expect(() => readProgressGameRecord(sample(`${GAME}/reader-invalid/${name}`))).toThrow(message);
+  });
+
+  it("refuses a bad schema field, an extra play mode, two identities, too many worlds and a game with both search and solve", () => {
+    expect(() => readProgressGameRecord(sample(`${GAME}/invalid/psolve-no-identity`))).toThrow(/invalid ProgressGameRecord/);
+    const two = sample(`${V2}/valid/psolve-match`);
+    two.matches.push({ ...structuredClone(two.matches[0]), match_id: "psolve-random-legal-argmax", solve: { ...two.matches[0].solve, identity_hash: "d".repeat(64) } });
+    two.games.push(...two.games.map((g: Record<string, unknown>) => ({ ...structuredClone(g), match_id: "psolve-random-legal-argmax" })));
+    two.matches[1].game_record_hashes = two.matches[0].game_record_hashes;
+    expect(() => readProgressEvaluationRecordV2(two)).toThrow(/one solver identity hash/);
+    const worlds = sample(`${V2}/valid/psolve-match`);
+    for (const c of [worlds.games[0].solve, worlds.matches[0].solve.counts]) c.worlds_refused = 99;
+    expect(() => readProgressEvaluationRecordV2(worlds)).toThrow(/cannot exceed worlds asked/);
+    const extra = sample(`${V2}/valid/psolve-match`);
+    extra.matches[0].mode = "sample";
+    extra.matches[0].temperature_ppm = 250000;
+    expect(() => readProgressEvaluationRecordV2(extra)).toThrow(/not a search, solver or ablation match/);
+    const previews = sample(`${V2}/valid/psolve-match`);
+    for (const c of [previews.games[0].solve, previews.matches[0].solve.counts]) c.previews = c.decisions + 1;
+    expect(() => readProgressEvaluationRecordV2(previews)).toThrow(/Team Previews cannot exceed decisions/);
+    const both = sample(`${GAME}/valid/psolve`);
+    both.search = { seat: "p1", identity_hash: "e".repeat(64), counts: sample(`${V2}/valid/search-match`).games[0].search };
+    expect(() => readProgressGameRecord(both)).toThrow(/never both/);
+  });
+});
