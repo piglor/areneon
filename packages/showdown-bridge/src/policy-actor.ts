@@ -25,7 +25,7 @@ import { observe, playerChannel } from "./player-channel.ts";
 import { startTimer, addSince, timed, timedAsync } from "./profile.ts";
 import { type PolicyClient, PolicyReplyError } from "./policy-worker.ts";
 import { type PolicyQueryInput, PolicyProtocolError, type PlaySettings } from "./policy-protocol.ts";
-import { type Actor, ForfeitSignal, type Player } from "./runner.ts";
+import { type Actor, declareReadsLegal, ForfeitSignal, type Player } from "./runner.ts";
 import { battleClass, type DataClass, stampTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
 import { sheetRegimeOf } from "./team-sheet-binding.ts";
 
@@ -153,7 +153,7 @@ export function policyActor(options: PolicyActorOptions): Actor {
   if (sampling === "argmax" && play !== undefined && (play.temperature_ppm !== undefined || play.truncation !== undefined)) {
     throw new PolicyProtocolError("a temperature or a truncation applies to sample mode only");
   }
-  return async (request, context) => {
+  const actor: Actor = async (request, context) => {
     if (context === undefined || context.player !== player) {
       throw new PolicyProtocolError(`the policy actor of ${player} needs its own player's channel`);
     }
@@ -240,6 +240,8 @@ export function policyActor(options: PolicyActorOptions): Actor {
       throw error;
     }
   };
+  // Only the random Preview reads the legal set; the worker path reads `enumerateCandidates` and the own channel (ADR-028 F4).
+  return declareReadsLegal(actor, preview_actor !== undefined);
 }
 
 /** One seat of a `policyGame`: a learned policy behind a worker. */
@@ -278,6 +280,8 @@ export interface PolicyGameOptions {
   seats: Record<Player, PolicySeat | Actor>;
   latency_budget: LatencyBudget;
   maxTurns?: number;
+  /** Training self-play only: skip the CloneJudge for a seat that declared it does not read the legal set (`BattleOptions.skip_unread_judge`). */
+  skip_unread_judge?: true;
 }
 
 /**
@@ -286,7 +290,7 @@ export interface PolicyGameOptions {
  * is guarded as role `policy`. Call `client.beginGame()` before it.
  */
 export async function policyGame(options: PolicyGameOptions): Promise<PlayedGame> {
-  const { engine, formatId, seed, game, teams, known_synthetic, seats, latency_budget, maxTurns } = options;
+  const { engine, formatId, seed, game, teams, known_synthetic, seats, latency_budget, maxTurns, skip_unread_judge } = options;
   const manifest = resolveFormat(engine, formatId).manifest;
   const channel_class = battleClass({ p1: teamHash(teams.p1), p2: teamHash(teams.p2) }, known_synthetic);
   const actorOf = (player: Player): Actor => {
@@ -315,5 +319,6 @@ export async function policyGame(options: PolicyGameOptions): Promise<PlayedGame
     teams,
     actors: { p1: actorOf("p1"), p2: actorOf("p2") },
     ...(maxTurns === undefined ? {} : { maxTurns }),
+    ...(skip_unread_judge === undefined ? {} : { skip_unread_judge }),
   });
 }
