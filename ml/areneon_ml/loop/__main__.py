@@ -51,6 +51,7 @@ from areneon_ml.inspector.resimulate import node_runner
 from areneon_ml.inspector.resimulate_command import parse_target, resimulate_game
 from areneon_ml.learner.config import RunConfigError, read_run_config
 from areneon_ml.learner.data import LearnerDataError
+from areneon_ml.learner.parallel import auto_processes
 from areneon_ml.learner.state import LearnerStateError
 from areneon_ml.learner.trainer import LearnerError
 from areneon_ml.loop import layout
@@ -187,9 +188,9 @@ def _add_run(commands: Any) -> None:
     run.add_argument(
         "--load-processes",
         type=_positive,
-        default=1,
         help="worker processes that check and encode a generation's stream in the load phase "
-        "(operational: the trajectories and every hash are the same for any number; each worker "
+        "(default: half the usable cores, at most 16, fewer if the free memory does not fit them; "
+        "operational: the trajectories and every hash are the same for any number; each worker "
         "adds its piece's tensors to memory while it runs, see docs/training-run.md)",
     )
     run.add_argument(
@@ -655,6 +656,7 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
             else "packages/showdown-bridge/scripts/play-generation.ts"
         ),
     )
+    load_processes = args.load_processes if args.load_processes is not None else auto_processes()
     if config.population:
         if args.profile:
             raise LoopError("population: --profile does not apply to a population run")
@@ -664,11 +666,11 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
                 "per member; --policy-workers and --game-processes do not apply"
             )
         pop = PopulationLoop(config, args.run_dir.resolve(), game, player)
-        pop.load_processes = args.load_processes
+        pop.load_processes = load_processes
         pop.load_memory_mb = args.load_memory_mb
         return pop.run(args.generations).as_dict(pop.frozen)
     loop = Loop(config, args.run_dir.resolve(), game, player)
-    loop.load_processes = args.load_processes
+    loop.load_processes = load_processes
     loop.load_memory_mb = args.load_memory_mb
     loop.profile = args.profile
     result = loop.run(args.generations)

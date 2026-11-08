@@ -135,6 +135,7 @@ def test_the_load_workers_are_a_flag_of_the_loop_only(
             return super().run(generations)
 
     monkeypatch.setattr("areneon_ml.loop.__main__.Loop", Spy)
+    monkeypatch.setattr("areneon_ml.loop.__main__.auto_processes", lambda: 5)
     assert (
         main(
             run(config_file, tmp_path / "r", 1, "--load-processes", "3", "--load-memory-mb", "900")
@@ -142,7 +143,7 @@ def test_the_load_workers_are_a_flag_of_the_loop_only(
         == 0
     )
     assert main(run(config_file, tmp_path / "s", 1)) == 0
-    assert seen == [(3, 900), (1, None)]
+    assert seen == [(3, 900), (5, None)]  # no flag: sized from the machine
     assert (tmp_path / "r" / "run-config.json").read_bytes() == (
         tmp_path / "s" / "run-config.json"
     ).read_bytes()
