@@ -177,6 +177,7 @@ export {
   BattleAbortedError,
   type BattleOptions,
   type BattleRecord,
+  declareReadsLegal,
   FORFEIT_CAUSES,
   type ForfeitCause,
   ForfeitSignal,
