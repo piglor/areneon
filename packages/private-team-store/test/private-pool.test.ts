@@ -75,7 +75,7 @@ describe("loadPrivatePool", () => {
     expect(worldIsPrivate(world)).toBe(true);
     const records = [...world.teams.map((team, k) => recordOfPaste(team.paste, k + 1, k === 3 ? "retired" : "active"))];
     const copy = await localCopy(records);
-    const pool = await loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash });
+    const pool = await loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash, holdout: "include" });
     expect(pool.snapshot_hash).toBe(copy.hash);
     expect(pool.teams).toHaveLength(3); // the retired record is not in the pool
     // The team's nickname marker names the record it came from.
@@ -87,18 +87,31 @@ describe("loadPrivatePool", () => {
     pool.holdout.forEach((flag, k) => expect(flag).toBe((source[k] as PrivateTeamRecord).holdout));
   });
 
+  it("with holdout exclude leaves the hold-out teams out, with include keeps them", async () => {
+    const records = world.teams.map((team, k) => recordOfPaste(team.paste, k + 1));
+    const held = records.filter((r) => r.holdout).length;
+    expect(held).toBeGreaterThan(0);
+    expect(held).toBeLessThan(records.length);
+    const copy = await localCopy(records);
+    const base = { engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash };
+    const excluded = await loadPrivatePool({ ...base, holdout: "exclude" });
+    expect(excluded.teams).toHaveLength(records.length - held);
+    expect(excluded.holdout.every((flag) => !flag)).toBe(true);
+    expect((await loadPrivatePool({ ...base, holdout: "include" })).teams).toHaveLength(records.length);
+  });
+
   it("leaves out a team holding an excluded ability, and refuses when nothing is left", async () => {
     const copy = await localCopy(world.teams.slice(0, 2).map((team, k) => recordOfPaste(team.paste, k + 1)));
     const ability = (world.teams[0]?.sets[0] as { ability: string }).ability;
-    const some = await loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash, excluded_abilities: [ability] });
+    const some = await loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash, holdout: "include", excluded_abilities: [ability] });
     expect(some.teams.length).toBeLessThan(2);
     const every = [...new Set(world.teams.slice(0, 2).flatMap((team) => team.sets.map((set) => set.ability)))];
-    expect(await refusal(() => loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash, excluded_abilities: every }))).toBe("private-pool: source_empty");
+    expect(await refusal(() => loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash, holdout: "include", excluded_abilities: every }))).toBe("private-pool: source_empty");
   });
 
   it("refuses with a fixed code: a copy that is not there, a bad hash, a directory outside private-data and a forged manifest", async () => {
     const copy = await localCopy(world.teams.slice(0, 2).map((team, k) => recordOfPaste(team.paste, k + 1)));
-    const ask = (over: Partial<Parameters<typeof loadPrivatePool>[0]>) => loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash, ...over });
+    const ask = (over: Partial<Parameters<typeof loadPrivatePool>[0]>) => loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash, holdout: "include", ...over });
     expect(await refusal(() => ask({ snapshot_hash: "cd".repeat(32) }))).toBe("private-pool: source_unreadable");
     for (const bad of ["../escape", "AB".repeat(32), ""]) expect(await refusal(() => ask({ snapshot_hash: bad }))).toBe("private-pool: source_unreadable");
     expect(await refusal(() => ask({ snapshotsDir: world.outside }))).toBe("private-pool: source_unreadable");
@@ -114,7 +127,7 @@ describe("an illegal team", () => {
     const long = makeCanaryWorld(engine, 2); // nicknames over 18 characters: the validator refuses them
     try {
       const copy = await localCopy(long.teams.map((team, k) => recordOfPaste(team.paste, k + 1)));
-      const observation = await observe(long, () => loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash }));
+      const observation = await observe(long, () => loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash, holdout: "include" }));
       expect(observation.thrown).toContain("private-pool: team_invalid 1");
       expectNoLeak(long, observation);
     } finally {
@@ -128,7 +141,7 @@ describe("withPrivatePool", () => {
 
   it("adds the private teams as a second component and never lets one into known_synthetic", async () => {
     const copy = await localCopy(world.teams.slice(0, 3).map((team, k) => recordOfPaste(team.paste, k + 1)));
-    const priv = await loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash });
+    const priv = await loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash, holdout: "include" });
     const source = withPrivatePool(() => synthetic, priv, 300);
     const pool = source(engine, { format_id: FORMAT_ID, generation: { excluded_abilities: [] } });
     expect(pool.teams).toHaveLength(synthetic.teams.length + 3);
@@ -148,7 +161,7 @@ describe("withPrivatePool", () => {
 
   it("plans from both pools: a public pool plans as before, a mixed pool is a pure function of config, generation and both pools", async () => {
     const copy = await localCopy(world.teams.slice(0, 3).map((team, k) => recordOfPaste(team.paste, k + 1)));
-    const priv = await loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash });
+    const priv = await loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash, holdout: "include" });
     const pool = withPrivatePool(() => synthetic, priv, 500)(engine, { format_id: FORMAT_ID, generation: { excluded_abilities: [] } });
     expect(planGeneration(config, 1, poolShape(synthetic))).toEqual(planGeneration(config, 1, synthetic.teams.length));
     const plan = planGeneration(config, 1, poolShape(pool));
@@ -160,7 +173,7 @@ describe("withPrivatePool", () => {
 
   it("refuses: a bad share, a pool that is already mixed and a private team that is also synthetic", async () => {
     const copy = await localCopy(world.teams.slice(0, 2).map((team, k) => recordOfPaste(team.paste, k + 1)));
-    const priv = await loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash });
+    const priv = await loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash, holdout: "include" });
     for (const share of [0, 1001, 0.5, Number.NaN]) expect(await refusal(() => withPrivatePool(() => synthetic, priv, share))).toBe("private-pool: share_invalid");
     const request = { format_id: FORMAT_ID, generation: { excluded_abilities: [] } };
     const mixed = withPrivatePool(() => synthetic, priv, 100);
@@ -171,7 +184,7 @@ describe("withPrivatePool", () => {
 
   it("is a PoolSource that the interim source composes with", async () => {
     const copy = await localCopy(world.teams.slice(0, 2).map((team, k) => recordOfPaste(team.paste, k + 1)));
-    const priv = await loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash });
+    const priv = await loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash, holdout: "include" });
     const pool = withPrivatePool(interimPoolSource, priv, 200)(engine, { format_id: FORMAT_ID, generation: { excluded_abilities: [] } });
     expect(pool.private?.count).toBe(2);
   });
@@ -184,7 +197,7 @@ describe("canary over pool construction and plan writing", () => {
     const observation = await observe(
       world,
       async () => {
-        const priv = await loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash });
+        const priv = await loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: copy.hash, holdout: "include" });
         const pool = withPrivatePool(interimPoolSource, priv, 400)(engine, { format_id: FORMAT_ID, generation: { excluded_abilities: [] } });
         const plan = planGeneration(config, 1, poolShape(pool));
         const text = canonicalJson(plan as never);
@@ -192,7 +205,7 @@ describe("canary over pool construction and plan writing", () => {
         // Refusals from a bad copy are scanned as well.
         let refusalText = "";
         try {
-          await loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: "ab".repeat(32) });
+          await loadPrivatePool({ engine, format_id: FORMAT_ID, snapshotsDir: copy.dir, snapshot_hash: "ab".repeat(32), holdout: "exclude" });
         } catch (error) {
           refusalText = String(error);
         }

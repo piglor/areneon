@@ -107,6 +107,22 @@ export function trainingTeamPool(engine: Engine, excludedAbilities: readonly str
   return { teams: hashes.map((hash) => byHash.get(hash) as PokemonSet[]), hashes, known_synthetic: new Set(hashes) };
 }
 
+/**
+ * A generation does not play a pool with a private component yet: its Episodes would be written into the public run directory
+ * before the loader refuses them. The guard goes with the ticket that writes private outputs to the private root (#1063).
+ */
+export function refusePrivatePool(pool: TrainingPool): void {
+  if (pool.private !== undefined) throw new GenerationError("a pool with a private component cannot be played by this generation yet");
+}
+
+/** The sorted hashes of the synthetic teams a plan draws (the cumulative team set): a private team's hash is never in it. */
+export function syntheticDrawnHashes(plan: readonly GamePlan[], pool: TrainingPool): string[] {
+  const syntheticCount = pool.teams.length - (pool.private?.count ?? 0);
+  const drawn = new Set<string>();
+  for (const entry of plan) for (const player of ["p1", "p2"] as const) if (entry.teams[player] < syntheticCount) drawn.add(pool.hashes[entry.teams[player]] as string);
+  return [...drawn].sort();
+}
+
 /** What a team pool is built from: the part of a run config (or a teacher run) that names the format, the dataset and the abilities left out. */
 export interface PoolRequest {
   format_id: string;
@@ -712,6 +728,7 @@ export async function seatEpisodes(record: BattleRecord, teams: Record<Player, n
  */
 export async function playEntries(options: GenerationOptions, shard: Shard = { index: 0, of: 1 }): Promise<PlayedEntry[]> {
   checkShard(shard);
+  refusePrivatePool(options.pool);
   const { config, generation, policy_id, client } = options;
   const plan = planGeneration(config, generation, poolShape(options.pool));
   // The damage-aware records are read once, and only when a game of this process needs them.
@@ -870,6 +887,7 @@ function watchIdle(live: (() => number) | undefined, activity: { busy: number },
  */
 export async function playGeneration(options: GenerationOptions): Promise<GenerationResult> {
   const { engine, config, generation, policy_id, pool } = options;
+  refusePrivatePool(pool);
   const plan = planGeneration(config, generation, poolShape(pool));
   const stop = new AbortController();
   const activity = options.activity ?? { busy: 0 };
@@ -943,10 +961,7 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
     }
     episodeHashes = await Promise.all(episodes.map((episode) => episodeHash(episode, nodeSha256)));
   }
-  const drawn = new Set<string>();
-  // The cumulative team set names synthetic teams only: a private team's hash is never written to a run file.
-  const syntheticCount = pool.teams.length - (pool.private?.count ?? 0);
-  for (const entry of plan) for (const player of ["p1", "p2"] as const) if (entry.teams[player] < syntheticCount) drawn.add(pool.hashes[entry.teams[player]] as string);
+  const drawn = syntheticDrawnHashes(plan, pool);
   const result: GenerationResult = {
     generation,
     plan,
@@ -960,7 +975,7 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
     run_record: await buildLeagueRunRecord({ config, generation, pair_policy_id: policy_id, plan, games: rows, baseline_reports: entries.flatMap((entry) => (entry.baseline === undefined ? [] : [entry.baseline])) }),
     training_set_hash: await nodeSha256(new TextEncoder().encode(jcs(set as unknown as Json))),
     manifest: resolveFormat(engine, config.format_id).manifest,
-    team_hashes: [...drawn].sort(),
+    team_hashes: drawn,
     ...(labelled === undefined ? {} : { labels: labelled }),
   };
   addSince("merge", mergeStart); // the serial tail after the games: stream, hashing, run record

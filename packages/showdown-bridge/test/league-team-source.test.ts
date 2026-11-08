@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { leagueGameStreams, privateTeamSource } from "../src/index.ts";
-import { type GamePlan, planGames, poolShape, type TrainingPool } from "../src/league-generation.ts";
+import { type GamePlan, GenerationError, planGames, playEntries, playGeneration, poolShape, refusePrivatePool, syntheticDrawnHashes, type TrainingPool } from "../src/league-generation.ts";
 
 // Computed outside this code base (Python hashlib over json.dumps(sort_keys, compact), first four bytes big-endian):
 // n and n * 1000 / 2^32 for `league-team-source/1`. A seat is private when that position is below the share.
@@ -97,5 +97,39 @@ describe("planGames with a private component", () => {
     const base = { teams: [[], []], hashes: ["a", "b"], known_synthetic: new Set<string>() } as unknown as TrainingPool;
     expect(poolShape(base)).toEqual({ size: 2 });
     expect(poolShape({ ...base, private: { count: 1, share_permille: 7, holdout: [true] } })).toEqual({ size: 2, private: { count: 1, share_permille: 7 } });
+  });
+});
+
+describe("a pool with a private component in a generation", () => {
+  const pool = (withPrivate: boolean): TrainingPool =>
+    ({
+      teams: [[], [], [], []],
+      hashes: ["s0", "s1", "p0", "p1"],
+      known_synthetic: new Set(["s0", "s1"]),
+      ...(withPrivate ? { private: { count: 2, share_permille: 500, holdout: [false, false] } } : {}),
+    }) as unknown as TrainingPool;
+
+  it("is refused by playGeneration and playEntries with a fixed error, before any Episode is written", async () => {
+    const options = { pool: pool(true) } as never;
+    await expect(playGeneration(options)).rejects.toThrow(GenerationError);
+    await expect(playEntries(options)).rejects.toThrow("a pool with a private component cannot be played by this generation yet");
+    expect(() => refusePrivatePool(pool(true))).toThrow(GenerationError);
+    expect(() => refusePrivatePool(pool(false))).not.toThrow();
+  });
+
+  it("names synthetic teams only in the cumulative team set", () => {
+    const plan = [
+      { teams: { p1: 0, p2: 2 } },
+      { teams: { p1: 3, p2: 1 } },
+      { teams: { p1: 1, p2: 0 } },
+    ] as unknown as GamePlan[];
+    expect(syntheticDrawnHashes(plan, pool(true))).toEqual(["s0", "s1"]);
+    // Without a private component every drawn team is named (the old behaviour).
+    expect(syntheticDrawnHashes(plan, pool(false))).toEqual(["p0", "p1", "s0", "s1"]);
+    // A real plan over a mixed pool never carries a private hash.
+    const mixed = planGames("drawn-run", 1, poolShape(pool(true)), opponents(500));
+    const hashes = syntheticDrawnHashes(mixed, pool(true));
+    expect(hashes.every((h) => h.startsWith("s"))).toBe(true);
+    expect(hashes).toEqual(["s0", "s1"]);
   });
 });

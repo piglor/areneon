@@ -10,26 +10,21 @@
 // file; every refusal is a fixed code and at most a 1-based team position, never
 // text of a lower layer, a paste or a team field.
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import {
   type Engine,
   importPaste,
   type PokemonSet,
   type PoolSource,
-  privateDataRoot,
   resolveFormat,
   teamHash,
-  teamVocabularyHash,
   validateTeam,
 } from "@areneon/showdown-bridge";
-import { loadFixtureInputs } from "@areneon/team-dataset";
-import { readPrivateSnapshot } from "./snapshot-reader.ts";
+import { ActiveRecordsError, readActiveRecords } from "./active-records.ts";
 
 export const PRIVATE_POOL_REFUSALS = {
-  source_unreadable: "the snapshot's local copy cannot be read",
-  snapshot_unverified: "the snapshot does not verify",
-  source_empty: "the snapshot has no usable active team",
+  source_unreadable: "the team source cannot be read",
+  snapshot_unverified: "the snapshot does not verify against the pinned engine and rules",
+  source_empty: "the team source holds no team",
   team_invalid: "a team is not legal in the format",
   share_invalid: "the share is not a whole number of permille from 1 to 1000",
   pool_has_private_component: "the synthetic pool already has a private component",
@@ -67,42 +62,28 @@ export interface LoadPrivatePoolInput {
   snapshot_hash: string;
   /** The run config's `generation.excluded_abilities`: a team holding one is left out, as in the synthetic pool. */
   excluded_abilities?: readonly string[];
+  /**
+   * No default. A TRAINING pool must say "exclude": the hold-out teams stay out of every training pool (training on a
+   * hold-out team is forbidden). "include" is for a reader that measures on them.
+   */
+  holdout: "include" | "exclude";
 }
 
 /** Read and verify the pinned snapshot's local copy and build its pool. */
 export async function loadPrivatePool(input: LoadPrivatePoolInput): Promise<PrivatePool> {
   const { engine, format_id, snapshotsDir, snapshot_hash } = input;
-  if (!/^[0-9a-f]{64}$/.test(snapshot_hash)) throw new PrivatePoolRefusal("source_unreadable");
-  let dir: string;
-  let manifest: unknown;
-  try {
-    privateDataRoot(snapshotsDir); // the copy lies inside a private-data directory
-    dir = join(snapshotsDir, snapshot_hash);
-    manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
-  } catch {
-    throw new PrivatePoolRefusal("source_unreadable");
-  }
   let active;
   try {
-    const inputs = loadFixtureInputs(engine, format_id);
-    const read = await readPrivateSnapshot({
-      engine,
-      manifest,
-      // A copy in a plain Uint8Array: the decode worker takes ownership of the buffer it is given.
-      shard: (index) => new Uint8Array(readFileSync(join(dir, "shards", `${index}.parquet`))),
-      labelSet: inputs.labelSet,
-      expectedSnapshotHash: snapshot_hash,
-      expected: { manifest: resolveFormat(engine, format_id).manifest, vocabularyHash: teamVocabularyHash(inputs.vocabulary) },
-    });
-    active = read.records.filter((record) => record.status === "active");
-  } catch {
-    throw new PrivatePoolRefusal("snapshot_unverified");
+    active = await readActiveRecords({ engine, formatId: format_id, snapshotsDir, snapshotHash: snapshot_hash });
+  } catch (error) {
+    throw new PrivatePoolRefusal(error instanceof ActiveRecordsError ? error.code : "snapshot_unverified");
   }
   const format = resolveFormat(engine, format_id);
   const excluded = new Set(input.excluded_abilities ?? []);
   const kept: { canonical: string; played: string; sets: PokemonSet[]; holdout: boolean }[] = [];
   let position = 0;
   for (const record of active) {
+    if (input.holdout === "exclude" && record.holdout) continue;
     position++;
     // The reader has round-tripped the paste, so it imports; validateTeam normalises the sets in place: this is the copy the battle plays.
     const sets = importPaste(engine, record.paste);
