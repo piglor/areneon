@@ -120,6 +120,33 @@ describe("sheetFromChannel (engine-sheet/1)", () => {
     expect(() => sheetFromChannel({ ...first, lines: flagged } as PlayerChannel, OPEN)).toThrow("flagged");
   });
 
+  it("a sheet that arrives before the |poke| lines is a SheetBuildError, never a TypeError", () => {
+    const battle = open[0] as RandomBattleFile;
+    const [first] = requestPrefixes(battle, "p1", "open") as [PlayerChannel];
+    const dropped = first.lines.filter((l) => !l.startsWith("|poke|p2|"));
+    expect(() => sheetFromChannel({ ...first, lines: dropped } as PlayerChannel, OPEN)).toThrow(SheetBuildError);
+  });
+
+  it("gives a Mega holder's sheet entry as the engine prints it (its stone and moves; the sheet names the base forme)", () => {
+    let holders = 0;
+    for (const battle of open) {
+      for (const player of ["p1", "p2"] as const) {
+        const [first] = requestPrefixes(battle, player, "open") as [PlayerChannel];
+        const block = sheetFromChannel(first, OPEN);
+        const truth = battle.teams[other(player)];
+        truth.forEach((set, i) => {
+          // The corpus sets hold the base forme with its stone (what the validator makes of a Mega set).
+          if (!/ite$/.test(set.item ?? "") || set.item === "Eviolite") return;
+          holders++;
+          const slot = block.slots[i];
+          expect(slot?.item.entries[0]?.id).toBe(toId(set.item ?? ""));
+          expect(slot?.moves.entries.map((e) => e.id)).toEqual(set.moves.map(toId).sort());
+        });
+      }
+    }
+    expect(holders).toBeGreaterThan(10);
+  });
+
   it("is invariant to the opponent's Stat Points and reads the sheet (negative control: the nature)", async () => {
     const spec = open[0] as RandomBattleFile;
     const rest = (): { teams: RandomBattleFile["teams"] } => ({ teams: structuredClone(spec.teams) });
@@ -217,7 +244,7 @@ describe("revealedOnlySheet (revealed-only/1)", () => {
     }
   });
 
-  it("refuses nothing it is given: a partial move list stays unknown, four revealed moves are revealed", () => {
+  it("builds from what the reader shows: a partial move list stays unknown, four revealed moves are revealed", () => {
     const base = { name: null, base_species: "x", species: null, volatiles: [] as string[], item_known: false, item: null, item_received: false, mega: false, mega_stone: null, ability: null, ability_received: false, moves_revealed: [] as string[] };
     const sheet = revealedOnlySheet({ roster: [{ ...base, moves_revealed: ["a", "b", "c"] }, { ...base, moves_revealed: ["d", "c", "b", "a"], item_known: true, item: "ix", ability: "ab" }, { ...base, volatiles: ["transform"], moves_revealed: ["a", "b", "c", "d"] }, { ...base, mega: true, mega_stone: "stone" }] as never });
     expect(sheet.slots[0]?.moves.source).toBe("unknown");
@@ -225,8 +252,30 @@ describe("revealedOnlySheet (revealed-only/1)", () => {
     expect(sheet.slots[1]?.item.entries[0]?.id).toBe("ix");
     expect(sheet.slots[2]?.moves.source).toBe("unknown");
     expect(sheet.slots[3]?.item.entries[0]?.id).toBe("stone");
+    // a fifth shown move (Struggle's) makes the list longer than four: unknown
+    expect(revealedOnlySheet({ roster: [{ ...base, moves_revealed: ["a", "b", "c", "d", "struggle"] }] as never }).slots[0]?.moves.source).toBe("unknown");
     // an empty roster is a block with no slot (the schema, not this builder, says six)
     expect(revealedOnlySheet({ roster: [] }).slots).toEqual([]);
+  });
+});
+
+describe("revealedOnlySheet fails closed", () => {
+  const mon = { name: null, base_species: "x", species: null, volatiles: [], item_known: false, item: null, item_received: false, mega: false, mega_stone: null, ability: null, ability_received: false, moves_revealed: [] };
+  it("refuses a flagged line and a phantom roster entry with a fixed code", () => {
+    const flag = { index: 3, line: "|x|", reason: "r" };
+    expect(() => revealedOnlySheet({ roster: [mon] as never }, [flag])).toThrow("reader_flagged");
+    expect(() => revealedOnlySheet({ roster: [mon, { ...mon, phantom: true }] as never })).toThrow(SheetBuildError);
+    expect(revealedOnlySheet({ roster: [mon] as never }, []).slots).toHaveLength(1);
+  });
+  it("gives a block for every committed closed request whose reader raised no flag, one slot per non-phantom entry", () => {
+    for (const battle of closed) {
+      for (const channel of requestPrefixes(battle, "p1", "closed")) {
+        const run = interpretChannel("p1", [...channel.lines]);
+        const state = (run.frames[run.frames.length - 1] as { state: PublicState }).state;
+        if (run.flags.length > 0 || state.opponent.roster.some((m) => m.phantom === true)) continue;
+        expect(revealedOnlySheet(state.opponent, run.flags).slots).toHaveLength(state.opponent.roster.length);
+      }
+    }
   });
 });
 

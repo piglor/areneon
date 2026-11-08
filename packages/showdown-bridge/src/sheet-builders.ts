@@ -12,7 +12,7 @@
 // the SHA-256 for the block's source hash. The shape and reader rules are `opponent-sheet.ts`'s.
 
 import { createHash } from "node:crypto";
-import { interpretChannel, type PublicMon, type PublicSide } from "@areneon/public-state";
+import { interpretChannel, type PublicFlag, type PublicSide } from "@areneon/public-state";
 import type { OpponentSheet } from "@areneon/schema/types/v1/opponent-sheet.ts";
 import { jcs } from "./canonical-json.ts";
 import type { PlayerChannel } from "./observation.ts";
@@ -45,6 +45,7 @@ const byId = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
  * (only `team_sheets` is read): the open regime alone has an engine sheet.
  */
 export function sheetFromChannel(channel: PlayerChannel, record: { readonly team_sheets?: "closed" | "open" }): OpponentSheet {
+  // The regime comes from the format's rules record, never from the channel: a channel cannot say which format it is.
   if (teamSheetsOf(record) !== "open") throw new SheetBuildError("an engine sheet exists in an open-sheet format only");
   const run = interpretChannel(channel.player, channel.lines);
   const frame = run.frames[run.frames.length - 1];
@@ -53,12 +54,15 @@ export function sheetFromChannel(channel: PlayerChannel, record: { readonly team
   const { roster, sheet } = frame.state.opponent;
   if (sheet === undefined) throw new SheetBuildError("the channel holds no opponent team sheet");
   // The reader flags a sheet that is not the team preview's (a different count included), which is refused above.
+  if (roster.length !== sheet.length) throw new SheetBuildError("the opponent sheet does not list one Pokemon per preview slot");
   const slots = sheet.map((mon, i): Slot => {
+    const base = roster[i]?.base_species;
+    if (base === undefined || base === "") throw new SheetBuildError("a sheet Pokemon has no preview entry");
     if (mon.nature === null) throw new SheetBuildError("a sheet Pokemon has no nature");
     const moves = [...new Set(mon.moves)].sort(byId);
     if (moves.length !== mon.moves.length || moves.length < 1 || moves.length > MAX_MOVES) throw new SheetBuildError("a sheet Pokemon holds one to four distinct moves");
     return {
-      species: (roster[i] as PublicMon).base_species,
+      species: base,
       brought_ppm: 0,
       brought_source: "unknown",
       item: { source: "sheet", entries: [{ id: mon.item, ppm: FULL }], other_ppm: 0 },
@@ -71,7 +75,10 @@ export function sheetFromChannel(channel: PlayerChannel, record: { readonly team
 }
 
 /** The `revealed-only/1` block of the reader's opponent half: revealed facts at 1,000,000 ppm, all else unknown. */
-export function revealedOnlySheet(opponent: Pick<PublicSide, "roster">): OpponentSheet {
+export function revealedOnlySheet(opponent: Pick<PublicSide, "roster">, flags: readonly PublicFlag[] = []): OpponentSheet {
+  // Fail closed, as the belief does (`reader_flagged`): a line the reader could not take, or an Illusion twin it could not
+  // reconcile, leaves a state that is not the facts. Slots are then exactly the non-phantom roster.
+  if (flags.length > 0 || opponent.roster.some((mon) => mon.phantom === true)) throw new SheetBuildError("reader_flagged");
   const slots = opponent.roster.map((mon): Slot => {
     const transformed = mon.volatiles.includes("transform");
     // The same evidence the belief reads: an item or ability a Pokemon received or copied is not its own.
