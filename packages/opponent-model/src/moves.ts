@@ -81,8 +81,13 @@ function inclusions(list: MoveListInput, pool: readonly string[]): Inclusion[] {
  * The model of one forme given its revealed moves, or null when the revealed moves cannot all be in
  * a set (more than `slots`, or a move with no probability at all). `revealed` holds pool moves only.
  * The likelihood is P(all revealed moves are in the set | forme).
+ *
+ * With `exactSize` the set is KNOWN: `revealed` is the whole set and `exactSize` its size (an engine-sent team sheet,
+ * ADR-025 erratum E1). The likelihood is then P(the set is exactly these moves | forme) = P(count = exactSize) times the
+ * design's probability of that subset, the count has the one outcome, and a forced move outside the set makes it null.
+ * A count the prior gives no mass takes weight 1 (the engine's word over the prior's silence, as the never-below rule).
  */
-export function moveModel(list: MoveListInput, pool: readonly string[], revealed: readonly string[]): { likelihood: Ratio; model: MoveModel } | null {
+export function moveModel(list: MoveListInput, pool: readonly string[], revealed: readonly string[], exactSize?: number): { likelihood: Ratio; model: MoveModel } | null {
   const all = inclusions(list, pool);
   const forced = all.filter((m) => m.a >= m.b && m.b > 0n).map((m) => m.id);
   const forcedSet = new Set(forced);
@@ -118,7 +123,12 @@ export function moveModel(list: MoveListInput, pool: readonly string[], revealed
     const size = Math.min(Math.max(c.size, forced.length), highest);
     if (size >= minimum) sizes.set(size, add(sizes.get(size) ?? ZERO, c.p));
   }
-  if (sizes.size === 0) sizes.set(minimum, ONE);
+  if (exactSize !== undefined) {
+    if (minimum !== exactSize) return null;
+    const mass = sizes.get(exactSize) ?? ONE;
+    sizes.clear();
+    sizes.set(exactSize, mass);
+  } else if (sizes.size === 0) sizes.set(minimum, ONE);
 
   // For each distinct size: P(targets in the set | size) and the inclusion of every other candidate given it.
   const full = elementary(open.map((m) => weightOf.get(m.id) as bigint), highest - forced.length);
