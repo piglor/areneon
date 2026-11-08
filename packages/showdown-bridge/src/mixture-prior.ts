@@ -132,7 +132,7 @@ export function successiveInclusion(pool: readonly string[], listed: readonly { 
   return out;
 }
 
-const uniformOver = (ids: readonly string[]): Map<string, number> => new Map([...new Set(ids)].sort(cmp).map((id, _, all) => [id, 1 / all.length]));
+const uniformOver = (ids: readonly string[]): Map<string, number> => new Map<string, number>([...new Set(ids)].sort(cmp).map((id, _, all): [string, number] => [id, 1 / all.length]));
 
 /** Teams simulated to estimate the usage component's species inclusion. */
 export const USAGE_INCLUSION_TEAMS = 200_000;
@@ -149,7 +149,7 @@ export const USAGE_INCLUSION_SEED = 0x5eed1134;
  */
 function usageInclusions(roster: readonly RosterEntry[], rows: ReadonlyMap<string, UsageWeightTable["species"][number]>, floor: number, teamSize: number): Map<string, number> {
   const n = roster.length;
-  const index = new Map(roster.map((r, k) => [r.id, k]));
+  const index = new Map<string, number>(roster.map((r, k): [string, number] => [r.id, k]));
   const w = roster.map((r) => rows.get(r.id)?.w_species ?? 0);
   const wTotal = w.reduce((a, b) => a + b, 0);
   const mates: Float64Array[] = roster.map((r) => {
@@ -219,7 +219,7 @@ function usageInclusions(roster: readonly RosterEntry[], rows: ReadonlyMap<strin
       for (let e = 0; e < n; e++) sums[e] = (sums[e] as number) + (row[e] as number);
     }
   }
-  return new Map(roster.map((r, k) => [r.id, (hits[k] as number) / USAGE_INCLUSION_TEAMS]));
+  return new Map<string, number>(roster.map((r, k): [string, number] => [r.id, (hits[k] as number) / USAGE_INCLUSION_TEAMS]));
 }
 
 export interface MixturePriorInput {
@@ -288,15 +288,15 @@ export function deriveMixturePrior(input: MixturePriorInput): UsagePrior {
   for (const id of vocabulary.items) itemWeights.set(id, override.get(id) ?? config.default_item_weight);
 
   const uniformItems = (entry: RosterEntry): Map<string, number> => {
-    if (entry.required_item !== undefined) return new Map([[entry.required_item, 1]]);
+    if (entry.required_item !== undefined) return new Map<string, number>([[entry.required_item, 1]]);
     const named = [...itemWeights.keys()].sort(cmp).filter((id) => (itemWeights.get(id) as number) > 0);
     const sum = named.reduce((t, id) => t + (itemWeights.get(id) as number), 0);
-    return sum === 0 ? new Map([["", 1]]) : new Map(named.map((id) => [id, (itemWeights.get(id) as number) / sum]));
+    return sum === 0 ? new Map<string, number>([["", 1]]) : new Map<string, number>(named.map((id): [string, number] => [id, (itemWeights.get(id) as number) / sum]));
   };
   const uniformMoves = (entry: RosterEntry): { moves: Map<string, number>; count: number } => {
     const pool = [...new Set(entry.moves)].sort(cmp);
     const k = Math.min(slots, pool.length);
-    return { moves: new Map(pool.map((id) => [id, k / pool.length])), count: k };
+    return { moves: new Map<string, number>(pool.map((id): [string, number] => [id, k / pool.length])), count: k };
   };
   const uniformDist = (entry: RosterEntry): Dist => ({
     abilities: uniformOver(entry.abilities),
@@ -308,7 +308,7 @@ export function deriveMixturePrior(input: MixturePriorInput): UsagePrior {
     spreads: new Map(),
   });
 
-  const roleBy = new Map((role_sets?.species ?? []).map((s) => [s.id, s]));
+  const roleBy = new Map<string, RoleSetTable["species"][number]>((role_sets?.species ?? []).map((s): [string, RoleSetTable["species"][number]] => [s.id, s]));
   const roleDist = (entry: RosterEntry): Dist | null => {
     const table = roleBy.get(entry.id);
     if (table === undefined) return null;
@@ -328,7 +328,7 @@ export function deriveMixturePrior(input: MixturePriorInput): UsagePrior {
     return { abilities: shows_as.has(entry.id) ? u.abilities : abilities, items: u.items, moves, count, spreads: new Map() };
   };
 
-  const usageBy = new Map((usage?.species ?? []).map((s) => [s.id, s]));
+  const usageBy = new Map<string, UsageWeightTable["species"][number]>((usage?.species ?? []).map((s): [string, UsageWeightTable["species"][number]] => [s.id, s]));
   const usageComponent = components.find((c) => c.kind === "usage");
   const floor = usageComponent?.kind === "usage" ? usageComponent.floor_permille / 1000 : 0;
   const setRoot = usageComponent?.kind === "usage" ? usageComponent.set_root : 1;
