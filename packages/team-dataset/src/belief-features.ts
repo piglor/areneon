@@ -9,7 +9,7 @@
 // whether any line was flagged). The memo is bypassed whenever the trapping check observes something: it then depends on the
 // player's own side, which the key does not hold. Memoised and recomputed blocks are equal (a test).
 
-import { belief, moveInclusions, opponentSheet, refusedSheet, SHEET_K, sheetFeatureSetHash, sheetRefusalOf, slotEvidence } from "@areneon/opponent-model";
+import { belief, EVIDENCE_NONE, moveInclusions, opponentSheet, refusedSheet, SHEET_K, sheetFeatureSetHash, sheetRefusalOf, slotEvidence, uninformativeIdentityHash, uninformativeOpponent } from "@areneon/opponent-model";
 import type { BeliefFeaturesPort, BeliefThreatsPort, SheetKValues } from "@areneon/showdown-bridge";
 import { type SearchWorldsContext, type SearchWorldsFiles, armParts, searchWorldsFiles } from "./search-worlds.ts";
 
@@ -17,6 +17,12 @@ export type BeliefFeaturesContext = Omit<SearchWorldsContext, "arm"> & {
   /** The prior arm. Today's synthetic opponents are the generator's, so `generator-matched` is the primary arm (an upper bound for this evaluation). */
   readonly arm?: SearchWorldsContext["arm"];
   readonly k?: SheetKValues;
+  /**
+   * `"none"` selects the uninformative mode (#1309): every block and every belief threat is built from the prior alone, from the
+   * opponent as the Team Preview gives it, whatever the channel reveals. It has its own identity (so its own source and feature set
+   * hashes). Absent: the informative belief, with every byte and hash it had.
+   */
+  readonly evidence?: typeof EVIDENCE_NONE;
 };
 
 /** At most this many memoised blocks (oldest first out). */
@@ -51,7 +57,10 @@ function remember<V>(memo: Map<string, V>, key: string, value: V): V {
 /** The port: belief over the committed prior, then the closed-regime block. */
 export function createBeliefFeatures(context: BeliefFeaturesContext, files: SearchWorldsFiles = searchWorldsFiles(context.vocabulary.format_id)): BeliefFeaturesPort & BeliefThreatsPort {
   const k = context.k ?? SHEET_K;
-  const { prior, view, beliefConfig, prior_hash, belief_config_hash, identity_hash } = armParts({ ...context, arm: context.arm ?? "generator-matched" }, files);
+  const parts = armParts({ ...context, arm: context.arm ?? "generator-matched" }, files);
+  const { prior, view, beliefConfig, prior_hash, belief_config_hash } = parts;
+  const uninformative = context.evidence === EVIDENCE_NONE;
+  const identity_hash = uninformative ? uninformativeIdentityHash(parts.identity_hash) : parts.identity_hash;
   const features_hash = sheetFeatureSetHash(identity_hash, k);
   const memo = new Map<string, ReturnType<BeliefFeaturesPort["sheet"]>>();
   const inclusionMemo = new Map<string, ReturnType<BeliefThreatsPort["moveInclusions"]>>();
@@ -64,7 +73,10 @@ export function createBeliefFeatures(context: BeliefFeaturesContext, files: Sear
     k,
     // The belief's move inclusions for `probe-damage/3` (no trapping check: the threats read the evidence projection only, so the
     // memo key is complete). A refusal of the model keeps its code (`{ refused }`); a defect throws.
-    moveInclusions({ opponent, flags }) {
+    moveInclusions(input) {
+      // The uninformative mode reads the preview opponent, no flags and no trapping: the answer is one value per roster.
+      const opponent = uninformative ? uninformativeOpponent(input.opponent) : input.opponent;
+      const flags = uninformative ? [] : input.flags;
       const key = evidenceKey(opponent, flags);
       const hit = inclusionMemo.get(key);
       if (hit !== undefined) return hit;
@@ -74,7 +86,10 @@ export function createBeliefFeatures(context: BeliefFeaturesContext, files: Sear
       );
       return remember(inclusionMemo, key, found);
     },
-    sheet({ opponent, flags, trapping }) {
+    sheet(input) {
+      const opponent = uninformative ? uninformativeOpponent(input.opponent) : input.opponent;
+      const flags = uninformative ? [] : input.flags;
+      const trapping = uninformative ? null : input.trapping;
       // The belief ignores a trapping check that observes nothing (`observed` empty), so such a call is a pure function of the
       // evidence projection; with observed levels the exclusions depend on the player's own side, which the key does not hold.
       const informative = trapping !== null && trapping !== undefined && trapping.observed.length > 0;

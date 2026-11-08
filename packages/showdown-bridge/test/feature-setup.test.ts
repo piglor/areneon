@@ -10,7 +10,7 @@ import { loadEngine } from "../src/engine.ts";
 import { BELIEF_THREATS_PER_FOE, FEATURE_SET_3, FEATURE_SET_BELIEF, featureSetHash, featureSetIdentity } from "../src/candidate-features.ts";
 import type { BeliefWorldsFactory } from "../src/damage-aware-worlds.ts";
 import { configV2, fakePort } from "./damage-aware-world-support.ts";
-import { beliefRowCounts, featureSetup, GenerationError, playGeneration, trainingTeamPool } from "../src/league-generation.ts";
+import { beliefRowCounts, featureSetup, GenerationError, sheetSetup, playGeneration, trainingTeamPool } from "../src/league-generation.ts";
 import type { PolicyClient } from "../src/policy-worker.ts";
 import type { PolicyQueryInput } from "../src/policy-protocol.ts";
 import { createFeatureMemo } from "../src/candidate-features.ts";
@@ -209,5 +209,54 @@ describe("beliefRowCounts", () => {
     const sum = beliefRowCounts([a, createFeatureMemo(), b]);
     expect(sum).toEqual({ decisions: 3, worlds_sampled: 24, redraws: 1, contradicted_worlds: 3, fallbacks: { evidence_has_no_support: 1, no_consistent_world: 3 } });
     expect(Object.keys(sum?.fallbacks ?? {})).toEqual(["evidence_has_no_support", "no_consistent_world"]);
+  });
+
+  describe("the uninformative belief mode (#1309): the named hash selects the mode", () => {
+    const sheetNamed = (hash: string): TrainingRunConfig => {
+      const raw = structuredClone(tiny) as { model: { encoder: { options?: unknown } } };
+      raw.model.encoder.options = { opponent_sheet: { feature_set: "opponent-sheet/1", feature_set_hash: hash } };
+      return readTrainingRunConfig(raw);
+    };
+    const seen: (string | undefined)[] = [];
+    const factory: BeliefFeaturesFactory = (context) => {
+      seen.push(context.evidence);
+      const none = context.evidence === "none";
+      return { identity_hash: (none ? "d" : "e").repeat(64), features_hash: (none ? "2" : "1").repeat(64), prior_hash: "0".repeat(64), belief_config_hash: "1".repeat(64), prior_format_id: "x", k: { item: 4, ability: 3, nature: 3, moves: 8 }, sheet: () => ({}) as never, moveInclusions: () => ({ slots: [] }) };
+    };
+
+    it("sheetSetup takes the informative port for its hash, the uninformative one for the other, and refuses a third", () => {
+      seen.length = 0;
+      expect(sheetSetup(engine, sheetNamed("1".repeat(64)), factory)?.statement.feature_set_hash).toBe("1".repeat(64));
+      expect(seen).toEqual([undefined]);
+      seen.length = 0;
+      expect(sheetSetup(engine, sheetNamed("2".repeat(64)), factory)?.statement.feature_set_hash).toBe("2".repeat(64));
+      expect(seen).toEqual([undefined, "none"]);
+      expect(() => sheetSetup(engine, sheetNamed("3".repeat(64)), factory)).toThrow(/computes as 1{64}/);
+    });
+
+    it("probe-damage/3 gets its own hash from the mode, and the named hash selects the port", () => {
+      // The hash this checkout computes for a port with the given identity, read from the refusal of a wrong one.
+      const hashOfIdentity = (identity: string): string => {
+        const fixed: BeliefFeaturesFactory = (context) => ({ ...factory(context), identity_hash: identity.repeat(64) });
+        try {
+          featureSetup(engine, withFeatures("0".repeat(64), FEATURE_SET_3), undefined, fixed);
+        } catch (error) {
+          return /computes as ([0-9a-f]{64})/.exec((error as Error).message)?.[1] ?? "";
+        }
+        return "";
+      };
+      const informative = hashOfIdentity("e");
+      const uninformative = hashOfIdentity("d");
+      expect(informative).not.toBe(uninformative);
+      seen.length = 0;
+      const first = featureSetup(engine, withFeatures(informative, FEATURE_SET_3), undefined, factory) as NonNullable<ReturnType<typeof featureSetup>>;
+      expect(first.configs.belief_threats?.port.identity_hash).toBe("e".repeat(64));
+      expect(seen).toEqual([undefined]);
+      seen.length = 0;
+      const second = featureSetup(engine, withFeatures(uninformative, FEATURE_SET_3), undefined, factory) as NonNullable<ReturnType<typeof featureSetup>>;
+      expect(second.configs.belief_threats?.port.identity_hash).toBe("d".repeat(64));
+      expect(second.statement.feature_set_hash).toBe(uninformative);
+      expect(seen).toEqual([undefined, "none"]);
+    });
   });
 });
