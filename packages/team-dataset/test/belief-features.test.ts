@@ -12,7 +12,7 @@ import { readerSha256 } from "../../public-state/src/index.ts";
 import { checkScenario } from "../../showdown-bridge/src/mechanics-scenario.ts";
 import { loadMechanicsConfig } from "../../showdown-bridge/src/mechanics-config.ts";
 import { goldenTeamVocabulary } from "../../showdown-bridge/src/golden.ts";
-import { cases } from "../../showdown-bridge/test/world-builder-support.ts";
+import { cases, casesOf, extraBattles } from "../../showdown-bridge/test/world-builder-support.ts";
 import { createBeliefFeatures, evidenceKey } from "../src/belief-features.ts";
 import { SearchWorldsError, searchWorldsFiles } from "../src/search-worlds.ts";
 import { engine, FORMAT } from "./support.ts";
@@ -38,7 +38,7 @@ describe("the port", () => {
     expect(port.k).toEqual(SHEET_K);
     expect(port.features_hash).toBe(sheetFeatureSetHash(port.identity_hash, SHEET_K));
     expect(port.features_hash).not.toBe(port.identity_hash);
-    expect(OPPONENT_SHEET_FORMAT).toBe("opponent-sheet-builder/1");
+    expect(OPPONENT_SHEET_FORMAT).toBe("opponent-sheet-builder/2");
   });
 
   it("a k value, the belief identity or the reader changes the feature set hash", () => {
@@ -72,6 +72,16 @@ describe("the builder over the committed random-play channels", () => {
       expect(b.slots.length).toBe((decisions[i] as (typeof decisions)[number]).input.state.opponent.roster.length);
     });
   });
+
+  it("sweep: every block of every random-play request and of every fifth request of the unavailable and search-fidelity battles passes the reader (slots_known never exceeds the moves held at 1,000,000 ppm)", () => {
+    const sweepBuilder = createSheetBuilder({ engine, vocabulary, port: portOf(), scenario_id });
+    const all = [...cases(), ...casesOf(extraBattles()).filter((_, i) => i % 5 === 0)];
+    expect(all.length).toBeGreaterThan(1000);
+    for (const c of all) {
+      const b = sweepBuilder.build({ request: c.input.request, team: c.input.team, state: c.input.state, flags: c.input.flags });
+      expect(() => readOpponentSheet(b), c.id).not.toThrow();
+    }
+  }, 600_000);
 
   it("a flagged request is a refused block with the fixed code, counted; every other block is predicted or revealed", () => {
     const counts = builder.counts();

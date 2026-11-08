@@ -17,7 +17,7 @@ import { jcs, type Json } from "./canonical-json.ts";
 import { type DamageAwareActor, type DamageAwareOptions, damageAwareActor } from "./damage-aware-actor.ts";
 import { type BeliefFeatureCounts, type BeliefFeatureSetup, createFeatureMemo, BELIEF_THREATS_PER_FOE, type BeliefThreatsSetup, type FeatureConfigs, type FeatureMemo, FEATURE_SET_3, FEATURE_SET_BELIEF } from "./candidate-features.ts";
 import { configuredSetHash } from "./feature-build.ts";
-import { type BeliefFeaturesFactory, createSheetBuilder, type SheetSetup, sheetStatement } from "./belief-features.ts";
+import { BELIEF_EVIDENCE_MODES, type BeliefEvidenceMode, type BeliefFeaturesFactory, type BeliefFeaturesPort, createSheetBuilder, type SheetSetup, sheetStatement } from "./belief-features.ts";
 import { type SheetCounts, sumSheetCounts } from "./sheet-counts.ts";
 import { checkScenario } from "./mechanics-scenario.ts";
 import { loadDamageAwareConfig, loadDamageAwareConfigV2 } from "./damage-aware-config.ts";
@@ -137,7 +137,7 @@ export function featureSetup(engine: Engine, config: TrainingRunConfig, beliefWo
   if (named === undefined) return undefined;
   if (config.format_id !== GOLDEN_FORMAT) throw new GenerationError(`the candidate features have a vocabulary for ${GOLDEN_FORMAT} only, not ${config.format_id}`);
   const vocabulary = goldenTeamVocabulary();
-  const configs: FeatureConfigs = {
+  const build = (evidence?: BeliefEvidenceMode): FeatureConfigs => ({
     vocabulary,
     config: loadDamageAwareConfig("v1", vocabulary),
     mechanics: loadMechanicsConfig(config.format_id),
@@ -145,11 +145,22 @@ export function featureSetup(engine: Engine, config: TrainingRunConfig, beliefWo
     data_class: "synthetic",
     feature_set: named.feature_set,
     ...(named.feature_set === FEATURE_SET_BELIEF ? { belief: beliefSetup(engine, vocabulary, config.format_id, beliefWorlds) } : {}),
-    ...(named.feature_set === FEATURE_SET_3 ? { belief_threats: beliefThreatsSetup(engine, vocabulary, config.format_id, beliefFeatures) } : {}),
-  };
-  const found = configuredSetHash(engine, configs);
+    ...(named.feature_set === FEATURE_SET_3 ? { belief_threats: beliefThreatsSetup(engine, vocabulary, config.format_id, beliefFeatures, evidence) } : {}),
+  });
+  // Only `probe-damage/3` has a belief mode to choose; the named hash selects it (the informative belief first, else the prior alone, #1309).
+  const modes = named.feature_set === FEATURE_SET_3 ? BELIEF_EVIDENCE_MODES : [undefined];
+  let configs = build();
+  let found = configuredSetHash(engine, configs);
+  const tried = [found];
+  for (const evidence of modes.slice(1)) {
+    if (found === named.feature_set_hash) break;
+    configs = build(evidence);
+    found = configuredSetHash(engine, configs);
+    tried.push(found);
+  }
   if (found !== named.feature_set_hash) {
-    throw new GenerationError(`the run config names the candidate feature set ${named.feature_set} ${named.feature_set_hash}, which this checkout computes as ${found}`);
+    const others = tried.length > 1 ? `; the other mode computes ${tried.slice(1).join(", ")}` : "";
+    throw new GenerationError(`the run config names the candidate feature set ${named.feature_set} ${named.feature_set_hash}, which this checkout computes as ${tried[0]}${others}`);
   }
   return { configs, statement: { feature_set: named.feature_set, feature_set_hash: found } };
 }
@@ -208,9 +219,20 @@ export function sheetSetup(engine: Engine, config: TrainingRunConfig, factory?: 
   if (config.format_id !== GOLDEN_FORMAT) throw new GenerationError(`the opponent sheet has a vocabulary for ${GOLDEN_FORMAT} only, not ${config.format_id}`);
   if (factory === undefined) throw new GenerationError("the run config names an opponent sheet source, and this script has no belief features factory");
   const vocabulary = goldenTeamVocabulary();
-  const port = factory({ engine, vocabulary, reader_sha256: readerSha256(), manifest: resolveFormat(engine, config.format_id).manifest });
-  if (port.features_hash !== named.feature_set_hash) {
-    throw new GenerationError(`the run config names the opponent sheet source ${named.feature_set} ${named.feature_set_hash}, which this checkout computes as ${port.features_hash}`);
+  const manifest = resolveFormat(engine, config.format_id).manifest;
+  // The named hash selects the mode: the informative belief, else the uninformative one (#1309), each with its own source hash.
+  let port: BeliefFeaturesPort | undefined;
+  const tried: string[] = [];
+  for (const evidence of BELIEF_EVIDENCE_MODES) {
+    const candidate = factory({ engine, vocabulary, reader_sha256: readerSha256(), manifest, ...(evidence === undefined ? {} : { evidence }) });
+    tried.push(candidate.features_hash);
+    if (candidate.features_hash === named.feature_set_hash) {
+      port = candidate;
+      break;
+    }
+  }
+  if (port === undefined) {
+    throw new GenerationError(`the run config names the opponent sheet source ${named.feature_set} ${named.feature_set_hash}, which this checkout computes as ${tried[0]} (informative belief); the other mode computes ${tried.slice(1).join(", ")}`);
   }
   const setup: SheetSetup = { engine, vocabulary, port, scenario_id: checkScenario(engine, loadMechanicsConfig(config.format_id)) };
   return { setup, statement: sheetStatement(setup) };
@@ -228,9 +250,9 @@ function beliefSetup(engine: Engine, vocabulary: ReturnType<typeof goldenTeamVoc
  * The belief a `probe-damage/3` run reads its move inclusions from: the committed prior and belief config through the composition
  * root's factory (the same port the opponent sheet reads), cut to `BELIEF_THREATS_PER_FOE` damaging moves a foe.
  */
-function beliefThreatsSetup(engine: Engine, vocabulary: ReturnType<typeof goldenTeamVocabulary>, formatId: string, factory: BeliefFeaturesFactory | undefined): BeliefThreatsSetup {
+function beliefThreatsSetup(engine: Engine, vocabulary: ReturnType<typeof goldenTeamVocabulary>, formatId: string, factory: BeliefFeaturesFactory | undefined, evidence?: BeliefEvidenceMode): BeliefThreatsSetup {
   if (factory === undefined) throw new GenerationError(`the candidate feature set ${FEATURE_SET_3} needs the belief features factory of the composition root (packages/team-dataset)`);
-  const port = factory({ engine, vocabulary, reader_sha256: readerSha256(), manifest: resolveFormat(engine, formatId, loadRulesSnapshot(engine.commit)).manifest });
+  const port = factory({ engine, vocabulary, reader_sha256: readerSha256(), manifest: resolveFormat(engine, formatId, loadRulesSnapshot(engine.commit)).manifest, ...(evidence === undefined ? {} : { evidence }) });
   const inclusions = port.moveInclusions;
   if (inclusions === undefined) throw new GenerationError(`the belief features port has no move inclusions, which ${FEATURE_SET_3} reads`);
   return { port: { identity_hash: port.identity_hash, moveInclusions: (input) => inclusions.call(port, input) }, per_foe: BELIEF_THREATS_PER_FOE };
