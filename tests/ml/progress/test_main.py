@@ -24,6 +24,7 @@ from areneon_ml.progress.run import (
     ProgressRequest,
     RunPair,
 )
+from areneon_ml.report.situational import SituationalError
 
 from tests.ml.model.support import FORMAT_DIR
 from tests.ml.progress.support import (
@@ -632,3 +633,30 @@ def test_a_mode_outside_the_grammar_is_refused_before_any_work(
     assert "--modes" in capsys.readouterr().err
     assert not (tmp_path / "m").exists() or not list((tmp_path / "m").glob("g*"))
     assert len(built) <= 1
+
+
+def test_the_situational_flag_prints_the_rates_and_writes_beside_the_root_only(
+    run: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_node(monkeypatch, run)
+    calls: list[dict[str, Any]] = []
+
+    def stand_in(root: Path, generation: int, run_dir: Path, **kwargs: Any) -> dict[str, Any]:
+        calls.append({"generation": generation, **kwargs})
+        return {"label": "x", "matches": {}}
+
+    monkeypatch.setattr(module, "situational_generation", stand_in)
+    base = ("--generation", "1", "--games", "2", "--record-games", "0")
+    code = main(args(run, *base, "--situational", "--situational-max-games", "3", "--node", "nd"))
+    printed = json.loads(capsys.readouterr().out)
+    assert code == 0
+    assert printed["generations"][0]["situational"] == {"label": "x", "matches": {}}
+    assert (calls[0]["node"], calls[0]["max_games"]) == ("nd", 3)
+
+    def failing(*_a: Any, **_k: Any) -> dict[str, Any]:
+        raise SituationalError("boom")
+
+    monkeypatch.setattr(module, "situational_generation", failing)
+    assert main(args(run, *base, "--situational")) == EXIT_REFUSED
+    assert main(args(run, *base, "--situational-max-games", "3")) == EXIT_REFUSED
+    capsys.readouterr()
