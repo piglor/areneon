@@ -22,7 +22,15 @@ from areneon_ml.progress.ablation import ablation_summary
 from areneon_ml.progress.eval_dataset import EvalDataset
 from areneon_ml.progress.gap import GAP_LABEL, SAME_MODE_NOTE, play_mode_gap
 from areneon_ml.progress.modes import ExtraMode
-from areneon_ml.progress.records import CONTROL_LABEL, SEARCH_LABEL, SEARCH_PRIOR_LABEL
+from areneon_ml.progress.records import (
+    CONTROL_LABEL,
+    SEARCH_LABEL,
+    SEARCH_PRIOR_LABEL,
+    SOLVE_CONTROL_LABEL,
+    SOLVE_EVIDENCE_NOTE,
+    SOLVE_LABEL,
+    SOLVE_PRIOR_LABEL,
+)
 from areneon_ml.progress.run import CROSS_RUN_LABEL, VersusSpec, summary_of
 from areneon_ml.progress.stats import PPM
 from areneon_ml.report.command import report_run
@@ -372,6 +380,39 @@ def test_the_decision_time_search_is_labelled_and_its_counts_and_the_controls_ar
     assert "Search results are never held-out evidence" in text
     assert f'<td class="n">{control.search["counts"]["leaf_queries"]}</td>' in text  # type: ignore[index]
     assert CONTROL_LABEL in text
+
+
+def test_the_team_preview_solver_is_labelled_and_its_counts_and_the_controls_are_shown(
+    run: Path, tmp_path: Path
+) -> None:
+    """ADR-029 section 8: the solver matches say what they are, never held-out evidence, and the
+    control's counts (solved 0) sit beside the solver's."""
+    root = tmp_path / "progress"
+    played(run, root, 1, preview_solve="argmax")
+    model = read_report_model(run, root)
+    found = {m.match_id: m for m in model.progress[1].matches}
+    assert sorted(found) == [
+        "psolve-actor-rule-argmax",
+        "psolve-random-legal-argmax",
+        "psolve-self-no-solve-argmax",
+    ]
+    control = found["psolve-self-no-solve-argmax"]
+    assert control.opponent_solve is not None
+    assert control.opponent_solve["counts"]["solved"] == 0
+    assert found["psolve-actor-rule-argmax"].opponent_solve is None
+    text = text_of(run, root)
+    assert "Team Preview solver counts" in text
+    assert SOLVE_LABEL in text
+    assert SOLVE_PRIOR_LABEL in text
+    assert SOLVE_EVIDENCE_NOTE.capitalize() in text
+    assert SOLVE_CONTROL_LABEL.capitalize() in text
+    assert f'<td class="n">{control.solve["counts"]["decisions"]}</td>' in text  # type: ignore[index]
+
+
+def test_a_page_without_the_solver_has_no_solver_table(run: Path, tmp_path: Path) -> None:
+    root = tmp_path / "progress"
+    played(run, root, 1)
+    assert "Team Preview solver counts" not in text_of(run, root)
 
 
 def test_a_page_without_search_has_no_search_table(run: Path, tmp_path: Path) -> None:
