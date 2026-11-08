@@ -10,7 +10,10 @@ process.exitCode = await runInputsCli(process.argv.slice(2), {
   env: process.env,
   engine: () => loadEngine(process.env.SHOWDOWN_DIR || undefined),
   openStore: (settings, layout) => new R2ObjectStore(settings, layout),
-  headCommit: (dir) => execFileSync("git", ["-C", dir, "rev-parse", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(),
+  repoState: (dir) => {
+    const git = (...args: string[]): string => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    return { commit: git("rev-parse", "HEAD").trim(), dirty: git("status", "--porcelain", "--untracked-files=no").trim() !== "" };
+  },
   out: (line) => process.stdout.write(`${line}\n`),
   err: (line) => process.stderr.write(`${line}\n`),
 });

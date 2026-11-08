@@ -53,10 +53,10 @@ export function readRunInputManifest(value: unknown): RunInputManifest {
     if (!isSafeRelativePath(path)) fail("paths must be safe relative paths: no absolute path, no empty, dot or dot-dot segment and no backslash");
   }
   if (paths.some((path, index) => index > 0 && path <= (paths[index - 1] as string))) fail("files must be sorted by path, each once");
-  const listed = new Set(paths);
+  if (new Set(paths.map((path) => path.toLowerCase())).size !== paths.length) fail("paths must differ ignoring case: a case-insensitive disk would merge them");
   const directories = new Set(paths.flatMap(ancestors));
   if (paths.some((path) => directories.has(path))) fail("a path cannot be both a file and a directory");
-  if (!listed.has(manifest.config_file)) fail("the config file must be one of the files");
+  if (!paths.includes(manifest.config_file)) fail("the config file must be one of the files");
   const prefix = `${manifest.dataset_dir}/`;
   if (manifest.config_file.startsWith(prefix)) fail("the config file cannot be inside the dataset directory");
   if (!paths.some((path) => path.startsWith(prefix))) fail("the dataset directory must hold at least one file");

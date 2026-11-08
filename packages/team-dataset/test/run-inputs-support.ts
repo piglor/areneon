@@ -43,6 +43,8 @@ export function datasetFiles(dir = SOURCE): Map<string, Uint8Array> {
 }
 
 export interface Doctor {
+  /** The directory the fetch will write to: the config names `<target>/dataset` (the fetch checks it). Refusal tests can leave it out. */
+  target?: string;
   config?: (raw: Record<string, any>) => void;
   /** Change a file's bytes before its manifest entry is computed. */
   files?: (files: Map<string, Uint8Array>) => void;
@@ -63,7 +65,7 @@ export interface Published {
 
 /** Put a run's inputs in an in-memory store by hand, so a test can doctor any part. */
 export async function publish(doctor: Doctor = {}, runKey = RUN_KEY): Promise<Published> {
-  const raw = configFor(join(SOURCE), doctor.config);
+  const raw = configFor(join(doctor.target ?? join(tmpdir(), "no-such-target"), DATASET_DIR), doctor.config);
   const configBytes = new TextEncoder().encode(configText(raw));
   const files = new Map<string, Uint8Array>([[RUN_CONFIG_FILE, configBytes]]);
   for (const [name, bytes] of datasetFiles()) files.set(`${DATASET_DIR}/${name}`, bytes);

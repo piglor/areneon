@@ -1,12 +1,11 @@
 import { inspect } from "node:util";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { R2ObjectStore, R2Settings } from "@areneon/object-store";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { buildRunInputs, fetchRunInputs, runInputLayout, uploadRunInputs } from "../src/run-inputs.ts";
 import { COMMIT, configFor, configText, FakeR2, removeDir, RUN_KEY, scratchDir, SOURCE } from "./run-inputs-support.ts";
 import { engine } from "./support.ts";
-import { writeFileSync } from "node:fs";
 
 // Credential canary over the fetch and publish paths (ADR-024 section 3.6,
 // ADR-015 section 1): the access key id, the secret, the session token, the
@@ -48,15 +47,14 @@ const settings = (): R2Settings => R2Settings.fromEnvironment(ENV, [], BUCKET);
 const storeOn = (fake: FakeR2): R2ObjectStore => new R2ObjectStore(settings(), runInputLayout(RUN_KEY), { fetch: fake.fetch });
 const head = () => COMMIT;
 
-async function seeded(): Promise<FakeR2> {
+let configFileOfLast = "";
+/** A fake R2 holding a run's published inputs; `target` is where the config says the fetch will write. */
+async function seeded(target = join(scratch, "not-fetched-here")): Promise<FakeR2> {
   const fake = new FakeR2(BUCKET);
-  const dir = join(scratch, "owner");
-  const configFile = join(dir, "config.json");
-  if (!existsSync(dir)) {
-    (await import("node:fs")).mkdirSync(dir);
-    writeFileSync(configFile, configText(configFor(SOURCE)));
-  }
-  await uploadRunInputs(storeOn(fake), await buildRunInputs({ engine, configFile, datasetDir: SOURCE, commit: COMMIT }));
+  const dir = mkdtempSync(join(scratch, "owner-"));
+  configFileOfLast = join(dir, "config.json");
+  writeFileSync(configFileOfLast, configText(configFor(join(target, "dataset"))));
+  await uploadRunInputs(storeOn(fake), await buildRunInputs({ engine, configFile: configFileOfLast, datasetDir: SOURCE, commit: COMMIT }));
   return fake;
 }
 
@@ -85,8 +83,8 @@ describe("negative controls: the scan can fail", () => {
 
 describe("the credential canary over publish and fetch", () => {
   it("leaks nothing on a good fetch: the result, the output, the URLs and the written files carry no marker, and the secret and token are in no URL", async () => {
-    const fake = await seeded();
     const out = fresh();
+    const fake = await seeded(out);
     const fetched = await fetchRunInputs({ store: storeOn(fake), engine, runKey: RUN_KEY, outDir: out, headCommit: head });
     expect(leaks(JSON.stringify(fetched).replaceAll(out, ""))).toEqual([]);
     expect(leaks(printed.join(""))).toEqual([]);
@@ -121,10 +119,12 @@ describe("the credential canary over publish and fetch", () => {
     };
     await refusal(() => fetchRunInputs({ store: storeOn(throwing), engine, runKey: RUN_KEY, outDir: fresh(), headCommit: head }));
 
-    const dir = join(scratch, "owner");
-    const inputs = await buildRunInputs({ engine, configFile: join(dir, "config.json"), datasetDir: SOURCE, commit: COMMIT });
+    const inputs = await buildRunInputs({ engine, configFile: configFileOfLast, datasetDir: SOURCE, commit: COMMIT });
     const full = await seeded();
-    await refusal(() => uploadRunInputs(storeOn(full), inputs)); // every object exists already
+    const changed = await buildRunInputs({ engine, configFile: configFileOfLast, datasetDir: SOURCE, commit: COMMIT });
+    full.objects.set([...full.objects.keys()][0] as string, new TextEncoder().encode(ECHO)); // an object of another content is already there
+    await refusal(() => uploadRunInputs(storeOn(full), changed));
+    expect(inputs.manifest.files.length).toBeGreaterThan(0);
 
     const garbled = await seeded();
     garbled.override = (request) => (new URL(request.url).searchParams.has("list-type") ? new Response(ECHO, { status: 200 }) : undefined);

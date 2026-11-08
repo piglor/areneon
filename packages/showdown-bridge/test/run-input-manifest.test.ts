@@ -20,6 +20,7 @@ const MESSAGES: Record<string, string> = {
   "path-dot-segment": PATHS,
   "path-backslash": PATHS,
   "path-space": PATHS,
+  "paths-differ-by-case": "paths must differ ignoring case",
   "path-trailing-slash": PATHS,
   "config-file-unsafe": PATHS,
   "dataset-dir-unsafe": PATHS,

@@ -24,7 +24,7 @@ interface Run {
   layouts: ObjectLayout[];
 }
 
-function harness(store: ObjectStore = new InMemoryObjectStore(runInputLayout(RUN_KEY)), head = COMMIT) {
+function harness(store: ObjectStore = new InMemoryObjectStore(runInputLayout(RUN_KEY)), head = COMMIT, dirty = false) {
   const run = async (argv: string[], env: RunInputsDeps["env"] = ENV): Promise<Run> => {
     const out: string[] = [];
     const err: string[] = [];
@@ -33,7 +33,7 @@ function harness(store: ObjectStore = new InMemoryObjectStore(runInputLayout(RUN
       env,
       engine: () => engine,
       openStore: (_settings: R2Settings, layout) => (layouts.push(layout), store),
-      headCommit: () => head,
+      repoState: () => ({ commit: head, dirty }),
       out: (line) => out.push(line),
       err: (line) => err.push(line),
     });
@@ -48,7 +48,8 @@ const noMarkers = (result: Run): void => {
 
 describe("the run-inputs command", () => {
   const configFile = join(scratch, "config.json");
-  writeFileSync(configFile, configText(configFor(SOURCE)));
+  const FETCHED = join(scratch, "fetched");
+  writeFileSync(configFile, configText(configFor(join(FETCHED, DATASET_DIR))));
   const publishArgs = ["publish", "--run-config", configFile, "--dataset-dir", SOURCE, "--commit", COMMIT, "--bucket", BUCKET];
 
   it("publishes the inputs, then fetches them into a fresh directory, and prints one JSON line each", async () => {
@@ -62,7 +63,7 @@ describe("the run-inputs command", () => {
     noMarkers(published);
     expect((store as InMemoryObjectStore).keys().length).toBe((summary.files as number) + 1);
 
-    const out = join(scratch, "fetched");
+    const out = FETCHED;
     const fetched = await run(["fetch", "--run-key", RUN_KEY, "--out", out, "--bucket", BUCKET, "--manifest-hash", summary.manifest_hash as string, "--repo", "somewhere"]);
     expect(fetched.code).toBe(0);
     expect(JSON.parse(fetched.out[0] as string)).toMatchObject({ manifest_hash: summary.manifest_hash, dataset_dir: join(out, DATASET_DIR), files: summary.files });
@@ -73,7 +74,7 @@ describe("the run-inputs command", () => {
   it("exits 1 with the code of a refusal and a fixed message, and leaves no directory", async () => {
     const { run } = harness();
     const out = join(scratch, "refused");
-    const missing = await run(["fetch", "--run-key", RUN_KEY, "--out", out, "--bucket", BUCKET]);
+    const missing = await run(["fetch", "--run-key", RUN_KEY, "--out", out, "--bucket", BUCKET, "--no-pin"]);
     expect(missing).toMatchObject({ code: 1, out: [] });
     expect(missing.err).toEqual(["run-inputs: manifest_missing: run inputs refused: the inputs bucket holds no run-input manifest for this run"]);
     expect(existsSync(out)).toBe(false);
@@ -81,7 +82,7 @@ describe("the run-inputs command", () => {
 
     const { run: wrongHead } = harness(undefined, "f".repeat(40));
     await wrongHead(publishArgs);
-    const stale = await wrongHead(["fetch", "--run-key", RUN_KEY, "--out", out, "--bucket", BUCKET]);
+    const stale = await wrongHead(["fetch", "--run-key", RUN_KEY, "--out", out, "--bucket", BUCKET, "--no-pin"]);
     expect(stale.code).toBe(1);
     expect(stale.err[0]).toMatch(/^run-inputs: commit_mismatch:/);
     expect(existsSync(out)).toBe(false);
@@ -95,10 +96,10 @@ describe("the run-inputs command", () => {
 
   it("reports a store failure by its own code and any other failure without detail", async () => {
     const denied: ObjectStore = { ...new InMemoryObjectStore(runInputLayout(RUN_KEY)), get: () => Promise.reject(new ObjectStoreError("denied")) } as unknown as ObjectStore;
-    const result = await harness(denied).run(["fetch", "--run-key", RUN_KEY, "--out", join(scratch, "denied"), "--bucket", BUCKET]);
+    const result = await harness(denied).run(["fetch", "--run-key", RUN_KEY, "--out", join(scratch, "denied"), "--bucket", BUCKET, "--no-pin"]);
     expect(result).toMatchObject({ code: 1, err: ["run-inputs: store: denied: object store refused: the store refused the credentials or their permission"] });
     const broken: ObjectStore = { ...new InMemoryObjectStore(runInputLayout(RUN_KEY)), get: () => Promise.reject(new Error(`boom ${MARK_S}`)) } as unknown as ObjectStore;
-    const other = await harness(broken).run(["fetch", "--run-key", RUN_KEY, "--out", join(scratch, "broken"), "--bucket", BUCKET]);
+    const other = await harness(broken).run(["fetch", "--run-key", RUN_KEY, "--out", join(scratch, "broken"), "--bucket", BUCKET, "--no-pin"]);
     expect(other).toMatchObject({ code: 1, err: ["run-inputs: failed"] });
     noMarkers(other);
   });
@@ -106,19 +107,28 @@ describe("the run-inputs command", () => {
   it("refuses credentials on the command line before reading the environment", async () => {
     const { run } = harness();
     for (const extra of [["--access-key", "x"], ["--secret", "x"], ["--session-token", "x"], ["--endpoint", "https://a.r2.cloudflarestorage.com"], ["--run-key", SESSION]]) {
-      const result = await run(["fetch", "--bucket", BUCKET, "--out", join(scratch, "argv"), ...extra, ...(extra[0] === "--run-key" ? [] : ["--run-key", RUN_KEY])]);
+      const result = await run(["fetch", "--bucket", BUCKET, "--no-pin", "--out", join(scratch, "argv"), ...extra, ...(extra[0] === "--run-key" ? [] : ["--run-key", RUN_KEY])]);
       expect(result.code, extra.join(" ")).toBe(2);
       expect(result.err[0]).toMatch(/credentials_on_argv/);
       noMarkers(result);
     }
-    const missing = await run(["fetch", "--run-key", RUN_KEY, "--out", join(scratch, "env"), "--bucket", BUCKET], {});
+    const missing = await run(["fetch", "--run-key", RUN_KEY, "--out", join(scratch, "env"), "--bucket", BUCKET, "--no-pin"], {});
     expect(missing).toMatchObject({ code: 2 });
     expect(missing.err[0]).toMatch(/credentials_missing/);
   });
 
+  it("refuses a fetch of a checked-out repository with uncommitted changes to tracked files, before any read", async () => {
+    const { run, store } = harness(undefined, COMMIT, true);
+    const result = await run(["fetch", "--run-key", RUN_KEY, "--out", join(scratch, "dirty"), "--bucket", BUCKET, "--no-pin"]);
+    expect(result.code).toBe(1);
+    expect(result.err[0]).toMatch(/^run-inputs: tree_dirty:/);
+    expect(existsSync(join(scratch, "dirty"))).toBe(false);
+    expect((store as InMemoryObjectStore).keys()).toEqual([]);
+  });
+
   it("exits 2 on a usage error", async () => {
     const { run } = harness();
-    for (const argv of [[], ["upload"], ["fetch", "--bucket", BUCKET], ["fetch", "--run-key", RUN_KEY, "--bucket", BUCKET], ["fetch", "--nonsense", "x", "--bucket", BUCKET], ["publish", "--bucket", BUCKET], ["fetch", "--run-key"], ["fetch", "extra", "--bucket", BUCKET]]) {
+    for (const argv of [[], ["upload"], ["fetch", "--bucket", BUCKET], ["fetch", "--run-key", RUN_KEY, "--bucket", BUCKET], ["fetch", "--run-key", RUN_KEY, "--out", join(scratch, "x"), "--bucket", BUCKET], ["fetch", "--run-key", RUN_KEY, "--out", join(scratch, "x"), "--bucket", BUCKET, "--no-pin", "--manifest-hash", "0".repeat(64)], ["fetch", "--nonsense", "x", "--bucket", BUCKET], ["publish", "--bucket", BUCKET], ["fetch", "--run-key"], ["fetch", "extra", "--bucket", BUCKET]]) {
       const result = await run(argv);
       expect(result.code, argv.join(" ")).toBe(2);
       expect(result.err[0]).toMatch(/^run-inputs: /);

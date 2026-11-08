@@ -25,7 +25,7 @@
 import { createHash } from "node:crypto";
 import { closeSync, fsyncSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { MAX_OBJECT_BYTES, type ObjectLayout, type ObjectStore } from "@areneon/object-store";
+import { MAX_OBJECT_BYTES, type ObjectLayout, type ObjectStore, ObjectStoreError } from "@areneon/object-store";
 import {
   type Engine,
   isSafeRelativePath,
@@ -57,6 +57,8 @@ export const RUN_INPUT_REFUSALS = [
   "config_other_run",
   "dataset_hash_mismatch",
   "dataset_invalid",
+  "dataset_path_mismatch",
+  "tree_dirty",
   "input_unsupported",
   "input_too_large",
   "write_failed",
@@ -82,6 +84,8 @@ const MESSAGES: Readonly<Record<RunInputRefusal, string>> = {
   config_other_run: "the run config names another run than the manifest",
   dataset_hash_mismatch: "the dataset hash of the config, the manifest and the dataset directory are not all equal",
   dataset_invalid: "the dataset directory does not pass the dataset reader",
+  dataset_path_mismatch: "the run config's team_dataset.path is not the fetched dataset directory",
+  tree_dirty: "the checked-out repository has uncommitted changes to tracked files",
   input_unsupported: "an input is not a plain file or a plain directory",
   input_too_large: "an input is larger than one object may be",
   write_failed: "an input could not be written to the local disk",
@@ -212,13 +216,40 @@ export async function buildRunInputs(input: BuildRunInputsInput): Promise<RunInp
   return { manifest, sources };
 }
 
-/** Put the inputs in the bucket: every file, then the manifest last (an interrupted upload leaves no manifest). Nothing is overwritten. Returns the manifest's hash. */
+/** True when `error` is the store's "an object is already there" refusal. */
+const isExists = (error: unknown): boolean => error instanceof ObjectStoreError && error.code === "exists";
+
+/**
+ * Put one object, resumably: if it already exists (an interrupted earlier
+ * publish), it is accepted only when it is byte-for-byte what is being put
+ * (same size and SHA-256); anything else is `hash_mismatch`. Nothing is overwritten.
+ */
+async function putOrConfirm(store: ObjectStore, key: string, bytes: Uint8Array): Promise<void> {
+  try {
+    await store.putIfAbsent(key, bytes);
+  } catch (error) {
+    if (!isExists(error)) throw error;
+    const there = await store.get(key);
+    if (there === null || there.byteLength !== bytes.byteLength || sha256Of(there) !== sha256Of(bytes)) throw new RunInputError("hash_mismatch");
+  }
+}
+
+/**
+ * Put the inputs in the bucket: every file, then the manifest last (an
+ * interrupted upload leaves no manifest, and a rerun resumes: objects already
+ * there are accepted only if identical). Each local file is re-checked against
+ * its manifest entry (size, then SHA-256) just before it is put, so a file
+ * changed since the manifest was built is refused. Returns the manifest's hash.
+ */
 export async function uploadRunInputs(store: ObjectStore, inputs: RunInputs): Promise<string> {
   const { manifest } = inputs;
   for (const entry of manifest.files) {
-    await store.putIfAbsent(fileKey(manifest.run_key, entry.path), readFileSync(inputs.sources.get(entry.path) as string));
+    const bytes = readFileSync(inputs.sources.get(entry.path) as string);
+    if (bytes.byteLength !== entry.size) throw new RunInputError("size_mismatch");
+    if (sha256Of(bytes) !== entry.sha256) throw new RunInputError("hash_mismatch");
+    await putOrConfirm(store, fileKey(manifest.run_key, entry.path), bytes);
   }
-  await store.putIfAbsent(manifestKey(manifest.run_key), runInputManifestBytes(manifest));
+  await putOrConfirm(store, manifestKey(manifest.run_key), runInputManifestBytes(manifest));
   return runInputManifestHash(manifest);
 }
 
@@ -235,6 +266,8 @@ export interface FetchRunInputsInput {
   readonly headCommit: () => string;
   /** Optional pin of the manifest's hash (SHA-256 of its JCS bytes), given by the owner out of band. */
   readonly expectedManifestHash?: string;
+  /** What a relative `team_dataset.path` of the run config is relative to; the default is the process's working directory. */
+  readonly cwd?: string;
 }
 
 export interface FetchedRunInputs {
@@ -279,6 +312,20 @@ function writeFile(path: string, bytes: Uint8Array): void {
     const fd = openSync(path, "wx", 0o644);
     try {
       writeSync(fd, bytes);
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    throw new RunInputError("write_failed");
+  }
+}
+
+/** Flush a directory's entries to disk; whatever the file system says is dropped. */
+function syncDir(path: string): void {
+  try {
+    const fd = openSync(path, "r");
+    try {
       fsyncSync(fd);
     } finally {
       closeSync(fd);
@@ -348,7 +395,8 @@ export async function fetchRunInputs(input: FetchRunInputsInput): Promise<Fetche
     const config = readConfig(join(partial, manifest.config_file));
     if ((await runConfigHash(config)) !== manifest.run_config_hash) throw new RunInputError("config_hash_mismatch");
     if (config.seeds.run_key !== manifest.run_key) throw new RunInputError("config_other_run");
-    if (config.team_dataset?.dataset_hash !== manifest.dataset_hash) throw new RunInputError("dataset_hash_mismatch");
+    const named = config.team_dataset;
+    if (named?.dataset_hash !== manifest.dataset_hash) throw new RunInputError("dataset_hash_mismatch");
     let found: string;
     try {
       found = verifiedDatasetHash(input.engine, join(partial, manifest.dataset_dir), config.format_id);
@@ -356,6 +404,11 @@ export async function fetchRunInputs(input: FetchRunInputsInput): Promise<Fetche
       throw new RunInputError("dataset_invalid");
     }
     if (found !== manifest.dataset_hash) throw new RunInputError("dataset_hash_mismatch");
+    // The config's path is part of its hash, so the owner wrote the path the machine uses; it must be where the dataset now is.
+    if (resolve(input.cwd ?? process.cwd(), named.path) !== join(out, manifest.dataset_dir)) throw new RunInputError("dataset_path_mismatch");
+    const directories = new Set<string>([partial]);
+    for (const entry of manifest.files) for (let dir = dirname(join(partial, entry.path)); dir !== partial; dir = dirname(dir)) directories.add(dir);
+    for (const dir of directories) syncDir(dir);
     if (occupied(out)) throw new RunInputError("output_exists");
     try {
       renameSync(partial, out);
@@ -363,6 +416,11 @@ export async function fetchRunInputs(input: FetchRunInputsInput): Promise<Fetche
       throw new RunInputError("write_failed");
     }
     done = true;
+    try {
+      syncDir(dirname(out)); // best effort: the rename has happened and the directory is complete
+    } catch {
+      // Nothing to undo.
+    }
     return {
       dir: out,
       datasetDir: join(out, manifest.dataset_dir),

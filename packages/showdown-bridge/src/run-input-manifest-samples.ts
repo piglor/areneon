@@ -62,6 +62,7 @@ export function runInputManifestSamples(): { valid: Cases; invalid: Cases; reade
     "run-input-manifest/path-empty-segment": withFiles([file("dataset//manifest.json", 1, "2"), file("run-config.json", 1, "6")]),
     "run-input-manifest/path-dot-segment": withFiles([file("dataset/./manifest.json", 1, "2"), file("run-config.json", 1, "6")]),
     "run-input-manifest/path-backslash": withFiles([file("dataset\\manifest.json", 1, "2"), file("run-config.json", 1, "6")]),
+    "run-input-manifest/paths-differ-by-case": withFiles([file("dataset/Manifest.json", 1, "2"), file("dataset/manifest.json", 1, "3"), file("run-config.json", 1, "6")]),
     "run-input-manifest/path-space": withFiles([file("dataset/my manifest.json", 1, "2"), file("run-config.json", 1, "6")]),
     "run-input-manifest/path-trailing-slash": withFiles([file("dataset/manifest.json/", 1, "2"), file("run-config.json", 1, "6")]),
     "run-input-manifest/config-file-unsafe": mutated(base, (copy) => (copy.config_file = "../run-config.json")),

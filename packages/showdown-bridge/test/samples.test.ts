@@ -433,6 +433,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/run-input-manifest/reader-invalid/path-parent-segment.json",
       "v1/run-input-manifest/reader-invalid/path-space.json",
       "v1/run-input-manifest/reader-invalid/path-trailing-slash.json",
+      "v1/run-input-manifest/reader-invalid/paths-differ-by-case.json",
       "v1/scripted-head-to-head-record/reader-invalid/a-seat-not-parity.json",
       "v1/scripted-head-to-head-record/reader-invalid/arm-counts-not-sum.json",
       "v1/scripted-head-to-head-record/reader-invalid/belief-missing-on-v2.json",

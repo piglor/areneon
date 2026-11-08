@@ -2,7 +2,8 @@
 import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { InMemoryObjectStore, ObjectStoreError } from "@areneon/object-store";
-import { jcs, planGeneration, readTrainingRunConfig, runInputManifestHash } from "@areneon/showdown-bridge";
+import { jcs, readTrainingRunConfig, runInputManifestHash } from "@areneon/showdown-bridge";
+import { planGeneration } from "../../showdown-bridge/src/league-generation.ts";
 import { afterAll, describe, expect, it } from "vitest";
 import { datasetHash, readDataset } from "../src/dataset-reader.ts";
 import { loadFixtureInputs } from "../src/fixtures.ts";
@@ -86,7 +87,8 @@ describe("build, upload and fetch (ADR-024 section 3.5)", () => {
     const dir = join(scratch, "owner");
     mkdirSync(dir);
     const configFile = join(dir, "config.json");
-    writeFileSync(configFile, configText(configFor(SOURCE)));
+    const out = fresh();
+    writeFileSync(configFile, configText(configFor(join(out, DATASET_DIR))));
     const inputs = await buildRunInputs({ engine, configFile, datasetDir: SOURCE, commit: COMMIT });
     const { manifest } = inputs;
     expect(manifest).toMatchObject({ data_class: "synthetic", run_key: RUN_KEY, commit: COMMIT, dataset_hash: DATASET_HASH, config_file: RUN_CONFIG_FILE, dataset_dir: DATASET_DIR });
@@ -96,9 +98,10 @@ describe("build, upload and fetch (ADR-024 section 3.5)", () => {
     const hash = await uploadRunInputs(store, inputs);
     expect(hash).toBe(await runInputManifestHash(manifest));
     expect(store.writes.at(-1)).toBe(manifestKey(RUN_KEY)); // the manifest is the last object written
-    await expect(uploadRunInputs(store, inputs)).rejects.toMatchObject({ code: "exists" }); // nothing is overwritten
+    const written = store.writes.length;
+    await expect(uploadRunInputs(store, inputs)).resolves.toBe(hash); // a rerun finds identical objects and writes nothing
+    expect(store.writes.length).toBe(written);
 
-    const out = fresh();
     const fetched = await fetchRunInputs({ store, engine, runKey: RUN_KEY, outDir: out, headCommit: head(), expectedManifestHash: hash });
     expect(fetched).toMatchObject({ dir: out, datasetDir: join(out, DATASET_DIR), configFile: join(out, RUN_CONFIG_FILE), manifestHash: hash, datasetHash: DATASET_HASH, files: manifest.files.length });
     for (const [name, bytes] of datasetFiles()) expect(readFileSync(join(out, DATASET_DIR, name)).equals(Buffer.from(bytes)), name).toBe(true);
@@ -107,10 +110,13 @@ describe("build, upload and fetch (ADR-024 section 3.5)", () => {
   });
 
   it("gives a run on the fetched directory the same dataset hash and the same first-generation plan as on the source", async () => {
-    const { store } = await publish();
-    const fetched = await fetchFrom(store);
+    const target = fresh();
+    const { store } = await publish({ target });
+    const fetched = await fetchFrom(store, { outDir: target });
     const source = readTrainingRunConfig(configFor(SOURCE));
-    const copy = readTrainingRunConfig(configFor(fetched.datasetDir));
+    // The fetched config, exactly as it was fetched: its team_dataset.path names the fetched dataset directory.
+    const copy = readTrainingRunConfig(JSON.parse(readFileSync(fetched.configFile, "utf8")));
+    expect(copy.team_dataset?.path).toBe(fetched.datasetDir);
     const a = datasetPoolDetail(engine, source);
     const b = datasetPoolDetail(engine, copy);
     expect(b.dataset_hash).toBe(a.dataset_hash);
@@ -121,10 +127,11 @@ describe("build, upload and fetch (ADR-024 section 3.5)", () => {
 
   it("refuses a missing manifest, another run's manifest, a pin that differs and a manifest that is not canonical", async () => {
     expect(await refused((outDir) => fetchRunInputs({ store: new InMemoryObjectStore(runInputLayout(RUN_KEY)), engine, runKey: RUN_KEY, outDir, headCommit: head() }))).toBe("manifest_missing");
-    const { store, manifestHash } = await publish();
+    const target = fresh();
+    const { store, manifestHash } = await publish({ target });
     expect(await refused((outDir) => fetchRunInputs({ store, engine, runKey: RUN_KEY, outDir, headCommit: head(), expectedManifestHash: "0".repeat(64) }))).toBe("manifest_hash_mismatch");
     expect(await refused((outDir) => fetchRunInputs({ store, engine, runKey: RUN_KEY, outDir, headCommit: head(), expectedManifestHash: "short" }))).toBe("manifest_hash_mismatch");
-    await expect(fetchFrom(store, { expectedManifestHash: manifestHash })).resolves.toBeDefined();
+    await expect(fetchFrom(store, { expectedManifestHash: manifestHash, outDir: target })).resolves.toBeDefined();
     const other = await publish({ manifest: (m) => (m.run_key = "another-run") });
     expect(await refused((outDir) => fetchRunInputs({ store: other.store, engine, runKey: RUN_KEY, outDir, headCommit: head() }))).toBe("manifest_other_run");
     const pretty = await publish({ manifestBytes: (bytes) => new TextEncoder().encode(JSON.stringify(JSON.parse(new TextDecoder().decode(bytes)), null, 2)) });
@@ -233,8 +240,8 @@ describe("build, upload and fetch (ADR-024 section 3.5)", () => {
   });
 
   it("leaves nothing at the output path when the rename finds the path taken meanwhile, or the disk fails mid-way", async () => {
-    const { store } = await publish();
     const out = fresh();
+    const { store } = await publish({ target: out });
     const realGet = store.get.bind(store);
     store.get = async (key) => {
       const bytes = await realGet(key);
@@ -246,6 +253,83 @@ describe("build, upload and fetch (ADR-024 section 3.5)", () => {
     expect(readdirSync(scratch).filter((name) => name.includes(".partial-"))).toEqual([]);
   });
 
+  it("requires the fetched config's team_dataset.path to be the fetched dataset directory", async () => {
+    // The default doctored config names a directory the fetch does not write to.
+    const elsewhere = await publish();
+    expect(await refused((outDir) => fetchRunInputs({ store: elsewhere.store, engine, runKey: RUN_KEY, outDir, headCommit: head() }))).toBe("dataset_path_mismatch");
+    const source = await publish({ config: (raw) => (raw.team_dataset.path = SOURCE) });
+    expect(await refused((outDir) => fetchRunInputs({ store: source.store, engine, runKey: RUN_KEY, outDir, headCommit: head() }))).toBe("dataset_path_mismatch");
+    // A relative path is relative to the working directory the run starts in (`cwd`).
+    const relative = await publish({ target: "inputs" });
+    const cwd = join(scratch, "cwd");
+    mkdirSync(cwd);
+    expect(await refused((outDir) => fetchRunInputs({ store: relative.store, engine, runKey: RUN_KEY, outDir, headCommit: head(), cwd }))).toBe("dataset_path_mismatch"); // outDir is not <cwd>/inputs
+    const fetched = await fetchRunInputs({ store: relative.store, engine, runKey: RUN_KEY, outDir: join(cwd, "inputs"), headCommit: head(), cwd });
+    expect(fetched.datasetDir).toBe(join(cwd, "inputs", DATASET_DIR));
+    expect(readFileSync(join(fetched.dir, RUN_CONFIG_FILE), "utf8")).toContain('"path": "inputs/dataset"');
+  });
+
+  it("resumes an interrupted publish and refuses an existing object that differs", async () => {
+    const dir = join(scratch, "owner-resume");
+    mkdirSync(dir);
+    const configFile = join(dir, "config.json");
+    writeFileSync(configFile, configText(configFor(join(scratch, "unused", DATASET_DIR))));
+    const inputs = await buildRunInputs({ engine, configFile, datasetDir: SOURCE, commit: COMMIT });
+    const store = new InMemoryObjectStore(runInputLayout(RUN_KEY));
+    const real = store.putIfAbsent.bind(store);
+    let budget = 3;
+    store.putIfAbsent = async (key, body) => {
+      if (budget-- <= 0) throw new ObjectStoreError("unavailable");
+      return real(key, body);
+    };
+    await expect(uploadRunInputs(store, inputs)).rejects.toMatchObject({ code: "unavailable" });
+    expect(store.keys().length).toBe(3);
+    expect(store.keys()).not.toContain(manifestKey(RUN_KEY)); // no manifest after an interruption
+    budget = Infinity;
+    const hash = await uploadRunInputs(store, inputs);
+    expect(store.keys().length).toBe(inputs.manifest.files.length + 1);
+    expect(hash).toBe(await runInputManifestHash(inputs.manifest));
+
+    // An existing object that differs is never accepted and never overwritten: same size, other bytes; other size; gone again; another manifest.
+    const first = fileKey(RUN_KEY, (inputs.manifest.files[0] as { path: string }).path);
+    for (const mutate of [(b: Uint8Array) => b.map((x) => x ^ 1), (b: Uint8Array) => b.slice(1)]) {
+      const damaged = new InMemoryObjectStore(runInputLayout(RUN_KEY));
+      damaged.seed(first, mutate(readFileSync(inputs.sources.get((inputs.manifest.files[0] as { path: string }).path) as string)));
+      await expect(uploadRunInputs(damaged, inputs)).rejects.toMatchObject({ code: "hash_mismatch" });
+      expect(damaged.writes).toEqual([]);
+    }
+    const vanishing = new InMemoryObjectStore(runInputLayout(RUN_KEY));
+    vanishing.putIfAbsent = () => Promise.reject(new ObjectStoreError("exists"));
+    await expect(uploadRunInputs(vanishing, inputs)).rejects.toMatchObject({ code: "hash_mismatch" });
+    const other = new InMemoryObjectStore(runInputLayout(RUN_KEY));
+    other.seed(manifestKey(RUN_KEY), new TextEncoder().encode("{}"));
+    await expect(uploadRunInputs(other, inputs)).rejects.toMatchObject({ code: "hash_mismatch" });
+    expect(other.writes.length).toBe(inputs.manifest.files.length); // the files went in; the foreign manifest stayed
+  });
+
+  it("re-checks each local file against its manifest entry just before it is put", async () => {
+    const dir = join(scratch, "owner-recheck");
+    mkdirSync(dir);
+    const copy = join(dir, "dataset");
+    mkdirSync(copy);
+    for (const [name, bytes] of datasetFiles()) writeFileSync(join(copy, name), bytes);
+    const configFile = join(dir, "config.json");
+    writeFileSync(configFile, configText(configFor(join(scratch, "unused", DATASET_DIR))));
+    const inputs = await buildRunInputs({ engine, configFile, datasetDir: copy, commit: COMMIT });
+    const victim = join(copy, "pilot.json");
+    const original = readFileSync(victim);
+    for (const [bytes, code] of [
+      [Buffer.concat([original, Buffer.from(" ")]), "size_mismatch"],
+      [Buffer.from(original.map((x) => x ^ 1)), "hash_mismatch"],
+    ] as const) {
+      writeFileSync(victim, bytes);
+      const store = new InMemoryObjectStore(runInputLayout(RUN_KEY));
+      await expect(uploadRunInputs(store, inputs)).rejects.toMatchObject({ code });
+      expect(store.keys()).not.toContain(fileKey(RUN_KEY, `${DATASET_DIR}/pilot.json`));
+      expect(store.keys()).not.toContain(manifestKey(RUN_KEY));
+    }
+  });
+
   it("passes a store failure through with its own fixed code", async () => {
     const { store } = await publish();
     store.list = () => Promise.reject(new ObjectStoreError("denied"));
@@ -255,7 +339,7 @@ describe("build, upload and fetch (ADR-024 section 3.5)", () => {
   it("holds a fixed message for every code and quotes nothing", () => {
     for (const code of RUN_INPUT_REFUSALS as readonly RunInputRefusal[]) {
       const error = new RunInputError(code);
-      expect(error.message).toMatch(/^run inputs refused: [A-Za-z0-9 ,;'()_-]+$/);
+      expect(error.message).toMatch(/^run inputs refused: [A-Za-z0-9 ,;'().()_-]+$/);
       expect(error.code).toBe(code);
     }
   });

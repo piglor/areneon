@@ -4,8 +4,20 @@
 //
 //   run-inputs.ts publish --run-config FILE --dataset-dir DIR --commit SHA --bucket NAME
 //       owner: build the manifest, put the files and then the manifest in the inputs bucket
-//   run-inputs.ts fetch --run-key KEY --out DIR --bucket NAME [--manifest-hash HEX] [--repo DIR]
+//   run-inputs.ts fetch --run-key KEY --out DIR --bucket NAME (--manifest-hash HEX | --no-pin) [--repo DIR]
 //       rented machine: pull, check every size and hash, then check the dataset hash and the commit
+//
+// The manifest hash (printed by `publish`, given to the machine out of band) is
+// the ONLY authenticity anchor: everything else the fetch checks is a hash the
+// manifest itself lists, so whoever can write the bucket can write a manifest
+// that agrees with doctored files. `fetch` therefore needs `--manifest-hash`,
+// or `--no-pin` to say out loud that no anchor is used. The checked-out
+// repository must have no uncommitted changes to tracked files. The run
+// config's `team_dataset.path` is part of its hash, so the owner writes into it,
+// before `publish`, the path the machine will use (for example a relative
+// `inputs/dataset` with `--out inputs`, run from the repository root); `fetch`
+// refuses a config whose path is not the fetched dataset directory. One input
+// file may be at most 256 MiB (the object store's ceiling).
 //
 // The credentials (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ENDPOINT_URL,
 // AWS_DEFAULT_REGION and, for a temporary credential, AWS_SESSION_TOKEN) come
@@ -26,8 +38,8 @@ export interface RunInputsDeps {
   readonly engine: () => Engine;
   /** The store behind the settings: the process wires the R2 client, tests give a fake (no CI test opens a socket). */
   readonly openStore: (settings: R2Settings, layout: ObjectLayout) => ObjectStore;
-  /** The HEAD commit of the repository at `dir` (the process asks git). */
-  readonly headCommit: (dir: string) => string;
+  /** The HEAD commit of the repository at `dir` and whether its tracked files have uncommitted changes (the process asks git). */
+  readonly repoState: (dir: string) => { readonly commit: string; readonly dirty: boolean };
   readonly out: (line: string) => void;
   readonly err: (line: string) => void;
 }
@@ -42,6 +54,7 @@ const OPTIONS = {
   "run-key": { type: "string" },
   out: { type: "string" },
   "manifest-hash": { type: "string" },
+  "no-pin": { type: "boolean" },
   repo: { type: "string" },
 } as const;
 
@@ -76,14 +89,18 @@ export async function runInputsCli(argv: readonly string[], deps: RunInputsDeps)
       return 0;
     }
     const runKey = need(values["run-key"], "run-key");
+    const pin = values["manifest-hash"];
+    if ((pin === undefined) === (values["no-pin"] !== true)) throw new UsageError("fetch needs exactly one of --manifest-hash HEX or --no-pin");
     const repo = values.repo ?? ".";
+    const state = deps.repoState(repo);
+    if (state.dirty) throw new RunInputError("tree_dirty");
     const fetched = await fetchRunInputs({
       store: deps.openStore(settings, runInputLayout(runKey)),
       engine: deps.engine(),
       runKey,
       outDir: need(values.out, "out"),
-      headCommit: () => deps.headCommit(repo),
-      ...(values["manifest-hash"] === undefined ? {} : { expectedManifestHash: values["manifest-hash"] }),
+      headCommit: () => state.commit,
+      ...(pin === undefined ? {} : { expectedManifestHash: pin }),
     });
     deps.out(JSON.stringify({ manifest_hash: fetched.manifestHash, run_config_hash: fetched.runConfigHash, dataset_hash: fetched.datasetHash, files: fetched.files, dataset_dir: fetched.datasetDir }));
     return 0;
