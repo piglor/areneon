@@ -22,7 +22,7 @@ const validConfig = ajvFor("contract").compile(trainingRunConfigSchema);
  * Read a TrainingRunConfig: the schema, then the rules it cannot say: the
  * attention heads divide the token width, a Team Preview order does not name
  * more positions than a side holds, each scripted baseline appears once, and a warm start names different
- * checkpoints (a checkpoint holds the network of one role; the Battle role alone is allowed), a value warm-up needs a warm start, and so does a KL anchor, a shared trunk excludes a two-role warm start (a Battle-only one is allowed), an explicit play temperature of 1,000,000 is refused (the default is omitted), generation.inference needs 2 <= max_batch <= n_parallel and excludes a population, and a population obeys its own rules (opponent shares sum to 10^6, `min_roots` at most `members`, `max_past_per_member` at most `max_size`, `member_ppo` sorted and unique, every explore bound contains its starting value, and no two-role warm start: members need distinct pairs).
+ * checkpoints (a checkpoint holds the network of one role; the Battle role alone is allowed), a value warm-up needs a warm start, and so does a KL anchor, a shared trunk excludes a two-role warm start (a Battle-only one is allowed), an explicit play temperature of 1,000,000 is refused (the default is omitted), generation.inference needs 2 <= max_batch <= n_parallel and excludes a population and search labels, and a population obeys its own rules (opponent shares sum to 10^6, `min_roots` at most `members`, `max_past_per_member` at most `max_size`, `member_ppo` sorted and unique, every explore bound contains its starting value, and no two-role warm start: members need distinct pairs).
  */
 export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
   if (!validConfig(value)) throw new TrainingRunConfigError(`invalid TrainingRunConfig: ${JSON.stringify(validConfig.errors)}`);
@@ -56,6 +56,7 @@ export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
       throw new TrainingRunConfigError(`generation.inference.max_batch ${generation.inference.max_batch} cannot exceed generation.n_parallel ${generation.n_parallel}`);
     }
     if (config.population !== undefined) throw new TrainingRunConfigError("generation.inference cannot be combined with a population (the population run plays batch 1)");
+    if (generation.search_labels !== undefined) throw new TrainingRunConfigError("generation.inference cannot be combined with generation.search_labels (labels are training targets and stay batch-1 functions of the Episode)");
   }
   checkSearchDistillation(config);
   if (config.population !== undefined && config.warm_start?.preview !== undefined) {

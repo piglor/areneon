@@ -122,6 +122,7 @@ INVALID = sorted(p.name for p in (CONFIGS / "invalid").iterdir())
         ("play-temperature-default.json", "is the default"),
         ("inference-above-parallel.json", "cannot exceed generation.n_parallel"),
         ("inference-population.json", "cannot be combined with a population"),
+        ("inference-search-labels.json", "cannot be combined with generation.search_labels"),
         ("shared-trunk-warm-start.json", "shared_trunk cannot be combined"),
         ("population-shares-sum.json", "must sum to 1000000"),
         ("population-roots-exceed-members.json", "min_roots cannot exceed members"),
@@ -143,7 +144,7 @@ def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> Non
 
 
 def test_every_reader_invalid_sample_is_checked_above() -> None:
-    assert len(READER_INVALID) == 30
+    assert len(READER_INVALID) == 31
 
 
 @pytest.mark.parametrize("name", INVALID)

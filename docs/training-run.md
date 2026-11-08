@@ -958,7 +958,7 @@ CPU:
 "generation": { ..., "n_parallel": 8, "inference": { "kind": "batched", "max_batch": 4 } }
 ```
 
-`max_batch` is 2 to `n_parallel`; a population run cannot set it. The run is a new run from
+`max_batch` is 2 to `n_parallel`; neither a population run nor a run with `generation.search_labels` can set it (labels are training targets and stay batch-1 functions of the Episode). The run is a new run from
 generation 0 (the field enters `run_config_hash`).
 
 What batches, and what does not. The game processes still send one query per decision; the worker
@@ -983,15 +983,20 @@ a byte-identical rerun of a generation, the same bytes for any `--game-processes
 and the SIGKILL-resumes-to-equal-bytes claim (what is grouped into a batch depends on timing, and a padded
 batch is not bit-identical to batch 1, so a choice can differ and the game then goes differently).
 
-Divergence measure. Each game process keeps a deterministic share (about 1.5 percent, chosen by a hash of the
-decision's own request and sampling draw `u`) of the decisions the pair plays. When its games are done it
-scores the smallest-keyed of them, at least 1 percent of its decisions and at least 256 (all of them when
-fewer were played), again at batch 1 on a worker of its own with each decision's own `u`, and asks the
+Divergence measure. Each game process computes a key for every decision the pair plays (a hash of the
+decision's own request and sampling draw `u`) and keeps the query of the decisions with the smallest keys,
+at least 512 of them and 2 percent of the decisions so far, so memory grows with the sample and not with the
+generation. When its games are done it scores the smallest-keyed of them, at least 1 percent of its
+decisions and at least 256 (all of them when fewer were played), again at batch 1 on a worker of its own with each decision's own `u`, and asks the
 batched worker and the batch-1 worker for the prior (temperature 1) of the same queries. The play script prints
 `{"inference_divergence": ...}` and the driver stores it as the optional `inference_divergence` of
 `metrics/g<N>.json` (outside every hash): `decisions` played, `sampled`, `differing` (the sampled decisions
 whose choice differs from the played one), `max_prior_diff_ppm` (the largest absolute difference of any
-candidate's prior) and `target_met` (false when fewer were kept than the target, as in a tiny run).
+candidate's prior) and `target_met` (the sample reached the target of `min(decisions, max(256, 1 percent))`; false only when fewer were kept, which a real generation does not do, and a tiny run's few decisions can). The batched priors it is compared with depend on what happened to be queued with each query, so `max_prior_diff_ppm` is a noisy diagnostic and not a bound; the dashboard shows the figures per generation under a note that the run is not byte-reproducible.
 It adds one worker start and a few thousand queries to the end of the play phase, which the play time
 includes. Before and after play times on an idle machine are measured as for section 9 and journaled on the
 ticket.
+
+Latency. A query waits for the others queued with it, so its `elapsed_ms` and its share of the
+per-decision budget include the whole batch's forward pass (up to `max_batch` queries); the budgets of the
+run config apply to that, and a run that batches should size `max_batch` against `latency_budget_ms`.

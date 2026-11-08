@@ -1147,6 +1147,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/population-member-ppo-out-of-range": populated((p) => (p.member_ppo = [{ member: 4, epochs: 3 }])),
     "training-run-config/play-temperature-default": runConfigWith((c) => (runSection(c, "generation").play = { temperature_ppm: 1000000 })),
     "training-run-config/inference-above-parallel": runConfigWith((c) => (runSection(c, "generation").inference = { kind: "batched", max_batch: 3 })),
+    "training-run-config/inference-search-labels": distilling((c) => (runSection(c, "generation").inference = { kind: "batched", max_batch: 2 })),
     "training-run-config/inference-population": populated((_p, c) => (runSection(c, "generation").inference = { kind: "batched", max_batch: 2 })),
     "clone-run-config/heads-do-not-divide-width": cloneWith((c) => (runSection(c, "model").n_heads = 3)),
     "clone-run-config/picks-exceed-team": cloneWith((c) => {

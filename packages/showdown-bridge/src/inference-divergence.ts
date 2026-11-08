@@ -16,8 +16,14 @@ import type { EvaluateQueryInput, InferenceSettings, PolicyQueryInput } from "./
 /** The share of the decisions the sample must reach (ppm), and the least number of decisions when that many were played. */
 export const DIVERGENCE_SHARE_PPM = 10_000;
 export const DIVERGENCE_MIN_SAMPLE = 256;
-/** The share kept while the games run (ppm): a little over the target, so the final sample (the smallest keys) is a subset of what was kept. */
-export const DIVERGENCE_KEEP_PPM = 15_000;
+/**
+ * While the games run the queries of the decisions with the smallest keys are kept, at least `DIVERGENCE_KEEP_FLOOR` of them and
+ * `DIVERGENCE_KEEP_PPM` of the decisions so far (twice the target share), so the final sample (the smallest keys of all) is a
+ * subset of what was kept: a decision dropped for a large key has, among random keys, almost no chance to be among the smallest 1%
+ * of a generation that has grown many times. The keys of every decision are cheap; only the queries are bounded.
+ */
+export const DIVERGENCE_KEEP_PPM = 20_000;
+export const DIVERGENCE_KEEP_FLOOR = 512;
 
 /** The record of run metrics (`RunMetrics.inference_divergence`): integers, counts of decisions. */
 export interface InferenceDivergence {
@@ -35,7 +41,6 @@ interface Kept {
   choice: string;
 }
 
-const TWO_64 = 2n ** 64n;
 
 /** A worker the measure starts for itself: the same checkpoints, never batching. */
 export type SingleWorker = PolicyClient & EvaluationClient & { start(): Promise<void>; close(): Promise<void> };
@@ -49,8 +54,6 @@ export function divergenceKey(query: PolicyQueryInput): bigint {
   return digest.readBigUInt64BE(0);
 }
 
-const below = (key: bigint, ppm: number): boolean => key * 1_000_000n < BigInt(ppm) * TWO_64;
-
 /** How many of `decisions` the sample holds: 1% of them, at least 256 (all of them when fewer were played). */
 export function sampleTarget(decisions: number): number {
   return Math.min(decisions, Math.max(DIVERGENCE_MIN_SAMPLE, Math.ceil((decisions * DIVERGENCE_SHARE_PPM) / 1_000_000)));
@@ -63,18 +66,30 @@ export class DivergenceSampler {
   readonly #kept: Kept[] = [];
 
   readonly #keep_ppm: number;
+  readonly #keep_floor: number;
 
-  /** `keep_ppm` is the share kept while the games run; the default is the one the sample size needs (a test passes a larger one). */
-  constructor(max_batch: number, keep_ppm: number = DIVERGENCE_KEEP_PPM) {
+  /** `keep_ppm` and `keep_floor` bound how many queries are kept while the games run (a test passes others). */
+  constructor(max_batch: number, keep_ppm: number = DIVERGENCE_KEEP_PPM, keep_floor: number = DIVERGENCE_KEEP_FLOOR) {
     this.max_batch = max_batch;
     this.#keep_ppm = keep_ppm;
+    this.#keep_floor = keep_floor;
+  }
+
+  /** Drop the queries with the largest keys beyond the bound; the kept ones are sorted by key. */
+  #prune(): void {
+    this.#kept.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    this.#kept.length = Math.min(this.#kept.length, this.#bound());
+  }
+
+  #bound(): number {
+    return Math.max(this.#keep_floor, Math.ceil((this.#decisions * this.#keep_ppm) / 1_000_000));
   }
 
   /** Observe one decision of the pair's own seat: the query it sent and the choice the batched worker answered. Never changes a byte. */
   readonly record = (query: PolicyQueryInput, choice: string): void => {
     this.#decisions += 1;
-    const key = divergenceKey(query);
-    if (below(key, this.#keep_ppm)) this.#kept.push({ key, query, choice });
+    this.#kept.push({ key: divergenceKey(query), query, choice });
+    if (this.#kept.length > Math.ceil(1.25 * this.#bound())) this.#prune();
   };
 
   get decisions(): number {
@@ -89,7 +104,8 @@ export class DivergenceSampler {
   async measure(batched: EvaluationClient, makeSingle: () => SingleWorker): Promise<InferenceDivergence | null> {
     if (this.#decisions === 0) return null;
     const target = sampleTarget(this.#decisions);
-    const chosen = [...this.#kept].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)).slice(0, target);
+    this.#prune();
+    const chosen = this.#kept.slice(0, target);
     const result = (differing: number, largest: number): InferenceDivergence => ({ max_batch: this.max_batch, decisions: this.#decisions, sampled: chosen.length, differing, max_prior_diff_ppm: largest, target_met: chosen.length === target });
     if (chosen.length === 0) return result(0, 0);
     const asEvaluate = (query: PolicyQueryInput): EvaluateQueryInput => ({ ...query, sampling: { kind: "evaluate" } }) as EvaluateQueryInput;

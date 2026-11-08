@@ -858,6 +858,52 @@ def _profile_section(model: ReportModel) -> str:
     )
 
 
+def _inference_section(model: ReportModel) -> str:
+    """Batched self-play inference (ADR-028 section 2 F2): the note, and the divergence of each
+    generation that recorded one. Nothing for a run at batch 1."""
+    if model.inference_max_batch is None:
+        return ""
+    rows = []
+    for g in model.generations:
+        found = None if g.metrics is None else g.metrics.get("inference_divergence")
+        if found is None:
+            continue
+        rows.append(
+            [
+                str(g.number),
+                str(found["decisions"]),
+                str(found["sampled"]),
+                str(found["differing"]),
+                str(found["max_prior_diff_ppm"]),
+                "yes" if found["target_met"] else "no",
+            ]
+        )
+    heads = [
+        ("Generation", True),
+        ("Decisions", True),
+        ("Sampled", True),
+        ("Differing choices", True),
+        ("Largest prior difference (ppm)", True),
+        ("Sample target met", False),
+    ]
+    table = (
+        _table(heads, rows, "Batched inference against batch 1 on a sample of each generation.")
+        if rows
+        else '<p class="note">No generation recorded a divergence yet.</p>'
+    )
+    return (
+        "<h2>Batched inference: not byte-reproducible</h2>"
+        f'<p class="note">This run batches its self-play forward pass (up to {model.inference_max_batch} '
+        "queries per pass, <code>generation.inference</code>): a rerun, another process count or a "
+        "resumed generation gives other bytes, because what is grouped depends on timing and a padded "
+        "batch is not bit-identical to batch 1. Plan, seeds, teams and policy ids still repeat. "
+        "Each sampled decision was scored again at batch 1 with its own sampling draw; the batched "
+        "priors it is compared with depend on timing, so the largest prior difference is a noisy "
+        "diagnostic, not a bound. From the optional <code>inference_divergence</code> of "
+        "<code>metrics/gNNNNNN.json</code>, outside every hash.</p>" + table
+    )
+
+
 def _diagnostics_section(model: ReportModel, tips: Tips) -> str:
     played = [g for g in model.generations if g.number > 0]
     xs = [g.number for g in played]
@@ -1089,6 +1135,7 @@ def build_report(model: ReportModel, links: Links | None = None) -> str:
             _counts_section(model, tips),
             _metrics_section(model),
             _profile_section(model),
+            _inference_section(model),
             _diagnostics_section(model, tips),
             _comparison(model, links),
             _inputs(model),

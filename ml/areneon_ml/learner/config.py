@@ -335,6 +335,12 @@ def _check_inference(raw: dict[str, Any]) -> None:
             "training-run-config: generation.inference cannot be combined with a population "
             "(the population run plays batch 1)"
         )
+    if "search_labels" in raw["generation"]:
+        raise RunConfigError(
+            "training-run-config: generation.inference cannot be combined with "
+            "generation.search_labels (labels are training targets and stay batch-1 "
+            "functions of the Episode)"
+        )
 
 
 def read_run_config(raw: object) -> RunConfig:

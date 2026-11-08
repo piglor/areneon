@@ -915,6 +915,7 @@
   "v1/training-run-config/reader-invalid/play-temperature-default.json": "d8174952f1aa37a26ba32004af8fa68be85edae7c4242636aeba2912076cadd0",
   "v1/training-run-config/reader-invalid/inference-population.json": "cceab46d59f1df5db29a91f9814cd3795227dc187d1c5bcbbbfcd76162469167",
   "v1/training-run-config/reader-invalid/inference-above-parallel.json": "e4a1305070d61a0189504a93cf34117f77242680d151bc6bb0a485482029b9fd",
+  "v1/training-run-config/reader-invalid/inference-search-labels.json": "c41f488f716e7bdedbac1b85e8a09a6e0c06649e9a6b3400e1f64c17afb94656",
   "v1/clone-run-config/reader-invalid/heads-do-not-divide-width.json": "ab6b98d4ea5dc7ca36bded5beabb165e125c14bba205560a05729be26f57a154",
   "v1/clone-run-config/reader-invalid/picks-exceed-team.json": "50ccd7cf185e7eab6b1318b472301d8589b480be124e64c266a9e073d7bd584f",
   "v1/league-run-record/reader-invalid/counts-disagree.json": "8bed7ba641b42b5c10d1e9224090df701a73cf62b0fc13fe9fbc4597d7721c2a",

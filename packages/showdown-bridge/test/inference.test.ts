@@ -166,7 +166,7 @@ describe("the divergence sample", () => {
   });
 
   it("takes the smallest keys when more were kept than the target, and says when it kept fewer", async () => {
-    const few = new DivergenceSampler(2, 0);
+    const few = new DivergenceSampler(2, 0, 0);
     few.record(query(1), choiceOf(query(1)));
     const quiet = worker(choiceOf, 0);
     expect(await few.measure(worker(choiceOf, 0), () => quiet)).toEqual({ max_batch: 2, decisions: 1, sampled: 0, differing: 0, max_prior_diff_ppm: 0, target_met: false });
@@ -178,6 +178,27 @@ describe("the divergence sample", () => {
     expect(found?.sampled).toBe(256);
     expect(found?.target_met).toBe(true);
   });
+
+  it("keeps enough of a real generation's decisions to meet the target, and they are the smallest keys of all", async () => {
+    const total = 100_000;
+    const sampler = new DivergenceSampler(2);
+    const everything = Array.from({ length: total }, (_, i) => query(i + 1));
+    for (const q of everything) sampler.record(q, choiceOf(q));
+    const asked: number[] = [];
+    const watcher = worker(choiceOf, 0);
+    (watcher as unknown as { ask: unknown }).ask = (_b: string, q: PolicyQueryInput) => {
+      asked.push(q.identity.request_seq);
+      return Promise.resolve({ schema_version: 1, identity: q.identity, choice: choiceOf(q), source_policy_id: q.policy_id, elapsed_ms: 0, deadline_outcome: "in_budget" });
+    };
+    const found = await sampler.measure(worker(choiceOf, 0), () => watcher);
+    expect(found).toMatchObject({ decisions: total, sampled: 1000, differing: 0, target_met: true });
+    const smallest = everything
+      .map((q) => ({ seq: q.identity.request_seq, key: divergenceKey(q) }))
+      .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+      .slice(0, 1000)
+      .map((k) => k.seq);
+    expect([...asked].sort((a, b) => a - b)).toEqual(smallest.sort((a, b) => a - b));
+  }, 60_000);
 
   it("refuses priors that list other candidates", async () => {
     const sampler = new DivergenceSampler(2, 1_000_000);
@@ -252,7 +273,7 @@ describe("what a game process does about batching (DivergenceRun)", () => {
       await other.leave(join(scratch, "1"), stand, single);
       expect(readDivergenceFile(join(scratch, "1", DIVERGENCE_FILE))).toMatchObject({ max_batch: 2, decisions: 1 });
       await mine.report(stand, single, scratch, 2, print);
-      expect(JSON.parse(printed[0] as string)).toEqual({ inference_divergence: { max_batch: 2, decisions: 1, sampled: 0, differing: 0, max_prior_diff_ppm: 0, target_met: false } });
+      expect(JSON.parse(printed[0] as string)).toEqual({ inference_divergence: { max_batch: 2, decisions: 1, sampled: 1, differing: 0, max_prior_diff_ppm: 0, target_met: true } });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

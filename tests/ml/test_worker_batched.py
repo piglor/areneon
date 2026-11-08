@@ -292,3 +292,18 @@ def test_the_command_line_refuses_a_batch_of_one(tmp_path: Path) -> None:
     run_dir, preview, battle = make_run_dir(tmp_path)
     with pytest.raises(SystemExit):
         main(cli(run_dir, preview, battle, "--inference-max-batch", "1"))
+
+
+@pytest.mark.parametrize("make", [battle_query, preview_query])
+def test_a_batch_of_one_is_bit_identical_to_the_unbatched_pass_for_each_role(
+    tmp_path: Path, make: Any
+) -> None:
+    scorer: Any = make_worker(tmp_path, inference_max_batch=2)._scorer
+    view = encoder_input(make())
+    [alone] = scorer.score_batch([(view, None)])
+    assert not isinstance(alone, Exception)
+    probabilities, value = scorer.evaluate(view)
+    assert alone == (probabilities, value)  # float for float, value included
+    [tempered] = scorer.score_batch([(view, 500_000)])
+    assert not isinstance(tempered, Exception)
+    assert tempered[0] == scorer.probabilities(view, temperature_ppm=500_000)
