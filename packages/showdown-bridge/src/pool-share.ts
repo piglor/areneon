@@ -16,6 +16,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { type Json, jcs } from "./canonical-json.ts";
 import { GenerationError, type PoolRequest, type TrainingPool } from "./league-generation.ts";
 import type { PokemonSet } from "./engine.ts";
+import { timed, timedAsync } from "./profile.ts";
 import { syntheticTeamHashes, teamHash } from "./team-class.ts";
 
 /** The version of the pool file's layout. */
@@ -60,4 +61,21 @@ export async function waitForPoolFile(path: string, request: PoolRequest, { poll
     await new Promise((resolve) => setTimeout(resolve, poll_ms));
   }
   return readPoolFile(path, request);
+}
+
+/**
+ * The pool of one game process. With `read` (a further game process) it waits for the file its starter writes;
+ * otherwise it loads the pool with `load` (the load runs before this returns its promise, so a caller that
+ * starts its workers after calling this starts them after the load, as before) and, with `write`, leaves it
+ * in that file for the others. Both ways are timed as the `pool_load` phase.
+ */
+export function obtainPool(
+  config: PoolRequest,
+  load: () => TrainingPool,
+  { read, write }: { read?: string | undefined; write?: string | undefined },
+): Promise<TrainingPool> {
+  if (read !== undefined) return timedAsync("pool_load", () => waitForPoolFile(read, config));
+  const pool = timed("pool_load", load);
+  if (write !== undefined) timed("pool_load", () => writePoolFile(write, pool, config));
+  return Promise.resolve(pool);
 }

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadEngine } from "../src/engine.ts";
 import { GenerationError, type PoolRequest, trainingTeamPool, type TrainingPool } from "../src/league-generation.ts";
-import { poolRequestKey, POOL_FILE_VERSION, readPoolFile, waitForPoolFile, writePoolFile } from "../src/pool-share.ts";
+import { obtainPool, poolRequestKey, POOL_FILE_VERSION, readPoolFile, waitForPoolFile, writePoolFile } from "../src/pool-share.ts";
 
 const request: PoolRequest = { format_id: "gen9championsvgc2026regmc", generation: { excluded_abilities: [] } };
 let dir: string;
@@ -71,5 +71,20 @@ describe("the shared team pool (#1192)", () => {
     const back = await waitForPoolFile(file, request, { poll_ms: 10, timeout_ms: 5000 });
     expect(back.hashes).toEqual([...pool.hashes]);
     await expect(waitForPoolFile(join(dir, "never.json"), request, { poll_ms: 5, timeout_ms: 30 })).rejects.toThrow(/did not appear in time/);
+  });
+
+  it("obtains the pool by loading it (and leaving it for the others), or by reading what its starter left", async () => {
+    const file = join(dir, "obtained.json");
+    let loads = 0;
+    const load = (): TrainingPool => {
+      loads++;
+      return pool;
+    };
+    expect((await obtainPool(request, load, { write: file })).hashes).toEqual([...pool.hashes]);
+    expect((await obtainPool(request, load, {})).hashes).toEqual([...pool.hashes]);
+    expect(loads).toBe(2);
+    expect((await obtainPool(request, load, { read: file })).hashes).toEqual([...pool.hashes]);
+    expect(loads).toBe(2); // a reader does not load
+    expect(() => obtainPool(request, () => { throw new GenerationError("empty"); }, {})).toThrow("empty"); // a load that fails fails before anything starts
   });
 });

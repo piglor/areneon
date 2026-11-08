@@ -22,8 +22,8 @@ import { type BeliefFeaturesFactory, SheetTotals } from "./belief-features.ts";
 import { labelCounts } from "./search-labeller.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import { PastPoolError, readPastPool } from "./past-pool.ts";
-import { leaveFigures, printProfile, startProfile, stopProfile, timed, timedAsync } from "./profile.ts";
-import { waitForPoolFile, writePoolFile } from "./pool-share.ts";
+import { leaveFigures, printProfile, startProfile, stopProfile, timed } from "./profile.ts";
+import { obtainPool } from "./pool-share.ts";
 import { type MemberFlag, parseMemberFlag, runCalibrationCli, runPopulationCli } from "./population-cli.ts";
 import { largest, ownPeakRss } from "./process-usage.ts";
 import { readTrainingRunConfig, runConfigHash } from "./training-run-config.ts";
@@ -110,7 +110,7 @@ export function combinedLoad(processes: number, workers: number, nParallel: numb
  * holds open, so it closes when the starter dies. The policy workers this process started have pipes to it
  * and end with it. Registered before anything slow (the pool, the workers), so it is heard during them (#980).
  */
-export function exitWhenParentDies(stdin: { once: (event: "end", listener: () => void) => unknown; resume: () => unknown; unref?: () => void } = process.stdin, exit: (code: number) => void = (code) => process.exit(code)): void {
+export function exitWhenParentDies(stdin: { once: (event: "end", listener: () => void) => unknown; resume: () => unknown; unref?: () => void } = process.stdin, exit: (code: number) => void = process.exit.bind(process)): void {
   stdin.once("end", () => exit(1));
   stdin.resume();
   stdin.unref?.(); // an open pipe must not keep the finished process alive
@@ -314,12 +314,7 @@ export async function runGenerationCli(
       }
     }
     // A further game process waits for the pool its starter loads while its own workers start; the starter loads it and leaves it for them.
-    const shared = values["pool-file"] === undefined ? undefined : timedAsync("pool_load", () => waitForPoolFile(poolFile as string, config));
-    shared?.catch(() => undefined); // reported where it is awaited
-    const loaded = shared === undefined ? timed("pool_load", () => poolSource(engine, config)) : undefined;
-    if (loaded !== undefined && scratch !== undefined) timed("pool_load", () => writePoolFile(poolFile as string, loaded, config));
-    await Promise.all(clients.map((client) => client.start()));
-    const pool = loaded ?? (await (shared as Promise<TrainingPool>));
+    const [pool] = await Promise.all([obtainPool(config, () => poolSource(engine, config), { read: values["pool-file"], ...(scratch === undefined ? {} : { write: poolFile }) }), ...clients.map((client) => client.start())]);
     const [client, ...peers] = clients as [PolicyWorkerClient, ...PolicyWorkerClient[]];
     if (values.shard !== undefined) {
       // A further game process (it ends with the process that started it, see above). It plays the slice and leaves it for the process that started this one.
