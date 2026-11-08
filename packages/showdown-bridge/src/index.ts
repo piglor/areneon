@@ -287,6 +287,7 @@ export {
 export { ITERATIVE_SOLVERS, loadPreviewSolveConfig, PREVIEW_SOLVE_POLICY_LABEL, type PreviewSolveConfig, PreviewSolveConfigError, previewSolveConfigHash, previewSolveIdentity, previewSolveIdentityHash, type PreviewSolveIdentityInputs, readPreviewSolveConfig } from "./preview-solve-config.ts";
 export { LEAF_FORMAT, loadSearchConfig, readSearchConfig, type SearchConfig, SearchConfigError, searchConfigHash, searchIdentity, searchIdentityHash, type SearchIdentityInputs, SEARCH_POLICY_LABEL } from "./search-config.ts";
 export { deriveRoleSetsPrior, ROLE_SETS_PRIOR_SCRIPT, RoleSetsPriorError, type RoleSetsPriorInput } from "./role-sets-prior.ts";
+export { apportion, deriveMixturePrior, MIXTURE_DENOMINATOR, MIXTURE_PRIOR_SCRIPT, MixturePriorError, type MixturePriorInput, successiveInclusion } from "./mixture-prior.ts";
 export { deriveGeneratorPrior, GENERATOR_PRIOR_SCRIPT, GeneratorPriorError, type GeneratorPriorInput, generatorConfigHash, megaHolderAbilities, megaPreviewSpecies } from "./generator-prior.ts";
 export { DAMAGE_CHECK_FORMAT } from "./damage-check.ts";
 export { SPEED_CHECK_FORMAT, evidenceCheckFormats } from "./speed-check.ts";

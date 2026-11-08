@@ -18,6 +18,7 @@ import {
   oracleGames,
   probability,
   qualityContext,
+  qualityContextFor,
   report,
   scoreGame,
   scoreSlot,
@@ -228,6 +229,25 @@ describe("refusals and fallbacks are counted, not fixed", () => {
   it("counts a Pokemon v1 cannot build a set for", () => {
     const v1 = { ...ctx.v1, vocabulary: { ...vocabulary, roster: [] } };
     expect(report(run([played[0] as OracleGame], { ...ctx, v1 })).v1_failures).toBeGreaterThan(0);
+  });
+});
+
+describe("any prior, on a dataset's validation split (slice 3b)", () => {
+  const committed = join(fileURLToPath(new URL("../../..", import.meta.url)), "fixtures", "teams", FORMAT, "datasets", "fixtures-v1");
+  it("reads the validation split of a dataset and builds the context of another prior", async () => {
+    const own = await oracleGames(engine, FORMAT, 0, 1, 40, committed);
+    const dev = await oracleGames(engine, FORMAT, 0, 1);
+    expect(own).toHaveLength(1);
+    expect(own[0]?.teams.p1.length).toBe(6);
+    // the validation and dev splits are disjoint, so the same game index plays other teams
+    expect(JSON.stringify(own[0]?.teams)).not.toBe(JSON.stringify(dev[0]?.teams));
+    const base = qualityContext(engine, goldenTeamVocabulary());
+    const other = qualityContextFor(engine, goldenTeamVocabulary(), { prior: base.prior, generator: JSON.parse(readFileSync(join(fileURLToPath(new URL("../../..", import.meta.url)), "config", "teams", FORMAT, "generator.json"), "utf8")) });
+    expect(other.port.prior_hash).toBe(base.port.prior_hash);
+    const scored = accumulator();
+    scoreGame(other, own[0] as OracleGame, scored);
+    expect(scored.requests).toBeGreaterThan(5);
+    expect(scored.joint.worlds).toBeGreaterThan(0);
   });
 });
 
