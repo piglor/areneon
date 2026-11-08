@@ -66,8 +66,8 @@ def fit_processes(requested: int, memory_mb: int | None) -> int:
     return max(1, min(requested, memory_mb // WORKER_MB))
 
 
-#: Load workers by default: one per this many usable cores (the rest stay for whatever else runs
-#: beside the load phase, such as the next generation's game processes), and never more than
+#: Load workers with ``--load-processes auto``: one per this many usable cores (the rest stay for
+#: whatever else runs beside the load phase, such as game processes), and never more than
 #: ``MAX_AUTO_WORKERS`` (measured on a 28-core machine: 6 workers 23 s, 12 workers 16 s).
 CORES_PER_WORKER = 2
 MAX_AUTO_WORKERS = 16
@@ -97,16 +97,23 @@ def available_memory_mb() -> int | None:
 
 
 def auto_processes(cores: int | None = None, available_mb: int | None = None) -> int:
-    """The default number of load workers for a machine: from its cores, then its free memory.
+    """The load workers ``auto`` picks for a machine as of this moment: cores, then free memory.
 
     ``cores // CORES_PER_WORKER`` workers (at most ``MAX_AUTO_WORKERS``), fewer if ``WORKER_MB``
     each does not fit in what is available above ``AUTO_RESERVE_MB`` (unknown memory caps
-    nothing). Operational only: the trajectories are the same for any number of workers.
+    nothing; the figures are estimates, not a guarantee). Operational only: the trajectories are
+    the same for any number of workers.
     """
     cores = usable_cores() if cores is None else cores
     memory = available_memory_mb() if available_mb is None else available_mb
     wanted = max(1, min(cores // CORES_PER_WORKER, MAX_AUTO_WORKERS))
     return fit_processes(wanted, None if memory is None else max(0, memory - AUTO_RESERVE_MB))
+
+
+def load_workers(requested: int, auto: bool, memory_mb: int | None) -> int:
+    """The workers for one load phase, decided now: ``requested``, or, with ``auto``, what the
+    machine can spare at this moment (``auto_processes``). ``memory_mb`` caps either one."""
+    return fit_processes(auto_processes() if auto else requested, memory_mb)
 
 
 @dataclass

@@ -16,6 +16,7 @@ from areneon_contracts.contracts import jcs, sha256_hex
 from areneon_ml.checkpoint.files import checkpoint_bytes, checkpoint_id
 from areneon_ml.checkpoint.record import read_record
 from areneon_ml.learner.config import RunConfig, RunConfigError, read_run_config
+from areneon_ml.learner.data import trajectories
 from areneon_ml.learner.state import pack_state
 from areneon_ml.learner.trainer import Learner
 from areneon_ml.loop import layout, population
@@ -875,6 +876,34 @@ def test_a_learner_is_parked_when_its_training_fails(
     with pytest.raises(RuntimeError, match="train failed"):
         make_population(tmp_path).run(1)
     assert events == ["up", "park"]
+
+
+def test_auto_load_workers_are_sized_when_a_member_is_loaded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sizes: list[int] = []
+    real = trajectories
+
+    def spy(stream: Any, manifest: Any, encoders: Any, pair: Any, processes: int = 1) -> Any:
+        sizes.append(processes)
+        return real(stream, manifest, encoders, pair, processes)
+
+    sampled: list[int] = []
+
+    def auto() -> int:
+        sampled.append(len(sizes))
+        return 1
+
+    monkeypatch.setattr("areneon_ml.loop.population.trajectories", spy)
+    monkeypatch.setattr("areneon_ml.learner.parallel.auto_processes", auto)
+    loop = make_population(tmp_path)
+    loop.load_auto = True
+    loop.load_processes = 7  # ignored while auto
+    assert sampled == []
+    loop.run(1)
+    assert sizes
+    assert set(sizes) == {1}
+    assert sampled == list(range(len(sizes)))  # one sample right before each member's load
 
 
 def test_moving_a_learner_keeps_its_state_bytes_and_moves_the_moments() -> None:

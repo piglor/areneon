@@ -51,7 +51,6 @@ from areneon_ml.inspector.resimulate import node_runner
 from areneon_ml.inspector.resimulate_command import parse_target, resimulate_game
 from areneon_ml.learner.config import RunConfigError, read_run_config
 from areneon_ml.learner.data import LearnerDataError
-from areneon_ml.learner.parallel import auto_processes
 from areneon_ml.learner.state import LearnerStateError
 from areneon_ml.learner.trainer import LearnerError
 from areneon_ml.loop import layout
@@ -102,6 +101,11 @@ from areneon_ml.report.dominated import progress_diagnostics
 EXIT_REFUSED = 3
 EXIT_PLAY = 4
 REPO = Path(__file__).resolve().parents[3]
+
+
+def _workers(text: str) -> int | str:
+    """A positive count, or ``auto``."""
+    return text if text == "auto" else _positive(text)
 
 
 def _positive(text: str) -> int:
@@ -187,9 +191,11 @@ def _add_run(commands: Any) -> None:
     )
     run.add_argument(
         "--load-processes",
-        type=_positive,
-        help="worker processes that check and encode a generation's stream in the load phase "
-        "(default: half the usable cores, at most 16, fewer if the free memory does not fit them; "
+        type=_workers,
+        default=1,
+        help="worker processes that check and encode a generation's stream in the load phase, "
+        "or 'auto': sized at each load phase from the usable cores (half, at most 16) and the "
+        "memory available at that moment (an estimate), capped by --load-memory-mb (default 1; "
         "operational: the trajectories and every hash are the same for any number; each worker "
         "adds its piece's tensors to memory while it runs, see docs/training-run.md)",
     )
@@ -656,7 +662,8 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
             else "packages/showdown-bridge/scripts/play-generation.ts"
         ),
     )
-    load_processes = args.load_processes if args.load_processes is not None else auto_processes()
+    auto = args.load_processes == "auto"
+    load_processes = 1 if auto else args.load_processes
     if config.population:
         if args.profile:
             raise LoopError("population: --profile does not apply to a population run")
@@ -667,10 +674,12 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
             )
         pop = PopulationLoop(config, args.run_dir.resolve(), game, player)
         pop.load_processes = load_processes
+        pop.load_auto = auto
         pop.load_memory_mb = args.load_memory_mb
         return pop.run(args.generations).as_dict(pop.frozen)
     loop = Loop(config, args.run_dir.resolve(), game, player)
     loop.load_processes = load_processes
+    loop.load_auto = auto
     loop.load_memory_mb = args.load_memory_mb
     loop.profile = args.profile
     result = loop.run(args.generations)

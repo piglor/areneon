@@ -135,7 +135,6 @@ def test_the_load_workers_are_a_flag_of_the_loop_only(
             return super().run(generations)
 
     monkeypatch.setattr("areneon_ml.loop.__main__.Loop", Spy)
-    monkeypatch.setattr("areneon_ml.loop.__main__.auto_processes", lambda: 5)
     assert (
         main(
             run(config_file, tmp_path / "r", 1, "--load-processes", "3", "--load-memory-mb", "900")
@@ -143,10 +142,28 @@ def test_the_load_workers_are_a_flag_of_the_loop_only(
         == 0
     )
     assert main(run(config_file, tmp_path / "s", 1)) == 0
-    assert seen == [(3, 900), (5, None)]  # no flag: sized from the machine
+    assert seen == [(3, 900), (1, None)]
     assert (tmp_path / "r" / "run-config.json").read_bytes() == (
         tmp_path / "s" / "run-config.json"
     ).read_bytes()
+
+
+def test_load_processes_auto_is_opt_in_and_is_not_resolved_at_start(
+    tmp_path: Path, config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_node(monkeypatch)
+    seen: list[tuple[int, bool]] = []
+    real = Loop
+
+    class Spy(real):  # type: ignore[valid-type, misc]
+        def run(self, generations: int) -> Any:
+            seen.append((self.load_processes, self.load_auto))
+            return super().run(generations)
+
+    monkeypatch.setattr("areneon_ml.loop.__main__.Loop", Spy)
+    assert main(run(config_file, tmp_path / "r", 1, "--load-processes", "auto")) == 0
+    assert main(run(config_file, tmp_path / "s", 1)) == 0
+    assert seen == [(1, True), (1, False)]
 
 
 @pytest.mark.parametrize(
