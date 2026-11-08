@@ -16,3 +16,8 @@ export type CostComponent = (typeof COST_COMPONENTS)[number];
 export interface CostSink {
   add(component: CostComponent, ms: number): void;
 }
+
+// The components sum to the decision's wall time only while the simulations run one after another, as they do (a decision awaits
+// each leaf in turn); a search that overlapped its leaves would count their time more than once. Time outside the components
+// (candidate enumeration, the reader, the world request, bookkeeping) is the decision total minus the sum: the budget script's
+// `other` line.

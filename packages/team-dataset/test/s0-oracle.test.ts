@@ -1,15 +1,17 @@
 // The S0 measurement tools (ADR-026 section 8 S0 measures 3, 4, 5 and 8; #1308) on a committed fixture battle: the oracle rollouts
 // from the test-only fork against the real opponent policy, the exhaustive re-rank and its recall, the split halves, the HP/KO
 // variant, and the per-component cost sink. A stand-in worker (no Python) stands for the pair; the tool code is the real one.
-import { COST_COMPONENTS, type CostComponent, loadSearchConfig, randomLegalActor, type Actor } from "@areneon/showdown-bridge";
+import { configuredSetHash, COST_COMPONENTS, type CostComponent, damageAwareSetup, loadDamageAwareConfig, loadMechanicsConfig, loadSearchConfig, randomLegalActor, syntheticTeamHashes, teamHash, type Actor, type FeatureConfigs } from "@areneon/showdown-bridge";
 import { describe, expect, it } from "vitest";
 import { captureDecisions, type OracleSpec } from "../../showdown-bridge/test/fidelity/oracle.ts";
 import { loadRandomCorpus } from "../../showdown-bridge/src/random-corpus.ts";
 import { type CostSink } from "../../showdown-bridge/src/search-cost.ts";
 import { foeChannelAt, oracleRollout, oracleValues, rolloutSeed } from "./s0/rollout.ts";
-import { measureBattle, summarise } from "./s0/measure.ts";
+import { type BattleMeasure, MAX_CAPPED_PPM, measureBattle, summarise } from "./s0/measure.ts";
+import { CAPPED_SCORE_PPM } from "./s0/rollout.ts";
+import { pairGameSpec } from "./s0/games.ts";
 import { engine, FORMAT } from "./support.ts";
-import { manifest, playSearch, portFor, setupFor, snapshot, ValueStandInWorker } from "./search-actor-support.ts";
+import { manifest, playSearch, portFor, setupFor, snapshot, ValueStandInWorker, vocabulary } from "./search-actor-support.ts";
 
 const battle = loadRandomCorpus()[0] as OracleSpec & ReturnType<typeof loadRandomCorpus>[number];
 
@@ -108,6 +110,62 @@ describe("the S0 pipeline on a fixture battle", () => {
     expect(summary.split_half.decisions).toBe(summary.decisions);
     expect(summary.leaf_value_head.decisions).toBe(summary.decisions);
     expect(summary.calibration_hp_ko).toHaveLength(5);
+    // reported: the paired means with the decisions dropped, the capped share, the alias, the clustered AUC
+    expect(summary.leaf_value_head.dropped).toBe(summary.decisions - summary.leaf_value_head.paired);
+    expect(summary.split_half.dropped).toBe(summary.decisions - summary.split_half.defined);
+    expect(summary.rollouts).toBe(measured.measures.reduce((n, m) => n + m.oracle.length * 2, 0));
+    expect(summary.capped_share_ppm).toBe(Math.floor((summary.capped_rollouts * 1_000_000) / summary.rollouts));
+    expect(summary.recall.filter((r) => r.alias_of === "prior-top-k").map((r) => r.rule)).toEqual(["distinct-slot", "distinct-slot", "distinct-slot"]);
+    expect(summary.recall.slice(3, 6).map((r) => r.hits)).toEqual(summary.recall.slice(0, 3).map((r) => r.hits));
+    expect(summary.value_head_auc.games).toBeLessThanOrEqual(2);
+    expect(summary.notes.join(" ")).toContain("alias of prior-top-k");
+  }, 600_000);
+});
+
+const measure = (capped: number, rollouts = 2): BattleMeasure => ({
+  battle_id: "b",
+  measures: [{ battle_id: "b", player: "p1", turn: 1, candidates: 2, candidate_list: [{ choice: "move 1", pending: false }, { choice: "move 2", pending: false }], top: [0, 1], prior_ppm: [600_000, 400_000], ranked: [0, 1], exhaustive_sums: [2, 1], exhaustive_q_ppm: [2, 1], hp_q_ppm: [2, 1], oracle: [Array(rollouts).fill(CAPPED_SCORE_PPM), Array(rollouts).fill(0)], capped_rollouts: capped, value_ppm: 500_000, outcome_ppm: 1_000_000, worlds_scored: 4 }],
+  seen: 1,
+  refused: 0,
+});
+
+describe("capped rollouts", () => {
+  it("score a tie, and a run with more than the limit is flagged", () => {
+    expect(CAPPED_SCORE_PPM).toBe(500_000);
+    expect(MAX_CAPPED_PPM).toBe(200_000);
+    const fine = summarise([measure(0)]);
+    expect(fine).toMatchObject({ rollouts: 4, capped_rollouts: 0, capped_share_ppm: 0, capped_within_limit: true });
+    // 1 of 4 is 250,000 ppm: above the limit
+    expect(summarise([measure(1)])).toMatchObject({ capped_share_ppm: 250_000, capped_within_limit: false });
+    expect(summarise([])).toMatchObject({ rollouts: 0, capped_share_ppm: null, capped_within_limit: true });
+  });
+});
+
+describe("a features pair against damage-aware@v1 (the S0 pair)", () => {
+  it("plays the game, searches it and rolls out with the pair's features and a fresh damage-aware opponent", async () => {
+    const configs: FeatureConfigs = { vocabulary, config: loadDamageAwareConfig("v1", vocabulary), mechanics: loadMechanicsConfig(FORMAT), snapshot, data_class: "synthetic" };
+    const worker = Object.assign(new ValueStandInWorker(), { featureSet: { feature_set: "probe-damage/1", feature_set_hash: configuredSetHash(engine, configs) } });
+    const base = loadSearchConfig(FORMAT);
+    const small = { ...base, worlds: { ...base.worlds, n: 4 }, min_valid_worlds: 2 } as typeof base;
+    const hp = { ...small, leaf: { kind: "hp-ko-differential" } } as typeof base;
+    const port = portFor();
+    const pair = { preview: "a".repeat(64), battle: "b".repeat(64) };
+    const known = syntheticTeamHashes([teamHash(battle.teams.p1), teamHash(battle.teams.p2)]);
+    const spec = pairGameSpec({ engine, manifest, client: worker, pair, sampling: "argmax", features: configs, damage: damageAwareSetup(engine, FORMAT), id: "f0", seed: battle.seed, teams: battle.teams, seat: "p1", game: 0, known });
+    expect(Object.keys(spec.make_actor ?? {}).sort()).toEqual(["p1", "p2"]);
+    const measured = await measureBattle({ engine, manifest, snapshot, setup: setupFor(port, { config: small }), setup_hp: setupFor(port, { config: hp }), worker, pair, sampling: "argmax", features: configs, rollouts: 2, rollout_max_turns: 2, max_decisions: 1 }, spec, 0, "p1");
+    expect(measured.measures.length).toBeGreaterThan(0);
+    expect(measured.measures.every((m) => m.player === "p1")).toBe(true);
+    // the pair's play (the game and the rollouts) and every root query carried rows; the leaves carried none
+    const asked = worker.queries.filter((q) => q.kind === "ask");
+    expect(asked.length).toBeGreaterThan(0);
+    expect(asked.every((q) => q.rows)).toBe(true);
+    const roots = worker.queries.filter((q) => q.kind === "evaluate" && q.candidates > 0);
+    expect(roots.length).toBeGreaterThan(0);
+    expect(roots.every((q) => q.rows)).toBe(true);
+    expect(worker.queries.filter((q) => q.kind === "value").every((q) => q.candidates === 0 && !q.rows)).toBe(true);
+    // a features worker with no configs (or the reverse) is refused
+    await expect(measureBattle({ engine, manifest, snapshot, setup: setupFor(port, { config: small }), setup_hp: setupFor(port, { config: hp }), worker, pair, sampling: "argmax", rollouts: 2, rollout_max_turns: 2, max_decisions: 1 }, spec, 0, "p1")).rejects.toThrow(/go together/);
   }, 600_000);
 });
 

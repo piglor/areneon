@@ -7,6 +7,11 @@
 //
 //   node packages/team-dataset/scripts/search-budget.ts --python /path/to/python [--games 4] [--start 0] [--max-turns 40]
 //        [--model-config FILE] [--leaf value-head|hp-ko-differential] [--out FILE]
+//        [--run-config RUN-CONFIG.json] [--opponent random-legal|damage-aware]
+//
+// `--run-config` takes the run's TrainingRunConfig: its `model` sizes the seeded pair and its candidate features (`probe-damage/1`) are stated
+// to the worker and built for the root query, so the pair is a features pair. `--opponent damage-aware` plays `damage-aware@v1` (a fresh
+// actor per game) in place of `random-legal`.
 //
 // `--python` is the interpreter of an environment that has `areneon-ml` installed (the worker runs as `python -I -m areneon_ml.worker`).
 // Per-component lines (ADR-026 section 8 S0 measure 5): for each searched decision the milliseconds spent in root prior, world building,
@@ -24,7 +29,10 @@ import {
   battleClass,
   COST_COMPONENTS,
   type CostComponent,
+  damageAwareActor,
+  damageAwareSetup,
   engineDataHash,
+  featureSetup,
   goldenWorldFactsData,
   loadEngine,
   loadRulesSnapshot,
@@ -65,12 +73,17 @@ const start = flag("start", 0, 0);
 const maxTurns = flag("max-turns", 40);
 const leaf = option("leaf") ?? "value-head";
 if (leaf !== "value-head" && leaf !== "hp-ko-differential") throw new Error("--leaf is value-head or hp-ko-differential");
+const opponent = option("opponent") ?? "random-legal";
+if (opponent !== "random-legal" && opponent !== "damage-aware") throw new Error("--opponent is random-legal or damage-aware");
+const runConfigFile = option("run-config");
+const runConfig = runConfigFile === undefined ? undefined : readTrainingRunConfig(JSON.parse(readFileSync(runConfigFile, "utf8")));
 const modelFile = option("model-config");
-const model = modelFile === undefined ? (JSON.parse(readFileSync(join(ROOT, "config/training/public-gpu16.json"), "utf8")) as { model: unknown }).model : JSON.parse(readFileSync(modelFile, "utf8"));
+const model = runConfig?.model ?? (modelFile === undefined ? (JSON.parse(readFileSync(join(ROOT, "config/training/public-gpu16.json"), "utf8")) as { model: unknown }).model : JSON.parse(readFileSync(modelFile, "utf8")));
 
 const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
 const vocabulary = goldenTeamVocabulary();
 const snapshot = loadRulesSnapshot(engine.commit);
+const features = runConfig === undefined ? undefined : featureSetup(engine, runConfig);
 const manifest = resolveFormat(engine, GOLDEN_FORMAT, snapshot).manifest;
 const dataFile = join(GOLDEN_DIR, "engine-data.json");
 
@@ -110,6 +123,7 @@ try {
     max_line_bytes: maxLine,
     n_parallel: 1,
     handshake_timeout_ms: 120_000,
+    ...(features === undefined ? {} : { features: features.statement }),
     expect: {
       encoder_version: preview.encoder_version,
       engine_data_hash: engineDataHash(readEngineDataAny(JSON.parse(readFileSync(dataFile, "utf8")))),
@@ -122,11 +136,14 @@ try {
   const config = { ...base, leaf: { kind: leaf } } as typeof base;
   const port = createSearchWorlds({ engine, vocabulary, reader_sha256: readerSha256(), manifest, arm: "generator-matched" });
   const setup = searchSetup({ engine, format_id: GOLDEN_FORMAT, vocabulary, port, facts_data: goldenWorldFactsData(), data_class: "synthetic", snapshot, config });
-  const { policy_id, identity_hash } = searchPolicy(setup, manifest, { preview: preview.checkpoint_id, battle: battle.checkpoint_id }, "argmax");
+  const pairIds = { preview: preview.checkpoint_id, battle: battle.checkpoint_id };
+  const { policy_id, identity_hash } = searchPolicy(setup, manifest, pairIds, "argmax", {}, features?.statement.feature_set_hash);
+  const damage = damageAwareSetup(engine, GOLDEN_FORMAT);
 
   const searchedMs: number[] = [];
   const allMs: number[] = [];
   const gameMs: number[] = [];
+  const otherMs: number[] = [];
   const perComponent = Object.fromEntries(COST_COMPONENTS.map((c) => [c, [] as number[]])) as Record<CostComponent, number[]>;
   let current = Object.fromEntries(COST_COMPONENTS.map((c) => [c, 0])) as Record<CostComponent, number>;
   const cost = { add: (component: CostComponent, ms: number): void => void (current[component] += ms) };
@@ -153,6 +170,7 @@ try {
       identity_hash,
       sampling: "argmax",
       cost,
+      ...(features === undefined ? {} : { features: { configs: features.configs }, pair: pairIds }),
     });
     let searchedBefore = 0;
     const timed: Actor = async (request, context) => {
@@ -166,13 +184,14 @@ try {
         if (searched > searchedBefore) {
           searchedMs.push(elapsed);
           for (const c of COST_COMPONENTS) perComponent[c].push(current[c]);
+          otherMs.push(elapsed - COST_COMPONENTS.reduce((total, c) => total + current[c], 0));
         }
         searchedBefore = searched;
       }
       return choice;
     };
     const began = performance.now();
-    await runBattle({ engine, formatId: GOLDEN_FORMAT, seed, teams, actors: { [seat]: timed, [other]: randomLegalActor(0xabc0 + game) } as Record<Player, Actor>, maxTurns, snapshot });
+    await runBattle({ engine, formatId: GOLDEN_FORMAT, seed, teams, actors: { [seat]: timed, [other]: opponent === "damage-aware" ? damageAwareActor({ ...damage, engine, data_class: "synthetic" }) : randomLegalActor(0xabc0 + game) } as Record<Player, Actor>, maxTurns, snapshot });
     gameMs.push(performance.now() - began);
     const { counts } = actor.report();
     for (const [key, value] of Object.entries(counts)) if (typeof value === "number") totals[key] = (totals[key] ?? 0) + value;
@@ -183,9 +202,9 @@ try {
 
   const result = {
     machine: { node: process.version, cpus: cpus().length, model: cpus()[0]?.model, load_average_at_end: loadavg().map((x) => Number(x.toFixed(2))) },
-    config: { search_policy: policy_id, identity_hash, leaf, games, start, max_turns: maxTurns, opponent: "random-legal", teams: "fixtures-v1 dataset", network: model, k: config.top_k, n: config.worlds.n, replies: config.replies },
+    config: { search_policy: policy_id, identity_hash, leaf, games, start, max_turns: maxTurns, opponent, features: features?.statement.feature_set ?? null, teams: "fixtures-v1 dataset", network: model, k: config.top_k, n: config.worlds.n, replies: config.replies },
     per_decision: { searched: summary(searchedMs), all_move_decisions: summary(allMs) },
-    per_component: Object.fromEntries(COST_COMPONENTS.map((c) => [c, summary(perComponent[c])])),
+    per_component: { ...Object.fromEntries(COST_COMPONENTS.map((c) => [c, summary(perComponent[c])])), other: summary(otherMs) },
     per_game: summary(gameMs),
     counts_total: totals,
     fallbacks,

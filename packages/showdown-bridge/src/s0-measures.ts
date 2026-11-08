@@ -166,8 +166,9 @@ export const rolloutSums = (rollouts: readonly (readonly number[])[], from = 0, 
 
 export interface SplitHalf {
   decisions: number;
-  /** Decisions whose halves have a correlation (both halves have a spread). */
+  /** Decisions whose halves have a correlation (both halves have a spread), and those dropped from the mean for lack of spread. */
   defined: number;
+  dropped: number;
   /** Mean over defined decisions of the Spearman between the half-sums, ppm. */
   half_correlation_ppm: number | null;
   /** The same corrected to the full 8 rollouts (Spearman-Brown), ppm: the noise ceiling on any attainable correlation. */
@@ -189,7 +190,7 @@ export function splitHalf(decisions: readonly (readonly (readonly number[])[])[]
     agree.push(top1AgreementPpm(a, b));
   }
   const mean = meanFloor(rhos);
-  return { decisions: decisions.length, defined: rhos.length, half_correlation_ppm: mean, corrected_ppm: mean === null ? null : spearmanBrownPpm(mean), top1_agreement_ppm: meanFloor(agree) };
+  return { decisions: decisions.length, defined: rhos.length, dropped: decisions.length - rhos.length, half_correlation_ppm: mean, corrected_ppm: mean === null ? null : spearmanBrownPpm(mean), top1_agreement_ppm: meanFloor(agree) };
 }
 
 /** Area under the ROC curve in ppm (Mann-Whitney; a positive-negative pair with equal scores counts half). Null when a class is empty. */
@@ -205,6 +206,38 @@ export function aucPpm(scores: readonly number[], positive: readonly boolean[]):
     }
   }
   return pairs === 0 ? null : Math.floor((wins2 * PPM) / (2 * pairs));
+}
+
+export interface AucInterval {
+  auc_ppm: number | null;
+  games: number;
+  decisions: number;
+  /** Percentile bounds over the resamples of GAMES (all of a game's decisions together) that had both classes; null when none did. */
+  low_ppm: number | null;
+  high_ppm: number | null;
+  resamples_used: number;
+}
+
+/**
+ * The value head's AUC with a game-clustered bootstrap interval (S0 measure 3): decisions of one game share one result and are
+ * correlated, so the unit of resampling is the game. A resample with no winner or no loser has no AUC and is skipped, counted.
+ */
+export function aucGameBootstrap(rows: readonly { game: string; score: number; positive: boolean }[], label: string): AucInterval {
+  const byGame = new Map<string, { score: number; positive: boolean }[]>();
+  for (const r of rows) byGame.set(r.game, [...(byGame.get(r.game) ?? []), { score: r.score, positive: r.positive }]);
+  const games = [...byGame.keys()].sort().map((g) => byGame.get(g) as { score: number; positive: boolean }[]);
+  const point = aucPpm(rows.map((r) => r.score), rows.map((r) => r.positive));
+  if (games.length === 0) return { auc_ppm: null, games: 0, decisions: 0, low_ppm: null, high_ppm: null, resamples_used: 0 };
+  const pick = draws(Buffer.from(label, "utf8"), games.length, games.length * 2000);
+  const values: number[] = [];
+  for (let b = 0; b < 2000; b += 1) {
+    const sample = Array.from({ length: games.length }, (_, j) => games[pick[b * games.length + j] as number] as { score: number; positive: boolean }[]).flat();
+    const auc = aucPpm(sample.map((x) => x.score), sample.map((x) => x.positive));
+    if (auc !== null) values.push(auc);
+  }
+  values.sort((x, y) => x - y);
+  const tail = Math.floor(values.length / 40);
+  return { auc_ppm: point, games: games.length, decisions: rows.length, low_ppm: values.length === 0 ? null : (values[tail] as number), high_ppm: values.length === 0 ? null : (values[values.length - 1 - tail] as number), resamples_used: values.length };
 }
 
 export interface CalibrationBin {
@@ -250,8 +283,13 @@ export interface LeafQuality {
   /** Decisions that entered, those with a correlation for both the search and the prior, and the search's top-1 against the oracle. */
   decisions: number;
   paired: number;
+  /** Decisions left out of the paired set because the search, the prior or the oracle values have no spread (no correlation). */
+  dropped: number;
   search_spearman_ppm: number | null;
   prior_spearman_ppm: number | null;
+  /** The same two means over the paired set only, the set the difference is taken on. */
+  search_spearman_paired_ppm: number | null;
+  prior_spearman_paired_ppm: number | null;
   /** Per-decision (search minus prior) with its bootstrap interval; the go rule reads the lower end. */
   difference: Interval | null;
   search_top1_ppm: number | null;
@@ -264,14 +302,18 @@ export interface LeafQuality {
  * both correlations exist.
  */
 export function leafQuality(decisions: readonly { search: readonly number[]; prior: readonly number[]; oracle: readonly number[] }[], label: string): LeafQuality {
-  const [s, p, diffs, st, pt] = [[] as number[], [] as number[], [] as number[], [] as number[], [] as number[]];
+  const [s, p, diffs, st, pt, sp, pp] = [[] as number[], [] as number[], [] as number[], [] as number[], [] as number[], [] as number[], [] as number[]];
   for (const d of decisions) {
     const [rs, rp] = [spearmanPpm(d.search, d.oracle), spearmanPpm(d.prior, d.oracle)];
     if (rs !== null) s.push(rs);
     if (rp !== null) p.push(rp);
-    if (rs !== null && rp !== null) diffs.push(rs - rp);
+    if (rs !== null && rp !== null) {
+      diffs.push(rs - rp);
+      sp.push(rs);
+      pp.push(rp);
+    }
     st.push(top1HitPpm(argmaxSet(d.search)[0] as number, d.oracle));
     pt.push(top1HitPpm(argmaxSet(d.prior)[0] as number, d.oracle));
   }
-  return { decisions: decisions.length, paired: diffs.length, search_spearman_ppm: meanFloor(s), prior_spearman_ppm: meanFloor(p), difference: diffs.length === 0 ? null : bootstrapInterval(diffs, label), search_top1_ppm: meanFloor(st), prior_top1_ppm: meanFloor(pt) };
+  return { decisions: decisions.length, paired: diffs.length, dropped: decisions.length - diffs.length, search_spearman_ppm: meanFloor(s), prior_spearman_ppm: meanFloor(p), search_spearman_paired_ppm: meanFloor(sp), prior_spearman_paired_ppm: meanFloor(pp), difference: diffs.length === 0 ? null : bootstrapInterval(diffs, label), search_top1_ppm: meanFloor(st), prior_top1_ppm: meanFloor(pt) };
 }

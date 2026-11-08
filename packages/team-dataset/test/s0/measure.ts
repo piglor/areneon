@@ -9,7 +9,11 @@
 
 import {
   battleClass,
+  buildFeatures,
+  createFeatureMemo,
   decodeRequest,
+  type FeatureConfigs,
+  type FeatureSetId,
   enumerateCandidates,
   type Engine,
   type EvaluationClient,
@@ -34,7 +38,7 @@ import {
   worldRequestOf,
   type VersionManifest,
   type Actor,
-  aucPpm,
+  aucGameBootstrap,
   leafQuality,
   rolloutSums,
   siblingCalibration,
@@ -59,6 +63,11 @@ export interface MeasureOptions {
   worker: PolicyClient & EvaluationClient;
   pair: { preview: string; battle: string };
   sampling: "argmax" | "sample";
+  /**
+   * The configs of a pair that reads candidate features (the worker states the set): the root query carries their rows, the search
+   * actor builds them, and the pair's rollout play builds them at every request.
+   */
+  features?: FeatureConfigs;
   /** Oracle rollouts per candidate (even: the split halves), and turns a rollout may play before it is cut. */
   rollouts: number;
   rollout_max_turns: number;
@@ -102,6 +111,9 @@ export interface BattleMeasure {
 }
 
 const foeActors = (spec: OracleSpec, foe: Player): ((rollout: number) => Actor) => {
+  // The real opponent policy of the game: a fresh copy of the very actor that played it, per rollout.
+  const make = spec.make_actor?.[foe];
+  if (make !== undefined) return () => make();
   const kind = spec.actors?.[foe] ?? "random-legal";
   return (rollout) => {
     const seed = ((spec.actor_seeds[foe] as number) ^ Math.imul(rollout + 1, 0x9e3779b1)) >>> 0;
@@ -110,7 +122,7 @@ const foeActors = (spec: OracleSpec, foe: Player): ((rollout: number) => Actor) 
 };
 
 /** Measure one replayed battle. */
-export async function measureBattle(options: MeasureOptions, spec: OracleSpec, game: number): Promise<BattleMeasure> {
+export async function measureBattle(options: MeasureOptions, spec: OracleSpec, game: number, only?: Player): Promise<BattleMeasure> {
   const { engine, manifest, setup, setup_hp, worker, pair, sampling } = options;
   const { decisions, record } = await captureDecisions(engine, spec);
   const known = syntheticTeamHashes([teamHash(spec.teams.p1), teamHash(spec.teams.p2)]);
@@ -119,11 +131,15 @@ export async function measureBattle(options: MeasureOptions, spec: OracleSpec, g
   const taken: Record<string, number> = {};
   const regime = sheetRegimeOf(manifest.showdown_commit, manifest.format_id);
   const actors = new Map<string, { value: ReturnType<typeof searchActor>; hp: ReturnType<typeof searchActor> }>();
-  const policy = searchPolicy(setup, manifest, pair, sampling);
-  const policyHp = searchPolicy(setup_hp, manifest, pair, sampling);
+  const featuresHash = worker.featureSet?.feature_set_hash;
+  if ((featuresHash === undefined) !== (options.features === undefined)) throw new Error("the features configs and the worker's stated feature set go together");
+  const policy = searchPolicy(setup, manifest, pair, sampling, {}, featuresHash);
+  const policyHp = searchPolicy(setup_hp, manifest, pair, sampling, {}, featuresHash);
+  const memo = createFeatureMemo();
 
   for (const d of decisions) {
     const seat = d.player;
+    if (only !== undefined && seat !== only) continue;
     if (options.seats !== undefined && !options.seats.includes(seat)) continue;
     if ((taken[seat] ?? 0) >= options.max_decisions) continue;
     const text = ([...d.channel].reverse().find((line) => line.startsWith("|request|")) as string).slice("|request|".length);
@@ -135,17 +151,21 @@ export async function measureBattle(options: MeasureOptions, spec: OracleSpec, g
 
     const team = stampTeam(spec.teams[seat] as never, known);
     const make = (s: SearchSetup, p: typeof policy) =>
-      searchActor({ setup: s, client: worker, battle: `s0-${spec.id}-${seat}`, player: seat, team, manifest, channel_class, seed: spec.seed, game, policy_id: p.policy_id, identity_hash: p.identity_hash, sampling });
+      searchActor({ setup: s, client: worker, battle: `s0-${spec.id}-${seat}`, player: seat, team, manifest, channel_class, seed: spec.seed, game, policy_id: p.policy_id, identity_hash: p.identity_hash, sampling, ...(options.features === undefined ? {} : { features: { configs: options.features }, pair }) });
     const key = `${seat}`;
     if (!actors.has(key)) actors.set(key, { value: make(setup, policy), hp: make(setup_hp, policyHp) });
     const { value: valueActor, hp: hpActor } = actors.get(key) as NonNullable<ReturnType<typeof actors.get>>;
 
     const observation = await observe({ channel: playerChannel({ schema_version: 1, data_class: channel_class, player: seat, lines: d.channel }, regime), team, manifest });
+    // A pair that reads candidate features: the root query carries the rows of its candidates, as the search actor's own does.
+    const stated = worker.featureSet ?? null;
+    const rows = options.features === undefined || stated === null ? undefined : buildFeatures(engine, options.features, playerChannel({ schema_version: 1, data_class: channel_class, player: seat, lines: d.channel }, regime), team.team, candidates, memo, stated.feature_set as FeatureSetId);
     const root = await worker.evaluate(`s0-${spec.id}-${seat}`, {
       schema_version: 1,
       identity: observation.identity,
       observation,
       candidates: candidates.map(({ choice, pending }) => ({ choice, pending })),
+      ...(rows === undefined ? {} : { candidate_features: rows }),
       sampling: { kind: "evaluate" },
       policy_id: policy.policy_id,
     } as Parameters<EvaluationClient["evaluate"]>[1]);
@@ -159,6 +179,8 @@ export async function measureBattle(options: MeasureOptions, spec: OracleSpec, g
       continue;
     }
     // The HP/KO leaf draws its own worlds from the same stream, so it is the same search with another leaf.
+    // The scores follow the prior-ranked order of the set that was searched.
+    if (exhaustive.scores.some((entry, j) => entry.choice !== (candidates[ranked[j] as number] as Candidate).choice)) throw new Error("the exhaustive scores do not follow the prior-ranked order");
     const hp = await hpActor.decide({ world, channel: d.channel, top: top.map((i) => candidates[i] as Candidate), stream });
     if (hp.kind !== "choice") {
       out.refused += 1;
@@ -208,9 +230,10 @@ function rolloutPair(options: MeasureOptions, spec: OracleSpec, known: ReturnTyp
     channel_class,
     seed: `${spec.seed}:rollout:${rollout}`,
     game: game * 1000 + rollout,
-    policy_id: policyId(options.pair, options.sampling, {}),
+    policy_id: policyId(options.pair, options.sampling, {}, options.worker.featureSet?.feature_set_hash),
     sampling: options.sampling,
     engine: options.engine,
+    ...(options.features === undefined ? {} : { features: { configs: options.features } }),
   });
 }
 
@@ -221,16 +244,25 @@ export interface S0Summary {
   decisions: number;
   battles: number;
   refused_decisions: number;
+  /** Rollouts played, those cut at the turn cap (scored 500,000, a tie), their share in ppm and whether it is within `MAX_CAPPED_PPM`. */
+  rollouts: number;
   capped_rollouts: number;
-  recall: ReturnType<typeof topKRecall>[];
+  capped_share_ppm: number | null;
+  capped_within_limit: boolean;
+  /** Rows of `distinct-slot` are those of `prior-top-k`: the actor treats the two alike (`search-set.ts`); `slot-cover` is the distinct rule. */
+  recall: (ReturnType<typeof topKRecall> & { alias_of?: "prior-top-k" })[];
   leaf_value_head: ReturnType<typeof leafQuality>;
   leaf_hp_ko: ReturnType<typeof leafQuality>;
   calibration_value_head: ReturnType<typeof siblingCalibration>;
   calibration_hp_ko: ReturnType<typeof siblingCalibration>;
   split_half: ReturnType<typeof splitHalf>;
-  value_head_auc_ppm: number | null;
-  value_head_auc_decisions: number;
+  /** The value head's AUC against game results over the games that were won or lost, with the game-clustered interval. */
+  value_head_auc: ReturnType<typeof aucGameBootstrap>;
+  notes: string[];
 }
+
+/** The share of capped rollouts above which a run is refused: 200,000 ppm (#1147 states none; a capped rollout is a tie, not a measurement). */
+export const MAX_CAPPED_PPM = 200_000;
 
 const EDGES = [0, 50_000, 100_000, 200_000, 400_000];
 
@@ -245,24 +277,34 @@ export function summarise(battles: readonly BattleMeasure[]): S0Summary {
     // exhaustive scores are in prior rank; the recall reads them by candidate index
     return { candidates: m.candidate_list as Candidate[], prior_ppm: m.prior_ppm, scores: m.ranked.map((candidate, j) => ({ candidate, sum: m.exhaustive_sums[j] as number })) };
   });
-  const recall: ReturnType<typeof topKRecall>[] = [];
+  const recall: S0Summary["recall"] = [];
   for (const k of [4, 6, 8]) recall.push(topKRecall(exhaustive, "prior-top-k", k));
-  for (const k of [4, 6, 8]) recall.push(topKRecall(exhaustive, "distinct-slot", k));
+  for (const k of [4, 6, 8]) recall.push({ ...topKRecall(exhaustive, "distinct-slot", k), alias_of: "prior-top-k" });
   for (const k of [4, 6, 8]) recall.push(topKRecall(exhaustive, "slot-cover", k));
   const decided = all.filter((m) => m.outcome_ppm !== 500_000);
+  const rollouts = all.reduce((n, m) => n + m.oracle.length * (m.oracle[0] as number[]).length, 0);
+  const capped = all.reduce((n, m) => n + m.capped_rollouts, 0);
+  const share = rollouts === 0 ? null : Math.floor((capped * 1_000_000) / rollouts);
   return {
     decisions: all.length,
     battles: battles.length,
     refused_decisions: battles.reduce((n, b) => n + b.refused, 0),
-    capped_rollouts: all.reduce((n, m) => n + m.capped_rollouts, 0),
+    rollouts,
+    capped_rollouts: capped,
+    capped_share_ppm: share,
+    capped_within_limit: share === null || share <= MAX_CAPPED_PPM,
     recall,
     leaf_value_head: leafQuality(set(search), "s0-leaf-value-head"),
     leaf_hp_ko: leafQuality(set((m) => m.hp_q_ppm), "s0-leaf-hp-ko"),
     calibration_value_head: siblingCalibration(all.map((m) => ({ predicted: search(m), oracle: oracleMeans(m) })), EDGES),
     calibration_hp_ko: siblingCalibration(all.map((m) => ({ predicted: m.hp_q_ppm, oracle: oracleMeans(m) })), EDGES),
     split_half: splitHalf(all.map((m) => m.oracle)),
-    value_head_auc_ppm: aucPpm(decided.map((m) => m.value_ppm), decided.map((m) => m.outcome_ppm === 1_000_000)),
-    value_head_auc_decisions: decided.length,
+    value_head_auc: aucGameBootstrap(decided.map((m) => ({ game: `${m.battle_id}:${m.player}`, score: m.value_ppm, positive: m.outcome_ppm === 1_000_000 })), "s0-value-head-auc"),
+    notes: [
+      "distinct-slot is an alias of prior-top-k in search-set.ts (the rows are identical); slot-cover is the distinct rule",
+      "a capped rollout scores 500,000 (a tie)",
+      "the paired means are over the decisions where both the search and the prior have a correlation with the oracle; `dropped` counts the rest",
+    ],
   };
 }
 

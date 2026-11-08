@@ -33,6 +33,11 @@ export interface OracleSpec {
   actor_seeds: Record<Player, number>;
   teams: Record<Player, PokemonSet[]>;
   actors?: Record<Player, "random-legal" | "pending-first">;
+  /**
+   * S0's game source: a factory per seat that builds the Actor that plays the battle (a fresh one per call), in place of the
+   * corpus kind: the pair through `policyActor`, damage-aware through `damageAwareActor`. A seat without a factory keeps its kind.
+   */
+  make_actor?: Partial<Record<Player, () => Actor>>;
 }
 
 /** One own move decision of a replayed battle: the serialised live battle (the fork) and the world input. */
@@ -187,7 +192,7 @@ export async function captureDecisions(engine: Engine, spec: OracleSpec): Promis
   const turns = new Map<string, number>();
   const kinds = spec.actors ?? { p1: "random-legal", p2: "random-legal" };
   const actorFor = (player: Player): Actor => {
-    const inner = ACTORS[kinds[player]](spec.actor_seeds[player]);
+    const inner = spec.make_actor?.[player]?.() ?? ACTORS[kinds[player]](spec.actor_seeds[player]);
     return (request, ctx) => {
       if (ctx !== undefined && request.phase === "move" && captured?.battle != null) {
         const live = captured.battle as any;

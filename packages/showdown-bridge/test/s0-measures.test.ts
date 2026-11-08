@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Candidate } from "../src/choices.ts";
-import { aucPpm, bootstrapInterval, doubledRanks, exhaustiveBest, leafQuality, meanFloor, rolloutSums, siblingCalibration, spearmanBrownPpm, spearmanPpm, splitHalf, top1AgreementPpm, top1HitPpm, topKRecall } from "../src/s0-measures.ts";
+import { aucGameBootstrap, aucPpm, bootstrapInterval, doubledRanks, exhaustiveBest, leafQuality, meanFloor, rolloutSums, siblingCalibration, spearmanBrownPpm, spearmanPpm, splitHalf, top1AgreementPpm, top1HitPpm, topKRecall } from "../src/s0-measures.ts";
 
 const cand = (n: number): Candidate[] => Array.from({ length: n }, (_, i) => ({ choice: `move ${i + 1}, move 1`, pending: false })) as Candidate[];
 
@@ -92,11 +92,11 @@ describe("split-half reliability", () => {
     expect(splitHalf([same]).half_correlation_ppm).toBe(-1_000_000);
     expect(splitHalf([same]).corrected_ppm).toBeNull();
     const agree = [[2, 2, 2, 2, 2, 2, 2, 2], [1, 1, 1, 1, 1, 1, 1, 1], [0, 0, 0, 0, 0, 0, 0, 0]];
-    expect(splitHalf([agree])).toEqual({ decisions: 1, defined: 1, half_correlation_ppm: 1_000_000, corrected_ppm: 1_000_000, top1_agreement_ppm: 1_000_000 });
+    expect(splitHalf([agree])).toEqual({ decisions: 1, defined: 1, dropped: 0, half_correlation_ppm: 1_000_000, corrected_ppm: 1_000_000, top1_agreement_ppm: 1_000_000 });
     // three candidates; first half sums 8,4,0 -> ranks 3,2,1; second half 4,8,0 -> ranks 2,3,1; rho = 0.5
     const half = [[2, 2, 2, 2, 1, 1, 1, 1], [1, 1, 1, 1, 2, 2, 2, 2], [0, 0, 0, 0, 0, 0, 0, 0]];
     const r = splitHalf([half, [[1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1]]]);
-    expect(r).toMatchObject({ decisions: 2, defined: 1, half_correlation_ppm: 500_000, corrected_ppm: 666_667 });
+    expect(r).toMatchObject({ decisions: 2, defined: 1, dropped: 1, half_correlation_ppm: 500_000, corrected_ppm: 666_667 });
     expect(r.top1_agreement_ppm).toBe(250_000); // (0 + 500000) / 2
   });
   it("needs an even number of rollouts", () => {
@@ -111,6 +111,28 @@ describe("AUC", () => {
     expect(aucPpm([1, 2, 1, 2], [true, false, false, true])).toBe(500_000); // pairs: (1,2) lose, (1,1) half, (2,2) half, (2,1) win
     expect(aucPpm([1, 2], [true, true])).toBeNull();
     expect(() => aucPpm([1], [true, false])).toThrow(RangeError);
+  });
+});
+
+describe("game-clustered AUC", () => {
+  it("resamples games, not decisions, and skips resamples with one class", () => {
+    const rows = [
+      { game: "a", score: 9, positive: true },
+      { game: "a", score: 8, positive: true },
+      { game: "b", score: 1, positive: false },
+      { game: "b", score: 2, positive: false },
+      { game: "c", score: 7, positive: true },
+      { game: "d", score: 3, positive: false },
+    ];
+    const r = aucGameBootstrap(rows, "x");
+    expect(r).toMatchObject({ auc_ppm: 1_000_000, games: 4, decisions: 6, low_ppm: 1_000_000, high_ppm: 1_000_000 });
+    expect(r.resamples_used).toBeGreaterThan(0);
+    expect(r.resamples_used).toBeLessThan(2000); // some resamples draw only winning or only losing games
+    expect(aucGameBootstrap(rows, "x")).toEqual(r);
+    // one game holding both classes: every resample is that game, so the interval is the point value
+    expect(aucGameBootstrap([{ game: "g", score: 1, positive: true }, { game: "g", score: 1, positive: false }], "x")).toMatchObject({ auc_ppm: 500_000, games: 1, low_ppm: 500_000, high_ppm: 500_000 });
+    expect(aucGameBootstrap([], "x")).toEqual({ auc_ppm: null, games: 0, decisions: 0, low_ppm: null, high_ppm: null, resamples_used: 0 });
+    expect(aucGameBootstrap([{ game: "a", score: 1, positive: true }], "x")).toMatchObject({ auc_ppm: null, low_ppm: null, high_ppm: null, resamples_used: 0 });
   });
 });
 
@@ -145,7 +167,7 @@ describe("leaf quality", () => {
       { search: [1, 1], prior: [1, 2], oracle: [1, 2] }, // search undefined
     ];
     const q = leafQuality(decisions, "t");
-    expect(q).toMatchObject({ decisions: 3, paired: 2, search_spearman_ppm: 900_000, prior_spearman_ppm: -266_667 });
+    expect(q).toMatchObject({ decisions: 3, paired: 2, dropped: 1, search_spearman_ppm: 900_000, prior_spearman_ppm: -266_667, search_spearman_paired_ppm: 900_000, prior_spearman_paired_ppm: -900_000 });
     expect(q.difference?.mean_ppm).toBe(1_800_000);
     expect(q.difference?.low_ppm).toBeGreaterThan(0);
     // top-1: search picks index 0 (oracle 30: best), index 3 (oracle 3, not best 4), index 0 of a tie (oracle 1 vs 2: miss)

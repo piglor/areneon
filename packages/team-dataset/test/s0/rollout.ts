@@ -14,7 +14,6 @@ import {
   CloneJudge,
   decodeRequest,
   type Engine,
-  hpKoDifferential,
   legalChoiceSet,
   outcomeScore,
   type PokemonSet,
@@ -26,6 +25,9 @@ import { activeRequest, playChoices, type TurnBattle } from "../../../showdown-b
 import { type Decision, revive } from "../../../showdown-bridge/test/fidelity/oracle.ts";
 
 type Player = "p1" | "p2";
+/** What a rollout cut at the turn cap scores: a tie. */
+export const CAPPED_SCORE_PPM = 500_000;
+
 const other = (p: Player): Player => (p === "p1" ? "p2" : "p1");
 
 /** The policies a rollout plays with: a fresh actor per rollout for the seat (the pair) and for the opponent (its real policy). */
@@ -46,7 +48,7 @@ export interface RolloutSpec {
 }
 
 export interface RolloutResult {
-  /** The seat's score in ppm (win 1,000,000, tie 500,000, loss 0; a capped rollout the hit-point differential), or null when the engine refused a choice. */
+  /** The seat's score in ppm (win 1,000,000, tie 500,000, loss 0; a capped rollout 500,000), or null when the engine refused a choice. */
   score_ppm: number | null;
   turns: number;
   capped: boolean;
@@ -98,7 +100,7 @@ export async function oracleRollout(spec: RolloutSpec, candidate: string, rollou
     channels[seat].push(...turn.lines);
     channels[foe].push(...(turn.foe as { lines: string[] }).lines);
     if (turn.ended !== null) return { score_ppm: outcomeScore(turn.ended), turns: played, capped: false };
-    if (played > spec.max_turns) return { score_ppm: hpKoDifferential(battle, seat), turns: played, capped: true };
+    if (played > spec.max_turns) return { score_ppm: CAPPED_SCORE_PPM, turns: played, capped: true };
     const ownChoice = await ask(seat, turn.request);
     const foeChoice = await ask(foe, (turn.foe as { request: string | null }).request);
     if (ownChoice === null && foeChoice === null) return { score_ppm: null, turns: played, capped: false };
