@@ -21,5 +21,5 @@ export { topWorlds, type TopWorld } from "./top-worlds.ts";
 export { TrappingCheckError, trapExclusions, type TrapCandidate, type TrapExclusions, type TrapLevel, type TrappingCheck, type TrapSlot } from "./trapping.ts";
 export { BELIEF_FORMAT, type BeliefInput, type BeliefVocabulary, type Cell, type DisguiseAssignment, type DisguiseMixture, type FormeBelief, type Marginal, type OpponentBelief, type SlotBelief, type SlotMarginal, type SlotSheet } from "./types.ts";
 export { applySpeed, emptySpeedCounts, type SpeedCandidate, type SpeedCheck, type SpeedCounts, type SpeedEvent, type SpeedRules } from "./speed.ts";
-export { type MoveInclusion, type MoveInclusions, moveInclusions, OPPONENT_SHEET_FORMAT, SHEET_DEFECT_CODES, SHEET_FEATURE_SET, SHEET_K, SHEET_REFUSAL_CODES, opponentSheet, refusedSheet, roundPpm, sheetFeatureSetHash, sheetRefusalOf, type SheetK, type SheetRefusalCode } from "./sheet.ts";
+export { type MoveInclusion, type MoveInclusions, moveInclusions, OPPONENT_SHEET_FORMAT, SHEET_DEFECT_CODES, SHEET_FEATURE_SET, SHEET_K, SHEET_REFUSAL_CODES, opponentSheet, refusedSheet, roundPpm, sheetFeatureSetHash, sheetRefusalDetail, sheetRefusalOf, type SheetK, type SheetRefusalCode } from "./sheet.ts";
 export { EVIDENCE_NONE, UNINFORMATIVE_FORMAT, uninformativeIdentityHash, uninformativeOpponent } from "./uninformative.ts";

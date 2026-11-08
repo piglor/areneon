@@ -248,7 +248,9 @@ function draw(b: OpponentBelief, tables: Prepared, ports: SamplerPorts, bits: Bi
     const known = parseSpreadKey(key);
     if (known === null && ports.spreads === undefined) throw new BeliefError("spread_sampler_required", "a sampled spread is the prior's other-spread entry and no SpreadSampler was given", i);
     const drawn = known ?? (ports.spreads as SpreadSampler).other(slot.species, forme.id, (total) => bits.below(total));
-    // An engine-sent sheet fixes the nature (the "other spread" entry names none; its Stat Points stay the port's draw).
+    // An engine-sent sheet fixes the nature (gap row `open-team-sheet-contents`); the "other spread" entry names none, its Stat Points stay the
+    // port's draw. Overriding the nature after the draw is exact only for a spread port in which nature and Stat Points are independent
+    // (the generator's is); a port that couples them would need the nature passed in.
     const spread = slot.sheet?.nature == null ? drawn : { ...drawn, nature: slot.sheet.nature };
     const shown = (b.slots[i] as OpponentBelief["slots"][number]).shown;
     return {

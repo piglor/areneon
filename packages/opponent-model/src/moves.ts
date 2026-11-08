@@ -85,9 +85,11 @@ function inclusions(list: MoveListInput, pool: readonly string[]): Inclusion[] {
  * With `exactSize` the set is KNOWN: `revealed` is the whole set and `exactSize` its size (an engine-sent team sheet,
  * ADR-025 erratum E1). The likelihood is then P(the set is exactly these moves | forme) = P(count = exactSize) times the
  * design's probability of that subset, the count has the one outcome, and a forced move outside the set makes it null.
- * A count the prior gives no mass takes weight 1 (the engine's word over the prior's silence, as the never-below rule).
+ * A count the prior gives no mass takes mass 1 (`countListed` false, the engine's word over the prior's silence, as the
+ * never-below rule); `countMass` is the count's factor of the likelihood, so a caller that compares formes can divide it out
+ * when some forme's prior is silent and the factor would not be comparable.
  */
-export function moveModel(list: MoveListInput, pool: readonly string[], revealed: readonly string[], exactSize?: number): { likelihood: Ratio; model: MoveModel } | null {
+export function moveModel(list: MoveListInput, pool: readonly string[], revealed: readonly string[], exactSize?: number): { likelihood: Ratio; model: MoveModel; countMass: Ratio; countListed: boolean } | null {
   const all = inclusions(list, pool);
   const forced = all.filter((m) => m.a >= m.b && m.b > 0n).map((m) => m.id);
   const forcedSet = new Set(forced);
@@ -123,11 +125,15 @@ export function moveModel(list: MoveListInput, pool: readonly string[], revealed
     const size = Math.min(Math.max(c.size, forced.length), highest);
     if (size >= minimum) sizes.set(size, add(sizes.get(size) ?? ZERO, c.p));
   }
+  let countMass: Ratio = ONE;
+  let countListed = true;
   if (exactSize !== undefined) {
     if (minimum !== exactSize) return null;
-    const mass = sizes.get(exactSize) ?? ONE;
+    const listed = sizes.get(exactSize);
+    countListed = listed !== undefined;
+    countMass = listed ?? ONE;
     sizes.clear();
-    sizes.set(exactSize, mass);
+    sizes.set(exactSize, countMass);
   } else if (sizes.size === 0) sizes.set(minimum, ONE);
 
   // For each distinct size: P(targets in the set | size) and the inclusion of every other candidate given it.
@@ -157,6 +163,8 @@ export function moveModel(list: MoveListInput, pool: readonly string[], revealed
   inclusion.sort((a, b) => compareIds(a.id, b.id));
   return {
     likelihood,
+    countMass,
+    countListed,
     model: {
       forced,
       revealed: targets,

@@ -9,13 +9,14 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { PublicSide, PublicSheetMon } from "@areneon/public-state";
 import { toId } from "@areneon/public-state";
-import { BELIEF_FORMAT, BeliefError, type BeliefErrorCode, type OpponentBelief, type SetLegality, type SpreadSampler, SHEET_DISAGREES, SHEET_FIELDS, belief, createSampler, worldsDigest } from "../src/index.ts";
+import { BELIEF_FORMAT, BeliefError, type BeliefErrorCode, type OpponentBelief, type SetLegality, type SpreadSampler, SHEET_DISAGREES, SHEET_FIELDS, belief, beliefIdentityHash, createSampler, worldsDigest } from "../src/index.ts";
 import { natureSpreads } from "../src/belief.ts";
+import { moveModel } from "../src/moves.ts";
 import { parseSpreadKey } from "../src/fields.ts";
 import { ratio } from "../src/ratio.ts";
 import { type Game, type Point, beliefAt, points, type Seat } from "./corpus.ts";
 import { ROOT, realVocabulary, uniformPrior } from "./real.ts";
-import { hidingConfig, input, prior, seen, text, vocabulary } from "./support.ts";
+import { hidingConfig, inert, input, prior, seen, text, vocabulary } from "./support.ts";
 
 const SW = (letter: "a" | "b", name: string, species: string) => `|switch|p2${letter}: ${name}|${species}, L50, M|100/100`;
 const p = (num: bigint, den = 1n) => ratio(num, den);
@@ -210,7 +211,10 @@ describe("the sheet's natures and the other-spread entry", () => {
     const jolly = natureSpreads(dist, "jolly", 2);
     expect(jolly.dist).toEqual({ total: 4n, options: [{ id: "other", weight: 4n }] });
     expect(jolly.share).toEqual(p(1n, 5n)); // 'other' holds one of two natures: 4 / (10 * 2)
-    expect(natureSpreads(dist, "hardy", 2).share).toEqual(p(4n, 5n)); // (6 * 2 + 4) / 20
+    // the weights themselves are the posterior's: of two natures, 'other' is a quarter of the spreads that remain (named 6 * 2 = 12, other 4)
+    const hardy = natureSpreads(dist, "hardy", 2);
+    expect(hardy.dist).toEqual({ total: 16n, options: [{ id: "hardy:0-0-0-0-0-0", weight: 12n }, { id: "other", weight: 4n }] });
+    expect(hardy.share).toEqual(p(4n, 5n)); // (6 * 2 + 4) / 20
     expect(natureSpreads({ total: 6n, options: [dist.options[0]!] }, "jolly", 2)).toEqual({ dist: { total: 0n, options: [] }, share: p(0n) });
   });
 
@@ -235,6 +239,68 @@ describe("the sheet's natures and the other-spread entry", () => {
     expect(caught(() => belief({ ...input(), opponent: edited })).detail).toBe(SHEET_DISAGREES);
     edited.sheet = edited.sheet!.slice(1);
     expect(caught(() => belief({ ...input(), opponent: edited })).detail).toBe(SHEET_DISAGREES);
+  });
+});
+
+describe("the move count the prior is silent on", () => {
+  // Two Mega formes of one stone (as a gendered species has): both stay possible, and the sheet lists three moves. The first forme's prior
+  // says four moves always (silent on three); the second says three or two with half each. A silent prior must not outweigh the other forme.
+  const twin = () => {
+    const v = vocabulary();
+    return { ...v, roster: [...v.roster, { id: "betamega2", abilities: ["bmega"] as [string, ...string[]], moves: v.roster.find((r) => r.id === "beta")!.moves, required_item: "betite" }] };
+  };
+  const pool = ["bm1", "bm2", "bm3", "bm4"];
+  const withMoves = (id: string, empty: number) => ({
+    ...inert(id, "bmega", "bm", 1),
+    moves: { denominator: 2, slots: 4, entries: pool.map((m) => ({ id: m, inclusion: 1 })), empty_slots: empty, residual: 0, unmapped: 0 },
+  });
+  const twins = () =>
+    prior((pr) => {
+      const beta = pr.species.find((s) => s.id === "beta")!;
+      beta.formes = [beta.formes[0]!, withMoves("betamega", 0), withMoves("betamega2", 3)] as typeof beta.formes;
+      beta.denominator = beta.formes.reduce((sum, f) => sum + f.weight, 0);
+    });
+  const sheet = { beta: ["Betite", "B1", "Bm1,Bm2,Bm3"] };
+
+  it("moveModel reports whether the prior listed the count, and its mass", () => {
+    const list = (empty: number) => ({ denominator: 2, slots: 4, entries: pool.map((id) => ({ id, inclusion: 1 })), empty_slots: empty, residual: 0 });
+    expect(moveModel(list(0), pool, ["bm1", "bm2", "bm3"], 3)).toMatchObject({ countListed: false, countMass: p(1n) });
+    expect(moveModel(list(3), pool, ["bm1", "bm2", "bm3"], 3)).toMatchObject({ countListed: true, countMass: p(1n, 2n) });
+    expect(moveModel(list(0), pool, ["bm1", "bm2", "bm3"])).toMatchObject({ countListed: true, countMass: p(1n) }); // not an exact set: unchanged
+  });
+
+  it("the formes weigh by the prior's weights and the subset alone, whatever the prior says about the count", () => {
+    const b = run([], sheet, { prior: twins(), vocabulary: twin() });
+    const formes = slot(b, "beta").formes;
+    expect(formes.map((f) => f.id)).toEqual(["betamega", "betamega2"]);
+    expect(formes[0]!.p).toEqual(p(1n, 2n));
+    expect(formes[1]!.p).toEqual(p(1n, 2n));
+  });
+
+  it("when every forme lists the count it stays a factor of the forme weights", () => {
+    const listed = prior((pr) => {
+      const beta = pr.species.find((s) => s.id === "beta")!;
+      beta.formes = [beta.formes[0]!, withMoves("betamega", 3), withMoves("betamega2", 2)] as typeof beta.formes;
+      beta.denominator = beta.formes.reduce((sum, f) => sum + f.weight, 0);
+    });
+    // the first lists three moves with probability 1/2, the second with probability 1
+    expect(slot(run([], sheet, { prior: listed, vocabulary: twin() }), "beta").formes.map((f) => f.p)).toEqual([p(1n, 3n), p(2n, 3n)]);
+  });
+});
+
+describe("the forme the sheet names", () => {
+  it("a sheet that names a Mega forme without its stone is the base forme", () => {
+    const edited = structuredClone(seen([showteam()]).opponent);
+    edited.sheet![1]!.species = "betamega";
+    expect(slot(belief({ ...input(), opponent: edited }), "beta").formes.map((f) => f.id)).toEqual(["beta"]);
+  });
+});
+
+describe("the belief identity is a function of the format id (why BELIEF_FORMAT does not move)", () => {
+  const parts = { prior_hash: "a".repeat(64), belief_config_hash: "b".repeat(64), vocabulary_hash: "c".repeat(64), reader_sha256: "d".repeat(64) };
+  const manifest = (format_id: string) => ({ showdown_commit: "e".repeat(40), format_id, regulation: "m-c", ruleset_hash: "f".repeat(64), format_rules_hash: "0".repeat(64) });
+  it("an open-sheet belief and a closed-format belief never share an identity: the version manifest names the format", () => {
+    expect(beliefIdentityHash({ ...parts, version_manifest: manifest("closedformat") })).not.toBe(beliefIdentityHash({ ...parts, version_manifest: manifest("openformat") }));
   });
 });
 

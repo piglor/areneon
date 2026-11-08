@@ -19,7 +19,7 @@ import { type Dist, OTHER_SPREAD, abilityDist, itemDist, only, parseSpreadKey, s
 import { solveItemClause } from "./item-clause.ts";
 import { moveModel } from "./moves.ts";
 import { type TrapSlot, trapExclusions } from "./trapping.ts";
-import { type Ratio, ONE, ZERO, add, greater, integerise, isZero, lcm, mul, ratio } from "./ratio.ts";
+import { type Ratio, ONE, ZERO, add, div, greater, integerise, isZero, lcm, mul, ratio } from "./ratio.ts";
 import { BELIEF_FORMAT, type SlotSheet, type BeliefInput, type BeliefVocabulary, type Cell, type DisguiseAssignment, type FormeBelief, type Marginal, type OpponentBelief, type SlotBelief, type SlotMarginal } from "./types.ts";
 
 type PriorSpecies = UsagePrior["species"][number];
@@ -101,6 +101,9 @@ function checkSheet(species: PriorSpecies, ev: SlotEvidence, sheet: PublicSheetM
   const evolved = ev.mega || (ev.shown !== null && species.formes.some((f) => f.id === ev.shown && isMega(species, f, entryOf(ctx, f.id, slot))));
   if (ev.ability !== null && !evolved && ev.ability !== sheet.ability) throw disagree("a revealed ability differs from the engine-sent sheet", slot);
   if (ev.gender !== null && sheet.gender !== null && ev.gender !== sheet.gender) throw disagree("the shown gender differs from the engine-sent sheet", slot);
+  // The level: the format adjusts every Pokemon to its rule table's `adjustLevel` and the engine prints the team's own level on the sheet,
+  // so this check is sound only where the two agree. They do in the committed open-sheet corpus (50 and 50); a format whose teams are
+  // built at another level would refuse every game here, and the check would then compare against `adjustLevel` instead.
   if (ev.level !== null && ev.level !== sheet.level) throw disagree("the shown level differs from the engine-sent sheet", slot);
   if (ev.moves.some((m) => !sheet.moves.includes(m) && (placeable(m) || (known !== null && known.has(m))))) throw disagree("a revealed move is not on the engine-sent sheet", slot);
 }
@@ -156,6 +159,15 @@ function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: n
   const itemUsable = ev.item !== null && ctx.items.has(ev.item);
   if (ev.item !== null) notes.push(itemUsable ? `item:${ev.item}` : `item_skipped:${ev.item}`);
 
+  // With a sheet the move set is known; the count's prior is a factor of each forme's weight. When any forme's prior is silent on the
+  // sheet's count that factor is not comparable between formes (a silent one would outweigh the others), so it is left out of all of them.
+  const exact = sheet === null ? null : new Map(abilityOf.flatMap(({ f }) => {
+    const pool = poolOf(f.id);
+    const found = sheet.moves.every((m) => pool.has(m)) ? moveModel(f.moves, [...pool], sheet.moves, new Set(sheet.moves).size) : null;
+    return found === null ? [] : [[f.id, found] as const];
+  }));
+  const uniformCount = exact !== null && [...exact.values()].some((found) => !found.countListed);
+
   const work: FormeWork[] = [];
   for (const { f, mega, dist, verdict, built, share } of abilityOf) {
     const entry = entries.get(f.id) as RosterEntry;
@@ -164,8 +176,9 @@ function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: n
     if (sheet !== null ? !sheet.moves.every((m) => pool.has(m)) : placeable.some((m) => !pool.has(m))) continue;
     if (built !== null ? weightOf(dist, built) === 0n : usable && verdict === "excluded") continue;
     // The sheet lists exactly the set's moves; otherwise the revealed ones are in it.
-    const model = sheet === null ? moveModel(f.moves, [...pool], placeable) : moveModel(f.moves, [...pool], sheet.moves, new Set(sheet.moves).size);
-    if (model === null) continue;
+    const found = exact === null ? moveModel(f.moves, [...pool], placeable) : (exact.get(f.id) ?? null);
+    if (found === null) continue;
+    const model = { model: found.model, likelihood: uniformCount ? div(found.likelihood, found.countMass) : found.likelihood };
 
     // The ability the forme is in the revealed (or built) state of: a point mass when the evidence fixes it.
     const claim = built ?? (usable && verdict === "fixed" ? ev.ability : null);
@@ -182,7 +195,8 @@ function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: n
     }
     if (items.size === 0) continue;
 
-    // The sheet's nature is a hard fact: the named spreads of the other natures go, and the forme's weight carries the share left.
+    // The sheet's nature is a hard fact (gap row `open-team-sheet-contents`: the engine sends the nature, not the Stat Points): the named
+    // spreads of the other natures go, and the forme's weight carries the share left.
     const listed = spreadDist(f.spreads.entries, f.spreads.residual);
     const natured = sheet === null || sheet.nature === null ? null : natureSpreads(listed, sheet.nature, ctx.vocabulary.natures?.length ?? 1);
     if (natured !== null && natured.dist.total === 0n) continue;
@@ -209,13 +223,16 @@ function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: n
 
 /**
  * A spread list given the nature the sheet names: the named spreads of that nature and the "other spread" entry (its nature is
- * the sheet's), with the probability of the nature under the list. The "other" entry holds one nature of `natures` (1 when the
- * vocabulary lists none), so its share is its weight over that many; the weights are scaled by `natures` to stay integers.
+ * the sheet's), with the probability of the nature under the list. The "other" entry holds ONE nature of `natures` (1 when the
+ * vocabulary lists none), so against the named spreads it counts for 1 / natures of its weight: the named weights are scaled by
+ * `natures` to stay integers, which makes the returned weights the posterior's and `share` = their sum over `total * natures`.
+ * (The nature is hard evidence of the open-sheet format, gap row `open-team-sheet-contents`.)
  */
 export function natureSpreads(listed: Dist<string>, nature: string, natures: number): { dist: Dist<string>; share: Ratio } {
-  const kept = listed.options.filter((o) => o.id === OTHER_SPREAD || parseSpreadKey(o.id)?.nature === nature);
-  const matched = kept.reduce((sum, o) => sum + (o.id === OTHER_SPREAD ? o.weight : o.weight * BigInt(natures)), 0n);
-  return { dist: { total: kept.reduce((sum, o) => sum + o.weight, 0n), options: kept }, share: matched === 0n ? ZERO : ratio(matched, listed.total * BigInt(natures)) };
+  const scale = BigInt(natures);
+  const options = listed.options.flatMap((o) => (o.id === OTHER_SPREAD ? [o] : parseSpreadKey(o.id)?.nature === nature ? [{ id: o.id, weight: o.weight * scale }] : []));
+  const total = options.reduce((sum, o) => sum + o.weight, 0n);
+  return { dist: { total, options }, share: total === 0n ? ZERO : ratio(total, listed.total * scale) };
 }
 
 /** The options of a distribution that are not in `excluded`. */
