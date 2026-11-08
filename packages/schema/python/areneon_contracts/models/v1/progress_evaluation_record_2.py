@@ -504,6 +504,128 @@ class SheetCounts(BaseModel):
     refusals: Annotated[list[Refusal], Field(max_length=16)]
 
 
+class Fallbacks1(BaseModel):
+    """
+    Team Previews the pair played itself, by reason (ADR-029 section 4); all 0 for the control.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    belief_refusal: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    clock_floor: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    engine_failure: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    too_few_worlds: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    worker_failure: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+
+
+class Payoff(BaseModel):
+    """
+    The payoff table builder's counts, summed over the solves tried.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    back_draws: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    clamped: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    clamped_high: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    clamped_low: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    engine_refusals: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    entries: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    entry_attempts: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    game_end_entries: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    missing_entries: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    not_move_request: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    preview_queries: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    rollout_capped: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    rollout_choices: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    value_queries: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    worlds_asked: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    worlds_dropped: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    worlds_used: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+
+
+class SolveCounts(BaseModel):
+    """
+    The integer counts of one game of a Team Preview solver policy (ADR-029 section 8), or the sums of several games'. Wall time is printed, never stored. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    decisions: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Requests answered, every phase.
+    """
+    previews: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Team Preview requests answered (the one phase the solver acts in; the no-solve control counts them too).
+    """
+    solved: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Team Preview decisions the solver chose (0 for the self-no-solve control).
+    """
+    fallbacks: Fallbacks1
+    """
+    Team Previews the pair played itself, by reason (ADR-029 section 4); all 0 for the control.
+    """
+    belief_refusals: list[CountEntry]
+    """
+    Belief refusals behind belief_refusal fallbacks, by the opponent model's code, sorted and unique by key.
+    """
+    worlds_asked: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    worlds_refused: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    worlds_unstarted: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    payoff: Payoff
+    """
+    The payoff table builder's counts, summed over the solves tried.
+    """
+    exploitability_ppm: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Sum over the solved decisions of the matrix exploitability in ppm (divide by solved).
+    """
+    support_size: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Sum over the solved decisions of the support size of our mixture (divide by solved).
+    """
+
+
+class SolveSummary(BaseModel):
+    """
+    A Team Preview solver policy's identity hash and its per-game counts summed over the match's games (ADR-029 section 8). Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    identity_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+    """
+    The solver identity hash (ADR-029 section 4; the preview_solve: member of the candidate's policy id). On the opponent side of a self-no-solve match it names the solver policy the control belongs to.
+    """
+    counts: SolveCounts
+
+
+class SelfNoSolveOpponent(BaseModel):
+    """
+    The control opponent of a Team Preview solver policy (ADR-029 section 8): the very pair the solver policy wraps, played without the solver. A minor change within v2: a reader older than it rejects a record that carries it.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["self-no-solve"]
+    policy_id: Annotated[StrictStr, Field(pattern="^policy:[0-9a-f]{64}$")]
+    """
+    The same frozen pair played WITHOUT the solver, in the mode the match played (its ordinary policy id).
+    """
+    checkpoints: Checkpoints
+    mode: Literal["sample", "argmax"]
+    """
+    The pair's play mode: the control's mode, the one the solver policy plays every other decision in.
+    """
+
+
 class Plan(BaseModel):
     """
     What every match played: derivations, sizes and caps.
@@ -540,6 +662,12 @@ class Plan(BaseModel):
     """
     Games in every cross-run match (even), laid out as games_per_match. Present exactly when the record has cross-run matches.
     """
+    preview_solve_budget_ms: Annotated[
+        StrictInt | MISSING, Field(ge=1, le=9007199254740991)
+    ] = MISSING
+    """
+    The Team Preview latency budget the games of the solver matches ran with (ADR-029 section 8), in ms: the larger of the run config's latency_budget_ms.preview_ms and the solver config's budget_ms, for every seat of those matches, the control's included. Present exactly when the record has solver matches. Reader rule: at least latency_budget_ms.preview_ms (the solver config is not named by the record, so its budget_ms is not checked there; the command raises the budget to it before the games). latency_budget_ms itself stays the run config's.
+    """
     max_turns: Annotated[StrictInt, Field(ge=1, le=9007199254740991)]
     """
     The turn cap of the run's TrainingRunConfig.generation: a game still running past it is a tie.
@@ -554,10 +682,11 @@ class Opponent(
         | AnchorOpponent
         | RunOpponent
         | SelfNoSearchOpponent
+        | SelfNoSolveOpponent
     ]
 ):
     root: Annotated[
-        BaselineOpponent | PreviousOpponent | AnchorOpponent | RunOpponent | SelfNoSearchOpponent,
+        BaselineOpponent | PreviousOpponent | AnchorOpponent | RunOpponent | SelfNoSearchOpponent | SelfNoSolveOpponent,
         Field(discriminator="kind"),
     ]
     """
@@ -598,6 +727,14 @@ class GameRow(BaseModel):
     opponent_search: SearchCounts | MISSING = MISSING
     """
     Only a game of a self-no-search match: the control's counts for this game.
+    """
+    solve: SolveCounts | MISSING = MISSING
+    """
+    Only a game of a match with the solver: the candidate's counts for this game.
+    """
+    opponent_solve: SolveCounts | MISSING = MISSING
+    """
+    Only a game of a self-no-solve match: the control's counts for this game.
     """
     sheet: SheetCounts | MISSING = MISSING
     """
@@ -674,6 +811,14 @@ class Match(BaseModel):
     opponent_search: SearchSummary | MISSING = MISSING
     """
     Only a self-no-search match: the control's counts (searched_decisions 0) summed over the match's games.
+    """
+    solve: SolveSummary | MISSING = MISSING
+    """
+    Only a match of a Team Preview solver candidate (match_id starts with psolve-): the candidate's identity hash and its game counts summed.
+    """
+    opponent_solve: SolveSummary | MISSING = MISSING
+    """
+    Only a self-no-solve match: the control's counts (solved 0) summed over the match's games.
     """
     sheet: SheetCounts | MISSING = MISSING
     """
