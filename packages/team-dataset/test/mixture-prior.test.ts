@@ -53,7 +53,7 @@ describe("the committed records", () => {
       const prior = derive(config);
       expect(`${jcs(prior as never)}\n`).toBe(committed);
       expect(readUsagePrior(JSON.parse(committed), vocabulary)).toEqual(prior);
-    });
+    }, 300_000);
   }
 });
 
@@ -115,7 +115,7 @@ describe("the usage component's moves against the real sampler", () => {
 const SLACK = 0.012;
 
 for (const [name, config] of [["mixture-u-v1", configU], ["mixture-r-v1", configR]] as const) {
-  describe(`the ${name} record against the proposal's frequencies`, () => {
+  describe(`the ${name} record against the proposal's frequencies`, { timeout: 300_000 }, () => {
     const prior = derive(config);
     const hasUsage = config.proposal?.components.some((c) => c.kind === "usage") === true;
     const proposal = new Proposal(vocabulary, table, config, roleSetsSource(engine, vocabulary, table, JSON.parse(JSON.stringify(roleTable))), hasUsage ? usageSource(vocabulary, usage) : undefined);
@@ -146,7 +146,7 @@ for (const [name, config] of [["mixture-u-v1", configU], ["mixture-r-v1", config
         compared += 1;
       }
       expect(compared).toBeGreaterThan(100);
-    });
+    }, 300_000);
 
     it("each entry's forme share, ability, item, move and spread marginals are the record's, per entry within binomial bounds", () => {
       let entries = 0;

@@ -229,6 +229,20 @@ function usageInclusions(roster: readonly RosterEntry[], rows: ReadonlyMap<strin
   return new Map<string, number>(roster.map((r, k): [string, number] => [r.id, (hits[k] as number) / USAGE_INCLUSION_TEAMS]));
 }
 
+const inclusionMemo = new WeakMap<UsageWeightTable, Map<string, Map<string, number>>>();
+
+/** `usageInclusions`, kept per table object and (floor, team size, roster) for the life of the process: the simulation is a pure function of them, and a test derives the same record several times. */
+function memoInclusions(table: UsageWeightTable, roster: readonly RosterEntry[], rows: ReadonlyMap<string, UsageWeightTable["species"][number]>, floor: number, teamSize: number): Map<string, number> {
+  const key = `${floor}|${teamSize}|${roster.map((r) => r.id).join(",")}`;
+  const byTable = inclusionMemo.get(table) ?? new Map<string, Map<string, number>>();
+  inclusionMemo.set(table, byTable);
+  const known = byTable.get(key);
+  if (known !== undefined) return known;
+  const computed = usageInclusions(roster, rows, floor, teamSize);
+  byTable.set(key, computed);
+  return computed;
+}
+
 export interface MixturePriorInput {
   readonly vocabulary: TeamVocabulary;
   readonly config: TeamGeneratorConfig;
@@ -370,7 +384,7 @@ export function deriveMixturePrior(input: MixturePriorInput): UsagePrior {
     return { abilities, items: itemsOut, moves, count: Math.min(slots, pool.length), spreads };
   };
   // The simulation runs only for a config that has a usage component (a floor of 0 is refused above).
-  const usageInclusionOf = usageComponent === undefined ? new Map<string, number>() : usageInclusions(roster, usageBy, floor, teamSize);
+  const usageInclusionOf = usageComponent === undefined || usage === undefined ? new Map<string, number>() : memoInclusions(usage, roster, usageBy, floor, teamSize);
   const usageInclusion = (entry: RosterEntry): number => usageInclusionOf.get(entry.id) ?? 0;
 
   const partsOf = (entry: RosterEntry): Parts[] => {
