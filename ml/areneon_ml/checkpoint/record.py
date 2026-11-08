@@ -113,7 +113,7 @@ def _check_game_manifests(manifest: dict[str, Any], found: list[dict[str, Any]])
     """``game_manifests``: sorted by JCS bytes and unique, ``manifest`` among them, one engine
     commit and regulation (the sheet-variant check proper needs the engine: the Node side's)."""
     keys = [jcs(m) for m in found]
-    if not _strictly_ascending(keys):
+    if not all(a < b for a, b in itertools.pairwise(keys)):
         raise RecordError(
             "checkpoint-record: game_manifests must be sorted by JCS bytes, each once"
         )
