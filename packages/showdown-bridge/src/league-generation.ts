@@ -151,14 +151,16 @@ export function featureSetup(engine: Engine, config: TrainingRunConfig, beliefWo
   const modes = named.feature_set === FEATURE_SET_3 ? BELIEF_EVIDENCE_MODES : [undefined];
   let configs = build();
   let found = configuredSetHash(engine, configs);
-  const informative = found;
+  const tried = [found];
   for (const evidence of modes.slice(1)) {
     if (found === named.feature_set_hash) break;
     configs = build(evidence);
     found = configuredSetHash(engine, configs);
+    tried.push(found);
   }
   if (found !== named.feature_set_hash) {
-    throw new GenerationError(`the run config names the candidate feature set ${named.feature_set} ${named.feature_set_hash}, which this checkout computes as ${informative}`);
+    const others = tried.length > 1 ? `; the other mode computes ${tried.slice(1).join(", ")}` : "";
+    throw new GenerationError(`the run config names the candidate feature set ${named.feature_set} ${named.feature_set_hash}, which this checkout computes as ${tried[0]}${others}`);
   }
   return { configs, statement: { feature_set: named.feature_set, feature_set_hash: found } };
 }
@@ -220,16 +222,17 @@ export function sheetSetup(engine: Engine, config: TrainingRunConfig, factory?: 
   const manifest = resolveFormat(engine, config.format_id).manifest;
   // The named hash selects the mode: the informative belief, else the uninformative one (#1309), each with its own source hash.
   let port: BeliefFeaturesPort | undefined;
+  const tried: string[] = [];
   for (const evidence of BELIEF_EVIDENCE_MODES) {
     const candidate = factory({ engine, vocabulary, reader_sha256: readerSha256(), manifest, ...(evidence === undefined ? {} : { evidence }) });
+    tried.push(candidate.features_hash);
     if (candidate.features_hash === named.feature_set_hash) {
       port = candidate;
       break;
     }
   }
   if (port === undefined) {
-    const found = factory({ engine, vocabulary, reader_sha256: readerSha256(), manifest }).features_hash;
-    throw new GenerationError(`the run config names the opponent sheet source ${named.feature_set} ${named.feature_set_hash}, which this checkout computes as ${found}`);
+    throw new GenerationError(`the run config names the opponent sheet source ${named.feature_set} ${named.feature_set_hash}, which this checkout computes as ${tried[0]} (informative belief); the other mode computes ${tried.slice(1).join(", ")}`);
   }
   const setup: SheetSetup = { engine, vocabulary, port, scenario_id: checkScenario(engine, loadMechanicsConfig(config.format_id)) };
   return { setup, statement: sheetStatement(setup) };

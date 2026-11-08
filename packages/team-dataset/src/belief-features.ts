@@ -36,6 +36,12 @@ export function evidenceKey(opponent: SheetArgs["opponent"], flags: SheetArgs["f
   return JSON.stringify([flags.length > 0, opponent.roster.map((mon) => [slotEvidence(mon), mon.phantom === true, mon.base_species])]);
 }
 
+/**
+ * Where the informative belief refuses for a reader reason: a reader flag or a phantom (Illusion twin) roster entry (`reader_flagged`).
+ * The uninformative mode refuses there too and reads no evidence otherwise, so the two arms' refused shares (E4's 1% validity rule) are comparable.
+ */
+const readerRefuses = (input: { readonly opponent: SheetArgs["opponent"]; readonly flags: SheetArgs["flags"] }): boolean => input.flags.length > 0 || input.opponent.roster.some((mon) => mon.phantom === true);
+
 /** Run `run`; a refusal of the model (a code a consumer falls back on) becomes `otherwise(code)`, a defect of the run throws. */
 function refusing<T>(run: () => T, otherwise: (code: NonNullable<ReturnType<typeof sheetRefusalOf>>) => T): T {
   try {
@@ -74,7 +80,9 @@ export function createBeliefFeatures(context: BeliefFeaturesContext, files: Sear
     // The belief's move inclusions for `probe-damage/3` (no trapping check: the threats read the evidence projection only, so the
     // memo key is complete). A refusal of the model keeps its code (`{ refused }`); a defect throws.
     moveInclusions(input) {
-      // The uninformative mode reads the preview opponent, no flags and no trapping: the answer is one value per roster.
+      // The uninformative mode reads the preview opponent, no flags and no trapping: the answer is one value per roster. It refuses
+      // exactly where the informative belief refuses for a reader reason (a flag or a phantom entry), so the refused shares of the two arms match.
+      if (uninformative && readerRefuses(input)) return { refused: "reader_flagged" };
       const opponent = uninformative ? uninformativeOpponent(input.opponent) : input.opponent;
       const flags = uninformative ? [] : input.flags;
       const key = evidenceKey(opponent, flags);
@@ -87,6 +95,7 @@ export function createBeliefFeatures(context: BeliefFeaturesContext, files: Sear
       return remember(inclusionMemo, key, found);
     },
     sheet(input) {
+      if (uninformative && readerRefuses(input)) return refusedSheet(input.opponent, "reader_flagged", features_hash);
       const opponent = uninformative ? uninformativeOpponent(input.opponent) : input.opponent;
       const flags = uninformative ? [] : input.flags;
       const trapping = uninformative ? null : input.trapping;

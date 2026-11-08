@@ -231,7 +231,7 @@ describe("beliefRowCounts", () => {
       seen.length = 0;
       expect(sheetSetup(engine, sheetNamed("2".repeat(64)), factory)?.statement.feature_set_hash).toBe("2".repeat(64));
       expect(seen).toEqual([undefined, "none"]);
-      expect(() => sheetSetup(engine, sheetNamed("3".repeat(64)), factory)).toThrow(/computes as 1{64}/);
+      expect(() => sheetSetup(engine, sheetNamed("3".repeat(64)), factory)).toThrow(/computes as 1{64} \(informative belief\); the other mode computes 2{64}/);
     });
 
     it("probe-damage/3 gets its own hash from the mode, and the named hash selects the port", () => {
@@ -257,6 +257,8 @@ describe("beliefRowCounts", () => {
       expect(second.configs.belief_threats?.port.identity_hash).toBe("d".repeat(64));
       expect(second.statement.feature_set_hash).toBe(uninformative);
       expect(seen).toEqual([undefined, "none"]);
+      // a wrong hash lists every hash tried
+      expect(() => featureSetup(engine, withFeatures("0".repeat(64), FEATURE_SET_3), undefined, factory)).toThrow(new RegExp(`computes as ${informative}; the other mode computes ${uninformative}`));
     });
   });
 });
