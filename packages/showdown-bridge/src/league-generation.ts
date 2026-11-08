@@ -622,6 +622,8 @@ async function playOne(options: GenerationOptions, plan: GamePlan, client: Polic
     seats,
     latency_budget: budget,
     maxTurns: settings.max_turns,
+    // Training self-play: a seat that does not read the legal set is not judged on a clone (ADR-028 F4).
+    skip_unread_judge: true,
   });
   const sheetCounts = builders.length === 0 ? undefined : sumSheetCounts(builders.map((b) => b.counts()));
   options.on_sheet_counts?.(plan.game, builders.map((b) => b.counts()));

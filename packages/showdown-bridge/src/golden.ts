@@ -10,6 +10,7 @@ import type { JsonObject, RequestPhase } from "./request.ts";
 import {
   type Actor,
   type BattleRecord,
+  declareReadsLegal,
   type Player,
   runBattle,
 } from "./runner.ts";
@@ -65,12 +66,12 @@ export const engineDefault: Actor = () => "default";
  * the first engine-judged candidate, else the first pending one. Throws
  * `NoCandidateError` only when the set is empty or missing.
  */
-export const firstLegal: Actor = (request) => {
+export const firstLegal: Actor = declareReadsLegal((request) => {
   if (request.legal === undefined) {
     throw new NoCandidateError(`${request.player}: request ${request.request_seq} has no legal choice set`);
   }
   return actorRule(request.legal);
-};
+}, true);
 
 /** Replay the golden battle on `engine`. */
 export function goldenBattle(engine: Engine): Promise<BattleRecord> {
