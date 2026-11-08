@@ -319,6 +319,106 @@ class SearchSeat(BaseModel):
     counts: SearchCounts
 
 
+class Fallbacks1(BaseModel):
+    """
+    Team Previews the pair played itself, by reason (ADR-029 section 4); all 0 for the control.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    belief_refusal: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    clock_floor: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    engine_failure: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    too_few_worlds: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    worker_failure: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+
+
+class Payoff(BaseModel):
+    """
+    The payoff table builder's counts, summed over the solves tried.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    back_draws: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    clamped: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    clamped_high: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    clamped_low: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    engine_refusals: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    entries: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    entry_attempts: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    game_end_entries: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    missing_entries: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    not_move_request: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    preview_queries: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    rollout_capped: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    rollout_choices: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    value_queries: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    worlds_asked: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    worlds_dropped: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    worlds_used: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+
+
+class SolveCounts(BaseModel):
+    """
+    The integer counts of one game of a Team Preview solver policy (ADR-029 section 8), or the sums of several games'. Wall time is printed, never stored. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    decisions: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Requests answered, every phase.
+    """
+    previews: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Team Preview requests answered (the one phase the solver acts in; the no-solve control counts them too).
+    """
+    solved: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Team Preview decisions the solver chose (0 for the self-no-solve control).
+    """
+    fallbacks: Fallbacks1
+    """
+    Team Previews the pair played itself, by reason (ADR-029 section 4); all 0 for the control.
+    """
+    belief_refusals: list[CountEntry]
+    """
+    Belief refusals behind belief_refusal fallbacks, by the opponent model's code, sorted and unique by key.
+    """
+    worlds_asked: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    worlds_refused: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    worlds_unstarted: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    payoff: Payoff
+    """
+    The payoff table builder's counts, summed over the solves tried.
+    """
+    exploitability_ppm: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Sum over the solved decisions of the matrix exploitability in ppm (divide by solved).
+    """
+    support_size: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Sum over the solved decisions of the support size of our mixture (divide by solved).
+    """
+
+
+class SolveSeat(BaseModel):
+    """
+    The Team Preview solver policy's seat in this game, the solver identity hash and that seat's integer counts (ADR-029 section 8); for the self-no-solve control the seat of the pair played without the solver and the same identity hash, with solved 0. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    seat: Literal["p1", "p2"]
+    identity_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+    counts: SolveCounts
+
+
 class Baseline(BaseModel):
     """
     Only a game with a damage-aware baseline seat (ADR-018 sections 4, 5): which seat it held, the baseline identity hash and that seat's integer counts for the game. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
@@ -438,4 +538,12 @@ class ProgressGameRecord(BaseModel):
     opponent_search: SearchSeat | MISSING = MISSING
     """
     Only a game against the self-no-search control.
+    """
+    solve: SolveSeat | MISSING = MISSING
+    """
+    Only a game of a Team Preview solver candidate.
+    """
+    opponent_solve: SolveSeat | MISSING = MISSING
+    """
+    Only a game against the self-no-solve control.
     """

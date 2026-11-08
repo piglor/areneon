@@ -14,7 +14,7 @@ import evaluationSchemaV2 from "@areneon/schema/contracts/v1/progress-evaluation
 import gameSchema from "@areneon/schema/contracts/v1/progress-game-record.schema.json" with { type: "json" };
 import type { ProgressEvaluationRecord } from "@areneon/schema/types/v1/progress-evaluation-record.ts";
 import type { ProgressEvaluationRecordV2 } from "@areneon/schema/types/v1/progress-evaluation-record-2.ts";
-import type { BaselineCounts, ProgressGameRecord, SearchCounts } from "@areneon/schema/types/v1/progress-game-record.ts";
+import type { BaselineCounts, ProgressGameRecord, SearchCounts, SolveCounts } from "@areneon/schema/types/v1/progress-game-record.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import { sheetCountsProblem, sumSheetCounts } from "./sheet-counts.ts";
 import { matchSuffix } from "./progress-modes.ts";
@@ -22,7 +22,7 @@ import { progressGameStreams } from "./progress-seed.ts";
 import { teamHash } from "./team-class.ts";
 import type { PokemonSet } from "./engine.ts";
 
-export type { BaselineCounts, ProgressEvaluationRecord, ProgressEvaluationRecordV2, ProgressGameRecord, SearchCounts };
+export type { BaselineCounts, ProgressEvaluationRecord, ProgressEvaluationRecordV2, ProgressGameRecord, SearchCounts, SolveCounts };
 
 /** The counts a damage-aware baseline seat reports per game (ADR-018 section 4), in the record's order. */
 export const BASELINE_COUNT_KEYS = ["decisions", "preview_decisions", "scored_decisions", "queries", "probe_runs", "unsupported_queries", "reader_fallbacks", "assumed_set_fallbacks", "epsilon_plays"] as const;
@@ -102,6 +102,41 @@ function checkControlCounts(counts: SearchCounts, what: string): void {
   const fallbacksOnlyStructural = SEARCH_FALLBACK_KEYS.filter((key) => !(CONTROL_FALLBACK_KEYS as readonly string[]).includes(key)).every((key) => counts.fallbacks[key] === 0);
   const tablesEmpty = SEARCH_TABLE_KEYS.every((key) => counts[key].length === 0) && SEARCH_DROP_KEYS.every((key) => counts.worlds_dropped[key] === 0);
   if (!quiet || !fallbacksOnlyStructural || !tablesEmpty) fail(`${what}: the no-search control searches nothing: every count but decisions and the structural fallbacks is 0`);
+}
+
+/** The numeric counts of a Team Preview solver policy's game, in the record's order (`fallbacks`, `belief_refusals` and `payoff` are apart). */
+export const SOLVE_COUNT_KEYS = ["decisions", "previews", "solved", "worlds_asked", "worlds_refused", "worlds_unstarted", "exploitability_ppm", "support_size"] as const;
+/** Why a Team Preview was played by the pair (ADR-029 section 4): the keys of the closed `fallbacks` table. */
+export const SOLVE_FALLBACK_KEYS = ["belief_refusal", "clock_floor", "engine_failure", "too_few_worlds", "worker_failure"] as const;
+/** The payoff builder's counts (`PayoffCounts` of `preview-payoff.ts`), the keys of the closed `payoff` table. */
+export const SOLVE_PAYOFF_KEYS = ["back_draws", "clamped", "clamped_high", "clamped_low", "engine_refusals", "entries", "entry_attempts", "game_end_entries", "missing_entries", "not_move_request", "preview_queries", "rollout_capped", "rollout_choices", "value_queries", "worlds_asked", "worlds_dropped", "worlds_used"] as const;
+
+/** The sums of per-game solver counts, key by key (the belief refusals merged, sorted by key). */
+export function sumSolveCounts(list: readonly SolveCounts[]): SolveCounts {
+  const total: Record<string, unknown> = {};
+  for (const key of SOLVE_COUNT_KEYS) total[key] = list.reduce((sum, counts) => sum + counts[key], 0);
+  total.fallbacks = Object.fromEntries(SOLVE_FALLBACK_KEYS.map((key) => [key, list.reduce((sum, counts) => sum + counts.fallbacks[key], 0)]));
+  total.payoff = Object.fromEntries(SOLVE_PAYOFF_KEYS.map((key) => [key, list.reduce((sum, counts) => sum + counts.payoff[key], 0)]));
+  total.belief_refusals = sumEntries(list.map((counts) => counts.belief_refusals));
+  return total as unknown as SolveCounts;
+}
+
+/** The rules the profile cannot say about one solver count record (a game's, or a sum of games'). */
+export function checkSolveCounts(counts: SolveCounts, what: string): void {
+  const fellBack = SOLVE_FALLBACK_KEYS.reduce((sum, key) => sum + counts.fallbacks[key], 0);
+  if (counts.solved + fellBack > counts.previews) fail(`${what}: solved and fallback Team Previews cannot exceed Team Previews`);
+  if (counts.previews > counts.decisions) fail(`${what}: Team Previews cannot exceed decisions`);
+  if (counts.worlds_refused + counts.worlds_unstarted > counts.worlds_asked) fail(`${what}: refused and unstarted worlds cannot exceed worlds asked`);
+  if (!strictlyAscending(counts.belief_refusals.map((entry) => entry.key))) fail(`${what}: belief_refusals must be sorted by key, each once`);
+  if (counts.belief_refusals.reduce((sum, entry) => sum + entry.count, 0) > counts.fallbacks.belief_refusal) fail(`${what}: belief refusals cannot exceed the belief_refusal fallbacks`);
+}
+
+/** The no-solve control solves nothing: only the decisions and the Team Previews it answered are counted. */
+function checkSolveControlCounts(counts: SolveCounts, what: string): void {
+  checkSolveCounts(counts, what);
+  const quiet = SOLVE_COUNT_KEYS.filter((key) => key !== "decisions" && key !== "previews").every((key) => counts[key] === 0);
+  const silent = SOLVE_FALLBACK_KEYS.every((key) => counts.fallbacks[key] === 0) && SOLVE_PAYOFF_KEYS.every((key) => counts.payoff[key] === 0) && counts.belief_refusals.length === 0;
+  if (!quiet || !silent) fail(`${what}: the no-solve control solves nothing: every count but decisions and previews is 0`);
 }
 
 export class ProgressRecordError extends Error {
@@ -230,17 +265,25 @@ export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluati
   }
   if (new Set(matches.map((match) => match.candidate_preview === undefined)).size > 1) fail("a Preview ablation record holds ablation matches only");
   if (new Set(matches.map((match) => match.search === undefined)).size > 1) fail("a search record holds search matches only: the search candidate is evaluated alone");
+  if (new Set(matches.map((match) => match.solve === undefined)).size > 1) fail("a solver record holds solver matches only: the Team Preview solver candidate is evaluated alone");
+  if (matches.some((match) => match.solve !== undefined) && matches.some((match) => match.search !== undefined)) fail("a record holds search matches or solver matches, never both");
+  if (matches.some((match) => match.solve !== undefined) !== (plan.preview_solve_budget_ms !== undefined)) fail("plan.preview_solve_budget_ms is present exactly when the record has solver matches");
+  if (plan.preview_solve_budget_ms !== undefined && plan.preview_solve_budget_ms < plan.latency_budget_ms.preview_ms) fail("plan.preview_solve_budget_ms is the Team Preview budget the games ran with: at least latency_budget_ms.preview_ms");
   const flat = ids.flatMap((id) => rowsOf.get(id) as RowV2[]);
   if (flat.some((row, index) => row !== games[index])) fail("game rows must be in match then game order");
   const identities = new Set<string>();
   const searchIdentities = new Set<string>();
+  const solveIdentities = new Set<string>();
   for (const match of matches) {
     const rows = rowsOf.get(match.match_id) as RowV2[];
     const searched = match.search !== undefined;
     // A search candidate's matches carry the prefix `search-`; the rest of the id is the usual opponent-and-mode name.
-    const name = searched ? match.match_id.slice("search-".length) : match.match_id;
+    const solved = match.solve !== undefined;
+    const name = searched ? match.match_id.slice("search-".length) : solved ? match.match_id.slice("psolve-".length) : match.match_id;
     if (searched !== match.match_id.startsWith("search-")) fail(`${match.match_id}: a match is named search-<opponent>-<mode> exactly when it carries search counts`);
+    if (solved !== match.match_id.startsWith("psolve-")) fail(`${match.match_id}: a match is named psolve-<opponent>-<mode> exactly when it carries solver counts`);
     checkSearchOfMatch(match, rows, searchIdentities);
+    checkSolveOfMatch(match, rows, solveIdentities);
     checkSheetOfMatch(match, rows);
     // An extra play mode (ADR-023 section 1, #1044): a sample at a declared temperature and/or threshold, against a scripted
     // baseline or another run's pair (both sides in the mode), named <opponent>-sample[-t<ppm>][-th<ppm>].
@@ -249,7 +292,7 @@ export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluati
     if (declared) {
       if (match.mode !== "sample") fail(`${match.match_id}: a temperature or a truncation applies to a sample match only`);
       if (match.opponent.kind !== "baseline" && match.opponent.kind !== "run") fail(`${match.match_id}: an extra play mode is played against a scripted baseline or another run's pair`);
-      if (searched || match.candidate_preview !== undefined) fail(`${match.match_id}: an extra play mode is not a search or ablation match`);
+      if (searched || solved || match.candidate_preview !== undefined) fail(`${match.match_id}: an extra play mode is not a search, solver or ablation match`);
       if (!name.endsWith(`-sample${suffix}`)) fail(`${match.match_id}: a match with play settings is named <opponent>-sample[-t<ppm>][-th<ppm>]`);
     } else if (/-sample-(?:t|th)\d+(?:-th\d+)?$/.test(name)) fail(`${match.match_id}: a match named for play settings carries them`);
     const preview = match.candidate_preview;
@@ -280,6 +323,7 @@ export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluati
   }
   if (identities.size > 1) fail("every damage-aware match of a record must carry one baseline identity hash");
   if (searchIdentities.size > 1) fail("every search match of a record must carry one search identity hash");
+  if (solveIdentities.size > 1) fail("every solver match of a record must carry one solver identity hash");
   return record;
 }
 
@@ -352,6 +396,37 @@ function checkSearchOfMatch(match: MatchV2, rows: readonly RowV2[], identities: 
   if (jcs(found.counts as unknown as Json) !== jcs(sumSearchCounts(control_per_game) as unknown as Json)) fail(`${match.match_id}: opponent_search.counts must be the sum of the game rows' counts`);
 }
 
+/**
+ * ADR-029 section 8: a match of a Team Preview solver candidate (`psolve-<opponent>-<mode>`) carries the solver identity hash and
+ * the sum of its rows' per-game counts; against the self-no-solve control, which is the same pair without the solver, the control's
+ * counts too (solved 0). No other match carries either; the sums recompute from the rows.
+ */
+function checkSolveOfMatch(match: MatchV2, rows: readonly RowV2[], identities: Set<string>): void {
+  const control = match.opponent.kind === "self-no-solve";
+  if (match.solve === undefined) {
+    if (control || match.opponent_solve !== undefined || rows.some((row) => row.solve !== undefined || row.opponent_solve !== undefined)) fail(`${match.match_id}: only a solver match carries solver counts, and the self-no-solve control belongs to one`);
+    return;
+  }
+  if (match.candidate_preview !== undefined || match.search !== undefined) fail(`${match.match_id}: a solver match has no Preview variant and no search`);
+  if (rows.some((row) => row.solve === undefined)) fail(`${match.match_id}: a solver match carries solver counts in its summary and in every game row`);
+  identities.add(match.solve.identity_hash);
+  const perGame = rows.map((row) => row.solve as SolveCounts);
+  perGame.forEach((counts, index) => checkSolveCounts(counts, `${match.match_id} game ${index}`));
+  if (jcs(match.solve.counts as unknown as Json) !== jcs(sumSolveCounts(perGame) as unknown as Json)) fail(`${match.match_id}: solve.counts must be the sum of the game rows' counts`);
+  if (!control) {
+    if (match.opponent_solve !== undefined || rows.some((row) => row.opponent_solve !== undefined)) fail(`${match.match_id}: only a self-no-solve match carries the control's counts`);
+    return;
+  }
+  const opponent = match.opponent as Extract<MatchV2["opponent"], { kind: "self-no-solve" }>;
+  if (opponent.mode !== match.mode) fail(`${match.match_id}: the control plays the pair in the match's mode`);
+  if (match.opponent_solve === undefined || rows.some((row) => row.opponent_solve === undefined)) fail(`${match.match_id}: a self-no-solve match carries the control's counts in its summary and in every game row`);
+  const found = match.opponent_solve as NonNullable<MatchV2["opponent_solve"]>;
+  if (found.identity_hash !== match.solve.identity_hash) fail(`${match.match_id}: the control's identity hash is the solver policy's it belongs to`);
+  const controlPerGame = rows.map((row) => row.opponent_solve as SolveCounts);
+  controlPerGame.forEach((counts, index) => checkSolveControlCounts(counts, `${match.match_id} game ${index} control`));
+  if (jcs(found.counts as unknown as Json) !== jcs(sumSolveCounts(controlPerGame) as unknown as Json)) fail(`${match.match_id}: opponent_solve.counts must be the sum of the game rows' counts`);
+}
+
 type Outcome = ProgressGameRecord["outcome"];
 
 /** Read a ProgressGameRecord: the schema, then the rules; `chosen` is among its candidates and every hash recomputes. */
@@ -378,6 +453,7 @@ export function readProgressGameRecord(value: unknown): ProgressGameRecord {
     if (baseline.counts.decisions < answered || baseline.counts.decisions > answered + forfeited) fail("baseline.counts.decisions must be the baseline seat's decisions");
   } else if (isDamageAware(record.policies.p1) || isDamageAware(record.policies.p2)) fail("a game with a damage-aware seat must carry the baseline counts");
   checkSearchOfGame(record);
+  checkSolveOfGame(record);
   // A game of a both-seats evaluation names its pair: both games of a pair share the pair's seed.
   if (record.pair !== undefined && record.pair !== record.game >> 1) fail("pair must be the game index divided by two");
   // A declared evaluation key (#1177) replaces the run key in the seed; it belongs to a both-seats game and never equals the run key.
@@ -407,6 +483,26 @@ function checkSearchOfGame(record: ProgressGameRecord): void {
   if (control.identity_hash !== search.identity_hash) fail("the control's identity hash is the search policy's it belongs to");
   checkControlCounts(control.counts, "opponent_search");
   if (!decisionsOk(control.seat, control.counts)) fail("opponent_search.counts.decisions must be the control seat's decisions");
+}
+
+/** A stored game's solver fields (ADR-029 section 8): as the search's, one identity hash on two seats, the control's counts the control's. */
+function checkSolveOfGame(record: ProgressGameRecord): void {
+  const { solve, opponent_solve: control } = record;
+  if (solve === undefined) {
+    if (control !== undefined) fail("opponent_solve belongs to a game that carries solve");
+    return;
+  }
+  if (record.search !== undefined) fail("a game carries search or solver counts, never both");
+  const forfeited = record.outcome.kind === "forfeit" ? 1 : 0;
+  const answered = (seat: "p1" | "p2"): number => record.decisions.filter((decision) => decision.player === seat).length;
+  const decisionsOk = (seat: "p1" | "p2", counts: SolveCounts): boolean => counts.decisions >= answered(seat) && counts.decisions <= answered(seat) + forfeited;
+  checkSolveCounts(solve.counts, "solve");
+  if (!decisionsOk(solve.seat, solve.counts)) fail("solve.counts.decisions must be the solver seat's decisions");
+  if (control === undefined) return;
+  if (control.seat === solve.seat) fail("opponent_solve.seat must be the seat the solver does not hold");
+  if (control.identity_hash !== solve.identity_hash) fail("the control's identity hash is the solver policy's it belongs to");
+  checkSolveControlCounts(control.counts, "opponent_solve");
+  if (!decisionsOk(control.seat, control.counts)) fail("opponent_solve.counts.decisions must be the control seat's decisions");
 }
 
 /** The two seats of a game record's outcome as the engine's winner field: `p1`, `p2` or `null` for a tie. */

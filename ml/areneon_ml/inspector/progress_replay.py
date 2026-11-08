@@ -40,6 +40,7 @@ from areneon_ml.progress.records import (
     ProgressRecordError,
     check_game_baseline,
     check_game_search,
+    check_game_solve,
     is_v2,
     preview_variant,
     read_game_record,
@@ -82,6 +83,10 @@ class ProgressGame:
     #: control's on the other seat, as the record states them; None otherwise.
     search: dict[str, Any] | None = None
     opponent_search: dict[str, Any] | None = None
+    #: A game of the Team Preview solver candidate (ADR-029): the solver seat's block, and the
+    #: self-no-solve control's on the other seat, as the record states them; None otherwise.
+    solve: dict[str, Any] | None = None
+    opponent_solve: dict[str, Any] | None = None
 
 
 def _read(path: Path, what: str) -> Any:
@@ -248,6 +253,7 @@ def _check_game(
     try:
         check_game_baseline(record, match, row)
         check_game_search(record, match, row)
+        check_game_solve(record, match, row)
     except ProgressRecordError as exc:
         raise InspectError(f"games/{name}: {exc}") from exc
 
@@ -322,6 +328,8 @@ def read_progress_games(
                 record.get("baseline"),
                 record.get("search"),
                 record.get("opponent_search"),
+                record.get("solve"),
+                record.get("opponent_solve"),
             )
         )
     if both:
