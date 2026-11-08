@@ -82,8 +82,8 @@ def manifests_problem(
     """Why ``manifests`` is not a run's ``game_manifests``, or None.
 
     Sorted by JCS bytes and unique; the closed format's manifest (``closed``, when given) is in it;
-    each manifest names one of the run's two formats, and they share the pinned engine commit and
-    the regulation (the engine-side sheet-variant check is the Node side's).
+    exactly one manifest for each of the run's two formats, and they share the pinned engine
+    commit and the regulation (the engine-side sheet-variant check is the Node side's).
     """
     sheet = config.sheet_regimes
     if sheet is None:
@@ -94,8 +94,8 @@ def manifests_problem(
     if closed is not None and closed not in manifests:
         return "the manifest must be one of game_manifests"
     formats = {config.format_id, sheet.open_format}
-    if any(m["format_id"] not in formats for m in manifests):
-        return "a game manifest names a format that is none of the run's"
+    if sorted(m["format_id"] for m in manifests) != sorted(formats):
+        return "game_manifests must hold one manifest for each of the run's two formats"
     if len({(m["showdown_commit"], m["regulation"]) for m in manifests}) > 1:
         return "the game manifests do not share one engine commit and regulation"
     return None

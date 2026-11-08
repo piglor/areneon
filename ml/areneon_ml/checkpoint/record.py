@@ -15,6 +15,9 @@ from typing import Any
 
 from areneon_contracts.contracts import jcs, sha256_hex, validate
 
+#: A mixed-format run names the manifests of exactly two formats: the closed one and the open one.
+FORMATS = 2
+
 
 class RecordError(ValueError):
     """A CheckpointRecord breaks a rule the contract profile cannot say."""
@@ -119,6 +122,10 @@ def _check_game_manifests(manifest: dict[str, Any], found: list[dict[str, Any]])
         )
     if manifest not in found:
         raise RecordError("checkpoint-record: manifest must be one of game_manifests")
+    if len(found) != FORMATS or len({m["format_id"] for m in found}) != FORMATS:
+        raise RecordError(
+            "checkpoint-record: game_manifests must hold one manifest for each of two formats"
+        )
     if len({(m["showdown_commit"], m["regulation"]) for m in found}) > 1:
         raise RecordError(
             "checkpoint-record: game_manifests must share one engine commit and regulation"

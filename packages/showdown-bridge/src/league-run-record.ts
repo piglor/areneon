@@ -66,6 +66,10 @@ function checkRegimes(record: LeagueRunRecord): void {
   if (record.regimes !== undefined && record.regimes.open + record.regimes.closed !== record.games) throw new LeagueRunRecordError("the regimes' counts must sum to games");
   const keys = (record.game_manifests ?? []).map((manifest) => jcs(manifest as unknown as Json));
   if (keys.some((key, index) => index > 0 && key <= (keys[index - 1] as string))) throw new LeagueRunRecordError("game_manifests must be sorted by their JCS bytes, each once");
+  const manifests = record.game_manifests ?? [];
+  if (record.game_manifests === undefined) return;
+  if (manifests.length !== 2 || new Set(manifests.map((m) => m.format_id)).size !== 2) throw new LeagueRunRecordError("game_manifests must hold one manifest for each of two formats");
+  if (new Set(manifests.map((m) => `${m.showdown_commit}/${m.regulation}`)).size > 1) throw new LeagueRunRecordError("game_manifests must share one engine commit and regulation");
 }
 
 /** Read a record: the schema (which fixes the derivation version), then the count and order rules. */
@@ -105,6 +109,9 @@ export async function checkLeagueRunRecord(record: LeagueRunRecord | LeagueRunRe
   if (record.run_id !== config.seeds.run_key) throw new LeagueRunRecordError(`run_id ${record.run_id} is not the config's run key`);
   if (record.run_config_hash !== (await runConfigHash(config))) throw new LeagueRunRecordError("run_config_hash is not the config's hash");
   if ((record.regimes !== undefined) !== (config.sheet_regimes !== undefined)) throw new LeagueRunRecordError("regimes and game_manifests exist exactly for a config with sheet_regimes");
+  if (config.sheet_regimes !== undefined && record.game_manifests?.map((m) => m.format_id).sort().join() !== [config.format_id, config.sheet_regimes.open_format].sort().join()) {
+    throw new LeagueRunRecordError("game_manifests must hold one manifest for each of the run's two formats");
+  }
   // `baselines` exists exactly for the config's damage-aware entries, with the same policy ids and games.
   const expected = config.generation.baseline_games.filter((baseline) => baseline.actor === "damage-aware" && baseline.games > 0).map((baseline) => `${baseline.policy_id}:${baseline.games}`).sort();
   const actual = (record.baselines ?? []).map((entry) => `${entry.policy_id}:${entry.games}`).sort();

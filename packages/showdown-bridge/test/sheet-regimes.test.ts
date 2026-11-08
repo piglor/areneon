@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { jcs, type Json } from "../src/canonical-json.ts";
 import { SAMPLES_DIR } from "../src/samples.ts";
+import { checkLeagueRunRecord, LeagueRunRecordError, readLeagueRunRecord } from "../src/league-run-record.ts";
 import {
   checkPlanRegimes,
   closedGameCount,
@@ -111,5 +112,30 @@ describe("the manifests of the two formats (ADR-027 section 5a)", () => {
     expect(() => resolveRegimes(engine, { ...mixed(), sheet_regimes: regimes({ open_format: CLOSED }) } as TrainingRunConfig)).toThrow(/must be an open-sheet format/);
     expect(() => resolveRegimes(engine, { ...mixed(), format_id: "gen9championsbssregmc" } as TrainingRunConfig)).toThrow();
     expect(() => resolveRegimes(engine, readTrainingRunConfig(sample("tiny")))).toThrow(/no sheet_regimes/);
+  });
+});
+
+describe("the manifests a league record lists (ADR-027 section 5a)", () => {
+  const record = (): Record<string, unknown> => JSON.parse(readFileSync(join(SAMPLES_DIR, "v1/league-run-record/valid/sheet-regimes.json"), "utf8")) as Record<string, unknown>;
+  const listed = (): Record<string, string>[] => record().game_manifests as Record<string, string>[];
+  const withManifests = (manifests: unknown[]) => ({ ...record(), game_manifests: manifests });
+
+  it("reads the sample and refuses one manifest, one format twice, a third format and a foreign commit", () => {
+    expect(() => readLeagueRunRecord(record())).not.toThrow();
+    const [a, b] = listed() as [Record<string, string>, Record<string, string>];
+    const sorted = (list: Record<string, string>[]) => [...list].sort((x, y) => (jcs(x as unknown as Json) < jcs(y as unknown as Json) ? -1 : 1));
+    expect(() => readLeagueRunRecord(withManifests([a]))).toThrow(/one manifest for each of two formats/);
+    expect(() => readLeagueRunRecord(withManifests(sorted([a, { ...a, format_rules_hash: "9".repeat(64) }])))).toThrow(/one manifest for each of two formats/);
+    expect(() => readLeagueRunRecord(withManifests(sorted([a, b, { ...b, format_id: "gen9third" }])))).toThrow(/one manifest for each of two formats/);
+    expect(() => readLeagueRunRecord(withManifests(sorted([a, { ...b, showdown_commit: "8".repeat(40) }])))).toThrow(/one engine commit and regulation/);
+    expect(() => readLeagueRunRecord(withManifests(sorted([a, { ...b, regulation: "other" }])))).toThrow(LeagueRunRecordError);
+  });
+
+  it("must name the config's two formats", async () => {
+    const config = readTrainingRunConfig({ ...sample("tiny"), sheet_regimes: regimes({ open_only_generations: 10 }) });
+    const ok = readLeagueRunRecord(record());
+    await expect(checkLeagueRunRecord(ok, config)).resolves.toBeUndefined();
+    const other = readLeagueRunRecord(withManifests(listed().map((m, i) => (i === 0 ? { ...m, format_id: "gen9third" } : m)).sort((x, y) => (jcs(x as unknown as Json) < jcs(y as unknown as Json) ? -1 : 1))));
+    await expect(checkLeagueRunRecord(other, config)).rejects.toThrow(/one manifest for each of the run's two formats/);
   });
 });

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,7 +7,8 @@ import { actorRule } from "../src/actor-rule.ts";
 import { jcs, type Json } from "../src/canonical-json.ts";
 import type { SheetSetup } from "../src/belief-features.ts";
 import { buildLeagueRunRecord, checkLeagueRunRecord, loadEngine, type PolicyClient, readLeagueRunRecord, resolveRegimes, runConfigHash } from "../src/index.ts";
-import { type GenerationResult, GenerationError, planGeneration, playGeneration, trainingTeamPool, type TrainingPool, writeGeneration } from "../src/league-generation.ts";
+import { featureSetup, type GenerationResult, GenerationError, planGeneration, playEntries, playGeneration, trainingTeamPool, type TrainingPool, writeGeneration } from "../src/league-generation.ts";
+import { readTrainingExample } from "../src/training-loader.ts";
 import { SAMPLES_DIR } from "../src/samples.ts";
 import { loadTrainingSet, TrainingLoaderError } from "../src/training-loader.ts";
 import { readTrainingRunConfig, type TrainingRunConfig } from "../src/training-run-config.ts";
@@ -82,6 +83,41 @@ describe("a closed-only run keeps its bytes (the no-change test)", () => {
         games,
       });
       expect(`${jcs(record as unknown as Json)}\n`).toBe(committed.text);
+    }
+  });
+});
+
+describe("a closed-only run writes the committed generation.json bytes", () => {
+  const run = fileURLToPath(new URL("../../../fixtures/loop/inspector-run", import.meta.url));
+  it("writes generation.json, plan.json and league-run.json of the committed generations byte for byte", () => {
+    const dir = mkdtempSync(join(tmpdir(), "regimes-pin-"));
+    try {
+      for (const generation of [1, 2]) {
+        const from = join(run, `generations/g00000${generation}`);
+        const read = (name: string): unknown => JSON.parse(readFileSync(join(from, name), "utf8")) as unknown;
+        const summary = read("generation.json") as { games: GenerationResult["games"]; episode_hashes: string[]; training_set_hash: string; examples: number; manifest: GenerationResult["manifest"]; team_hashes: string[] };
+        // The parts that depend on trained weights or an engine run (the Episodes, the stream) are not rebuilt: the rest is written as it is.
+        const result = {
+          generation,
+          plan: read("plan.json"),
+          games: summary.games,
+          episodes: [],
+          episodes_dir: null,
+          episode_hashes: summary.episode_hashes,
+          stream: "",
+          stream_path: null,
+          set: { examples: summary.examples },
+          run_record: read("league-run.json"),
+          training_set_hash: summary.training_set_hash,
+          manifest: summary.manifest,
+          team_hashes: summary.team_hashes,
+        } as unknown as GenerationResult;
+        const out = join(dir, `g${generation}`);
+        writeGeneration(out, result);
+        for (const name of ["generation.json", "plan.json", "league-run.json"]) expect(readFileSync(join(out, name), "utf8"), name).toBe(readFileSync(join(from, name), "utf8"));
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
@@ -170,4 +206,59 @@ describe("a tiny mixed-format generation", () => {
   }, 120_000);
 
   afterAll(() => undefined);
+});
+
+describe("a mixed-format run that reads candidate features", () => {
+  const hashOf = (): string => {
+    try {
+      featureSetup(engine, withFeatures("0".repeat(64)));
+    } catch (error) {
+      return /computes as ([0-9a-f]{64})/.exec((error as Error).message)?.[1] ?? "";
+    }
+    return "";
+  };
+  const withFeatures = (hash: string): TrainingRunConfig => {
+    const raw = structuredClone({ ...sample("tiny"), sheet_regimes: mixed.sheet_regimes }) as unknown as { model: { encoder: { options?: unknown } } };
+    raw.model.encoder.options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: hash } };
+    return readTrainingRunConfig(raw);
+  };
+
+  it("builds rows at play time in both formats and the stream carries the very rows that were sent", async () => {
+    const config = withFeatures(hashOf());
+    const setup = featureSetup(engine, config) as NonNullable<ReturnType<typeof featureSetup>>;
+    const asked: unknown[] = [];
+    const client = { ...actorClient(), featureSet: setup.statement, ask: (battle: never, query: never) => (asked.push((query as { candidate_features?: unknown }).candidate_features), actorClient().ask(battle, query)) } as PolicyClient & { beginGame: () => Promise<void> };
+    const result = await play(config, 2, { client, features: setup.configs });
+    expect(result.run_record.regimes).toEqual({ open: 2, closed: 4 });
+    const examples = (result.stream as string).split("\n").filter((line) => line !== "").map((line) => readTrainingExample(JSON.parse(line)));
+    expect(examples.length).toBeGreaterThan(0);
+    expect(examples.some((example) => (example.candidate_features?.rows.length ?? 0) > 0)).toBe(true);
+    const sent = new Set(asked.map((rows) => jcs(rows as Json)));
+    for (const example of examples) expect(sent.has(jcs(example.candidate_features as unknown as Json))).toBe(true);
+    // Both formats' Episodes were read: the open games' examples are in the stream too.
+    expect(result.episodes.filter((e) => e.provenance.manifest.format_id === OPEN).length).toBeGreaterThan(0);
+  }, 900_000);
+});
+
+describe("a mixed-format generation played by two game processes", () => {
+  it("writes the files of a single process, byte for byte", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "regimes-shards-"));
+    try {
+      const names = ["generation.json", "league-run.json", "plan.json", "stream.jsonl", "training-set.json"];
+      const tree = (root: string): Record<string, string> =>
+        Object.fromEntries([...names, ...readdirSync(join(root, "episodes")).map((n) => `episodes/${n}`)].map((n) => [n, readFileSync(join(root, n), "utf8")]));
+      const opts = (extra: object): Parameters<typeof playGeneration>[0] => ({ engine, config: mixed, generation: 2, policy_id: POLICY, client: actorClient(), pool, ...extra }) as Parameters<typeof playGeneration>[0];
+      const single = join(dir, "single");
+      mkdirSync(join(single, "episodes"), { recursive: true });
+      writeGeneration(single, await playGeneration(opts({ stream_path: join(single, "stream.jsonl"), episodes_dir: join(single, "episodes") })));
+      const sliced = join(dir, "sliced");
+      mkdirSync(join(sliced, "episodes"), { recursive: true });
+      const there = playEntries(opts({ episodes_dir: join(sliced, "episodes") }), { index: 1, of: 2 });
+      writeGeneration(sliced, await playGeneration(opts({ stream_path: join(sliced, "stream.jsonl"), episodes_dir: join(sliced, "episodes"), shard: { index: 0, of: 2 }, others: there })));
+      expect(tree(sliced)).toEqual(tree(single));
+      expect(JSON.parse(readFileSync(join(sliced, "generation.json"), "utf8")).game_manifests).toHaveLength(2);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 300_000);
 });

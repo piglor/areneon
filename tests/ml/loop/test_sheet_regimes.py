@@ -179,7 +179,12 @@ def test_the_game_manifests_rules() -> None:
     assert "sorted" in str(manifests_problem(both[::-1], config))
     assert "sorted" in str(manifests_problem([both[0], both[0]], config))
     assert "one of" in str(manifests_problem([manifest(OPEN)], config, closed))
-    assert "none of the run's" in str(manifests_problem([manifest("other")], config))
+    assert "one manifest for each" in str(manifests_problem([manifest("other")], config))
+    assert "one manifest for each" in str(manifests_problem(both[:1], config))
+    third = sorted([*both, manifest("third")], key=jcs)
+    assert "one manifest for each" in str(manifests_problem(third, config))
+    wrong = sorted([both[0], manifest("other")], key=jcs)
+    assert "one manifest for each" in str(manifests_problem(wrong, config))
     other_commit = [both[0], {**both[1], "showdown_commit": "8" * 40}]
     assert "share one engine commit" in str(
         manifests_problem(sorted(other_commit, key=jcs), config)
@@ -416,3 +421,31 @@ def test_a_generation_that_does_not_report_its_manifests_is_refused(tmp_path: Pa
     config = mixed_config()
     with pytest.raises(LoopError, match="game_manifests"):
         make_loop(tmp_path, config, MixedPlayer(config, report_manifests=False)).run(1)
+
+
+def test_a_closed_only_run_rebuilds_a_committed_checkpoint_record_byte_for_byte() -> None:
+    """No-change pin: the committed population fixture's records, rebuilt without game_manifests."""
+    root = SAMPLES.parent.parent.parent / "fixtures" / "loop" / "population-run"
+    config = read_run_config(json.loads((root / "run-config.json").read_text()))
+    assert config.sheet_regimes is None
+    paths = sorted(root.glob("generations/*/members/*/records/*.json"))
+    assert len(paths) >= 8
+    for path in paths:
+        text = path.read_text()
+        committed = json.loads(text)
+        facts = RecordFacts(
+            role=committed["role"],
+            checkpoint_id=committed["checkpoint_id"],
+            parent=committed.get("parent"),
+            training_set_hashes=committed["training_set_hashes"],
+            team_set_manifest_hash=committed["team_set_manifest_hash"],
+            learner_state_hash=committed["learner_state_hash"],
+            encoder_version=committed["encoder_version"],
+            manifest=committed["manifest"],
+            lineage_id=committed["lineage_id"],
+            league_opponents=tuple(committed["league_opponents"]),
+        )
+        rebuilt = checkpoint_record(config, facts).to_json()
+        assert "game_manifests" not in rebuilt
+        assert rebuilt["run_config_hash"] == committed["run_config_hash"]
+        assert jcs(rebuilt) == jcs(committed), path
