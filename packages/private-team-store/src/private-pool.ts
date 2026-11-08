@@ -19,7 +19,7 @@ import {
   teamHash,
   validateTeam,
 } from "@areneon/showdown-bridge";
-import { ActiveRecordsError, readActiveRecords } from "./active-records.ts";
+import { type ActiveRecordsError, readActiveRecords } from "./active-records.ts";
 
 export const PRIVATE_POOL_REFUSALS = {
   source_unreadable: "the team source cannot be read",
@@ -76,7 +76,7 @@ export async function loadPrivatePool(input: LoadPrivatePoolInput): Promise<Priv
   try {
     active = await readActiveRecords({ engine, formatId: format_id, snapshotsDir, snapshotHash: snapshot_hash });
   } catch (error) {
-    throw new PrivatePoolRefusal(error instanceof ActiveRecordsError ? error.code : "snapshot_unverified");
+    throw new PrivatePoolRefusal((error as ActiveRecordsError).code);
   }
   const format = resolveFormat(engine, format_id);
   const excluded = new Set(input.excluded_abilities ?? []);
