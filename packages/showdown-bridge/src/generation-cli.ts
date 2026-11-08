@@ -19,7 +19,7 @@ import { ChunkedFileWriter, readFileLines } from "./chunked-file.ts";
 import { resolveFormat } from "./formats.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
 import { type BeliefFeaturesFactory, SheetTotals } from "./belief-features.ts";
-import { DivergenceSampler, readDivergenceFile, sumDivergence } from "./inference-divergence.ts";
+import { DivergenceRun } from "./inference-divergence.ts";
 import { labelCounts } from "./search-labeller.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import { PastPoolError, readPastPool } from "./past-pool.ts";
@@ -179,7 +179,7 @@ export async function runGenerationCli(
   }
   const { max_line_bytes, n_parallel, handshake_timeout_ms } = config.generation;
   // Batched self-play inference (ADR-028 section 2 F2): the training clients below alone ask for it; absent is today's batch 1.
-  const inference = config.generation.inference;
+  const divergence = new DivergenceRun(config.generation.inference);
   const preview = need("preview");
   const battle = need("battle");
   const count = (name: "policy-workers" | "game-processes"): number => {
@@ -238,19 +238,19 @@ export async function runGenerationCli(
   const profile = startProfile(values["profile-dir"], values.profile === true);
   const profileDir = profile?.dir;
   // `batch1` is the control worker of the divergence measure: the same checkpoints, never batching, and no profile.
-  const makeClient = (batch1 = false): PolicyWorkerClient => new PolicyWorkerClient({
+  const makeClient = (batch1: boolean): PolicyWorkerClient => new PolicyWorkerClient({
     command: need("worker-python"),
     args: [
       "-I", "-m", "areneon_ml.worker", "--run-dir", need("run-dir"), "--preview", preview, "--battle", battle,
       "--engine-data", dataFile, "--max-line-bytes", String(max_line_bytes),
-      ...(inference === undefined || batch1 ? [] : ["--inference-max-batch", String(inference.max_batch)]),
+      ...divergence.workerArgs(batch1),
       ...(batch1 ? [] : optionalFlag("--profile-dir", profileDir)),
     ],
     env: {},
     max_line_bytes,
     n_parallel,
     handshake_timeout_ms,
-    ...(inference === undefined || batch1 ? {} : { inference }),
+    ...divergence.clientOptions(batch1),
     ...(features === undefined ? {} : { features: features.statement }),
     ...sheetArgs.client,
     expect: {
@@ -262,10 +262,7 @@ export async function runGenerationCli(
       ],
     },
   });
-  const clients = Array.from({ length: workerCount }, () => makeClient());
-  // The decisions the pair plays are sampled for the divergence measure (only when the run batches; observes, never changes a byte).
-  const divergence = inference === undefined ? undefined : new DivergenceSampler(inference.max_batch);
-  const divergenceOptions = divergence === undefined ? {} : { on_answer: divergence.record };
+  const clients = Array.from({ length: workerCount }, () => makeClient(false));
   // The Episodes go to one directory as their games finish; a further game process writes into its starter's.
   const episodesDir = values["episodes-dir"] ?? join(need("out"), "episodes");
   mkdirSync(episodesDir, { recursive: true });
@@ -298,10 +295,10 @@ export async function runGenerationCli(
       process.stdin.resume();
       (process.stdin as unknown as { unref?: () => void }).unref?.(); // an open pipe must not keep the finished process alive
       // It plays the slice and leaves it for the process that started this one.
-      const entries = await playEntries({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, episodes_dir: episodesDir, belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, ...labelArgs, ...divergenceOptions, features_dir: featuresDir }, own);
+      const entries = await playEntries({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, episodes_dir: episodesDir, belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, ...labelArgs, ...divergence.observer, features_dir: featuresDir }, own);
       mkdirSync(need("out"), { recursive: true });
       writeShardFile(join(need("out"), SHARD_FILE), entries);
-      if (divergence !== undefined) writeFileSync(join(need("out"), DIVERGENCE_FILE), `${jcs((await divergence.measure(client, () => makeClient(true))) as unknown as Json)}\n`);
+      await divergence.leave(need("out"), client, makeClient);
       writeFileSync(join(need("out"), USAGE_FILE), `${jcs(usageOf(ownPeakRss(), largest(clients.map((worker) => worker.peakRssBytes()))) as unknown as Json)}\n`);
       leaveFigures(profile, (own as Shard).index, ownPeakRss());
       return 0;
@@ -310,7 +307,7 @@ export async function runGenerationCli(
     const others = Promise.all(children.map((child) => child.entries));
     // The stream goes straight to its file in chunks as the examples are made (#998).
     mkdirSync(need("out"), { recursive: true });
-    const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, ...divergenceOptions, stream_path: join(need("out"), "stream.jsonl"), episodes_dir: episodesDir, ...labelArgs, ...(labelling ? { labels_path: join(need("out"), "labels.jsonl") } : {}), belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, features_dir: featuresDir, ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()), live_children: () => children.filter((child) => child.alive()).length });
+    const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, ...divergence.observer, stream_path: join(need("out"), "stream.jsonl"), episodes_dir: episodesDir, ...labelArgs, ...(labelling ? { labels_path: join(need("out"), "labels.jsonl") } : {}), belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, features_dir: featuresDir, ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()), live_children: () => children.filter((child) => child.alive()).length });
     timed("merge", () => writeGeneration(need("out"), result));
     // The labelling counts of this generation (also in generation.json): a generation with no label is told from a broken labeller by them.
     if (result.labels !== undefined) process.stderr.write(`search labels: ${jcs(labelCounts(result.labels.totals) as unknown as Json)}\n`);
@@ -320,12 +317,7 @@ export async function runGenerationCli(
     const usage = combineUsage([usageOf(ownPeakRss(), largest(clients.map((worker) => worker.peakRssBytes()))), ...(await Promise.all(children.map((child) => child.usage)))]);
     if (Object.keys(usage).length > 0) print(jcs({ resource_usage: usage } as unknown as Json));
     // The batched run's divergence from batch 1 on a sample of its decisions, this process's and the further game processes' (a diagnostic line; no file the manifest hashes).
-    if (divergence !== undefined) {
-      const own = await divergence.measure(client, () => makeClient(true));
-      const rest = scratch === undefined ? [] : Array.from({ length: processes - 1 }, (_, i) => readDivergenceFile(join(scratch, String(i + 1), DIVERGENCE_FILE)));
-      const total = sumDivergence([...(own === null ? [] : [own]), ...rest.flatMap((part) => (part === null ? [] : [part]))]);
-      if (total !== null) print(jcs({ inference_divergence: total } as unknown as Json));
-    }
+    await divergence.report(client, makeClient, scratch, processes, print);
     // The workers write their figures when they end, so they end now; the game processes have ended (their results were read above).
     await printProfile(profile, async () => {
       await Promise.all(clients.map((worker) => worker.close()));
@@ -361,8 +353,6 @@ export function optionalFlag(name: string, value: string | undefined): string[] 
 const SHARD_FILE = "shard.jsonl";
 /** A game process's peak memory, beside its shard file. */
 const USAGE_FILE = "usage.json";
-/** A game process's batched-inference divergence record, beside its shard file (only for a run that batches). */
-const DIVERGENCE_FILE = "divergence.json";
 
 /** Write a game process's entries, one line each, flushed to disk. */
 export function writeShardFile(path: string, entries: readonly PlayedEntry[]): void {

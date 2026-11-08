@@ -1,11 +1,11 @@
 // Batched self-play inference (ADR-028 section 2 F2, #1195): the policy id, the config rules, the client's handshake, the sample of
 // decisions scored again at batch 1, and the rule that only the training self-play clients ever batch.
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { DIVERGENCE_MIN_SAMPLE, DivergenceSampler, divergenceKey, readDivergenceFile, sampleTarget, type SingleWorker, sumDivergence } from "../src/inference-divergence.ts";
+import { DIVERGENCE_FILE, DIVERGENCE_MIN_SAMPLE, DivergenceRun, DivergenceSampler, divergenceKey, readDivergenceFile, sampleTarget, type SingleWorker, sumDivergence } from "../src/inference-divergence.ts";
 import { PolicyProtocolError, type PolicyQueryInput, policyId } from "../src/policy-protocol.ts";
 import { PolicyHandshakeError, PolicyWorkerClient, type PolicyWorkerOptions } from "../src/policy-worker.ts";
 import { readTrainingRunConfig } from "../src/training-run-config.ts";
@@ -100,9 +100,11 @@ describe("only the training self-play clients batch (source scan)", () => {
   const root = fileURLToPath(new URL("../../", import.meta.url));
   const files = readdirSync(root).flatMap((pkg) => ["src", "scripts"].flatMap((sub) => (statSync(join(root, pkg)).isDirectory() ? (() => { try { return sources(join(root, pkg, sub)); } catch { return []; } })() : [])));
 
-  it("asks a worker to batch in one place, the generation script", () => {
+  it("asks a worker to batch in one place, and only the generation script uses it", () => {
     const asking = files.filter((file) => readFileSync(file, "utf8").includes("--inference-max-batch"));
-    expect(asking.map((file) => file.slice(root.length))).toEqual(["showdown-bridge/src/generation-cli.ts"]);
+    expect(asking.map((file) => file.slice(root.length))).toEqual(["showdown-bridge/src/inference-divergence.ts"]);
+    const users = files.filter((file) => readFileSync(file, "utf8").includes("new DivergenceRun("));
+    expect(users.map((file) => file.slice(root.length))).toEqual(["showdown-bridge/src/generation-cli.ts"]);
   });
 
   it("gives a client the inference option in one place", () => {
@@ -204,6 +206,53 @@ describe("the divergence sample", () => {
       expect(readDivergenceFile(join(dir, "null.json"))).toBeNull();
       expect(readDivergenceFile(join(dir, "odd.json"))).toBeNull();
       expect(readDivergenceFile(join(dir, "missing.json"))).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("what a game process does about batching (DivergenceRun)", () => {
+  const stand = { evaluate: (_b: string, q: PolicyQueryInput) => Promise.resolve({ identity: q.identity, prior_ppm: q.candidates.map(() => 1000) as [number, ...number[]], value_ppm: 0 }) };
+  const single = (): SingleWorker =>
+    ({ start: () => Promise.resolve(), close: () => Promise.resolve(), ask: (_b: string, q: PolicyQueryInput) => Promise.resolve({ choice: (q.candidates[0] as { choice: string }).choice }), evaluate: stand.evaluate }) as unknown as SingleWorker;
+
+  it("does nothing for a run that does not batch", async () => {
+    const none = new DivergenceRun(undefined);
+    expect(none.workerArgs(false)).toEqual([]);
+    expect(none.clientOptions(false)).toEqual({});
+    expect(none.observer).toEqual({});
+    await none.leave("/nonexistent", stand, single);
+    const printed: string[] = [];
+    await none.report(stand, single, undefined, 1, (line) => void printed.push(line));
+    expect(printed).toEqual([]);
+  });
+
+  it("asks the play clients, and not the batch-1 control worker, to batch", () => {
+    const run = new DivergenceRun(BATCH2);
+    expect(run.workerArgs(false)).toEqual(["--inference-max-batch", "2"]);
+    expect(run.workerArgs(true)).toEqual([]);
+    expect(run.clientOptions(false)).toEqual({ inference: BATCH2 });
+    expect(run.clientOptions(true)).toEqual({});
+    expect(typeof run.observer.on_answer).toBe("function");
+  });
+
+  it("leaves its record for the process that started it, and sums it with its own", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "areneon-divergence-run-"));
+    try {
+      const mine = new DivergenceRun(BATCH2);
+      const printed: string[] = [];
+      const print = (line: string): void => void printed.push(line);
+      await mine.report(stand, single, undefined, 1, print); // nothing played, nothing left
+      expect(printed).toEqual([]);
+      const other = new DivergenceRun(BATCH2);
+      other.observer.on_answer?.(INPUT as PolicyQueryInput, (INPUT.candidates[0] as { choice: string }).choice);
+      const scratch = join(dir, "scratch");
+      mkdirSync(join(scratch, "1"), { recursive: true });
+      await other.leave(join(scratch, "1"), stand, single);
+      expect(readDivergenceFile(join(scratch, "1", DIVERGENCE_FILE))).toMatchObject({ max_batch: 2, decisions: 1 });
+      await mine.report(stand, single, scratch, 2, print);
+      expect(JSON.parse(printed[0] as string)).toEqual({ inference_divergence: { max_batch: 2, decisions: 1, sampled: 0, differing: 0, max_prior_diff_ppm: 0, target_met: false } });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

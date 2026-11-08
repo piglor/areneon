@@ -7,10 +7,11 @@
 // one, and the largest difference between the batched and the batch-1 prior (the policy's probabilities at temperature 1, in ppm).
 
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { type Json, jcs } from "./canonical-json.ts";
 import type { EvaluationClient, PolicyClient } from "./policy-worker.ts";
-import type { EvaluateQueryInput, PolicyQueryInput } from "./policy-protocol.ts";
+import type { EvaluateQueryInput, InferenceSettings, PolicyQueryInput } from "./policy-protocol.ts";
 
 /** The share of the decisions the sample must reach (ppm), and the least number of decisions when that many were played. */
 export const DIVERGENCE_SHARE_PPM = 10_000;
@@ -135,4 +136,55 @@ export function sumDivergence(parts: readonly InferenceDivergence[]): InferenceD
     max_prior_diff_ppm: parts.reduce((n, p) => Math.max(n, p.max_prior_diff_ppm), 0),
     target_met: parts.every((p) => p.target_met),
   };
+}
+
+/** A game process's divergence record, beside its shard file (only for a run that batches). */
+export const DIVERGENCE_FILE = "divergence.json";
+
+/**
+ * What a game process does about batched inference (#1195), in one object so the script has no branch for it: `inference` is the
+ * run's `generation.inference` (absent: batch 1, and every method here does nothing).
+ */
+export class DivergenceRun {
+  readonly #inference: InferenceSettings | undefined;
+  readonly #sampler: DivergenceSampler | undefined;
+
+  constructor(inference: InferenceSettings | undefined) {
+    this.#inference = inference;
+    this.#sampler = inference === undefined ? undefined : new DivergenceSampler(inference.max_batch);
+  }
+
+  /** The worker flag of a play client; none for the batch-1 control worker (`batch1`). */
+  workerArgs(batch1: boolean): string[] {
+    return this.#inference === undefined || batch1 ? [] : ["--inference-max-batch", String(this.#inference.max_batch)];
+  }
+
+  /** The `PolicyWorkerOptions` part of a play client. */
+  clientOptions(batch1: boolean): { inference?: InferenceSettings } {
+    return this.#inference === undefined || batch1 ? {} : { inference: this.#inference };
+  }
+
+  /** The `GenerationOptions` part that observes the pair's decisions. */
+  get observer(): { on_answer?: (query: PolicyQueryInput, choice: string) => void } {
+    return this.#sampler === undefined ? {} : { on_answer: this.#sampler.record };
+  }
+
+  /** A further game process leaves its record (or `null`) beside its shard file. */
+  async leave(dir: string, batched: EvaluationClient, make: (batch1: boolean) => SingleWorker): Promise<void> {
+    if (this.#sampler === undefined) return;
+    writeFileSync(join(dir, DIVERGENCE_FILE), `${jcs((await this.#sampler.measure(batched, () => make(true))) as unknown as Json)}\n`);
+  }
+
+  /**
+   * Print the play script's divergence line, if any: this process's record summed with the further game processes' (their scratch
+   * directories are `scratch/1` to `scratch/<processes - 1>`; no scratch directory means no further process).
+   */
+  async report(batched: EvaluationClient, make: (batch1: boolean) => SingleWorker, scratch: string | undefined, processes: number, print: (line: string) => void): Promise<void> {
+    if (this.#sampler === undefined) return;
+    const own = await this.#sampler.measure(batched, () => make(true));
+    const dirs = scratch === undefined ? [] : Array.from({ length: processes - 1 }, (_, i) => join(scratch, String(i + 1)));
+    const parts = [own, ...dirs.map((dir) => readDivergenceFile(join(dir, DIVERGENCE_FILE)))].flatMap((part) => (part === null ? [] : [part]));
+    const total = sumDivergence(parts);
+    if (total !== null) print(jcs({ inference_divergence: total } as unknown as Json));
+  }
 }
