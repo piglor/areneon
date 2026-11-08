@@ -1,5 +1,5 @@
 import { NoCandidateError } from "./actor-rule.ts";
-import type { Actor } from "./runner.ts";
+import { type Actor, declareReadsLegal } from "./runner.ts";
 import type { LegalChoiceSet } from "@areneon/schema/types/v1/legal-choice-set.ts";
 
 /** The PRNG state: one unsigned 32-bit integer. */
@@ -92,12 +92,12 @@ function checkState(state: RandomLegalState): void {
 export function randomLegalActor(seed: RandomLegalState): Actor {
   checkState(seed);
   let state = seed;
-  return (request) => {
+  return declareReadsLegal((request) => {
     if (request.legal === undefined) {
       throw new NoCandidateError(`${request.player}: request ${request.request_seq} has no legal choice set`);
     }
     const pick = randomLegal(request.legal, state);
     state = pick.state;
     return pick.choice;
-  };
+  }, true);
 }

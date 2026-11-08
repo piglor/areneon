@@ -83,10 +83,17 @@ function beliefThreatRows(engine: Engine, configs: FeatureConfigs, setup: Belief
   type Kept = { move: string; inclusion_ppm: number; paste: string };
   const kept = new Map<Foe, Kept[]>();
   for (const foe of foes) {
+    // A phantom entry (an Illusion twin) has no slot of the belief: its belief rows are skipped (the informative belief refuses such a roster).
+    if (foe.mon.phantom === true) {
+      kept.set(foe, []);
+      continue;
+    }
     const position = state.opponent.roster.indexOf(foe.mon);
+    const slotInclusions = inclusions[position];
+    if (slotInclusions === undefined) throw new DamageAwareError("the belief port gave no move inclusions for a foe of the roster");
     const revealed = new Set(threats.filter((t) => t.foe === foe.loc).map((t) => t.move));
     const list: Kept[] = [];
-    for (const { id, inclusion_ppm } of inclusions[position] as readonly BeliefMoveInclusion[]) {
+    for (const { id, inclusion_ppm } of slotInclusions as readonly BeliefMoveInclusion[]) {
       if (list.length >= setup.per_foe) break;
       if (revealed.has(id) || foe.assumed.revealed_moves.includes(id)) continue;
       const data = view.dex.moves.get(id);

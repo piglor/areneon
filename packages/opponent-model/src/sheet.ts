@@ -26,7 +26,7 @@ import type { Marginal, OpponentBelief } from "./types.ts";
 import { BeliefError, type BeliefErrorCode } from "./error.ts";
 
 /** Bumped when the builder computes a value differently (rounding, ordering, sources, the cut). Part of the feature set hash. */
-export const OPPONENT_SHEET_FORMAT = "opponent-sheet-builder/1";
+export const OPPONENT_SHEET_FORMAT = "opponent-sheet-builder/2";
 
 /** The feature set the block belongs to; the block's `source.hash` is its hash. */
 export const SHEET_FEATURE_SET = "opponent-sheet/1";
@@ -129,9 +129,12 @@ function natureMarginals(spreads: readonly Marginal<string>[]): { id: string; p:
 
 function moveField(marginals: readonly Marginal<string>[], k: number, revealedMoves: readonly string[]): SheetMoveField {
   const kept = top(marginals, k);
-  const known = Math.min(4, revealedMoves.length);
   if (kept.length === 0) return { source: "unknown", entries: [], slots_known: 0 };
   const entries: SheetMoveEntry[] = kept.map((e) => ({ id: e.id, inclusion_ppm: e.v }));
+  // Only a revealed move the belief holds is known evidence. One it does not place (a move copied by Transform, Struggle,
+  // a move called by another move) is skipped, as the belief skips it, so it is neither counted nor held at 1000000 ppm.
+  const placed = new Set(entries.filter((e) => e.inclusion_ppm === Number(PPM)).map((e) => e.id));
+  const known = Math.min(4, new Set(revealedMoves.filter((m) => placed.has(m))).size);
   const source: SheetFieldSource = known === 4 ? "revealed" : "predicted";
   return { source, entries, slots_known: known };
 }

@@ -79,4 +79,28 @@ describe("a generation of a sheet pair", () => {
     expect(result.games.every((game) => game.sheet === undefined)).toBe(true);
     expect((result.stream as string).includes("opponent_sheet")).toBe(false);
   }, 300_000);
+
+  it("under the uninformative mode (#1309) a seat sends one block a game and a rerun is byte-identical", async () => {
+    const manifest = resolveFormat(engine, "gen9championsvgc2026regmc").manifest;
+    const blind = createBeliefFeatures({ engine, vocabulary: goldenTeamVocabulary(), reader_sha256: readerSha256(), manifest, evidence: "none" });
+    const informative = createBeliefFeatures({ engine, vocabulary: goldenTeamVocabulary(), reader_sha256: readerSha256(), manifest });
+    expect(blind.features_hash).not.toBe(informative.features_hash);
+    const config = configWith(blind.features_hash);
+    // the setup finds the mode by the named hash through the same factory the commands use
+    const setup = sheetSetup(engine, config, factory);
+    expect(setup?.statement.feature_set_hash).toBe(blind.features_hash);
+    const pool = trainingTeamPool(engine, config.generation.excluded_abilities);
+    const play = async () => {
+      const client = standIn(setup?.statement ?? null);
+      const result = await playGeneration({ engine, config, generation: 1, policy_id: POLICY, client, pool, ...(setup === undefined ? {} : { sheet: setup.setup }) });
+      return { client, result };
+    };
+    const first = await play();
+    const second = await play();
+    expect(second.result.stream).toBe(first.result.stream);
+    const distinct = new Set(first.client.queries.map((query) => jcs(query.opponent_sheet as unknown as Json)));
+    expect(first.client.queries.length).toBeGreaterThan(distinct.size);
+    expect(distinct.size).toBeLessThanOrEqual(2 * first.result.games.length);
+    for (const query of first.client.queries) expect(query.opponent_sheet?.source.hash).toBe(blind.features_hash);
+  }, 900_000);
 });
