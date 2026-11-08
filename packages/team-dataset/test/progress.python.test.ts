@@ -186,6 +186,35 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     expect(alone.stderr).toMatch(/evaluated alone/);
   }, 900_000);
 
+  it("evaluates the pair with the Team Preview solver (ADR-029 section 8): both sides' counts, the control, byte-identical on rerun, refusals", () => {
+    const a = join(dir, "pa.progress");
+    const b = join(dir, "pb.progress");
+    const more = ["--generation", "1", "--preview-solve", "argmax"];
+    const printed = progress(a, ...more);
+    expect(printed.generations[0]?.matches.map((m) => m.match_id)).toEqual(["psolve-actor-rule-argmax", "psolve-random-legal-argmax", "psolve-self-no-solve-argmax"]);
+    progress(b, ...more);
+    const files = tree(join(a, gen(1)));
+    expect(tree(join(b, gen(1)))).toEqual(files);
+    for (const file of files) expect(readFileSync(join(a, gen(1), file), "utf8"), file).toBe(readFileSync(join(b, gen(1), file), "utf8"));
+    const record = readProgressEvaluationRecordV2(json<ProgressEvaluationRecordV2>(a, gen(1), "progress.json"));
+    expect(record.plan.preview_solve_budget_ms).toBeGreaterThan(0);
+    const control = record.matches.find((m) => m.match_id === "psolve-self-no-solve-argmax") as (typeof record.matches)[number];
+    expect(control.opponent.kind).toBe("self-no-solve");
+    expect(control.solve?.counts.decisions).toBeGreaterThan(0);
+    expect(control.opponent_solve?.counts.solved).toBe(0);
+    const stored = readProgressGameRecord(json(a, gen(1), "games", "psolve-self-no-solve-argmax-1.json"));
+    expect(stored.solve?.identity_hash).toBe(control.solve?.identity_hash);
+    expect(stored.opponent_solve?.seat).not.toBe(stored.solve?.seat);
+    expect(progress(a, ...more).generations.map((g) => g.skipped)).toEqual([true]);
+    // A solver record is its own kind; the solver is evaluated alone.
+    const mixed = spawnSync(PYTHON, ["-I", "-m", "areneon_ml.loop", "progress", "--run-dir", runDir, "--engine-data", DATA, "--generation", "1", "--games", "4", "--record-games", "2", "--progress-dir", a, "--node", process.execPath, "--worker-python", PYTHON], { encoding: "utf8", env, cwd: ROOT });
+    expect(mixed.status).toBe(3);
+    expect(mixed.stderr).toMatch(/solver record of another kind/);
+    const alone = spawnSync(PYTHON, ["-I", "-m", "areneon_ml.loop", "progress", "--run-dir", runDir, "--engine-data", DATA, "--generation", "1", "--preview-solve", "argmax", "--anchors", "0", "--progress-dir", join(dir, "pc.progress")], { encoding: "utf8", env, cwd: ROOT });
+    expect(alone.status).toBe(3);
+    expect(alone.stderr).toMatch(/evaluated alone/);
+  }, 900_000);
+
   it("evaluates on a second dataset's validation split (the eval-dataset option): named in the record, byte-identical on rerun, refusals", () => {
     const second = join(dir, "second-dataset");
     const inputs = loadFixtureInputs(engine, FORMAT);

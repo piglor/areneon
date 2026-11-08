@@ -1,0 +1,484 @@
+{
+  "schema_version": 2,
+  "data_class": "synthetic",
+  "run_id": "tiny-run",
+  "run_config_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+  "generation": 1,
+  "generation_manifest_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+  "checkpoints": {
+    "preview": "1111111111111111111111111111111111111111111111111111111111111111",
+    "battle": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "version_manifest": {
+    "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3",
+    "format_rules_hash": "549cd2aa97324be093c567324676d46a5eff19d6b0c9d8491c483dab746d5dcc"
+  },
+  "teams": {
+    "dataset_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+    "split": "validation",
+    "pairs_used": 2
+  },
+  "plan": {
+    "seed_derivation": "progress-seed/1",
+    "pairing": "progress-pairing/1",
+    "games_per_match": 4,
+    "recorded_games_per_match": 1,
+    "max_turns": 100,
+    "latency_budget_ms": {
+      "preview_ms": 30000,
+      "battle_ms": 30000
+    },
+    "preview_solve_budget_ms": 30000
+  },
+  "matches": [
+    {
+      "match_id": "psolve-self-no-solve-argmax",
+      "policy_id": "policy:9999999999999999999999999999999999999999999999999999999999999999",
+      "opponent": {
+        "kind": "self-no-solve",
+        "policy_id": "policy:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "checkpoints": {
+          "preview": "1111111111111111111111111111111111111111111111111111111111111111",
+          "battle": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "mode": "argmax"
+      },
+      "mode": "argmax",
+      "games": 4,
+      "wins": 2,
+      "ties": 1,
+      "losses": 1,
+      "turn_cap_ties": 0,
+      "turns_total": 16,
+      "forfeits": [],
+      "game_record_hashes": [
+        "a1524cd756046d7eb63a0a5ce6c69ff3316f81d02c30d2c531779ea257ade236"
+      ],
+      "solve": {
+        "identity_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "counts": {
+          "decisions": 24,
+          "previews": 4,
+          "solved": 4,
+          "worlds_asked": 64,
+          "worlds_refused": 4,
+          "worlds_unstarted": 0,
+          "exploitability_ppm": 16800,
+          "support_size": 12,
+          "fallbacks": {
+            "belief_refusal": 0,
+            "clock_floor": 0,
+            "engine_failure": 0,
+            "too_few_worlds": 0,
+            "worker_failure": 0
+          },
+          "payoff": {
+            "back_draws": 0,
+            "clamped": 8,
+            "clamped_high": 4,
+            "clamped_low": 4,
+            "engine_refusals": 0,
+            "entries": 3600,
+            "entry_attempts": 3600,
+            "game_end_entries": 0,
+            "missing_entries": 0,
+            "not_move_request": 0,
+            "preview_queries": 64,
+            "rollout_capped": 0,
+            "rollout_choices": 0,
+            "value_queries": 3600,
+            "worlds_asked": 64,
+            "worlds_dropped": 0,
+            "worlds_used": 60
+          },
+          "belief_refusals": []
+        }
+      },
+      "opponent_solve": {
+        "identity_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "counts": {
+          "decisions": 24,
+          "previews": 4,
+          "solved": 1,
+          "worlds_asked": 0,
+          "worlds_refused": 0,
+          "worlds_unstarted": 0,
+          "exploitability_ppm": 0,
+          "support_size": 0,
+          "fallbacks": {
+            "belief_refusal": 0,
+            "clock_floor": 0,
+            "engine_failure": 0,
+            "too_few_worlds": 0,
+            "worker_failure": 0
+          },
+          "payoff": {
+            "back_draws": 0,
+            "clamped": 0,
+            "clamped_high": 0,
+            "clamped_low": 0,
+            "engine_refusals": 0,
+            "entries": 0,
+            "entry_attempts": 0,
+            "game_end_entries": 0,
+            "missing_entries": 0,
+            "not_move_request": 0,
+            "preview_queries": 0,
+            "rollout_capped": 0,
+            "rollout_choices": 0,
+            "value_queries": 0,
+            "worlds_asked": 0,
+            "worlds_dropped": 0,
+            "worlds_used": 0
+          },
+          "belief_refusals": []
+        }
+      }
+    }
+  ],
+  "games": [
+    {
+      "match_id": "psolve-self-no-solve-argmax",
+      "game": 0,
+      "pair": 0,
+      "candidate_seat": "p1",
+      "outcome": {
+        "kind": "played",
+        "winner": "candidate",
+        "turns": 4
+      },
+      "solve": {
+        "decisions": 6,
+        "previews": 1,
+        "solved": 1,
+        "fallbacks": {
+          "belief_refusal": 0,
+          "clock_floor": 0,
+          "engine_failure": 0,
+          "too_few_worlds": 0,
+          "worker_failure": 0
+        },
+        "belief_refusals": [],
+        "worlds_asked": 16,
+        "worlds_refused": 1,
+        "worlds_unstarted": 0,
+        "payoff": {
+          "back_draws": 0,
+          "clamped": 2,
+          "clamped_high": 1,
+          "clamped_low": 1,
+          "engine_refusals": 0,
+          "entries": 900,
+          "entry_attempts": 900,
+          "game_end_entries": 0,
+          "missing_entries": 0,
+          "not_move_request": 0,
+          "preview_queries": 16,
+          "rollout_capped": 0,
+          "rollout_choices": 0,
+          "value_queries": 900,
+          "worlds_asked": 16,
+          "worlds_dropped": 0,
+          "worlds_used": 15
+        },
+        "exploitability_ppm": 4200,
+        "support_size": 3
+      },
+      "opponent_solve": {
+        "decisions": 6,
+        "previews": 1,
+        "solved": 1,
+        "fallbacks": {
+          "belief_refusal": 0,
+          "clock_floor": 0,
+          "engine_failure": 0,
+          "too_few_worlds": 0,
+          "worker_failure": 0
+        },
+        "belief_refusals": [],
+        "worlds_asked": 0,
+        "worlds_refused": 0,
+        "worlds_unstarted": 0,
+        "payoff": {
+          "back_draws": 0,
+          "clamped": 0,
+          "clamped_high": 0,
+          "clamped_low": 0,
+          "engine_refusals": 0,
+          "entries": 0,
+          "entry_attempts": 0,
+          "game_end_entries": 0,
+          "missing_entries": 0,
+          "not_move_request": 0,
+          "preview_queries": 0,
+          "rollout_capped": 0,
+          "rollout_choices": 0,
+          "value_queries": 0,
+          "worlds_asked": 0,
+          "worlds_dropped": 0,
+          "worlds_used": 0
+        },
+        "exploitability_ppm": 0,
+        "support_size": 0
+      }
+    },
+    {
+      "match_id": "psolve-self-no-solve-argmax",
+      "game": 1,
+      "pair": 0,
+      "candidate_seat": "p2",
+      "outcome": {
+        "kind": "played",
+        "winner": "opponent",
+        "turns": 4
+      },
+      "solve": {
+        "decisions": 6,
+        "previews": 1,
+        "solved": 1,
+        "fallbacks": {
+          "belief_refusal": 0,
+          "clock_floor": 0,
+          "engine_failure": 0,
+          "too_few_worlds": 0,
+          "worker_failure": 0
+        },
+        "belief_refusals": [],
+        "worlds_asked": 16,
+        "worlds_refused": 1,
+        "worlds_unstarted": 0,
+        "payoff": {
+          "back_draws": 0,
+          "clamped": 2,
+          "clamped_high": 1,
+          "clamped_low": 1,
+          "engine_refusals": 0,
+          "entries": 900,
+          "entry_attempts": 900,
+          "game_end_entries": 0,
+          "missing_entries": 0,
+          "not_move_request": 0,
+          "preview_queries": 16,
+          "rollout_capped": 0,
+          "rollout_choices": 0,
+          "value_queries": 900,
+          "worlds_asked": 16,
+          "worlds_dropped": 0,
+          "worlds_used": 15
+        },
+        "exploitability_ppm": 4200,
+        "support_size": 3
+      },
+      "opponent_solve": {
+        "decisions": 6,
+        "previews": 1,
+        "solved": 0,
+        "fallbacks": {
+          "belief_refusal": 0,
+          "clock_floor": 0,
+          "engine_failure": 0,
+          "too_few_worlds": 0,
+          "worker_failure": 0
+        },
+        "belief_refusals": [],
+        "worlds_asked": 0,
+        "worlds_refused": 0,
+        "worlds_unstarted": 0,
+        "payoff": {
+          "back_draws": 0,
+          "clamped": 0,
+          "clamped_high": 0,
+          "clamped_low": 0,
+          "engine_refusals": 0,
+          "entries": 0,
+          "entry_attempts": 0,
+          "game_end_entries": 0,
+          "missing_entries": 0,
+          "not_move_request": 0,
+          "preview_queries": 0,
+          "rollout_capped": 0,
+          "rollout_choices": 0,
+          "value_queries": 0,
+          "worlds_asked": 0,
+          "worlds_dropped": 0,
+          "worlds_used": 0
+        },
+        "exploitability_ppm": 0,
+        "support_size": 0
+      }
+    },
+    {
+      "match_id": "psolve-self-no-solve-argmax",
+      "game": 2,
+      "pair": 1,
+      "candidate_seat": "p1",
+      "outcome": {
+        "kind": "played",
+        "winner": "candidate",
+        "turns": 4
+      },
+      "solve": {
+        "decisions": 6,
+        "previews": 1,
+        "solved": 1,
+        "fallbacks": {
+          "belief_refusal": 0,
+          "clock_floor": 0,
+          "engine_failure": 0,
+          "too_few_worlds": 0,
+          "worker_failure": 0
+        },
+        "belief_refusals": [],
+        "worlds_asked": 16,
+        "worlds_refused": 1,
+        "worlds_unstarted": 0,
+        "payoff": {
+          "back_draws": 0,
+          "clamped": 2,
+          "clamped_high": 1,
+          "clamped_low": 1,
+          "engine_refusals": 0,
+          "entries": 900,
+          "entry_attempts": 900,
+          "game_end_entries": 0,
+          "missing_entries": 0,
+          "not_move_request": 0,
+          "preview_queries": 16,
+          "rollout_capped": 0,
+          "rollout_choices": 0,
+          "value_queries": 900,
+          "worlds_asked": 16,
+          "worlds_dropped": 0,
+          "worlds_used": 15
+        },
+        "exploitability_ppm": 4200,
+        "support_size": 3
+      },
+      "opponent_solve": {
+        "decisions": 6,
+        "previews": 1,
+        "solved": 0,
+        "fallbacks": {
+          "belief_refusal": 0,
+          "clock_floor": 0,
+          "engine_failure": 0,
+          "too_few_worlds": 0,
+          "worker_failure": 0
+        },
+        "belief_refusals": [],
+        "worlds_asked": 0,
+        "worlds_refused": 0,
+        "worlds_unstarted": 0,
+        "payoff": {
+          "back_draws": 0,
+          "clamped": 0,
+          "clamped_high": 0,
+          "clamped_low": 0,
+          "engine_refusals": 0,
+          "entries": 0,
+          "entry_attempts": 0,
+          "game_end_entries": 0,
+          "missing_entries": 0,
+          "not_move_request": 0,
+          "preview_queries": 0,
+          "rollout_capped": 0,
+          "rollout_choices": 0,
+          "value_queries": 0,
+          "worlds_asked": 0,
+          "worlds_dropped": 0,
+          "worlds_used": 0
+        },
+        "exploitability_ppm": 0,
+        "support_size": 0
+      }
+    },
+    {
+      "match_id": "psolve-self-no-solve-argmax",
+      "game": 3,
+      "pair": 1,
+      "candidate_seat": "p2",
+      "outcome": {
+        "kind": "played",
+        "winner": "tie",
+        "turns": 4
+      },
+      "solve": {
+        "decisions": 6,
+        "previews": 1,
+        "solved": 1,
+        "fallbacks": {
+          "belief_refusal": 0,
+          "clock_floor": 0,
+          "engine_failure": 0,
+          "too_few_worlds": 0,
+          "worker_failure": 0
+        },
+        "belief_refusals": [],
+        "worlds_asked": 16,
+        "worlds_refused": 1,
+        "worlds_unstarted": 0,
+        "payoff": {
+          "back_draws": 0,
+          "clamped": 2,
+          "clamped_high": 1,
+          "clamped_low": 1,
+          "engine_refusals": 0,
+          "entries": 900,
+          "entry_attempts": 900,
+          "game_end_entries": 0,
+          "missing_entries": 0,
+          "not_move_request": 0,
+          "preview_queries": 16,
+          "rollout_capped": 0,
+          "rollout_choices": 0,
+          "value_queries": 900,
+          "worlds_asked": 16,
+          "worlds_dropped": 0,
+          "worlds_used": 15
+        },
+        "exploitability_ppm": 4200,
+        "support_size": 3
+      },
+      "opponent_solve": {
+        "decisions": 6,
+        "previews": 1,
+        "solved": 0,
+        "fallbacks": {
+          "belief_refusal": 0,
+          "clock_floor": 0,
+          "engine_failure": 0,
+          "too_few_worlds": 0,
+          "worker_failure": 0
+        },
+        "belief_refusals": [],
+        "worlds_asked": 0,
+        "worlds_refused": 0,
+        "worlds_unstarted": 0,
+        "payoff": {
+          "back_draws": 0,
+          "clamped": 0,
+          "clamped_high": 0,
+          "clamped_low": 0,
+          "engine_refusals": 0,
+          "entries": 0,
+          "entry_attempts": 0,
+          "game_end_entries": 0,
+          "missing_entries": 0,
+          "not_move_request": 0,
+          "preview_queries": 0,
+          "rollout_capped": 0,
+          "rollout_choices": 0,
+          "value_queries": 0,
+          "worlds_asked": 0,
+          "worlds_dropped": 0,
+          "worlds_used": 0
+        },
+        "exploitability_ppm": 0,
+        "support_size": 0
+      }
+    }
+  ]
+}
