@@ -177,6 +177,7 @@ export {
   BattleAbortedError,
   type BattleOptions,
   type BattleRecord,
+  declareReadsLegal,
   FORFEIT_CAUSES,
   type ForfeitCause,
   ForfeitSignal,
@@ -189,7 +190,6 @@ export {
   replayActor,
   type RequestRecord,
   runBattle,
-  declareReadsLegal,
   validatePlayers,
 } from "./runner.ts";
 export {

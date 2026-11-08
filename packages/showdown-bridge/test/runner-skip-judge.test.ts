@@ -62,8 +62,10 @@ describe("skip_unread_judge (ADR-028 F4)", () => {
       return nonReader()(request, context);
     }, false);
     await play({ p1: spy, p2: nonReader() }, { skip_unread_judge: true });
-    for (const legal of seen.filter((_, i) => i % 2 === 0)) {
-      if (legal !== undefined) expect(Object.keys(legal as object).sort()).toEqual(["choices", "pending", "request_hash", "request_seq", "schema_version", "showdown_commit"].filter((k) => k in (legal as object)));
+    const legals = seen.filter((_, i) => i % 2 === 0).filter((l) => l !== undefined) as object[];
+    expect(legals.length).toBeGreaterThan(0);
+    for (const legal of legals) {
+      expect(Object.keys(legal).sort()).toEqual(["choices", "pending", "request_hash", "request_seq", "schema_version", "showdown_commit"]);
     }
     expect(JSON.stringify(seen)).not.toContain("verdict");
   });

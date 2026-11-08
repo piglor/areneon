@@ -33,7 +33,10 @@ export type Actor = ((request: RequestRecord, context?: ActorContext) => string 
   reads_legal?: boolean;
 };
 
-/** Declare whether `actor` reads `request.legal` (see `Actor.reads_legal`); returns the same actor. */
+/**
+ * Declare whether `actor` reads `request.legal` (see `Actor.reads_legal`); returns the same actor, mutated in place, so
+ * do not declare a shared actor (one used by several seats or callers) with a value only one of them can vouch for.
+ */
 export function declareReadsLegal<A extends Actor>(actor: A, reads: boolean): A {
   return Object.assign(actor, { reads_legal: reads });
 }
