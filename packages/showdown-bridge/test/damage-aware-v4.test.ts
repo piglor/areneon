@@ -11,7 +11,7 @@ import { firstLegal, GOLDEN_FORMAT } from "../src/golden.ts";
 import { type MechanicsContext, MechanicsProbeError, type ProbeOutcome } from "../src/mechanics-probe.ts";
 import { AssumedSetError } from "../src/damage-aware-assumed-set.ts";
 import { type ParsedMechanicsQuery } from "../src/mechanics-query.ts";
-import { readerSha256 } from "@areneon/public-state";
+import { readerSha256, WORLD_FACTS_FORMAT } from "@areneon/public-state";
 import { resolveFormat } from "../src/formats.ts";
 import { classifySlot, foeFirst, reaches, threatShare, type SituationRows } from "../src/situation.ts";
 import { runBattle } from "../src/runner.ts";
@@ -137,6 +137,11 @@ describe("construction and identity", () => {
     const manifest = resolveFormat(engine, GOLDEN_FORMAT, snapshot).manifest;
     const identity = (config: typeof v4) => damageAwareIdentity({ config, mechanics, manifest, reader_sha256: readerSha256() });
     expect(identity(v4).situational_format).toBe(SITUATIONAL_SCORE_FORMAT);
+    // v4's choices read the world facts and the /2 arrays: their format and set hash are in its identity only
+    expect(identity(v4).world_facts_format).toBe(WORLD_FACTS_FORMAT);
+    expect(identity(v4).feature_set_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(identity(v3)).not.toHaveProperty("feature_set_hash");
+    expect(identity(v3)).not.toHaveProperty("world_facts_format");
     expect(Object.keys(identity(v3)).sort()).toEqual(["adapter_format", "baseline_config_hash", "mechanics_config_hash", "reader_sha256", "version_manifest"]);
     expect(damageAwareIdentityHash(identity(v4))).not.toBe(damageAwareIdentityHash(identity(v3)));
     expect(identity(v4).baseline_config_hash).not.toBe(identity(v3).baseline_config_hash);
@@ -277,6 +282,9 @@ describe("choosing with the situational values (a stand-in probe with known answ
     expect(Object.keys(counts).sort()).toEqual(Object.keys(run(c, sceneFor(c, foeMoves, true, true), v3).actor.report().counts).sort());
     expect(counts.queries).toBeGreaterThan(run(c, sceneFor(c, foeMoves, true, true), v3).actor.report().counts.queries);
     expect(counts.scored_decisions).toBe(1);
+    // v4's report has the extra situational field (not a stored count); v3's has none
+    expect(actor.report().situational).toEqual({ protect_no_facts: 0 });
+    expect(run(c, sceneFor(c, foeMoves, true, true), v3).actor.report()).not.toHaveProperty("situational");
   });
 
   it("answers a request the probe-damage/2 reading cannot be built for by the actor-rule candidate and counts it by cause", () => {
