@@ -338,17 +338,13 @@ def test_the_command_warns_on_stderr_and_keeps_the_status(
     assert SOLVE_LATENCY_INVALID in capsys.readouterr().err
 
 
-def test_the_solver_is_refused_for_a_pair_that_reads_features_or_the_sheet(
+def test_the_solver_is_refused_for_a_pair_that_reads_the_sheet(
     run: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(run_module, "features_hash", lambda config: "a" * 64)
-    with pytest.raises(ProgressError, match="candidate features or the opponent sheet"):
-        evaluate(run, tmp_path / "f", player(run), preview_solve="argmax")
-    monkeypatch.undo()
     monkeypatch.setattr(run_module, "sheet_set", lambda options: object())
-    with pytest.raises(ProgressError, match="candidate features or the opponent sheet"):
+    with pytest.raises(ProgressError, match="reads the opponent sheet"):
         evaluate(run, tmp_path / "s", player(run), preview_solve="argmax")
-    assert not (tmp_path / "f" / "g000001").exists()
+    assert not (tmp_path / "s" / "g000001").exists()
 
 
 def test_a_budget_below_the_run_s_preview_budget_is_refused() -> None:

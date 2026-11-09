@@ -35,6 +35,8 @@ import { DATASETS_DIR, loadFixtureInputs, readFixtureRun, recordedPilot, regener
 import { createOpponentTeams } from "../src/opponent-teams.ts";
 import { datasetValidationPool } from "../src/progress-pool.ts";
 import { goldenTeamVocabulary } from "../../showdown-bridge/src/golden.ts";
+import { type FeatureConfigs, featureSetHash, featureSetIdentity } from "../../showdown-bridge/src/candidate-features.ts";
+import { config as baselineConfig, mechanics, snapshot as featureSnapshot, vocabulary as featureVocabulary } from "../../showdown-bridge/test/damage-aware-support.ts";
 import { engine, FORMAT } from "./support.ts";
 
 const ROOT = new URL("../../..", import.meta.url).pathname;
@@ -97,7 +99,7 @@ function bCorrect(observation: Observation): { b: boolean; truth: boolean } | nu
 
 /** The stand-in worker: a fixed (decreasing) Preview prior or a uniform one, and the ground truth as battle behaviour and value. */
 class Standin implements PolicyClient, EvaluationClient {
-  readonly featureSet = null;
+  featureSet: { feature_set: string; feature_set_hash: string } | null = null;
   queries = 0;
   readonly uniform: boolean;
   readonly fault: "none" | "zero-prior" | "evaluate-throws" | "ask-throws";
@@ -205,6 +207,32 @@ describe("the best-response evaluation", () => {
     expect(jcs(fixed.again as unknown as Json)).toEqual(jcs(fixed.record as unknown as Json));
   });
 
+  it("plays a pair that reads candidate features: the hypothetical observations and the games carry the pair's rows, and a worker that ignores them gives the same record bytes", { timeout: 900_000 }, async () => {
+    const configs: FeatureConfigs = { vocabulary: featureVocabulary, config: baselineConfig, mechanics, snapshot: featureSnapshot, data_class: "synthetic" };
+    const identity = featureSetIdentity(engine, configs);
+    const stated = { feature_set: identity.feature_set, feature_set_hash: featureSetHash(identity) };
+    const inner = new Standin(false);
+    const seen: Query[] = [];
+    const client = inner;
+    client.featureSet = stated;
+    const evaluate = inner.evaluate.bind(inner);
+    const ask = inner.ask.bind(inner);
+    client.evaluate = (battle, query) => (seen.push(query as unknown as Query), evaluate(battle, query));
+    client.ask = (battle, query) => (seen.push(query), ask(battle, query));
+    const record = await playBestResponse(options(client as unknown as BestResponseClient, "argmax", { evaluated: { ...options(client as unknown as BestResponseClient, "argmax").evaluated, features: configs } }));
+    expect(seen.length).toBeGreaterThan(0);
+    for (const query of seen) expect(query.candidate_features).toMatchObject(stated);
+    // Hypothetical move requests (the payoff leaf) carry rows; the rows are the builder's own, never the opponent's sets.
+    expect(seen.some((q) => ((q.observation as unknown as Observation).kind === "battle") && (q.candidate_features?.rows.length ?? 0) > 0)).toBe(true);
+    expect(jcs(record as unknown as Json)).toEqual(jcs(fixed.record as unknown as Json));
+    // The pair's rows need their configs, and configs need a worker that states a set.
+    await expect(playBestResponse(options(client as unknown as BestResponseClient, "argmax"))).rejects.toThrow(/needs its feature configs/);
+    await expect(playBestResponse(options(new Standin(false), "argmax", { evaluated: { ...options(new Standin(false), "argmax").evaluated, features: configs } }))).rejects.toThrow(/states no feature set/);
+    const wrong = new Standin(false);
+    wrong.featureSet = { ...stated, feature_set_hash: "d".repeat(64) };
+    await expect(playBestResponse(options(wrong as unknown as BestResponseClient, "argmax", { evaluated: { ...options(wrong as unknown as BestResponseClient, "argmax").evaluated, features: configs } }))).rejects.toThrow(/another feature set/);
+  });
+
   it("a uniform policy gives the responder the blind control's weights: the same choice, the same games, a margin of exactly zero", { timeout: 900_000 }, async () => {
     const record = await playBestResponse(options(new Standin(true), "sample"));
     for (const row of record.games) {
@@ -280,13 +308,11 @@ describe("the best-response evaluation", () => {
     await expect(playBestResponse(options(new Standin(false), "argmax", { responder: { ...options(new Standin(false), "argmax").responder, teams: bad } }))).rejects.toThrow(/the responder failed/);
   });
 
-  it("refuses what it cannot play: bad numbers, a key equal to the run's own, a pair that reads features", async () => {
+  it("refuses what it cannot play: bad numbers, a key equal to the run's own", async () => {
     const client = new Standin(false);
     await expect(playBestResponse(options(client, "argmax", { pairs: 0 }))).rejects.toThrow(BestResponseError);
     await expect(playBestResponse(options(client, "argmax", { evaluation_key: config.seeds.run_key }))).rejects.toThrow(/run's own key/);
     await expect(playBestResponse(options(client, "argmax", { evaluation_key: "bad key!" }))).rejects.toThrow(/id token/);
-    const features = Object.assign(new Standin(false), { featureSet: { feature_set: "probe-damage/1", feature_set_hash: "f".repeat(64) } });
-    await expect(playBestResponse(options(features as unknown as BestResponseClient, "argmax"))).rejects.toThrow(/features_pair/);
     const bad = options(client, "argmax");
     await expect(playBestResponse({ ...bad, responder: { ...bad.responder, settings: { ...bad.responder.settings, worlds: 0 } } })).rejects.toThrow(/worlds/);
     await expect(playBestResponse({ ...bad, responder: { ...bad.responder, preview_budget_ms: 0 } })).rejects.toThrow(/budget/);

@@ -20,7 +20,9 @@
 
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
 import { jcs } from "./canonical-json.ts";
+import { createFeatureMemo, type FeatureConfigs, FeatureBuildError, type FeatureMemo } from "./candidate-features.ts";
 import { enumerateCandidates } from "./choices.ts";
+import { type AnyCandidateFeatures, buildFeatures, featureSetOf } from "./feature-build.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { resolveFormat, type VersionManifest } from "./formats.ts";
 import { observe, playerChannel } from "./player-channel.ts";
@@ -53,6 +55,20 @@ export const hypotheticalEngineSeed = (stream: Uint8Array, world: number): strin
 /** The hypothetical battle cannot be made or read: a team the validator refuses is an `InvalidTeamError`; the rest are this. */
 export class HypotheticalError extends Error {
   override name = "HypotheticalError";
+}
+
+/**
+ * A hypothetical request the pair's own feature builder cannot feature (`FeatureBuildError`: a reader limit, an assumed set the
+ * validator refuses, a refused probe). The caller drops the world and counts it: never a rule fallback, as at play. `code` is the
+ * builder's own code (a fixed word, no content).
+ */
+export class HypotheticalFeatureError extends HypotheticalError {
+  override name = "HypotheticalFeatureError";
+  readonly code: string;
+  constructor(code: string) {
+    super(`no candidate features: ${code}`);
+    this.code = code;
+  }
 }
 
 declare const hypothetical: unique symbol;
@@ -104,6 +120,8 @@ interface ChannelText {
 interface ObservationText {
   observation: Observation;
   candidates: { choice: string; pending: boolean }[];
+  /** The rows of the pair's feature set on this channel and this seat's own team (a features pair only). */
+  features?: AnyCandidateFeatures;
 }
 const channelTexts = new WeakMap<object, ChannelText>();
 const observationTexts = new WeakMap<object, ObservationText>();
@@ -183,6 +201,13 @@ export interface HypotheticalStartInput {
   own_request?: string;
   /** The rules snapshot to resolve the format against; default reads and validates `rules/`. */
   snapshot?: RulesSnapshot;
+  /**
+   * The feature configs of a pair that reads candidate features (`pairFeatureSetup(...).configs`: the run's own, as at play). Each
+   * hypothetical observation then carries the rows `buildFeatures` makes on that seat's OWN hypothetical channel and OWN team (the
+   * opponent seat's are its own view and its own sets, which are the world's), through the assumed sets of the shared reader. A
+   * request that cannot be featured is a `HypotheticalFeatureError`. Absent: no rows, every byte as before.
+   */
+  features?: { configs: FeatureConfigs };
 }
 
 /** The result of playing one pair of orders to our first request. */
@@ -236,7 +261,9 @@ function withRealGenders(team: readonly Readonly<PokemonSet>[], request: string)
 
 /** Start the battle once to Team Preview. Both teams are validated first, on copies, as `runBattle` does. */
 export function startHypothetical(input: HypotheticalStartInput): HypotheticalPreview {
-  const { engine, format_id, seat, world_team, stream, world, data_class, snapshot } = input;
+  const { engine, format_id, seat, world_team, stream, world, data_class, snapshot, features: featureSetup } = input;
+  // One memo per seat for the battle's lifetime (a probe answer is a pure function of its query).
+  const memos: Record<Player, FeatureMemo> = { p1: createFeatureMemo(), p2: createFeatureMemo() };
   const own_team = input.own_request === undefined ? input.own_team : withRealGenders(input.own_team, input.own_request);
   if (!PLAYERS.includes(seat)) throw new HypotheticalError("seat must be p1 or p2");
   const foe: Player = seat === "p1" ? "p2" : "p1";
@@ -283,8 +310,17 @@ export function startHypothetical(input: HypotheticalStartInput): HypotheticalPr
     // A copy, frozen: the query the worker client validates and sends is the one this module made, whatever a caller does after.
     const observation = deepFreeze(structuredClone(built));
     const candidates = enumerateCandidates(decodedRequest(channel)).candidates.map(({ choice, pending }) => ({ choice, pending }));
+    let features: AnyCandidateFeatures | undefined;
+    if (featureSetup !== undefined) {
+      try {
+        features = buildFeatures(engine, featureSetup.configs, real, teamOf(channel.player), candidates, memos[channel.player], featureSetOf(featureSetup.configs));
+      } catch (error) {
+        if (error instanceof FeatureBuildError) throw new HypotheticalFeatureError(error.code);
+        throw error;
+      }
+    }
     const branded = Object.freeze({ player: channel.player, kind: observation.kind }) as unknown as HypotheticalObservation;
-    observationTexts.set(branded, { observation, candidates });
+    observationTexts.set(branded, { observation, candidates, ...(features === undefined ? {} : { features: deepFreeze(structuredClone(features)) }) });
     return branded;
   };
 
@@ -350,13 +386,20 @@ export async function evaluateHypothetical(
 ): Promise<{ evaluation: Evaluation; candidates: HypotheticalCandidate[] }> {
   const held = observationTexts.get(observation);
   if (held === undefined) throw new HypotheticalError("not a hypothetical observation made by this module");
-  // A pair that reads candidate features would need their rows at every hypothetical request (ADR-029 section 3): refused, as in ADR-026.
-  if (client.featureSet !== undefined && client.featureSet !== null) throw new HypotheticalError("features_pair: a pair that reads candidate features is not supported by the Team Preview solve");
+  // A pair that reads candidate features gets the rows of its own builder, made on the hypothetical channel when the battle was started
+  // with the pair's configs; the set must be the one the worker stated, and a worker that states none takes none.
+  const stated = client.featureSet ?? null;
+  if (stated === null && held.features !== undefined) throw new HypotheticalError("features_pair: the observation carries candidate features but the worker states no feature set");
+  if (stated !== null) {
+    if (held.features === undefined) throw new HypotheticalError("features_pair: the worker reads candidate features: start the hypothetical battle with the pair's feature configs");
+    if (held.features.feature_set !== stated.feature_set || held.features.feature_set_hash !== stated.feature_set_hash) throw new HypotheticalError("features_pair: the candidate features built are of another feature set than the worker stated");
+  }
   const evaluation = await client.evaluate(battle, {
     schema_version: 1,
     identity: held.observation.identity,
     observation: held.observation,
     candidates: held.candidates,
+    ...(held.features === undefined ? {} : { candidate_features: held.features }),
     sampling: { kind: "evaluate" },
     policy_id,
   } as EvaluateQueryInput);

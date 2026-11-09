@@ -84,7 +84,7 @@ describe("runBestResponseCli", () => {
     await expect(run(base(withDataset), { run_teams: ports.run_teams })).rejects.toThrow(/no belief port/);
   });
 
-  it("refuses a run config that is a placeholder, names no team dataset or reads candidate features", async () => {
+  it("refuses a run config that is a placeholder, names no team dataset or a candidate feature set this checkout does not compute", async () => {
     const placeholder = join(dir, "placeholder.json");
     writeFileSync(placeholder, readFileSync(withDataset, "utf8").replace("tiny-run", "CHANGE-ME-run"));
     await expect(run(base(placeholder))).rejects.toThrow(/CHANGE-ME/);
@@ -92,7 +92,7 @@ describe("runBestResponseCli", () => {
     expect(await run(base(withoutDataset))).toBe(1);
     expect(error).toHaveBeenCalledWith(expect.stringContaining("names no team dataset"));
     error.mockRestore();
-    await expect(run(base(features))).rejects.toThrow(/features_pair|candidate feature/);
+    await expect(run(base(features))).rejects.toThrow(/which this checkout computes as/);
   });
 
   it("refuses the run's own training dataset as the evaluation dataset and a malformed team set", async () => {

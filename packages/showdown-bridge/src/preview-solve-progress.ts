@@ -4,7 +4,7 @@
 // factories, so `policyGame` builds them with exactly the options `policyActor` gets and guards them as role `policy`. Nothing
 // solved leaves the actor: the counts below are integers, wall time is printed by the caller and never stored.
 
-import { policyActor, type PolicyActorOptions, type PolicySeat } from "./policy-actor.ts";
+import { type ActorFeatures, policyActor, type PolicyActorOptions, type PolicySeat } from "./policy-actor.ts";
 import type { PlaySettings } from "./policy-protocol.ts";
 import type { PolicyClient } from "./policy-worker.ts";
 import { type PreviewSolveActor, type PreviewSolveCounts, previewSolveActor, type PreviewSolveSetup } from "./preview-solve.ts";
@@ -32,6 +32,8 @@ export interface SolveSeatOptions {
   identity_hash: string;
   mode: "sample" | "argmax";
   play?: PlaySettings;
+  /** The candidate-feature records of the pair (absent: it reads none): the seat's rows and the solver's hypothetical rows come from them. */
+  features?: ActorFeatures;
   /** Called with each game's actor as it is built: the caller reads `report()` after the game. */
   onActor: (actor: PreviewSolveActor) => void;
 }
@@ -43,8 +45,10 @@ export function solveSeat(o: SolveSeatOptions): PolicySeat {
     policy_id: o.policy_id,
     sampling: o.mode,
     ...(o.play === undefined ? {} : { play: o.play }),
+    ...(o.features === undefined ? {} : { features: o.features }),
     make: (options: PolicyActorOptions) => {
       const actor = previewSolveActor({
+        ...(o.features === undefined ? {} : { features: { configs: o.features.configs } }),
         setup: o.setup,
         client: o.client,
         battle: options.battle,
@@ -73,6 +77,8 @@ export interface SolveControlSeatOptions {
   policy_id: string;
   mode: "sample" | "argmax";
   play?: PlaySettings;
+  /** The pair's candidate-feature records (absent: it reads none). */
+  features?: ActorFeatures;
   onTally: (tally: SolveControlTally) => void;
 }
 
@@ -83,6 +89,7 @@ export function solveControlSeat(o: SolveControlSeatOptions): PolicySeat {
     policy_id: o.policy_id,
     sampling: o.mode,
     ...(o.play === undefined ? {} : { play: o.play }),
+    ...(o.features === undefined ? {} : { features: o.features }),
     make: (options: PolicyActorOptions) => {
       const inner: Actor = policyActor(options);
       const counts: PreviewSolveCounts = {

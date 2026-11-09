@@ -229,7 +229,8 @@ export interface ProgressOptions {
    * anchors, no previous generation, no extra modes; its matches are `psolve-<opponent>-<mode>`), against the same baselines and
    * pairs as the pair itself and head to head against the control `self-no-solve`: the same pair in the same mode without the
    * solver. The games of such an evaluation run with a Team Preview budget of at least the config's `budget_ms`
-   * (`previewSolveBudgetMs`), the control's included. A pair that reads candidate features or the opponent sheet is refused.
+   * (`previewSolveBudgetMs`), the control's included. A pair that reads the opponent sheet is refused; a pair that reads candidate features is solved with rows built
+   * on the hypothetical channels by its own builder (`features`).
    */
   preview_solve?: {
     setup: PreviewSolveSetup;
@@ -518,7 +519,6 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   if (solve !== undefined) {
     if (ablation !== undefined || search !== undefined) throw new ProgressError("the Team Preview solver candidate is evaluated alone: no Preview ablation and no search");
     if (previous !== undefined || anchors.length > 0) throw new ProgressError("the Team Preview solver candidate is evaluated alone: no anchors and no previous-generation matches");
-    if (options.features !== undefined) throw new ProgressError("the progress evaluation does not solve a features pair: the solver refuses it");
     if (options.sheet !== undefined) throw new ProgressError("a pair that reads opponent_sheet is not solved: the solver refuses it");
     if (!PROGRESS_MODES.includes(solve.mode)) throw new ProgressError("the solver mode is argmax or sample");
     opponents.push({
@@ -526,7 +526,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       opponent: (mode) => ({ kind: "self-no-solve", policy_id: options.policy_ids[mode], checkpoints: options.checkpoints, mode }),
       seat: (mode) => {
         let tally: SolveControlTally | undefined;
-        const seat = solveControlSeat({ client, policy_id: options.policy_ids[mode], mode, ...(solve.play === undefined ? {} : { play: solve.play }), onTally: (made) => (tally = made) });
+        const seat = solveControlSeat({ client, policy_id: options.policy_ids[mode], mode, ...(solve.play === undefined ? {} : { play: solve.play }), ...ownFeatures, onTally: (made) => (tally = made) });
         return { seat, solveControl: () => (tally as SolveControlTally).counts() };
       },
       policies: (mode) => options.policy_ids[mode],
@@ -572,7 +572,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   }
   if (solve !== undefined) {
     // The solver policy's id carries the solver identity (ADR-029 section 4); the control keeps the pair's own id.
-    const named = previewSolvePolicy(solve.setup, manifest, options.checkpoints, solve.mode, solve.play ?? {});
+    const named = previewSolvePolicy(solve.setup, manifest, options.checkpoints, solve.mode, solve.play ?? {}, undefined, client.featureSet?.feature_set_hash);
     modes = [solve.mode];
     candidates.length = 0;
     candidates.push({ prefix: "psolve-", client, policy_ids: { ...options.policy_ids, [solve.mode]: named.policy_id }, solve: { identity_hash: named.identity_hash } });
@@ -663,7 +663,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
         const candidateBuilders: SheetBuilder[] = [];
         const seat: PolicySeat =
           candidateKind.solve !== undefined && solve !== undefined
-            ? solveSeat({ setup: solve.setup, client: candidateKind.client as PolicyClient & Parameters<typeof solveSeat>[0]["client"], policy_id, identity_hash: candidateKind.solve.identity_hash, mode, ...(solve.play === undefined ? {} : { play: solve.play }), onActor: (made) => (solver = made) })
+            ? solveSeat({ setup: solve.setup, client: candidateKind.client as PolicyClient & Parameters<typeof solveSeat>[0]["client"], policy_id, identity_hash: candidateKind.solve.identity_hash, mode, ...ownFeatures, ...(solve.play === undefined ? {} : { play: solve.play }), onActor: (made) => (solver = made) })
             : candidateKind.search !== undefined && search !== undefined
             ? searchSeat({ setup: search.setup, client: candidateKind.client as PolicyClient & Parameters<typeof searchSeat>[0]["client"], policy_id, identity_hash: candidateKind.search.identity_hash, mode, pair: options.checkpoints, ...ownFeatures, ...(search.play === undefined ? {} : { play: search.play }), onActor: (made) => (searcher = made) })
             : { client: candidateKind.client, policy_id, sampling: mode, ...(extra === undefined ? {} : { play: extra.play }), ...ownFeatures, ...sheetSeat(options.sheet, candidateBuilders), ...(candidateKind.random_preview === undefined ? {} : { random_preview: true }) };
