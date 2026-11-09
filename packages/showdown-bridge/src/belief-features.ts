@@ -43,7 +43,7 @@ export interface BeliefFeaturesPort {
   /** The usage prior's `format_id`. */
   readonly prior_format_id: string;
   readonly k: SheetKValues;
-  sheet(input: { readonly opponent: PublicSide; readonly flags: readonly PublicFlag[]; readonly trapping?: TrappingCheckPort | null }): OpponentSheet;
+  sheet(input: { readonly opponent: PublicSide; readonly flags: readonly PublicFlag[]; readonly trapping?: TrappingCheckPort | null }): OpponentSheet & { readonly refusal_detail?: string };
   /** The belief's move inclusions (`BeliefThreatsPort`); the composition root provides it, a stand-in for the sheet alone may not. */
   moveInclusions?: BeliefThreatsPort["moveInclusions"];
 }
@@ -127,12 +127,14 @@ export function createSheetBuilder(context: BeliefFeaturesContext): SheetBuilder
   return {
     build({ request, team, state, flags }) {
       const trapping = createTrappingCheck({ engine, vocabulary, scenario_id }, { request, team, state });
-      const block = port.sheet({ opponent: state.opponent, flags, trapping });
+      // A refusal caused by the engine-sent sheet (`refusal_detail`, not part of the closed block) is counted under its own key.
+      const { refusal_detail: detail, ...block } = port.sheet({ opponent: state.opponent, flags, trapping });
       requests += 1;
       const code = block.source.refusal;
       if (code !== undefined) {
         refused += 1;
-        byCode.set(code, (byCode.get(code) ?? 0) + 1);
+        const key = detail ?? code;
+        byCode.set(key, (byCode.get(key) ?? 0) + 1);
       }
       return block;
     },
