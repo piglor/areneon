@@ -48,7 +48,12 @@ import { DATASETS_DIR } from "./fixtures.ts";
 import { datasetTeamPool } from "./loop-pool.ts";
 import { playSweepBattle } from "./reducer-sweep.ts";
 import { type PublicFlag, type PublicMon, type PublicState, interpretChannel, toId } from "../../public-state/src/index.ts";
+import type { TeamGeneratorConfig } from "@areneon/schema/types/v1/team-generator-config.ts";
 import type { UsagePrior } from "@areneon/schema/types/v1/usage-prior.ts";
+import { beliefIdentityHash, createSampler } from "@areneon/opponent-model";
+import { beliefConfigHash, createSetLegality, evidenceCheckFormats, usagePriorHash } from "@areneon/showdown-bridge";
+import { datasetValidationPool, type ValidationPoolInput } from "./progress-pool.ts";
+import { generatorSpreadSampler } from "./spread-sampler.ts";
 
 export type Seat = "p1" | "p2";
 export const FIELDS = ["item", "ability", "move"] as const;
@@ -101,16 +106,52 @@ export function qualityContext(engine: Engine, vocabulary: TeamVocabulary): Qual
   };
 }
 
+/**
+ * The context of ANY prior (ADR-025 slice 3b, #1134): the committed belief config and v1 rule as in `qualityContext`, with the given prior
+ * and a port that samples worlds from a belief over it. `generator` supplies the "other spread" routine of the sampler (the Stat Points and
+ * nature of a spread the prior does not name); a prior derived from a generator config passes that config. The port is built here from
+ * the model and the pinned engine's set legality, as `createBeliefWorlds` builds the committed one, without its "derived from the
+ * committed generator config" check, since the point is to read other priors; the identity hash is the model's, so each table row names it.
+ */
+export function qualityContextFor(engine: Engine, vocabulary: TeamVocabulary, setup: { prior: UsagePrior; generator: TeamGeneratorConfig }): QualityContext {
+  const base = qualityContext(engine, vocabulary);
+  const prior = readUsagePrior(setup.prior, vocabulary);
+  const view = base.vocabulary;
+  const sampler = createSampler({ legality: createSetLegality({ engine, vocabulary }), spreads: generatorSpreadSampler(vocabulary, setup.generator) });
+  const manifest = resolveFormat(engine, vocabulary.format_id, loadRulesSnapshot(engine.commit)).manifest;
+  const prior_hash = usagePriorHash(prior);
+  const belief_config_hash = beliefConfigHash(base.config);
+  const port: BeliefWorldsPort = {
+    identity_hash: beliefIdentityHash({ prior_hash, belief_config_hash, vocabulary_hash: view.vocabulary_hash, reader_sha256: readerSha256(), version_manifest: manifest, ...evidenceCheckFormats(base.config) }),
+    prior_hash,
+    belief_config_hash,
+    prior_format_id: prior.format_id,
+    sample: ({ opponent, flags, stream, n }) => {
+      const sampled = sampler.sampleWorlds(belief({ prior, vocabulary: view, config: base.config, opponent, flags }), stream, n);
+      return { worlds: sampled.worlds.map(({ world }) => ({ world })), redraws: sampled.redraws };
+    },
+  };
+  return { ...base, prior, port };
+}
+
 /** The run key of the declared seeded set: the games are a function of it, the committed dev pool and the index. */
 export const ORACLE_RUN_KEY = "prediction-quality-1";
+
+/** The VALIDATION split of a dataset as the sweep's pool (the hashes are the canonical hashes `datasetValidationPool` sorted by). */
+function validationPool(engine: Engine, named: ValidationPoolInput): ReturnType<typeof datasetTeamPool> {
+  const pool = datasetValidationPool(engine, named);
+  return { teams: pool.teams.map((t) => t.sets), hashes: pool.teams.map((t) => t.canonical_team_hash), known_synthetic: pool.known_synthetic };
+}
 
 /**
  * Seeded A1 games, random-legal against random-legal, on teams of the committed dev split (`fixtures-v1`), both teams
  * recorded: game `index` is a function of the run key, the index and the pool alone. A game that did not finish throws.
  */
-export async function oracleGames(engine: Engine, formatId: string, start: number, count: number, maxTurns = 40): Promise<OracleGame[]> {
-  const dir = join(DATASETS_DIR(formatId), "fixtures-v1");
-  const pool = datasetTeamPool(engine, { format_id: formatId, team_dataset: { path: dir, dataset_hash: verifiedDatasetHash(engine, dir, formatId) }, generation: { excluded_abilities: [] } });
+export async function oracleGames(engine: Engine, formatId: string, start: number, count: number, maxTurns = 40, validationDataset?: string): Promise<OracleGame[]> {
+  const dir = validationDataset ?? join(DATASETS_DIR(formatId), "fixtures-v1");
+  const named = { format_id: formatId, team_dataset: { path: dir, dataset_hash: verifiedDatasetHash(engine, dir, formatId) }, generation: { excluded_abilities: [] } };
+  // The default is the dev split of the committed dataset (as before). A dataset given by the caller is read the way an evaluation reads one: its VALIDATION split only.
+  const pool = validationDataset === undefined ? datasetTeamPool(engine, named) : validationPool(engine, named);
   const out: OracleGame[] = [];
   for (let index = start; index < start + count; index++) {
     const battle = await playSweepBattle(engine, formatId, pool, { run_key: ORACLE_RUN_KEY, mix: "random-legal", index, max_turns: maxTurns });
