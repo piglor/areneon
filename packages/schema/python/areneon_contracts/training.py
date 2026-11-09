@@ -16,14 +16,17 @@ not readable at all: there is no function that reads one alone.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import itertools
 import json
 import re
 from collections.abc import Callable, Iterable, Iterator, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from jsonschema import Draft202012Validator
 from pydantic import BaseModel
 
 from areneon_contracts.contracts import ContractError, _model, parse, schema, sha256_hex, validate
@@ -232,27 +235,168 @@ def _log_shortcut_sound() -> bool:
     return True
 
 
-class ExampleReader:
-    """``parse("training-example", raw)`` for one stream's lines, with a cheaper check of the log.
+#: The two observation shapes of the contract and the properties of one that an Episode repeats
+#: unchanged on every example: the version manifest and the player's team (about two thirds of a
+#: line's validation time, #1193).
+_OBSERVATIONS = ("PreviewObservation", "BattleObservation")
+_STATIC = {"manifest": "VersionManifest", "team": "PrivateTeamSpec"}
+_TOP_KEYS = {
+    "$schema",
+    "$id",
+    "title",
+    "description",
+    "type",
+    "additionalProperties",
+    "required",
+    "properties",
+    "$defs",
+}
+_OBSERVATION_KEYS = {"description", "type", "additionalProperties", "required", "properties"}
+#: The most distinct values of one static property remembered as valid.
+_STATIC_MEMORY = 1024
+#: The most distinct candidate pairs remembered as valid, and the keys of a candidate.
+_PAIR_MEMORY = 1 << 16
+_CANDIDATE_KEYS = {"choice", "pending"}
 
-    An Episode's examples list each log as a prefix of the next, so a generation's stream
-    repeats the same strings about a hundred times over, and python-jsonschema checks every one
-    of them every time (about 80% of the load phase, #964). The schema says of the log that it is
-    an array of at least one string and nothing more (``_log_shortcut_sound`` checks that it
-    still says exactly that), so if an example's log begins with the strings of the previous
-    valid example's log, the example is valid exactly when the same example with only the new
-    strings (or the last one, if there are none) as its log is valid. That verdict, a pass, is
-    taken; anything else, a failure included, is decided by the full check of the whole example,
-    so every refusal keeps its message. The typed model is always built from the whole example.
+
+def _ref_only(entry: object, target: str) -> bool:
+    """True when ``entry`` is a ``$ref`` to the definition ``target`` and a description at most."""
+    return isinstance(entry, dict) and {k: v for k, v in entry.items() if k != "description"} == {
+        "$ref": f"#/$defs/{target}"
+    }
+
+
+def _observation_sound(found: object) -> bool:
+    """True when a definition is a closed object that requires the static properties by ``$ref``."""
+    if not isinstance(found, dict) or not set(found) <= _OBSERVATION_KEYS:
+        return False
+    if found.get("additionalProperties") is not False:
+        return False
+    properties = found.get("properties", {})
+    required = found.get("required", [])
+    return all(
+        key in required and _ref_only(properties.get(key), target)
+        for key, target in _STATIC.items()
+    )
+
+
+def _candidates_sound(whole: dict[str, Any]) -> bool:
+    """True when ``candidates`` is an optional array of ``Candidate`` and nothing else."""
+    entry = whole.get("properties", {}).get("candidates")
+    if not isinstance(entry, dict) or "candidates" in whole.get("required", []):
+        return False
+    if not set(entry) <= {"description", "type", "minItems", "maxItems", "items"}:
+        return False
+    return entry.get("type") == "array" and _ref_only(entry.get("items"), "Candidate")
+
+
+def _static_sound(whole: dict[str, Any]) -> bool:
+    """True when the schema is exactly what the static shortcut needs (see ``_static_shortcut``)."""
+    if not set(whole) <= _TOP_KEYS or not _candidates_sound(whole):
+        return False
+    observation = whole.get("properties", {}).get("observation")
+    wanted = {
+        "type": "object",
+        "oneOf": [{"$ref": f"#/$defs/{name}"} for name in _OBSERVATIONS],
+        "discriminator": {"propertyName": "kind"},
+    }
+    if not isinstance(observation, dict):
+        return False
+    if {k: v for k, v in observation.items() if k != "description"} != wanted:
+        return False
+    return all(_observation_sound(whole.get("$defs", {}).get(name)) for name in _OBSERVATIONS)
+
+
+@dataclass(frozen=True)
+class _Shortcut:
+    """The validators of the split ``_static_shortcut`` makes."""
+
+    #: The contract without the static properties and without ``candidates``.
+    reduced: Any
+    #: The definitions the static properties refer to, by property name.
+    static: dict[str, Any]
+    #: ``candidates`` without its items: the array's own rules.
+    array: Any
+    #: One ``Candidate``.
+    candidate: Any
+
+
+def _static_shortcut() -> _Shortcut | None:
+    """The validators of the shortcut, or None if the schema is not what it needs.
+
+    The shortcut validates an observation's ``manifest`` and ``team`` on their own, once per
+    distinct value, each ``candidates`` item once per distinct (choice, pending), and the rest of
+    the example against the contract without those. That equals the whole check only if the
+    schema constrains each of them by its own ``$ref`` and nothing couples them to the rest:
+    ``_static_sound`` checks the schema says exactly that (the top level, the observation's
+    ``oneOf`` of two closed objects, the properties), and this returns None, so that the whole
+    example is checked as before, when it says anything else.
+    """
+    whole = schema("training-example")
+    if not _static_sound(whole):
+        return None
+    definitions = whole["$defs"]
+    reduced = copy.deepcopy(whole)
+    reduced["properties"].pop("candidates")
+    for name in _OBSERVATIONS:
+        for key in _STATIC:
+            reduced["$defs"][name]["properties"].pop(key)
+        reduced["$defs"][name]["required"] = [
+            k for k in reduced["$defs"][name]["required"] if k not in _STATIC
+        ]
+    dialect = {k: whole[k] for k in ("$schema",) if k in whole}
+
+    def alone(rule: dict[str, Any]) -> Any:
+        return Draft202012Validator({**dialect, "$defs": definitions, **rule})
+
+    array = {
+        k: v
+        for k, v in whole["properties"]["candidates"].items()
+        if k not in ("description", "items")
+    }
+    return _Shortcut(
+        Draft202012Validator(reduced),
+        {key: alone({"$ref": f"#/$defs/{target}"}) for key, target in _STATIC.items()},
+        alone(array),
+        alone({"$ref": "#/$defs/Candidate"}),
+    )
+
+
+class ExampleReader:
+    """``parse("training-example", raw)`` for one stream's lines, with cheaper checks.
+
+    Three repeats make a stream's lines cheap to check without checking less (#964, #1193):
+
+    * An Episode's examples list each log as a prefix of the next, so a generation's stream
+      repeats the same strings about a hundred times over. The schema says of the log that it is
+      an array of at least one string and nothing more (``_log_shortcut_sound`` checks that it
+      still says exactly that), so if an example's log begins with the strings of the previous
+      valid example's log, the example is valid exactly when the same example with only the new
+      strings (or the last one, if there are none) as its log is valid.
+    * The observation's version manifest and team are the same value on every example of an
+      Episode (and of every Episode of the same team). Each distinct value is checked once
+      against its own definition, and the rest of the example against the contract without those
+      two properties (``_static_shortcut`` checks the schema allows exactly that split).
+    * A candidate is a (choice, pending) pair and the same pairs come up on line after line
+      (every Team Preview lists the same 360). The array is checked for its own rules and each
+      distinct pair once against ``Candidate``.
+
+    A pass of all is the verdict; anything else, a failure included, is decided by the full
+    check of the whole example, so every refusal keeps its message. The typed model is always
+    built from the whole example.
     """
 
     def __init__(self) -> None:
         self._shortcut = _log_shortcut_sound()
+        self._split = _static_shortcut()
+        self._good: dict[str, set[str]] = {key: set() for key in _STATIC}
+        self._pairs: set[tuple[str, bool]] = set()
         self._previous: list[str] | None = None
 
     def parse(self, raw: object) -> BaseModel:
         log = _log_of(raw)
         previous = self._previous
+        tail: list[str] | None = None
         if (
             self._shortcut
             and isinstance(raw, dict)
@@ -261,15 +405,74 @@ class ExampleReader:
             and log[: len(previous)] == previous
         ):
             tail = log[len(previous) :] or log[-1:]
-            reduced = {**raw, "observation": {**raw["observation"], "log": tail}}
-            try:
-                validate("training-example", reduced)
-            except ContractError:
-                validate("training-example", raw)  # raises with the whole example's message
-            else:
-                return self._build(raw, log)
-        validate("training-example", raw)
+        if self._passes(raw, tail):
+            return self._build(raw, log)
+        validate("training-example", raw)  # raises with the whole example's message
         return self._build(raw, log)
+
+    def _passes(self, raw: object, tail: list[str] | None) -> bool:
+        """True when the shortcuts, which are sound only as a pass, say the example is valid."""
+        observation = raw.get("observation") if isinstance(raw, dict) else None
+        if not isinstance(raw, dict) or not isinstance(observation, dict):
+            return False
+        split = self._split
+        if split is not None and all(key in observation for key in _STATIC):
+            view = {k: v for k, v in observation.items() if k not in _STATIC}
+            if tail is not None:
+                view["log"] = tail
+            reduced = {k: v for k, v in raw.items() if k != "candidates"}
+            reduced["observation"] = view
+            return (
+                split.reduced.is_valid(reduced)
+                and all(self._static_valid(k, observation[k], split.static[k]) for k in _STATIC)
+                and ("candidates" not in raw or self._candidates_valid(raw["candidates"], split))
+            )
+        if tail is None:
+            return False
+        try:
+            validate("training-example", {**raw, "observation": {**observation, "log": tail}})
+        except ContractError:
+            return False
+        return True
+
+    def _candidates_valid(self, candidates: object, split: _Shortcut) -> bool:
+        if not split.array.is_valid(candidates) or not isinstance(candidates, list):
+            return False
+        pairs = self._pairs
+        for item in candidates:
+            if (
+                type(item) is dict
+                and len(item) == len(_CANDIDATE_KEYS)
+                and item.keys() == _CANDIDATE_KEYS
+                and type(item["choice"]) is str
+                and type(item["pending"]) is bool
+            ):
+                pair = (item["choice"], item["pending"])
+                if pair in pairs:
+                    continue
+                if not split.candidate.is_valid(item):
+                    return False
+                if len(pairs) >= _PAIR_MEMORY:
+                    pairs.clear()
+                pairs.add(pair)
+            elif not split.candidate.is_valid(item):
+                return False
+        return True
+
+    def _static_valid(self, key: str, value: object, validator: Any) -> bool:
+        try:
+            text = json.dumps(value, sort_keys=True)
+        except (TypeError, ValueError):  # not a JSON value: the validator judges it, unremembered
+            return bool(validator.is_valid(value))
+        good = self._good[key]
+        if text in good:
+            return True
+        if not validator.is_valid(value):
+            return False
+        if len(good) >= _STATIC_MEMORY:
+            good.clear()
+        good.add(text)
+        return True
 
     def _build(self, raw: object, log: list[str] | None) -> BaseModel:
         model = _model("training-example").model_validate(raw, strict=True)
