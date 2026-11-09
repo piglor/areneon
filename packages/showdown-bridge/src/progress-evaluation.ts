@@ -535,15 +535,15 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   }
   if (search !== undefined) {
     if (ablation !== undefined) throw new ProgressError("the search candidate is evaluated alone: no Preview ablation");
-    if (options.features !== undefined) throw new ProgressError("the progress evaluation does not search a features pair yet");
     if (options.sheet !== undefined) throw new ProgressError("a pair that reads opponent_sheet is not searched: the search refuses it");
+    if (client.featureSet != null && client.featureSet.feature_set !== "probe-damage/1") throw new ProgressError("the search plays a pair that reads no candidate features or probe-damage/1 only");
     if (!PROGRESS_MODES.includes(search.mode)) throw new ProgressError("the search mode is argmax or sample");
     opponents.push({
       id: "self-no-search",
       opponent: (mode) => ({ kind: "self-no-search", policy_id: options.policy_ids[mode], checkpoints: options.checkpoints, mode }),
       seat: (mode) => {
         let tally: ControlTally | undefined;
-        const seat = controlSeat({ client, policy_id: options.policy_ids[mode], mode, ...(search.play === undefined ? {} : { play: search.play }), onTally: (made) => (tally = made) });
+        const seat = controlSeat({ client, policy_id: options.policy_ids[mode], mode, ...ownFeatures, ...(search.play === undefined ? {} : { play: search.play }), onTally: (made) => (tally = made) });
         return { seat, control: () => (tally as ControlTally).counts() };
       },
       policies: (mode) => options.policy_ids[mode],
@@ -565,7 +565,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   let modes: readonly ProgressMode[] = PROGRESS_MODES;
   if (search !== undefined) {
     // The search policy's id carries the search identity (ADR-026 section 5); the control keeps the pair's own id.
-    const named = searchPolicy(search.setup, manifest, options.checkpoints, search.mode, search.play ?? {});
+    const named = searchPolicy(search.setup, manifest, options.checkpoints, search.mode, search.play ?? {}, client.featureSet?.feature_set_hash);
     modes = [search.mode];
     candidates.length = 0;
     candidates.push({ prefix: "search-", client, policy_ids: { ...options.policy_ids, [search.mode]: named.policy_id }, search: { identity_hash: named.identity_hash } });
@@ -665,7 +665,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
           candidateKind.solve !== undefined && solve !== undefined
             ? solveSeat({ setup: solve.setup, client: candidateKind.client as PolicyClient & Parameters<typeof solveSeat>[0]["client"], policy_id, identity_hash: candidateKind.solve.identity_hash, mode, ...(solve.play === undefined ? {} : { play: solve.play }), onActor: (made) => (solver = made) })
             : candidateKind.search !== undefined && search !== undefined
-            ? searchSeat({ setup: search.setup, client: candidateKind.client as PolicyClient & Parameters<typeof searchSeat>[0]["client"], policy_id, identity_hash: candidateKind.search.identity_hash, mode, ...(search.play === undefined ? {} : { play: search.play }), onActor: (made) => (searcher = made) })
+            ? searchSeat({ setup: search.setup, client: candidateKind.client as PolicyClient & Parameters<typeof searchSeat>[0]["client"], policy_id, identity_hash: candidateKind.search.identity_hash, mode, pair: options.checkpoints, ...ownFeatures, ...(search.play === undefined ? {} : { play: search.play }), onActor: (made) => (searcher = made) })
             : { client: candidateKind.client, policy_id, sampling: mode, ...(extra === undefined ? {} : { play: extra.play }), ...ownFeatures, ...sheetSeat(options.sheet, candidateBuilders), ...(candidateKind.random_preview === undefined ? {} : { random_preview: true }) };
         await candidateKind.client.beginGame?.();
         await baseline.begin();
