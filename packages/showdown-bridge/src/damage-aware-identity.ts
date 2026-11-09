@@ -13,6 +13,9 @@ import { sha256Hex } from "./rules.ts";
 
 export const DAMAGE_AWARE_NAME = "damage-aware";
 
+/** The version of the situational scorer of `damage-aware@v4` (`damage-aware-situational.ts`); bump it when it scores a switch or a stalling move differently for the same input. Part of the identity only for a record with `situational` weights, so v1, v2 and v3 keep their bytes. */
+export const SITUATIONAL_SCORE_FORMAT = 1;
+
 /**
  * The parts a baseline's play depends on besides its policy id: five, and a sixth only when the config
  * record names a belief (ADR-025 section 5, ADR-018 erratum E-18.3), so v1's identity bytes are unchanged.
@@ -25,6 +28,8 @@ export interface DamageAwareIdentity {
   version_manifest: VersionManifest;
   /** `belief_identity_hash` of the belief the record names; absent for v1. */
   belief_identity_hash?: string;
+  /** `SITUATIONAL_SCORE_FORMAT`; present only for a record with `situational` weights (v4). */
+  situational_format?: number;
 }
 
 export interface IdentityParts {
@@ -50,6 +55,7 @@ export function damageAwareIdentity(parts: IdentityParts): DamageAwareIdentity {
     reader_sha256: parts.reader_sha256,
     version_manifest: parts.manifest,
     ...(parts.belief_identity_hash === undefined ? {} : { belief_identity_hash: parts.belief_identity_hash }),
+    ...(parts.config.schema_version === 1 && parts.config.situational !== undefined ? { situational_format: SITUATIONAL_SCORE_FORMAT } : {}),
   };
 }
 

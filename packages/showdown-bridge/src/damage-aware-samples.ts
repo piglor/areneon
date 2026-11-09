@@ -18,8 +18,9 @@ function mutated(value: unknown, change: (copy: any) => void): Record<string, un
 export function damageAwareSamples(): { valid: Cases; invalid: Cases; readerInvalid: Cases } {
   const config = JSON.parse(readFileSync(join(DAMAGE_AWARE_CONFIG_DIR, "damage-aware.v1.json"), "utf8")) as unknown;
   const second = JSON.parse(readFileSync(join(DAMAGE_AWARE_CONFIG_DIR, "damage-aware.v2.json"), "utf8")) as unknown;
+  const fourth = JSON.parse(readFileSync(join(DAMAGE_AWARE_CONFIG_DIR, "damage-aware.v4.json"), "utf8")) as unknown;
   return {
-    valid: { "damage-aware-config/v1": config, "damage-aware-config-2/v2": second },
+    valid: { "damage-aware-config/v1": config, "damage-aware-config-2/v2": second, "damage-aware-config/v4": fourth },
     invalid: {
       "damage-aware-config-2/extra-field": mutated(second, (c) => (c.note = "x")),
       "damage-aware-config-2/field-rules-instead-of-belief": mutated(second, (c) => (c.assumed_set = (config as any).assumed_set)),
@@ -37,9 +38,13 @@ export function damageAwareSamples(): { valid: Cases; invalid: Cases; readerInva
       "damage-aware-config/unknown-item-kind": mutated(config, (c) => (c.assumed_set.item = { kind: "guess" })),
       "damage-aware-config/fixed-item-without-id": mutated(config, (c) => (c.assumed_set.item = { kind: "fixed" })),
       "damage-aware-config/missing-stat-point": mutated(config, (c) => delete c.assumed_set.stat_points.spe),
+      "damage-aware-config/situational-missing-protect": mutated(fourth, (c) => delete c.situational.protect_value_ppm),
+      "damage-aware-config/situational-fractional-switch": mutated(fourth, (c) => (c.situational.switch_value_ppm = 0.5)),
+      "damage-aware-config/situational-weight-over-one": mutated(fourth, (c) => (c.situational.protect_value_ppm = 1000001)),
       "damage-aware-config/unknown-rounding": mutated(config, (c) => (c.hp_rounding = "banker")),
     },
     readerInvalid: {
+      "damage-aware-config/situational-without-engine-convention": mutated(fourth, (c) => delete c.target_convention),
       "damage-aware-config-2/other-format": mutated(second, (c) => (c.format_id = "gen9ou")),
       "damage-aware-config/unknown-nature": mutated(config, (c) => (c.assumed_set.nature = "grumpy")),
       "damage-aware-config/unknown-fixed-item": mutated(config, (c) => (c.assumed_set.item = { kind: "fixed", item: "notanitem" })),

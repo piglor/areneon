@@ -28,8 +28,14 @@ for (const file of files) {
       const { target_convention, ...rest } = v3;
       if (target_convention !== "engine") throw new Error("v3 must select the engine's target convention");
       if (!isDeepStrictEqual(rest, v1)) throw new Error("v3 must equal v1 in every value but the target convention");
-    }
-    else if (version === "v2") {
+    } else if (version === "v4") {
+      // v4 is v3's values plus the two situational weights (#1329); nothing else may differ.
+      const v3 = loadDamageAwareConfig("v3", vocabulary);
+      const v4 = loadDamageAwareConfig(version, vocabulary);
+      const { situational, ...rest } = v4;
+      if (situational === undefined) throw new Error("v4 must carry the situational weights");
+      if (!isDeepStrictEqual(rest, v3)) throw new Error("v4 must equal v3 in every value but the situational weights");
+    } else if (version === "v2") {
       // The belief record names the prior and the belief config by hash: the committed files must be those.
       const record = loadDamageAwareConfigV2(vocabulary);
       const dir = join(DAMAGE_AWARE_CONFIG_DIR, "..", "opponent-model", record.format_id);

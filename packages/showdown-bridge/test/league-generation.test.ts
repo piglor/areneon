@@ -10,6 +10,7 @@ import {
   damageAwareSetup,
   damageAwareSetupV2,
   DAMAGE_AWARE_V3_POLICY_ID,
+  DAMAGE_AWARE_V4_POLICY_ID,
   forfeitCauses,
   GenerationError,
   type GenerationOptions,
@@ -654,6 +655,33 @@ describe("damage-aware@v3 as a training opponent (#1183)", () => {
 
   it("never hands a v1 record to a config that names v3", async () => {
     await expect(play(v3Config(), { damage_aware_v3: damageAwareSetup(engine, "gen9championsvgc2026regmc") })).rejects.toThrow(/names another record version/);
+  }, 120_000);
+});
+
+describe("damage-aware@v4 as a training opponent (#1329)", () => {
+  const v4Config = () =>
+    readTrainingRunConfig({
+      ...(sample("tiny") as object),
+      generation: { ...config.generation, games: 2, baseline_games: [{ actor: "damage-aware", policy_id: DAMAGE_AWARE_V4_POLICY_ID, games: 2 }] },
+    });
+  const play = (cfg = v4Config(), extra: Partial<Parameters<typeof playGeneration>[0]> = {}) =>
+    playGeneration({ engine, config: cfg, generation: 1, policy_id: POLICY, client: actorClient(), pool, ...extra });
+
+  it("plays the v4 record: its own opponent entry and identity, byte-identical on a rerun", async () => {
+    const first = await play();
+    expect((await play()).stream).toBe(first.stream);
+    const record = readLeagueRunRecord(first.run_record);
+    expect(record.opponents).toContainEqual({ opponent_policy_id: DAMAGE_AWARE_V4_POLICY_ID, games: 2 });
+    const entry = at(record.baselines ?? [], 0);
+    expect(entry).toMatchObject({ policy_id: DAMAGE_AWARE_V4_POLICY_ID, games: 2 });
+    expect(entry.counts.decisions).toBeGreaterThan(0);
+    await expect(checkLeagueRunRecord(record, v4Config())).resolves.toBeUndefined();
+    const v3 = await play(readTrainingRunConfig({ ...(sample("tiny") as object), generation: { ...config.generation, games: 2, baseline_games: [{ actor: "damage-aware", policy_id: DAMAGE_AWARE_V3_POLICY_ID, games: 2 }] } }));
+    expect(entry.identity_hash).not.toBe(at(readLeagueRunRecord(v3.run_record).baselines ?? [], 0).identity_hash);
+  }, 400_000);
+
+  it("never hands a v3 record to a config that names v4", async () => {
+    await expect(play(v4Config(), { damage_aware_v4: damageAwareSetup(engine, "gen9championsvgc2026regmc", "v3") })).rejects.toThrow(/names another record version/);
   }, 120_000);
 });
 
