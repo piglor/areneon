@@ -31,6 +31,11 @@ export interface BeliefVocabulary {
   readonly vocabulary_hash: TeamVocabulary["engine_data_hash"];
   readonly rules: Pick<TeamVocabulary["rules"], "adjust_level" | "min_team_size" | "max_team_size" | "picked_team_size"> & { readonly item_clause?: number };
   readonly items: TeamVocabulary["items"];
+  /**
+   * The format's natures. Optional: read only to price an engine-sent sheet's nature against the prior's "other spread"
+   * entry (one nature of this many); absent, that entry counts as consistent with the sheet's nature in full.
+   */
+  readonly natures?: TeamVocabulary["natures"];
   readonly roster: readonly TeamVocabulary["roster"][number][];
 }
 
@@ -93,6 +98,19 @@ export interface Cell {
   readonly weight: bigint;
 }
 
+/**
+ * The engine-sent sheet entry of a slot (open-sheet formats, ADR-025 erratum E1), as the belief read it: the team as built.
+ * Present on a slot only when the opponent half carried a sheet, so a closed-format belief has no such key.
+ */
+export interface SlotSheet {
+  readonly item: string | null;
+  readonly ability: string;
+  readonly moves: readonly string[];
+  readonly nature: string | null;
+  readonly gender: string | null;
+  readonly level: number;
+}
+
 /** One slot's belief inside ONE disguise assignment: the full per-forme models and the (forme, item) cells. */
 export interface SlotBelief {
   /** The 0-based position in the opponent's preview roster. */
@@ -114,6 +132,8 @@ export interface SlotBelief {
   readonly cells: readonly Cell[];
   /** The evidence applied to this slot and the evidence that was left out, as fixed words. */
   readonly constraints: readonly string[];
+  /** The sheet entry the slot was constrained by (absent without a sheet). */
+  readonly sheet?: SlotSheet;
 }
 
 /** One slot's belief mixed over the disguise assignments (with a single assignment, that assignment's own numbers). */
