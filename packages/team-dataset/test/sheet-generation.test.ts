@@ -18,7 +18,7 @@ import {
   resolveFormat,
   sheetSetup,
 } from "@areneon/showdown-bridge";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { readSheetBlocks } from "../../showdown-bridge/src/sheet-recompute.ts";
 import { readerSha256 } from "../../public-state/src/index.ts";
 import { goldenTeamVocabulary } from "../../showdown-bridge/src/golden.ts";
@@ -134,10 +134,12 @@ describe("the play-time sheet sidecar", () => {
     };
     const recomputed = await write("recomputed.jsonl");
     const sidecar = await write("sidecar.jsonl", readSheetBlocks(found.features_hash, sheets));
+    // The independence assertion: the stream from the sidecar, the stream recomputed by the loader and the stream written during play agree.
     expect(sidecar.text).toBe(recomputed.text);
     expect(sidecar.text).toBe(readFileSync(join(dir, "stream.jsonl"), "utf8"));
     expect(sidecar.set.stream_sha256).toBe(recomputed.set.stream_sha256);
-    // Teeth: the writer reads the files (blocks moved to other decisions change the stream), and a file of another source is not used.
+    // The sidecar is trusted like the rows sidecar (a valid block in the right place is taken as built); the equality above is the guard.
+    // Here it is shown that the writer does read the files (blocks moved to other decisions change the stream) and skips a file of another source.
     const first = join(sheets, readdirSync(sheets)[0] as string);
     const original = readFileSync(first, "utf8");
     const parsed = JSON.parse(original) as { blocks: unknown[] };
@@ -160,5 +162,25 @@ describe("the play-time sheet sidecar", () => {
     expect(read(hash, real.request_seqs)).toBeUndefined();
     writeFileSync(first, "{not json");
     expect(read(hash, real.request_seqs)).toBeUndefined();
+  }, 900_000);
+
+  it("a failing sidecar write is skipped and logged without content, and the generation still completes", async () => {
+    const found = createBeliefFeatures({ engine, vocabulary: goldenTeamVocabulary(), reader_sha256: readerSha256(), manifest: resolveFormat(engine, "gen9championsvgc2026regmc").manifest });
+    const config = configWith(found.features_hash);
+    const setup = sheetSetup(engine, config, factory);
+    if (setup === undefined) throw new Error("no sheet setup");
+    const blocked = join(dir, "not-a-directory");
+    writeFileSync(blocked, "a file where the sidecar directory should be");
+    mkdirSync(join(dir, "episodes-failing"), { recursive: true });
+    const err: string[] = [];
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(((chunk: string | Uint8Array) => (err.push(String(chunk)), true)) as never);
+    try {
+      const result = await playGeneration({ engine, config, generation: 1, policy_id: POLICY, client: standIn(setup.statement), pool: trainingTeamPool(engine, config.generation.excluded_abilities), sheet: setup.setup, stream_path: join(dir, "failing.jsonl"), episodes_dir: join(dir, "episodes-failing"), features_dir: blocked });
+      expect(result.games.length).toBeGreaterThan(0);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(err.join("")).toMatch(/sheet sidecar skipped for game \d+: Error/);
+    expect(readFileSync(join(dir, "failing.jsonl"), "utf8")).toBe(readFileSync(join(dir, "stream.jsonl"), "utf8"));
   }, 900_000);
 });

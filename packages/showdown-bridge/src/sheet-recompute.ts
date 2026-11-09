@@ -53,6 +53,7 @@ export function readSheetBlocks(sourceHash: string, dir: string): (hash: string,
       const found = JSON.parse(readFileSync(sheetFile(dir, hash), "utf8")) as { episode_hash?: unknown; source_hash?: unknown; request_seqs?: unknown; blocks?: unknown };
       if (found.episode_hash !== hash || found.source_hash !== sourceHash || !Array.isArray(found.blocks) || !Array.isArray(found.request_seqs)) return undefined;
       if (found.request_seqs.length !== request_seqs.length || found.request_seqs.some((seq, i) => seq !== request_seqs[i])) return undefined;
+      // The cast is checked right below: every block is of the stream's source, not an oracle block, and passes the reader rules.
       const blocks = found.blocks as TrainingBlock[];
       if (blocks.length !== request_seqs.length) return undefined;
       return blocks.every((block) => block.source.hash === sourceHash && (block.source.kind as string) !== "oracle-diagnostic" && opponentSheetProblem(block as OpponentSheet) === null) ? blocks : undefined;
