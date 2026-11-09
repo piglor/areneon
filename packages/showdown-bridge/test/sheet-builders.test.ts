@@ -127,6 +127,12 @@ describe("sheetFromChannel (engine-sheet/1)", () => {
     expect(() => sheetFromChannel({ ...first, lines: dropped } as PlayerChannel, OPEN)).toThrow(SheetBuildError);
   });
 
+  type RawDex = { items: { get(id: string): { megaStone?: unknown } } };
+  const isStone = (item: string | undefined): boolean => {
+    const sim = engine.sim as unknown as { Dex: { formats: { get(id: string): { mod: string } }; mod(name: string): RawDex } };
+    const dex = sim.Dex.mod(sim.Dex.formats.get(OPEN_SHEET_FORMAT).mod);
+    return item !== undefined && item !== "" && dex.items.get(toId(item)).megaStone !== undefined;
+  };
   it("gives a Mega holder's sheet entry as the engine prints it (its stone and moves; the sheet names the base forme)", () => {
     let holders = 0;
     for (const battle of open) {
@@ -135,8 +141,8 @@ describe("sheetFromChannel (engine-sheet/1)", () => {
         const block = sheetFromChannel(first, OPEN);
         const truth = battle.teams[other(player)];
         truth.forEach((set, i) => {
-          // The corpus sets hold the base forme with its stone (what the validator makes of a Mega set).
-          if (!/ite$/.test(set.item ?? "") || set.item === "Eviolite") return;
+          // A holder is a set whose item the engine's own data marks as a Mega Stone (`megaStone`).
+          if (!isStone(set.item)) return;
           holders++;
           const slot = block.slots[i];
           expect(slot?.item.entries[0]?.id).toBe(toId(set.item ?? ""));
