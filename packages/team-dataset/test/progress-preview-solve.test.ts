@@ -30,6 +30,8 @@ import { DATASETS_DIR } from "../src/fixtures.ts";
 import { createPreviewSolvePorts } from "../src/preview-solver-port.ts";
 import { datasetValidationPool } from "../src/progress-pool.ts";
 import { goldenTeamVocabulary } from "../../showdown-bridge/src/golden.ts";
+import { type FeatureConfigs, featureSetHash, featureSetIdentity } from "../../showdown-bridge/src/candidate-features.ts";
+import { config as baselineConfig, mechanics, snapshot as featureSnapshot, vocabulary as featureVocabulary } from "../../showdown-bridge/test/damage-aware-support.ts";
 import { StandInWorker } from "./search-actor-support.ts";
 import { engine, FORMAT } from "./support.ts";
 
@@ -66,7 +68,7 @@ class Worker extends StandInWorker {
   override ask(_battle: string, query: Parameters<PolicyClient["ask"]>[1]): ReturnType<PolicyClient["ask"]> {
     const open = query.candidates.filter((c) => !c.pending).map((c) => c.choice);
     const pending = query.candidates.filter((c) => c.pending).map((c) => c.choice);
-    this.queries.push({ kind: "ask", log_lines: 0, candidates: 0, rows: false });
+    this.queries.push({ kind: "ask", log_lines: 0, candidates: 0, rows: query.candidate_features !== undefined });
     return Promise.resolve({ schema_version: 1 as const, identity: query.identity, choice: actorRule({ choices: open, pending }), source_policy_id: query.policy_id, elapsed_ms: 0, deadline_outcome: "in_budget" as const });
   }
 }
@@ -123,6 +125,30 @@ describe("the Team Preview solver candidate of the progress evaluation", () => {
     expect(jcs(second.record as unknown as Json)).toBe(jcs(record as unknown as Json));
   }, 900_000);
 
+  it("solves a pair that reads candidate features: the policy id names the feature set, both seats' hypothetical and real queries carry rows, and a rerun is byte-identical", async () => {
+    const configs: FeatureConfigs = { vocabulary: featureVocabulary, config: baselineConfig, mechanics, snapshot: featureSnapshot, data_class: "synthetic" };
+    const identity = featureSetIdentity(engine, configs);
+    const stated = { feature_set: identity.feature_set, feature_set_hash: featureSetHash(identity) };
+    class Featured extends Worker {
+      override readonly featureSet = stated;
+    }
+    const run = async () => {
+      const client = new Featured();
+      const result = await playProgress(options({ client, features: configs, games: 2, record_games: 0 }));
+      return { client, result };
+    };
+    const a = await run();
+    const named = previewSolvePolicy(setupFor(), manifest, checkpoints, "argmax", {}, undefined, stated.feature_set_hash);
+    for (const match of a.result.record.matches) {
+      expect(match.policy_id).toBe(named.policy_id);
+      if (match.solve !== undefined) expect(match.solve.counts.solved).toBe(2);
+    }
+    expect(a.client.queries.filter((q) => q.kind === "evaluate").every((q) => q.rows)).toBe(true);
+    expect(a.client.queries.some((q) => q.kind === "ask" && q.rows)).toBe(true);
+    const b = await run();
+    expect(jcs(b.result.record as unknown as Json)).toBe(jcs(a.result.record as unknown as Json));
+  }, 900_000);
+
   it("runs the games with a Team Preview budget of at least the config's, and leaves a plain record's plan as it was", async () => {
     // A config budget below the run's own leaves the run's preview budget in force; the record still names the solver's.
     const small = await playProgress(options({ preview_solve: { setup: setupFor((c) => (c.budget_ms = 1)), mode: "argmax" }, games: 2, record_games: 0 }));
@@ -146,7 +172,7 @@ describe("the Team Preview solver candidate of the progress evaluation", () => {
     expect(record.matches[0]?.solve?.counts.solved).toBe(2);
   }, 900_000);
 
-  it("is refused beside the ablation, a search, anchors, a previous generation, extra modes, a features or sheet pair, and in an unknown mode", async () => {
+  it("is refused beside the ablation, a search, anchors, a previous generation, extra modes, a sheet pair, and in an unknown mode", async () => {
     const other = { checkpoints, policy_ids: { sample: `policy:${"e".repeat(64)}`, argmax: `policy:${"f".repeat(64)}` }, client: new Worker() };
     const ablation = { generation: { generation: 0, checkpoint: "3".repeat(64), policy_id: `policy:${"e".repeat(64)}`, client: new Worker() }, random_policy_id: `policy:${"f".repeat(64)}` };
     await expect(playProgress(options({ ablation }))).rejects.toThrow(/evaluated alone/);
@@ -154,7 +180,6 @@ describe("the Team Preview solver candidate of the progress evaluation", () => {
     await expect(playProgress(options({ anchors: [{ generation: 0, ...other }], anchor_games: 2 }))).rejects.toThrow(/evaluated alone/);
     await expect(playProgress(options({ search: { setup: {} as never, mode: "argmax" } }))).rejects.toThrow(/evaluated alone/);
     await expect(playProgress(options({ extra_modes: [{ play: { temperature_ppm: 500_000 }, policy_id: `policy:${"9".repeat(64)}` }] }))).rejects.toThrow(/extra play modes are not played/);
-    await expect(playProgress(options({ features: {} as never }))).rejects.toThrow(/does not solve a features pair/);
     await expect(playProgress(options({ sheet: {} as never }))).rejects.toThrow(/opponent_sheet is not solved/);
     await expect(playProgress(options({ preview_solve: { setup: setupFor(), mode: "greedy" as never } }))).rejects.toThrow(ProgressError);
   });
