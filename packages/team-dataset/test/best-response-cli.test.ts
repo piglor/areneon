@@ -95,6 +95,21 @@ describe("runBestResponseCli", () => {
     await expect(run(base(features))).rejects.toThrow(/which this checkout computes as/);
   });
 
+  it("builds the feature setup of a pair that reads candidate features and hands its statement to the worker client", async () => {
+    // The sample's hash is not this checkout's: the refusal names the one it computes, which a config can then carry.
+    const refused = await run(base(features)).catch((e: unknown) => e as Error);
+    const computed = /computes as ([0-9a-f]{64})/.exec((refused as Error).message)?.[1];
+    expect(computed).toMatch(/^[0-9a-f]{64}$/);
+    const config = JSON.parse(readFileSync(features, "utf8")) as { model: { encoder: { options: { candidate_features: { feature_set_hash: string } } } } };
+    config.model.encoder.options.candidate_features.feature_set_hash = computed as string;
+    const ok = join(dir, "features-ok.json");
+    writeFileSync(ok, JSON.stringify(config));
+    const engineData = join(dir, "engine-data.json");
+    writeFileSync(engineData, readFileSync(join(ROOT, "fixtures/showdown", FORMAT, "engine-data.json"), "utf8"));
+    // The worker cannot start (no such interpreter): the command got as far as building the client with the pair's statement.
+    await expect(run(base(ok, { "worker-python": "/nonexistent/python", "engine-data": engineData }))).rejects.not.toThrow(UsageError);
+  });
+
   it("refuses the run's own training dataset as the evaluation dataset and a malformed team set", async () => {
     const own = json<{ team_dataset: { dataset_hash: string } }>(withDataset).team_dataset.dataset_hash;
     await expect(run(base(withDataset, { "eval-dataset-dir": SOURCE, "eval-dataset-hash": own }))).rejects.toThrow(/run's own training dataset/);
