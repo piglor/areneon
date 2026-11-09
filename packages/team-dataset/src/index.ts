@@ -92,3 +92,23 @@ export { listPool, type ListedSet, type ListedTeam, type PoolListing } from "./p
 export { drawRolePicks, type RolePick, RoleSetProposalError, type RoleSetsSource, roleSetsSource } from "./role-set-proposal.ts";
 export { pickWeighted, type UsageSource, UsageProposalError, UsageSampler, usageMembers, usageSource } from "./usage-proposal.ts";
 export { createBeliefFeatures, evidenceKey, type BeliefFeaturesContext } from "./belief-features.ts";
+export {
+  buildRunInputs,
+  DATASET_DIR,
+  fetchRunInputs,
+  fileKey,
+  filesPrefix,
+  inputsPrefix,
+  manifestKey,
+  RUN_CONFIG_FILE,
+  RUN_INPUT_REFUSALS,
+  RunInputError,
+  runInputLayout,
+  type BuildRunInputsInput,
+  type FetchedRunInputs,
+  type FetchRunInputsInput,
+  type RunInputRefusal,
+  type RunInputs,
+  uploadRunInputs,
+} from "./run-inputs.ts";
+export { runInputsCli, type RunInputsDeps } from "./run-inputs-cli.ts";
