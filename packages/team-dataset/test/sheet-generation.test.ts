@@ -1,7 +1,8 @@
 // A training generation of a pair that reads the opponent sheet (ADR-025 erratum E4 point 5): the real engine and opponent model with a
 // stand-in worker. The pair's seats send a block per request, the stream's examples carry the very blocks that were sent, and each
 // game row of generation.json carries the blocks built and the refusals by code (absent for a pair without the option).
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   actorRule,
@@ -9,6 +10,7 @@ import {
   type Json,
   type PolicyClient,
   type PolicyQueryInput,
+  writeStoredTrainingStream,
   playGeneration,
   readPolicyQuery,
   readTrainingExample,
@@ -16,7 +18,8 @@ import {
   resolveFormat,
   sheetSetup,
 } from "@areneon/showdown-bridge";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
+import { readSheetBlocks } from "../../showdown-bridge/src/sheet-recompute.ts";
 import { readerSha256 } from "../../public-state/src/index.ts";
 import { goldenTeamVocabulary } from "../../showdown-bridge/src/golden.ts";
 import { trainingTeamPool } from "../../showdown-bridge/src/league-generation.ts";
@@ -102,5 +105,60 @@ describe("a generation of a sheet pair", () => {
     expect(first.client.queries.length).toBeGreaterThan(distinct.size);
     expect(distinct.size).toBeLessThanOrEqual(2 * first.result.games.length);
     for (const query of first.client.queries) expect(query.opponent_sheet?.source.hash).toBe(blind.features_hash);
+  }, 900_000);
+});
+
+// The play-time sheet sidecar (#1315): the blocks a seat built while the game was played are left beside the Episode, and the stream
+// writer takes them instead of building every block a second time. No stream byte depends on whether they exist.
+describe("the play-time sheet sidecar", () => {
+  const dir = mkdtempSync(join(tmpdir(), "areneon-sheet-sidecar-"));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  it("is written during play, equals the recomputation byte for byte and is what the stream writer reads", async () => {
+    const found = createBeliefFeatures({ engine, vocabulary: goldenTeamVocabulary(), reader_sha256: readerSha256(), manifest: resolveFormat(engine, "gen9championsvgc2026regmc").manifest });
+    const config = configWith(found.features_hash);
+    const setup = sheetSetup(engine, config, factory);
+    if (setup === undefined) throw new Error("no sheet setup");
+    const pool = trainingTeamPool(engine, config.generation.excluded_abilities);
+    mkdirSync(join(dir, "episodes"), { recursive: true });
+    const sheets = join(dir, "sheets");
+    const result = await playGeneration({ engine, config, generation: 1, policy_id: POLICY, client: standIn(setup.statement), pool, sheet: setup.setup, stream_path: join(dir, "stream.jsonl"), episodes_dir: join(dir, "episodes"), features_dir: sheets });
+    expect(result.games.length).toBeGreaterThan(0);
+    const own = readdirSync(join(dir, "episodes")).filter((name) => (JSON.parse(readFileSync(join(dir, "episodes", name), "utf8")) as { provenance: { behaviour_policy_id: string } }).provenance.behaviour_policy_id === POLICY);
+    expect(own.length).toBeGreaterThan(0);
+    expect(readdirSync(sheets).sort()).toEqual(own.map((name) => name.replace(".json", ".sheet.json")).sort());
+    const stored = own.map((name) => ({ hash: name.replace(".json", ""), path: join(dir, "episodes", name) }));
+    const base = { episodes: stored, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: POLICY };
+    const write = async (name: string, precomputed?: ReturnType<typeof readSheetBlocks>) => {
+      const set = await writeStoredTrainingStream({ ...base, sheet: { ...setup.setup, ...(precomputed === undefined ? {} : { precomputed }) } }, { path: join(dir, name) });
+      return { set, text: readFileSync(join(dir, name), "utf8") };
+    };
+    const recomputed = await write("recomputed.jsonl");
+    const sidecar = await write("sidecar.jsonl", readSheetBlocks(found.features_hash, sheets));
+    expect(sidecar.text).toBe(recomputed.text);
+    expect(sidecar.text).toBe(readFileSync(join(dir, "stream.jsonl"), "utf8"));
+    expect(sidecar.set.stream_sha256).toBe(recomputed.set.stream_sha256);
+    // Teeth: the writer reads the files (blocks moved to other decisions change the stream), and a file of another source is not used.
+    const first = join(sheets, readdirSync(sheets)[0] as string);
+    const original = readFileSync(first, "utf8");
+    const parsed = JSON.parse(original) as { blocks: unknown[] };
+    parsed.blocks.reverse();
+    writeFileSync(first, JSON.stringify(parsed));
+    const tampered = await write("tampered.jsonl", readSheetBlocks(found.features_hash, sheets));
+    expect(tampered.text).not.toBe(recomputed.text);
+    const otherSource = await write("other.jsonl", readSheetBlocks("f".repeat(64), sheets));
+    expect(otherSource.text).toBe(recomputed.text);
+    // A stale or damaged file is recomputed: wrong request numbers, a bad block, garbage.
+    const read = readSheetBlocks(found.features_hash, sheets);
+    const hash = (readdirSync(sheets)[0] as string).replace(".sheet.json", "");
+    const real = JSON.parse(original) as { request_seqs: number[]; blocks: unknown[] };
+    expect(read(hash, real.request_seqs)).toBeDefined();
+    writeFileSync(first, original);
+    expect(read(hash, real.request_seqs)?.length).toBe(real.blocks.length);
+    expect(read(hash, [...real.request_seqs, 99])).toBeUndefined();
+    expect(read("0".repeat(64), real.request_seqs)).toBeUndefined();
+    writeFileSync(first, JSON.stringify({ ...real, episode_hash: hash, source_hash: found.features_hash, blocks: [{ source: { kind: "oracle-diagnostic", hash: found.features_hash } }, ...real.blocks.slice(1)] }));
+    expect(read(hash, real.request_seqs)).toBeUndefined();
+    writeFileSync(first, "{not json");
+    expect(read(hash, real.request_seqs)).toBeUndefined();
   }, 900_000);
 });

@@ -207,7 +207,13 @@ export interface TrainingInput {
    * own team (the block is derived, never stored in an Episode). One builder per Episode, as at play time (the counts are a
    * game's). A builder refusal is the `unknown` block, as it was sent; a defect of the run is thrown.
    */
-  sheet?: SheetSetup;
+  sheet?: SheetSetup & {
+    /**
+     * The blocks the play-time seats left for an Episode (`sheet-recompute.ts`, #1315), by its hash; used only when there is one per
+     * decision, otherwise the blocks are recomputed here. The same function of the same Episode, so no stream byte depends on it.
+     */
+    precomputed?: (hash: string, request_seqs: readonly number[]) => readonly NonNullable<TrainingExample["opponent_sheet"]>[] | undefined;
+  };
 }
 
 export interface TrainingStream {
@@ -261,7 +267,9 @@ export async function examplesOf(episode: Episode, hash: string, features: Train
   const memo = createFeatureMemo(); // one Episode is one game, as at play time; the memo never changes a byte
   const given = features?.precomputed?.(hash, observations.map((o) => o.identity.request_seq));
   const rows = given?.length === episode.decisions.length ? given : undefined;
-  const builder = sheet === undefined ? undefined : createSheetBuilder({ engine: sheet.engine, vocabulary: sheet.vocabulary, port: sheet.port, scenario_id: sheet.scenario_id });
+  const givenSheets = sheet?.precomputed?.(hash, observations.map((o) => o.identity.request_seq));
+  const sheets = givenSheets?.length === episode.decisions.length ? givenSheets : undefined;
+  const builder = sheet === undefined || sheets !== undefined ? undefined : createSheetBuilder({ engine: sheet.engine, vocabulary: sheet.vocabulary, port: sheet.port, scenario_id: sheet.scenario_id });
   return episode.decisions.flatMap(({ choice }, i) => {
     const observation = observations[i] as TrainingExample["observation"];
     if (only !== undefined && !only.has(observation.identity.request_seq)) return [];
@@ -271,7 +279,7 @@ export async function examplesOf(episode: Episode, hash: string, features: Train
       outcome,
       episode_hash: hash,
       ...(features === undefined ? {} : { candidate_features: rows?.[i] ?? featuresOf(episode, observation, hash, features, memo) }),
-      ...(builder === undefined ? {} : { opponent_sheet: sheetOf(builder, observation, episode) }),
+      ...(sheets !== undefined ? { opponent_sheet: sheets[i] as NonNullable<TrainingExample["opponent_sheet"]> } : builder === undefined ? {} : { opponent_sheet: sheetOf(builder, observation, episode) }),
     })];
   });
 }
