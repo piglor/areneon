@@ -177,6 +177,7 @@ export {
   BattleAbortedError,
   type BattleOptions,
   type BattleRecord,
+  declareReadsLegal,
   FORFEIT_CAUSES,
   type ForfeitCause,
   ForfeitSignal,
@@ -480,6 +481,7 @@ export { type ExtraPlay, matchSuffix, modeName, parseExtraMode, parseModes, Prog
 export { EVAL_DATASET_FLAGS, type EvalDataset, readEvalDataset, withEvalDataset } from "./eval-dataset.ts";
 export { committedPlanSeeds, type ProgressPoolSource, type ProgressPorts, runProgressCli } from "./progress-cli.ts";
 export { controlSeat, searchCountsRecord, searchSeat } from "./search-progress.ts";
+export { solveControlSeat, solveCountsRecord, solveSeat } from "./preview-solve-progress.ts";
 export { H2H_FILE, runScriptedH2HCli } from "./scripted-h2h-cli.ts";
 export {
   type ScriptedGameRow,
@@ -815,3 +817,5 @@ export { readPreviewChannel, startPreviewWorlds } from "./preview-worlds.ts";
 export { type BeliefFeaturesContext, BELIEF_REFUSAL_CODES, type BeliefMoveInclusion, type BeliefMoveInclusions, type BeliefRefusalCode, type BeliefThreatsPort, type BeliefFeaturesFactory, type BeliefFeaturesFactoryContext, type BeliefEvidenceMode, BELIEF_EVIDENCE_MODES, type BeliefFeaturesPort, BeliefFeaturesError, createSheetBuilder, SHEET_FEATURE_SET, SheetInputError, SheetTotals, sheetForChannel, sheetStatement, type SheetBuilder, type SheetCounts, type SheetInput, type SheetKValues, type SheetSetup } from "./belief-features.ts";
 export { OpponentSheetError, opponentSheetProblem, readOpponentSheet } from "./opponent-sheet.ts";
 export { MAX_REFUSED_PPM, refusedSharePpm, sheetCountsProblem, sheetCountsValid, sumSheetCounts } from "./sheet-counts.ts";
+export * from "./s0-measures.ts";
+export { type CostComponent, type CostSink, COST_COMPONENTS } from "./search-cost.ts";
