@@ -47,6 +47,9 @@ import type { RequestRecord } from "./runner.ts";
 export const SAMPLES_DIR = fileURLToPath(new URL("../../../fixtures/contracts", import.meta.url));
 export const SAMPLE_HASHES = "hashes.json";
 
+/** The bytes a sample file holds: two-space JSON and a newline. */
+export const sampleBytes = (content: unknown): string => `${JSON.stringify(content, null, 2)}\n`;
+
 const TIMER = { starting: 420, grace: 90, add_per_turn: 0, max_per_turn: 55, max_first_turn: 90, tick: 5 };
 
 /** A copy of `value` with `change` applied: one mutation per invalid sample. */
@@ -1751,9 +1754,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       samples[`v1/${contract}/${kind}/${name}.json`] = value;
     }
   }
+  // Sorted by path (code units), so the committed file's key order never depends on the order the samples are built in (#1298).
   const hashes: Record<string, string> = {};
-  for (const [path, value] of Object.entries(samples)) {
-    hashes[path] = createHash("sha256").update(jcs(value as Json)).digest("hex");
+  for (const path of Object.keys(samples).sort()) {
+    hashes[path] = createHash("sha256").update(jcs(samples[path] as Json)).digest("hex");
   }
   samples[SAMPLE_HASHES] = hashes;
   return samples;
