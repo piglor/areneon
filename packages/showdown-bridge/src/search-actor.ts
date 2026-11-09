@@ -50,6 +50,7 @@ import { createReplyModel, REPLY_MODEL_FORMAT, type ReplyModel } from "./reply-m
 import type { RulesSnapshot } from "./rules.ts";
 import { type Actor, ForfeitSignal, type Player } from "./runner.ts";
 import { MECHANICS_ADAPTER_FORMAT } from "./mechanics-result.ts";
+import type { CostSink } from "./search-cost.ts";
 import { LEAF_FORMAT, loadSearchConfig, type SearchConfig, searchIdentity, searchIdentityHash } from "./search-config.ts";
 import { type LabelDecision, type LabelInput, type SearchDecision, type SearchDecisionDeps, type SearchInput, searchDecision, searchLabel } from "./search-decision.ts";
 import type { DataClass } from "./team-class.ts";
@@ -278,6 +279,8 @@ export interface SearchActorOptions {
    * `searchPolicy(..., features)` gives for the worker's stated feature set (else `SearchError` `policy_mismatch`).
    */
   pair?: { preview: string; battle: string };
+  /** Optional wall-clock sink for the per-component cost lines (S0): the search reports milliseconds to it and reads nothing back. */
+  cost?: CostSink;
   /** Test seam: the reply model (default `createReplyModel` over the setup's reviewed records). */
   reply_model?: ReplyModel;
 }
@@ -348,7 +351,7 @@ export function searchActor(options: SearchActorOptions): SearchActor {
     counts.fallbacks[reason] += 1;
   };
 
-  const deps: SearchDecisionDeps = { engine, config, sampler, replyModel, client, battle, player, team, manifest, channel_class, regime, policy_id, valueOnly, counts };
+  const deps: SearchDecisionDeps = { engine, config, sampler, replyModel, client, battle, player, team, manifest, channel_class, regime, policy_id, valueOnly, counts, ...(options.cost === undefined ? {} : { cost: options.cost }) };
   const decide = (input: SearchInput): Promise<SearchDecision> => searchDecision(input, deps);
 
   const worldRequest = (context: { channel: readonly string[]; team: readonly Readonly<PokemonSet>[] }): WorldRequest => worldRequestOf(setup.facts_data, player, context);
@@ -403,6 +406,7 @@ export function searchActor(options: SearchActorOptions): SearchActor {
       }
       // Not recorded (`features.record`): search games are not training data, so no play-time sidecar is wanted for the root's rows.
     }
+    const rootBegan = options.cost === undefined ? 0 : performance.now();
     const prior = await client.evaluate(battle, {
       schema_version: 1,
       identity,
@@ -412,6 +416,7 @@ export function searchActor(options: SearchActorOptions): SearchActor {
       sampling: { kind: "evaluate" },
       policy_id,
     } as Parameters<EvaluationClient["evaluate"]>[1]);
+    options.cost?.add("root_prior", performance.now() - rootBegan);
     const stream = searchStream({ seed, game, player, policy_id, request_seq: identity.request_seq });
     // The searched set by the config's rule (the prior's top-k, equal priors in canonical order, or slot-cover), searched by the shared decision.
     const decision = await searchLabel({ world, channel: context.channel, candidates, prior_ppm: prior.prior_ppm, stream }, deps);

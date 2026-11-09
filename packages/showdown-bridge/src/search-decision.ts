@@ -21,6 +21,7 @@ import { sha256Hex } from "./rules.ts";
 import type { Player } from "./runner.ts";
 import type { SearchCounts, DropReason } from "./search-actor.ts";
 import type { SearchConfig } from "./search-config.ts";
+import type { CostComponent, CostSink } from "./search-cost.ts";
 import { searchedIndices } from "./search-set.ts";
 import { hpKoDifferential, outcomeScore } from "./search-leaf.ts";
 import { cloneWorld, foeSwitchChoice, playChoices, type TurnResult } from "./search-turn.ts";
@@ -80,6 +81,8 @@ export interface SearchDecisionDeps {
   /** The worker answers `value` queries (no candidates, no rows). */
   readonly valueOnly: boolean;
   readonly counts: SearchCounts;
+  /** Optional wall-clock sink for the cost lines (S0 measure 5); reads nothing back and changes no value. */
+  readonly cost?: CostSink;
 }
 
 /** `floor(sum / (worlds * 10^6))` clamped to 0..10^6: the weighted mean leaf value in ppm (each world's reply weights sum to 10^6). Integer arithmetic. */
@@ -121,8 +124,26 @@ function repliesOf(deps: SearchDecisionDeps, world: number, built: Parameters<Re
 
 
 export async function searchDecision(input: SearchInput, deps: SearchDecisionDeps): Promise<SearchDecision> {
-  const { engine, config, sampler, client, battle, player, team, manifest, channel_class, regime, policy_id, valueOnly, counts } = deps;
-  const worlds: DecisionWorlds = sampler.sample(input.world, input.stream);
+  const { engine, config, sampler, client, battle, player, team, manifest, channel_class, regime, policy_id, valueOnly, counts, cost } = deps;
+  const timeSync = <T>(component: CostComponent, run: () => T): T => {
+    if (cost === undefined) return run();
+    const began = performance.now();
+    try {
+      return run();
+    } finally {
+      cost.add(component, performance.now() - began);
+    }
+  };
+  const timeAsync = async <T>(component: CostComponent, run: () => Promise<T>): Promise<T> => {
+    if (cost === undefined) return run();
+    const began = performance.now();
+    try {
+      return await run();
+    } finally {
+      cost.add(component, performance.now() - began);
+    }
+  };
+  const worlds: DecisionWorlds = timeSync("world_building", () => sampler.sample(input.world, input.stream));
   if (worlds.kind === "refused") return { kind: "fallback", reason: "belief_refused" };
   if (!worlds.searched) return { kind: "fallback", reason: "below_min_valid" };
 
@@ -136,32 +157,34 @@ export async function searchDecision(input: SearchInput, deps: SearchDecisionDep
       counts.leaf_memo_hits += 1;
       return known;
     }
-    const observation = await observe({ channel: playerChannel({ schema_version: 1, data_class: channel_class, player, lines: [...input.channel, ...lines] }, regime), team, manifest });
+    const observation = await timeAsync("observation_build", () => observe({ channel: playerChannel({ schema_version: 1, data_class: channel_class, player, lines: [...input.channel, ...lines] }, regime), team, manifest }));
     counts.leaf_queries += 1;
     let value_ppm: number;
     if (valueOnly) {
       // Value-only: no candidates and no rows (E2 decision 7); the hypothetical request is not even enumerated.
       value_ppm = (
-        await (client.value as NonNullable<EvaluationClient["value"]>)(battle, {
+        await timeAsync("worker_round_trip", () => (client.value as NonNullable<EvaluationClient["value"]>)(battle, {
           schema_version: 1,
           identity: observation.identity,
           observation,
           candidates: [],
           sampling: { kind: "value" },
           policy_id,
-        } as ValueQueryInput)
+        } as ValueQueryInput))
       ).value_ppm;
     } else {
       const candidates = enumerateCandidates(decodeRequest(request)).candidates;
       value_ppm = (
-        await client.evaluate(battle, {
-          schema_version: 1,
-          identity: observation.identity,
-          observation,
-          candidates: candidates.map(({ choice, pending }) => ({ choice, pending })),
-          sampling: { kind: "evaluate" },
-          policy_id,
-        } as Parameters<EvaluationClient["evaluate"]>[1])
+        await timeAsync("worker_round_trip", () =>
+          client.evaluate(battle, {
+            schema_version: 1,
+            identity: observation.identity,
+            observation,
+            candidates: candidates.map(({ choice, pending }) => ({ choice, pending })),
+            sampling: { kind: "evaluate" },
+            policy_id,
+          } as Parameters<EvaluationClient["evaluate"]>[1]),
+        )
       ).value_ppm;
     }
     memo.set(key, value_ppm);
@@ -170,8 +193,8 @@ export async function searchDecision(input: SearchInput, deps: SearchDecisionDep
 
   /** One (candidate, reply) of a world: the leaf value, or the reason the world cannot be scored. */
   async function simulate(serialised: string, seedHex: string, ownChoice: string, foeChoice: string): Promise<{ value: number } | { drop: DropReason }> {
-    const clone = cloneWorld(engine, serialised, seedHex);
-    let turn: TurnResult = playChoices(clone, player, { own: ownChoice, foe: foeChoice });
+    const clone = timeSync("turn_simulation", () => cloneWorld(engine, serialised, seedHex));
+    let turn: TurnResult = timeSync("turn_simulation", () => playChoices(clone, player, { own: ownChoice, foe: foeChoice }));
     counts.turns += 1;
     const lines: string[] = [];
     // A wait request is played on: the opponent must switch, and its choice is the first legal one in canonical order. Each step is a
@@ -181,7 +204,7 @@ export async function searchDecision(input: SearchInput, deps: SearchDecisionDep
       if (turn.refused !== null) return { drop: "choice_refused" };
       if (turn.ended !== null || (JSON.parse(turn.request as string) as { wait?: boolean }).wait !== true) break;
       counts.wait_continuations += 1;
-      turn = playChoices(clone, player, { own: null, foe: foeSwitchChoice(clone, player) });
+      turn = timeSync("turn_simulation", () => playChoices(clone, player, { own: null, foe: foeSwitchChoice(clone, player) }));
     }
     if (turn.ended !== null) {
       counts.leaf_game_end += 1;
@@ -199,7 +222,7 @@ export async function searchDecision(input: SearchInput, deps: SearchDecisionDep
   for (const valid of worlds.valid) {
     let replies;
     try {
-      replies = repliesOf(deps, valid.world, valid.built, input.stream);
+      replies = timeSync("max_damage_reply", () => repliesOf(deps, valid.world, valid.built, input.stream));
     } catch (error) {
       if (!(error instanceof ReplyModelError)) throw error;
       counts.worlds_dropped.reply_model += 1;

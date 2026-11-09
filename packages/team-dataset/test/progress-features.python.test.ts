@@ -96,6 +96,34 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     loop("progress", "--run-dir", plainRun, "--engine-data", DATA, "--games", "2", "--record-games", "2", "--generation", "1", "--progress-dir", out, "--node", process.execPath, "--worker-python", PYTHON);
   }, 900_000); // one pair twice per match with the features seat running the real probe
 
+  it("searches a features pair (#1307): the search and control ids carry the features member, no forfeit, byte-identical on rerun", () => {
+    const search = (out: string): void => {
+      loop("progress", "--run-dir", featuresRun, "--engine-data", DATA, "--games", "2", "--record-games", "2", "--generation", "1", "--search-mode", "argmax", "--progress-dir", out, "--node", process.execPath, "--worker-python", PYTHON);
+    };
+    const a = join(dir, "sa.progress");
+    const b = join(dir, "sb.progress");
+    search(a);
+    search(b);
+    const record = readProgressEvaluationRecordV2(json<ProgressEvaluationRecordV2>(a, gen(1), "progress.json"));
+    const own = json<{ checkpoints: { preview: string; battle: string } }>(featuresRun, "generations", gen(1), "manifest.json").checkpoints;
+    expect(record.matches.map((m) => m.match_id)).toEqual(["search-actor-rule-argmax", "search-random-legal-argmax", "search-self-no-search-argmax"]);
+    const control = record.matches.find((m) => m.match_id === "search-self-no-search-argmax") as (typeof record.matches)[number];
+    for (const m of record.matches) {
+      // The search policy id adds the search member to the training id's features member.
+      expect(m.policy_id).not.toBe(policyId(own, "argmax", {}, hash));
+      expect(m.search?.identity_hash).toBeDefined();
+    }
+    // The control is the very pair without search: its id is the training id.
+    expect(control.opponent.kind === "self-no-search" && control.opponent.policy_id).toBe(policyId(own, "argmax", {}, hash));
+    expect(control.opponent_search?.counts.searched_decisions).toBe(0);
+    expect(control.search?.counts.searched_decisions).toBeGreaterThan(0);
+    expect(control.search?.counts.leaf_queries).toBeGreaterThan(0);
+    expect(record.games.filter((r) => r.outcome.kind === "forfeit")).toEqual([]);
+    const files = tree(join(a, gen(1)));
+    expect(tree(join(b, gen(1)))).toEqual(files);
+    for (const file of files) expect(readFileSync(join(a, gen(1), file), "utf8"), file).toBe(readFileSync(join(b, gen(1), file), "utf8"));
+  }, 1_800_000); // twice: three matches of two games, the search seats running the real probe and the world builder
+
   it("runs the Node command in process for both orientations, so the seat wiring of each run is exercised", async () => {
     const cli = async (name: string, own: string, other: string, ownFeatures: boolean, otherFeatures: boolean): Promise<void> => {
       const manifest = (run: string): { preview: string; battle: string } => json<{ checkpoints: { preview: string; battle: string } }>(run, "generations", gen(1), "manifest.json").checkpoints;

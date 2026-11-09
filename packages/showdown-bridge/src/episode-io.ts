@@ -113,12 +113,26 @@ export async function decisionObservations(episode: Episode): Promise<Observatio
  */
 export async function readEpisode(
   value: unknown,
-  { known_synthetic, engine }: { known_synthetic: SyntheticTeamHashes; engine?: Engine },
+  options: { known_synthetic: SyntheticTeamHashes; engine?: Engine },
 ): Promise<Episode> {
+  return (await readEpisodeObserved(value, options)).episode;
+}
+
+/**
+ * `readEpisode`, also handing back the observation of each decision that the check built, in decision
+ * order, so a caller that needs them (the training loader) does not build them a second time (#1192).
+ * They are `decisionObservations(episode)` exactly: the same channel prefixes built the same way. They
+ * are `undefined` when the engine's commit is not the one the Episode's manifest names, because the
+ * team-sheet regime of the check then differs from the one `decisionObservations` reads.
+ */
+export async function readEpisodeObserved(
+  value: unknown,
+  { known_synthetic, engine }: { known_synthetic: SyntheticTeamHashes; engine?: Engine },
+): Promise<{ episode: Episode; observations: Observation[] | undefined }> {
   try {
-    const episode = await read(structuredClone(value), engine);
-    assertProven(episode.team, known_synthetic);
-    return episode;
+    const checked = await read(structuredClone(value), engine);
+    assertProven(checked.episode.team, known_synthetic);
+    return checked;
   } catch (error) {
     // An unavailable engine is the host's fault, not a defect of the Episode.
     if (error instanceof EpisodeError || error instanceof EngineError) throw error;
@@ -126,7 +140,7 @@ export async function readEpisode(
   }
 }
 
-async function read(value: unknown, engine: Engine | undefined): Promise<Episode> {
+async function read(value: unknown, engine: Engine | undefined): Promise<{ episode: Episode; observations: Observation[] | undefined }> {
   const version = (value as { schema_version?: unknown } | null)?.schema_version;
   const validate = typeof version === "number" ? READERS[version] : undefined;
   if (!validate) throw new EpisodeError(`no reader for an Episode with schema_version ${JSON.stringify(version)}`);
@@ -151,6 +165,7 @@ async function read(value: unknown, engine: Engine | undefined): Promise<Episode
   assertSupportedFormat(sim, episode.provenance.manifest.format_id);
   assertOwnTeamStats(sim, episode.provenance.manifest.format_id, episode.team, preview);
   let last = 0;
+  const observations: Observation[] = [];
   for (const decision of episode.decisions) {
     const { identity } = decision;
     if (identity.request_seq <= last) throw new EpisodeError(`decision ${identity.request_seq} is out of request order`);
@@ -159,11 +174,13 @@ async function read(value: unknown, engine: Engine | undefined): Promise<Episode
     if (observation?.identity.request_hash !== identity.request_hash) {
       throw new EpisodeError(`decision ${identity.request_seq} does not answer that request of the channel`);
     }
+    observations.push(observation);
     if (episode.provenance.runtime === "A2" && (!decision.deadline || !decision.decision_context)) {
       throw new EpisodeError(`A2 decision ${identity.request_seq} lacks its deadline record or timer context`);
     }
   }
-  return episode;
+  // `decisionObservations` reads the regime of the manifest's commit; these were built under the engine's.
+  return { episode, observations: sim.commit === episode.provenance.manifest.showdown_commit ? observations : undefined };
 }
 
 const snapshots = new Map<string, RulesSnapshot>();

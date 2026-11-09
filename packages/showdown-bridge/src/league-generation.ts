@@ -45,6 +45,8 @@ import { stampTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
 import { loadTrainingSet, type StoredEpisode, type TrainingSet, writeStoredTrainingStream, writeTrainingStream } from "./training-loader.ts";
 import { type ChunkLimits } from "./chunked-file.ts";
 import { readFeatureRows, writeFeatureRows, writePlayRows } from "./feature-recompute.ts";
+import type { OpponentSheet } from "@areneon/schema/types/v1/opponent-sheet.ts";
+import { readSheetBlocks, writePlaySheets } from "./sheet-recompute.ts";
 import type { AnyCandidateFeatures } from "./feature-build.ts";
 import type { TrainingRunConfig } from "./training-run-config.ts";
 import type { Episode } from "./episode.ts";
@@ -568,6 +570,8 @@ interface PlayedOne extends PlayedGame {
   feature_belief?: BeliefRowCounts;
   /** The pair's seats' sheet block counts, when the pair reads `opponent_sheet`. */
   sheet?: SheetCounts;
+  /** The pair's seats' sheet blocks as they were attached to the queries (with `features_dir`), per seat. */
+  play_sheets?: Partial<Record<Player, ReadonlyMap<number, OpponentSheet>>>;
 }
 
 async function playOne(options: GenerationOptions, plan: GamePlan, client: PolicyClient): Promise<PlayedOne> {
@@ -580,19 +584,24 @@ async function playOne(options: GenerationOptions, plan: GamePlan, client: Polic
   const rows: Partial<Record<Player, Map<number, AnyCandidateFeatures>>> = {};
   const keepRows = options.features !== undefined && options.features_dir !== undefined && options.episodes_dir !== undefined;
   const builders: ReturnType<typeof createSheetBuilder>[] = [];
-  const sheetFor = (): Pick<PolicySeat, "sheet"> => {
+  const keepSheets = options.sheet !== undefined && options.features_dir !== undefined && options.episodes_dir !== undefined;
+  const sheets: Partial<Record<Player, Map<number, OpponentSheet>>> = {};
+  const sheetFor = (player: Player): Pick<PolicySeat, "sheet"> => {
     if (options.sheet === undefined) return {};
     const builder = createSheetBuilder(options.sheet);
     builders.push(builder);
-    return { sheet: { builder } };
+    if (!keepSheets) return { sheet: { builder } };
+    const kept = new Map<number, OpponentSheet>();
+    sheets[player] = kept;
+    return { sheet: { builder, record: (seq: number, block: OpponentSheet) => void kept.set(seq, block) } };
   };
   const seatFor = (player: Player): PolicySeat => {
-    if (options.features === undefined) return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), ...sheetFor() };
+    if (options.features === undefined) return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), ...sheetFor(player) };
     const memo = createFeatureMemo();
     memos[player] = memo;
     const kept = new Map<number, AnyCandidateFeatures>();
     rows[player] = kept;
-    return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), features: { configs: options.features, memo, ...(keepRows ? { record: (seq: number, found: AnyCandidateFeatures) => void kept.set(seq, found) } : {}) }, ...sheetFor() };
+    return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), features: { configs: options.features, memo, ...(keepRows ? { record: (seq: number, found: AnyCandidateFeatures) => void kept.set(seq, found) } : {}) }, ...sheetFor(player) };
   };
   const baseline = plan.opponent === "self" ? undefined : baselineActor(options, plan.opponent, plan, budget);
   const seats: PolicyGameOptions["seats"] =
@@ -617,6 +626,7 @@ async function playOne(options: GenerationOptions, plan: GamePlan, client: Polic
     ...played,
     ...(baseline?.report === undefined ? {} : { baseline: baseline.report() }),
     ...(keepRows ? { play_rows: rows } : {}),
+    ...(keepSheets ? { play_sheets: sheets } : {}),
     ...(belief === undefined ? {} : { feature_belief: belief }),
     ...(sheetCounts === undefined ? {} : { sheet: sheetCounts }),
   };
@@ -745,6 +755,15 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
           // Not renamed into place: the directory is the generation's partial one, discarded whole on a restart, and the loader checks each file against its name.
           writeDurable(join(options.episodes_dir, `${hash}.json`), `${jcs(episode as unknown as Json)}\n`);
           stored.push({ hash, behaviour_policy_id: episode.provenance.behaviour_policy_id });
+          // The sheet sidecar (#1315), the same way: the blocks the seat built at play time; a gap or a failure leaves the stream writer to recompute.
+          const playedSheets = game.play_sheets?.[seat === 0 ? "p1" : "p2"];
+          if (playedSheets !== undefined && options.sheet !== undefined && options.features_dir !== undefined && episode.provenance.behaviour_policy_id === policy_id) {
+            try {
+              await writePlaySheets(options.sheet.port.features_hash, episode, hash, playedSheets, options.features_dir);
+            } catch (error) {
+              process.stderr.write(`sheet sidecar skipped for game ${entry.game}: ${(error as Error).name}\n`);
+            }
+          }
           // The play-time sidecar: the pair's own seat leaves the rows it attached to its queries (a gap leaves nothing: the post-game pass builds them).
           const played = game.play_rows?.[seat === 0 ? "p1" : "p2"];
           if (played !== undefined && options.features !== undefined && options.features_dir !== undefined && episode.provenance.behaviour_policy_id === policy_id) {
@@ -884,7 +903,7 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
     const ownRefs = refs.filter((ref) => ref.behaviour_policy_id === policy_id);
     if (ownRefs.length === 0) throw new GenerationError("no Episode of the frozen pair: every game was forfeited");
     const stored: StoredEpisode[] = ownRefs.map(({ hash }) => ({ hash, path: join(dir, `${hash}.json`) }));
-    set = await writeStoredTrainingStream({ episodes: stored, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id, ...(options.features === undefined ? {} : { features: { engine, configs: options.features, ...(options.features_dir === undefined ? {} : { precomputed: readFeatureRows(engine, options.features, options.features_dir) }) } }), ...(options.sheet === undefined ? {} : { sheet: options.sheet }) }, { ...limits, path: options.stream_path });
+    set = await writeStoredTrainingStream({ episodes: stored, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id, ...(options.features === undefined ? {} : { features: { engine, configs: options.features, ...(options.features_dir === undefined ? {} : { precomputed: readFeatureRows(engine, options.features, options.features_dir) }) } }), ...(options.sheet === undefined ? {} : { sheet: { ...options.sheet, ...(options.features_dir === undefined ? {} : { precomputed: readSheetBlocks(options.sheet.port.features_hash, options.features_dir) }) } }) }, { ...limits, path: options.stream_path });
     episodeHashes = refs.map((ref) => ref.hash);
     if (labelsActive(options)) {
       if (options.labels_path === undefined) throw new GenerationError("labels need labels_path");
