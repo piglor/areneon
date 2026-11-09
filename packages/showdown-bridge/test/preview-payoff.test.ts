@@ -28,6 +28,9 @@ import {
   strategiesOf,
 } from "../src/index.ts";
 import { decodeRequest } from "../src/request.ts";
+import { type FeatureConfigs, featureSetHash, featureSetIdentity } from "../src/candidate-features.ts";
+import { AssumedSetError } from "../src/damage-aware-assumed-set.ts";
+import { config as baselineConfig, mechanics, snapshot, vocabulary } from "./damage-aware-support.ts";
 
 const STREAM = new Uint8Array(32).fill(9);
 let engine: Engine;
@@ -45,9 +48,9 @@ beforeAll(() => {
   worlds = [base, named];
 });
 
-const start = (world: number, team: PokemonSet[] = worlds[world] as PokemonSet[], overrides: { own_team?: PokemonSet[] } = {}): { index: number; preview: HypotheticalPreview } => ({
+const start = (world: number, team: PokemonSet[] = worlds[world] as PokemonSet[], overrides: { own_team?: PokemonSet[]; features?: { configs: FeatureConfigs } } = {}): { index: number; preview: HypotheticalPreview } => ({
   index: world,
-  preview: startHypothetical({ engine, format_id: GOLDEN_FORMAT, seat: "p1", own_team: overrides.own_team ?? own, world_team: team, stream: STREAM, world, data_class: "synthetic", own_request: REAL }),
+  preview: startHypothetical({ engine, format_id: GOLDEN_FORMAT, seat: "p1", own_team: overrides.own_team ?? own, world_team: team, stream: STREAM, world, data_class: "synthetic", own_request: REAL, ...(overrides.features === undefined ? {} : { features: overrides.features }) }),
 });
 
 /** The stand-in Team Preview prior: a fixed integer weight per candidate index. */
@@ -282,6 +285,81 @@ describe("what a leaf can see of the opponent's back pair (B1)", () => {
     const refused = await preview.rollout("team 1234", "team 1111", 2, choose);
     expect(refused.kind).toBe("refused");
   }, 120_000);
+});
+
+describe("a pair that reads candidate features (probe-damage/1)", () => {
+  const configs = (change: Partial<FeatureConfigs> = {}): FeatureConfigs => ({ vocabulary, config: baselineConfig, mechanics, snapshot, data_class: "synthetic", ...change });
+  let stated: { feature_set: string; feature_set_hash: string };
+  beforeAll(() => {
+    const identity = featureSetIdentity(engine, configs());
+    stated = { feature_set: identity.feature_set, feature_set_hash: featureSetHash(identity) };
+  });
+  type Query = Parameters<PayoffClient["evaluate"]>[1];
+  /** The flat stand-in worker, stating the feature set and keeping every query. */
+  const featuredClient = (): PayoffClient & { seen: Query[] } => {
+    const base = standIn();
+    const inner = base.evaluate.bind(base);
+    const queries: Query[] = [];
+    return Object.assign(base, {
+      seen: queries,
+      featureSet: stated,
+      evaluate: async (battle: string, query: Query) => {
+        queries.push(query);
+        return inner(battle, query);
+      },
+    }) as unknown as PayoffClient & { seen: Query[] };
+  };
+  const featuredWorlds = (change: Partial<FeatureConfigs> = {}) => [start(0, undefined, { features: { configs: configs(change) } }), start(1, undefined, { features: { configs: configs(change) } })];
+  const cfg = config({ k_own: 2, k_opp: 2 });
+
+  it("builds the same table as a pair without features for a worker whose values ignore the rows, and every query carries its rows", async () => {
+    const client = featuredClient();
+    const table = await buildPayoffTable(input(client, featuredWorlds(), cfg));
+    const plain = await buildPayoffTable(input(standIn(), [start(0), start(1)], cfg));
+    expect(table.entries).toEqual(plain.entries);
+    expect(table.own).toEqual(plain.own);
+    expect(table.complete).toBe(true);
+    expect(table.feature_refusals).toEqual({});
+    expect(client.seen.length).toBeGreaterThan(0);
+    for (const query of client.seen) expect(query.candidate_features).toMatchObject(stated);
+    // Team Preview queries have no rows; at least one first-request query has some.
+    for (const query of client.seen.filter((q) => q.observation.kind === "preview")) expect(query.candidate_features?.rows).toEqual([]);
+    expect(client.seen.some((q) => q.observation.kind === "battle" && (q.candidate_features?.rows.length ?? 0) > 0)).toBe(true);
+  }, 180_000);
+
+  it("is byte-identical on a rerun, rollout leaf included, and the rollout asks for rows from both seats", async () => {
+    const run = async () => {
+      const client = featuredClient();
+      const table = await buildPayoffTable(input(client, featuredWorlds(), config({ k_own: 1, k_opp: 1, leaf: { kind: "rollout", turns: 1 } })));
+      return { table, client };
+    };
+    const a = await run();
+    const b = await run();
+    expect(JSON.stringify(b.table)).toBe(JSON.stringify(a.table));
+    expect(JSON.stringify(b.client.seen)).toBe(JSON.stringify(a.client.seen));
+    expect(a.table.counts.rollout_choices).toBeGreaterThan(0);
+    for (const query of a.client.seen) expect(query.candidate_features).toMatchObject(stated);
+  }, 240_000);
+
+  it("drops a world whose request the builder cannot feature, counted by the builder's code and in worlds_dropped, never a rule fallback", async () => {
+    const refusing = { assume: () => { throw new AssumedSetError("a refusal"); } };
+    const good = start(0, undefined, { features: { configs: configs() } });
+    const bad = start(1, undefined, { features: { configs: configs(refusing) } });
+    const client = featuredClient();
+    const table = await buildPayoffTable(input(client, [good, bad], cfg));
+    expect(table.feature_refusals).toEqual({ assumed_set: 1 });
+    expect(table.counts).toMatchObject({ worlds_used: 2, worlds_dropped: 1, engine_refusals: 0, entries: 4 });
+    expect(table.contributors).toEqual([[1, 1], [1, 1]]);
+    const alone = await buildPayoffTable(input(featuredClient(), [good], cfg));
+    expect(table.entries).toEqual(alone.entries);
+    const every = await buildPayoffTable(input(featuredClient(), [bad], cfg));
+    expect(every.complete).toBe(false);
+    expect(every.counts.missing_entries).toBe(4);
+  }, 180_000);
+
+  it("refuses worlds started without the configs for a worker that states a feature set", async () => {
+    await expect(buildPayoffTable(input(featuredClient(), [start(0)], cfg))).rejects.toThrow(HypotheticalError);
+  });
 });
 
 describe("whole worlds, the step cap and our real request", () => {

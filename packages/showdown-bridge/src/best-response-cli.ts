@@ -26,7 +26,7 @@ import { readTrainingRunConfig } from "./training-run-config.ts";
 export { UsageError };
 
 /** The ports a composition root fills: the belief's full-team draw and the run's own teams (the bridge imports neither the opponent model nor the dataset reader). */
-export interface BestResponsePorts extends Pick<ProgressPorts, "run_teams"> {
+export interface BestResponsePorts extends Pick<ProgressPorts, "run_teams" | "belief_worlds" | "belief_features"> {
   teams?: (engine: Engine, formatId: string) => ResponderTeamPort;
 }
 
@@ -101,14 +101,14 @@ export async function runBestResponseCli(argv: readonly string[], print: (line: 
   if (evalDataset !== undefined && evalDataset.dataset_hash === config.team_dataset.dataset_hash) throw new UsageError("--eval-dataset-hash is the run's own training dataset: leave the option out to evaluate on its validation split");
   const teamSet = readTeamSet(need("team-set"));
   const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
-  if (pairFeatureSetup(engine, config) !== undefined) throw new UsageError("features_pair: a pair that reads candidate features is not supported by the responder");
+  const features = pairFeatureSetup(engine, config, ports.belief_worlds, ports.belief_features);
   const runTeams = evalDataset === undefined ? new Set<string>() : ports.run_teams(engine, config);
   const dataFile = need("engine-data");
   const dataHash = engineDataHash(readEngineDataAny(JSON.parse(readFileSync(dataFile, "utf8"))));
   const { max_line_bytes, handshake_timeout_ms } = config.generation;
   const preview = need("preview");
   const battle = need("battle");
-  const client = frozenPairClient({ python: need("worker-python"), runDir: need("run-dir"), pair: { preview, battle }, encoderVersion: need("encoder-version"), engineDataFile: dataFile, engineDataHash: dataHash, max_line_bytes, handshake_timeout_ms });
+  const client = frozenPairClient({ python: need("worker-python"), runDir: need("run-dir"), pair: { preview, battle }, encoderVersion: need("encoder-version"), engineDataFile: dataFile, engineDataHash: dataHash, max_line_bytes, handshake_timeout_ms, ...(features === undefined ? {} : { features: features.statement }) });
   const started = performance.now();
   try {
     const pool = poolSource(engine, withEvalDataset(config, evalDataset));
@@ -118,7 +118,7 @@ export async function runBestResponseCli(argv: readonly string[], print: (line: 
       config,
       pool,
       pairs,
-      evaluated: { generation, generation_manifest_sha256: need("generation-manifest-sha256"), checkpoints: { preview, battle }, mode: mode as PlayMode, policy_id: need("policy-id"), client },
+      evaluated: { generation, generation_manifest_sha256: need("generation-manifest-sha256"), checkpoints: { preview, battle }, mode: mode as PlayMode, policy_id: need("policy-id"), client, ...(features === undefined ? {} : { features: features.configs }) },
       responder: { settings, teams: ports.teams(engine, config.format_id), vocabulary: goldenTeamVocabulary(), preview_budget_ms: previewBudget },
       training_teams: new Set([...teamSet, ...runTeams]),
       league_seeds: committedPlanSeeds(need("run-dir")),

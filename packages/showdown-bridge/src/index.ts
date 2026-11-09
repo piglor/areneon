@@ -753,6 +753,7 @@ export {
   HYPOTHETICAL_BATTLE_FORMAT,
   HYPOTHETICAL_ENGINE_PURPOSE,
   HypotheticalError,
+  HypotheticalFeatureError,
   hypotheticalCandidates,
   hypotheticalEngineSeed,
   hypotheticalRequest,
