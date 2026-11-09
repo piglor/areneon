@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 const ROOT = join(import.meta.dirname, "..", "..", "..");
 
 /** What only the oracle (test/fidelity/oracle.ts) may name. */
-export const ORACLE_IDENTIFIERS = ["copyRandomState", "captureDecisions", "translateChoice", "stateDelta", "OracleSpec", "prng.clone("] as const;
+export const ORACLE_IDENTIFIERS = ["copyRandomState", "captureDecisions", "translateChoice", "stateDelta", "OracleSpec", "prng.clone(", "oracleRollout", "oracleValues", "foeChannelAt", "rolloutSeed"] as const;
 
 /** Files outside tests that may rebuild a battle from JSON: each forks a battle IT built (a scenario world or a probe clone), reviewed here. */
 export const FROM_JSON_ALLOWED = ["choice-judge.ts", "mechanics-damage.ts", "reply-model.ts", "search-turn.ts"];
@@ -19,6 +19,9 @@ export const PRNG_ASSIGN_ALLOWED = ["mechanics-damage.ts", "mechanics-speed.ts",
 // the declared per-world engine seed (`search-engine/1`, the harness's search stream) as its generator; it copies no random state from any battle.
 // hypothetical-preview.ts (ADR-029) forks no battle itself: it builds a Team Preview battle of its own and clones it only through search-turn.ts's `cloneWorld`,
 // so it needs no entry here; a direct `fromJSON` call there would be flagged by this scan.
+
+/** The S0 oracle's own identifiers, as whole words (not the substring "rollout"). */
+export const S0_ORACLE_WORDS = /\b(oracleRollout|oracleValues|foeChannelAt|rolloutSeed)\b/;
 
 export interface Finding {
   file: string;
@@ -71,6 +74,18 @@ describe("the fork oracle and the random-state copy are reachable only from test
     expect(index).not.toMatch(/fidelity|oracle/i);
   });
 
+  it("the S0 oracle tools (rollouts from the fork, the real opponent policy) live under test/ and no shipped file names them", () => {
+    for (const f of ["packages/team-dataset/test/s0/rollout.ts", "packages/team-dataset/test/s0/measure.ts", "packages/team-dataset/test/s0/s0-cli.ts"]) expect(statSync(join(ROOT, f)).isFile()).toBe(true);
+    const names = shipped().map((f) => relative(ROOT, f));
+    // the arithmetic and the cost sink ship (they read no oracle) and are inside the scan
+    for (const f of ["packages/showdown-bridge/src/s0-measures.ts", "packages/showdown-bridge/src/search-cost.ts", "packages/team-dataset/scripts/search-budget.ts"]) expect(names).toContain(f);
+    expect(names.some((n) => /(^|\/)test\/s0\//.test(n))).toBe(false);
+    const index = readFileSync(join(ROOT, "packages/showdown-bridge/src/index.ts"), "utf8");
+    // Whole words only: the index legitimately exports other things with "rollout" in their names (the Team Preview payoff table's leaf).
+    expect(index).not.toMatch(S0_ORACLE_WORDS);
+    expect(index).not.toMatch(/test\/s0\//);
+  });
+
   it("negative controls: the scan flags each way the oracle could leak into shipped code", () => {
     const clean = "export const x = 1;\n";
     expect(scanSource("src/a.ts", clean)).toEqual([]);
@@ -80,6 +95,11 @@ describe("the fork oracle and the random-state copy are reachable only from test
     expect(scanSource("src/choice-judge.ts", "Battle.fromJSON(x);")).toEqual([]);
     expect(scanSource("src/a.ts", "world.battle.prng = live.prng;").map((f) => f.what)).toEqual(["assigns a battle's random-number source"]);
     expect(scanSource("src/mechanics-speed.ts", "battle.prng = refusing;")).toEqual([]);
+    // The S0 words are whole-word matches: a planted S0 identifier is flagged, an unrelated name containing "rollout" is not.
+    expect(S0_ORACLE_WORDS.test("export { oracleRollout } from './x.ts';")).toBe(true);
+    expect(S0_ORACLE_WORDS.test("import { rolloutSeed } from './x.ts';")).toBe(true);
+    expect(S0_ORACLE_WORDS.test("export { payoffRollout, rolloutLeaf } from './preview-payoff.ts';")).toBe(false);
+    expect(scanSource("src/a.ts", "oracleValues(x);").map((f) => f.what)).toEqual(["names the oracle identifier oracleValues"]);
     // The world builder is in no allowlist: forking or copying there would be a finding.
     expect(scanSource("src/world-builder.ts", "x.prng = y;").length).toBe(1);
     expect(scanSource("src/world-builder.ts", "x.fromJSON(y);").length).toBe(1);

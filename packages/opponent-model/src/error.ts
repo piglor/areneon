@@ -16,6 +16,9 @@ export const BELIEF_ERROR_CODES = [
   "empty_distribution", // a prior list with no mass at all (every weight unmapped)
 ] as const;
 
+/** The `BeliefError.detail` of a refusal caused by the engine-sent team sheet. */
+export const SHEET_DISAGREES = "sheet_disagrees";
+
 export type BeliefErrorCode = (typeof BELIEF_ERROR_CODES)[number];
 
 export class BeliefError extends Error {
@@ -23,9 +26,16 @@ export class BeliefError extends Error {
   readonly code: BeliefErrorCode;
   /** The 0-based roster position the refusal is about, when it is about one. */
   readonly slot: number | null;
-  constructor(code: BeliefErrorCode, message: string, slot: number | null = null) {
+  /**
+   * A finer reason inside the code, for a consumer that counts: `SHEET_DISAGREES` marks an `evidence_has_no_support`
+   * that comes from an engine-sent team sheet the channel's reveals or the prior cannot agree with (ADR-025 erratum E1).
+   * Null for every other refusal; the codes themselves are the contracts' closed list and do not grow.
+   */
+  readonly detail: string | null;
+  constructor(code: BeliefErrorCode, message: string, slot: number | null = null, detail: string | null = null) {
     super(message);
     this.code = code;
     this.slot = slot;
+    this.detail = detail;
   }
 }
