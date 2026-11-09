@@ -69,7 +69,7 @@ export async function runTeacherCli(
   }
   for (const name of ["run-key", "format", "out"] as const) if (values[name] === undefined) throw new UsageError(`--${name} is required`);
   if ((values.dataset === undefined) !== (values["dataset-hash"] === undefined)) throw new UsageError("--dataset and --dataset-hash go together");
-  // `--teacher damage-aware@v1|damage-aware@v3` (#1182); absent is v1 and leaves every byte of today's runs.
+  // `--teacher damage-aware@v1|damage-aware@v3|damage-aware@v4` (#1182, #1329); absent is v1 and leaves every byte of today's runs.
   const teacher = values.teacher ?? "damage-aware@v1";
   const teacher_version = TEACHER_VERSIONS.find((version) => `damage-aware@${version}` === teacher) as TeacherVersion | undefined;
   if (teacher_version === undefined) throw new UsageError(`--teacher must be one of ${TEACHER_VERSIONS.map((version) => `damage-aware@${version}`).join(", ")}`);
