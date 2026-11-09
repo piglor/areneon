@@ -5,12 +5,12 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadEngine } from "../src/engine.ts";
-import { contractSamples, SAMPLES_DIR } from "../src/samples.ts";
+import { contractSamples, sampleBytes, SAMPLES_DIR } from "../src/samples.ts";
 
 const samples = await contractSamples(loadEngine());
 rmSync(join(SAMPLES_DIR, "v1"), { recursive: true, force: true });
 for (const [file, content] of Object.entries(samples)) {
   mkdirSync(dirname(join(SAMPLES_DIR, file)), { recursive: true });
-  writeFileSync(join(SAMPLES_DIR, file), `${JSON.stringify(content, null, 2)}\n`);
+  writeFileSync(join(SAMPLES_DIR, file), sampleBytes(content));
 }
 console.log(`wrote ${Object.keys(samples).length} files under ${SAMPLES_DIR}`);
