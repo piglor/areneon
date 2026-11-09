@@ -13,8 +13,8 @@ from typing import Any
 
 import pytest
 import torch
-from areneon_contracts.contracts import jcs, sha256_hex
-from areneon_contracts.training import stream_split_points
+from areneon_contracts.contracts import jcs, parse, sha256_hex
+from areneon_contracts.training import StreamChecker, stream_split_points
 from areneon_ml.learner import parallel
 from areneon_ml.learner.data import (
     Collected,
@@ -84,6 +84,24 @@ def test_the_workers_give_the_serial_trajectories_tensor_for_tensor(tmp_path: Pa
         same(serial, trajectories(path, manifest, encoders(), POLICY, processes=processes))
     # ... and the string form is still served by one process.
     same(serial, trajectories(text, manifest, encoders(), POLICY, processes=4))
+
+
+def test_the_default_worker_count_and_the_cheaper_reader_change_no_tensor(tmp_path: Path) -> None:
+    text, manifest = stream_of(examples_of())
+    path, manifest = write(tmp_path, text, manifest)
+    serial = trajectories(path, manifest, encoders(), POLICY)
+    same(
+        serial,
+        trajectories(path, manifest, encoders(), POLICY, processes=parallel.auto_processes()),
+    )
+    # The reader's shortcuts hand over the very model the whole check builds, line by line.
+    checker = StreamChecker(manifest)
+    for number, line in enumerate(text.split("\n")[:-1], start=1):
+        _, model = checker.line(number, line)
+        whole = parse("training-example", json.loads(line))
+        assert model.model_dump(mode="json", by_alias=True) == whole.model_dump(
+            mode="json", by_alias=True
+        )
 
 
 def test_the_pieces_are_cut_between_episodes_and_cover_the_file(tmp_path: Path) -> None:
@@ -319,6 +337,45 @@ def test_the_memory_cap_leaves_at_least_one_worker_and_never_more_than_asked() -
     assert parallel.fit_processes(6, 10 * parallel.WORKER_MB) == 6
     assert parallel.fit_processes(6, 2 * parallel.WORKER_MB + 1) == 2
     assert parallel.fit_processes(6, 1) == 1
+
+
+def test_the_default_worker_count_follows_the_cores_and_the_free_memory() -> None:
+    ample = 100 * parallel.WORKER_MB + parallel.AUTO_RESERVE_MB
+    assert parallel.auto_processes(1, ample) == 1
+    assert parallel.auto_processes(2, ample) == 1
+    assert parallel.auto_processes(28, ample) == 14
+    assert parallel.auto_processes(200, ample) == parallel.MAX_AUTO_WORKERS
+    # Memory above the reserve is shared out at WORKER_MB a worker; at or under it one worker runs.
+    assert parallel.auto_processes(28, parallel.AUTO_RESERVE_MB + 3 * parallel.WORKER_MB) == 3
+    assert parallel.auto_processes(28, parallel.AUTO_RESERVE_MB) == 1
+    assert parallel.auto_processes(28, 0) == 1
+    # Unknown memory caps nothing.
+    assert parallel.auto_processes(28, None) == parallel.auto_processes(28, ample)
+
+
+def test_the_machine_probes_answer_sensibly(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert parallel.usable_cores() >= 1
+    found = parallel.available_memory_mb()
+    assert found is None or found > 0
+    assert 1 <= parallel.auto_processes() <= parallel.MAX_AUTO_WORKERS
+    monkeypatch.setattr(os, "sched_getaffinity", lambda _pid: {0, 1, 2})
+    assert parallel.usable_cores() == 3
+
+    def broken(_pid: int) -> set[int]:
+        raise OSError
+
+    monkeypatch.setattr(os, "sched_getaffinity", broken)
+    assert parallel.usable_cores() == max(1, os.cpu_count() or 1)
+
+    real_open = Path.open
+
+    def opener(self: Path, *args: Any, **kwargs: Any) -> Any:
+        if str(self) == "/proc/meminfo":
+            raise OSError
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", opener)
+    assert parallel.available_memory_mb() is None
 
 
 def killed(piece: tuple[int, int, int]) -> bytes:

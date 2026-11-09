@@ -282,7 +282,7 @@ export async function runGenerationCli(
   mkdirSync(episodesDir, { recursive: true });
   const scratch = values.shard === undefined && processes > 1 ? mkdtempSync(join(tmpdir(), "areneon-shards-")) : undefined;
   // With game processes and a feature set, every process recomputes the rows of its own Episodes when its games are done (#1185).
-  const featuresDir = featuresDirOf(values["features-dir"], scratch, features !== undefined);
+  const featuresDir = featuresDirOf(values["features-dir"], scratch, features !== undefined || sheet !== undefined);
   // With game processes and labels, every process labels its own Episodes when its games are done (#1290); a lone process leaves its files in a scratch directory of its own.
   const ownLabels = labelling && values["labels-dir"] === undefined && scratch === undefined ? mkdtempSync(join(tmpdir(), "areneon-labels-")) : undefined;
   const labelsDir = !labelling ? undefined : values["labels-dir"] ?? (scratch !== undefined ? join(scratch, "labels") : ownLabels);
