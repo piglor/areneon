@@ -8,19 +8,19 @@
 // All arithmetic is exact (BigInt and `Ratio`); there is no floating point. No game rule and no
 // species, item or move name is written here: rule values and lists come from the vocabulary.
 
-import type { PublicMon } from "@areneon/public-state";
+import type { PublicMon, PublicSheetMon } from "@areneon/public-state";
 import type { UsagePrior } from "@areneon/schema/types/v1/usage-prior.ts";
-import { BeliefError } from "./error.ts";
+import { BeliefError, SHEET_DISAGREES } from "./error.ts";
 import { enumerate, hasMatching } from "./disguise.ts";
 import { type DamageCounts, type DamageEvent, type DamageCheck, type DamageRules, applyDamage, emptyDamageCounts } from "./damage.ts";
 import { type SpeedCheck, type SpeedCounts, type SpeedEvent, type SpeedRules, applySpeed, emptySpeedCounts } from "./speed.ts";
 import { type SlotEvidence, slotEvidence, trapEvidence } from "./evidence.ts";
-import { type Dist, abilityDist, itemDist, only, spreadDist, uniformDist, weightOf } from "./fields.ts";
+import { type Dist, OTHER_SPREAD, abilityDist, itemDist, only, parseSpreadKey, spreadDist, uniformDist, weightOf } from "./fields.ts";
 import { solveItemClause } from "./item-clause.ts";
 import { moveModel } from "./moves.ts";
 import { type TrapSlot, trapExclusions } from "./trapping.ts";
-import { type Ratio, ONE, ZERO, add, greater, integerise, isZero, lcm, mul, ratio } from "./ratio.ts";
-import { BELIEF_FORMAT, type BeliefInput, type BeliefVocabulary, type Cell, type DisguiseAssignment, type FormeBelief, type Marginal, type OpponentBelief, type SlotBelief, type SlotMarginal } from "./types.ts";
+import { type Ratio, ONE, ZERO, add, div, greater, integerise, isZero, lcm, mul, ratio } from "./ratio.ts";
+import { BELIEF_FORMAT, type SlotSheet, type BeliefInput, type BeliefVocabulary, type Cell, type DisguiseAssignment, type FormeBelief, type Marginal, type OpponentBelief, type SlotBelief, type SlotMarginal } from "./types.ts";
 
 type PriorSpecies = UsagePrior["species"][number];
 type PriorForme = PriorSpecies["formes"][number];
@@ -78,9 +78,41 @@ function consistentFormes(species: PriorSpecies, ev: SlotEvidence, ctx: Context,
   return species.formes;
 }
 
+const disagree = (message: string, slot: number | null): BeliefError => new BeliefError("evidence_has_no_support", message, slot, SHEET_DISAGREES);
+
+/**
+ * The formes the engine-sent sheet leaves possible (ADR-025 erratum E1). The sheet is the team as built: a Pokemon that holds the
+ * stone of one of the species' Mega formes is that Mega forme before the Evolution (the sheet shows the preview species with the
+ * stone), any other item means a forme that is not a Mega (the one the sheet names, else the preview species' own).
+ */
+function sheetFormes(species: PriorSpecies, formes: readonly PriorForme[], sheet: PublicSheetMon, ctx: Context, slot: number): PriorForme[] {
+  const mega = (f: PriorForme): boolean => isMega(species, f, entryOf(ctx, f.id, slot));
+  const holders = formes.filter((f) => mega(f) && fixedItem(entryOf(ctx, f.id, slot)) === sheet.item);
+  if (holders.length > 0) return holders;
+  const plain = formes.filter((f) => !mega(f));
+  const named = plain.filter((f) => f.id === sheet.species);
+  return named.length > 0 ? named : plain.filter((f) => f.id === species.id);
+}
+
+/** The reveals of the battle must agree with the sheet: a consumed item is no reveal, an Evolved Mega's ability is its own. */
+function checkSheet(species: PriorSpecies, ev: SlotEvidence, sheet: PublicSheetMon, ctx: Context, slot: number, known: ReadonlySet<string> | null, placeable: (move: string) => boolean): void {
+  if (ev.item !== null && ev.item !== sheet.item) throw disagree("a revealed item differs from the engine-sent sheet", slot);
+  if (ev.megaStone !== null && ev.megaStone !== sheet.item) throw disagree("the Mega stone differs from the item of the engine-sent sheet", slot);
+  const evolved = ev.mega || (ev.shown !== null && species.formes.some((f) => f.id === ev.shown && isMega(species, f, entryOf(ctx, f.id, slot))));
+  if (ev.ability !== null && !evolved && ev.ability !== sheet.ability) throw disagree("a revealed ability differs from the engine-sent sheet", slot);
+  if (ev.gender !== null && sheet.gender !== null && ev.gender !== sheet.gender) throw disagree("the shown gender differs from the engine-sent sheet", slot);
+  // The level: the format adjusts every Pokemon to its rule table's `adjustLevel` and the engine prints the team's own level on the sheet,
+  // so this check is sound only where the two agree. They do in the committed open-sheet corpus (50 and 50); a format whose teams are
+  // built at another level would refuse every game here, and the check would then compare against `adjustLevel` instead.
+  if (ev.level !== null && ev.level !== sheet.level) throw disagree("the shown level differs from the engine-sent sheet", slot);
+  if (ev.moves.some((m) => !sheet.moves.includes(m) && (placeable(m) || (known !== null && known.has(m))))) throw disagree("a revealed move is not on the engine-sent sheet", slot);
+}
+
 /** The forme-and-item weights of one slot, after the ability, item and move evidence. */
-function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: number, notes: string[], known: ReadonlySet<string> | null, trap: ReadonlySet<string> | null, damage: SlotDamage | null, speed: SlotSpeed | null): FormeWork[] {
-  const formes = consistentFormes(species, ev, ctx, slot, notes);
+function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: number, notes: string[], known: ReadonlySet<string> | null, trap: ReadonlySet<string> | null, damage: SlotDamage | null, speed: SlotSpeed | null, sheet: PublicSheetMon | null): FormeWork[] {
+  const shownFormes = consistentFormes(species, ev, ctx, slot, notes);
+  const formes = sheet === null ? shownFormes : sheetFormes(species, shownFormes, sheet, ctx, slot);
+  if (formes.length === 0) throw disagree("the engine-sent sheet's item and species leave no forme of the slot", slot);
   const entries = new Map(formes.map((f) => [f.id, entryOf(ctx, f.id, slot)]));
   const speciesEntry = entryOf(ctx, species.id, slot);
   const stones = new Set(species.formes.flatMap((f) => (isMega(species, f, entryOf(ctx, f.id, slot)) ? [fixedItem(entryOf(ctx, f.id, slot))] : [])).filter((s): s is string => s !== null));
@@ -91,6 +123,11 @@ function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: n
   // Moves the Pokemon chose: a move no consistent forme can hold (Struggle, a copied move) adds no evidence.
   const poolOf = (id: string): ReadonlySet<string> => new Set((entries.get(id) as RosterEntry).moves);
   const placeable = ev.moves.filter((m) => formes.some((f) => poolOf(f.id).has(m)));
+  if (sheet !== null) {
+    checkSheet(species, ev, sheet, ctx, slot, known, (m) => placeable.includes(m));
+    notes.push(`sheet:item:${sheet.item ?? "none"}`, `sheet:ability:${sheet.ability}`, `sheet:moves:${sheet.moves.length}`);
+    if (sheet.nature !== null) notes.push(`sheet:nature:${sheet.nature}`);
+  }
   // Under a possible disguise a real move that no consistent forme can hold belongs to another member (Struggle, in no pool, still adds nothing).
   if (known !== null && ev.moves.some((m) => !placeable.includes(m) && known.has(m))) {
     throw new BeliefError("evidence_has_no_support", "a revealed move is in the vocabulary but no forme of the slot can hold it", slot);
@@ -110,7 +147,9 @@ function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: n
     // The own request's trapping flags: abilities the engine says the shown foe cannot hold get weight 0 (the forme's weight is scaled by the share left).
     const dist = trap === null ? listed : restrict(listed, trap);
     const verdict = ev.ability === null ? "free" : evolved && preAbilities.has(ev.ability) ? "ambiguous" : weightOf(dist, ev.ability) > 0n ? "fixed" : "excluded";
-    return { f, mega, dist, verdict, share: dist.total === listed.total ? ONE : ratio(dist.total, listed.total) };
+    // The sheet's ability is the one the Pokemon was built with: before the Evolution it is the (holder) list's, a hard fact.
+    const built = sheet === null || evolved ? null : sheet.ability;
+    return { f, mega, dist, verdict, built, share: dist.total === listed.total ? ONE : ratio(dist.total, listed.total) };
   });
   const usable = ev.ability !== null && abilityOf.some((a) => a.verdict !== "excluded");
   if (ev.ability !== null) {
@@ -120,33 +159,49 @@ function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: n
   const itemUsable = ev.item !== null && ctx.items.has(ev.item);
   if (ev.item !== null) notes.push(itemUsable ? `item:${ev.item}` : `item_skipped:${ev.item}`);
 
+  // With a sheet the move set is known; the count's prior is a factor of each forme's weight. When any forme's prior is silent on the
+  // sheet's count that factor is not comparable between formes (a silent one would outweigh the others), so it is left out of all of them.
+  const exact = sheet === null ? null : new Map(abilityOf.flatMap(({ f }) => {
+    const pool = poolOf(f.id);
+    const found = sheet.moves.every((m) => pool.has(m)) ? moveModel(f.moves, [...pool], sheet.moves, new Set(sheet.moves).size) : null;
+    return found === null ? [] : [[f.id, found] as const];
+  }));
+  const uniformCount = exact !== null && [...exact.values()].some((found) => !found.countListed);
+
   const work: FormeWork[] = [];
-  for (const { f, mega, dist, verdict, share } of abilityOf) {
+  for (const { f, mega, dist, verdict, built, share } of abilityOf) {
     const entry = entries.get(f.id) as RosterEntry;
     const pool = poolOf(f.id);
     if (dist.total === 0n) continue;
-    if (placeable.some((m) => !pool.has(m))) continue;
-    if (usable && verdict === "excluded") continue;
-    const model = moveModel(f.moves, [...pool], placeable);
-    if (model === null) continue;
+    if (sheet !== null ? !sheet.moves.every((m) => pool.has(m)) : placeable.some((m) => !pool.has(m))) continue;
+    if (built !== null ? weightOf(dist, built) === 0n : usable && verdict === "excluded") continue;
+    // The sheet lists exactly the set's moves; otherwise the revealed ones are in it.
+    const found = exact === null ? moveModel(f.moves, [...pool], placeable) : (exact.get(f.id) ?? null);
+    if (found === null) continue;
+    const model = { model: found.model, likelihood: uniformCount ? div(found.likelihood, found.countMass) : found.likelihood };
 
-    // The ability the forme is in the revealed state of: a point mass when the evidence fixes it.
-    const fixed = usable && verdict === "fixed" && ev.ability !== null;
-    const abilityLikelihood = fixed ? ratio(weightOf(dist, ev.ability as string), dist.total) : ONE;
-    const abilities = fixed ? only(ev.ability as string) : dist;
+    // The ability the forme is in the revealed (or built) state of: a point mass when the evidence fixes it.
+    const claim = built ?? (usable && verdict === "fixed" ? ev.ability : null);
+    const abilityLikelihood = claim !== null ? ratio(weightOf(dist, claim), dist.total) : ONE;
+    const abilities = claim !== null ? only(claim) : dist;
 
     const stone = fixedItem(entry);
     const full: Dist<string | null> = stone !== null ? only<string | null>(stone) : itemDist(f.items.entries, f.items.no_item, f.items.residual, ctx.vocabulary.items, stones);
     if (full.total === 0n) throw new BeliefError("empty_distribution", "a prior item list has no mass", slot);
     const items = new Map<string | null, Ratio>();
     for (const o of full.options) {
-      if (itemUsable && o.id !== ev.item) continue;
+      if (sheet !== null ? o.id !== sheet.item : itemUsable && o.id !== ev.item) continue;
       items.set(o.id, ratio(o.weight, full.total));
     }
     if (items.size === 0) continue;
 
-    const spreads = spreadDist(f.spreads.entries, f.spreads.residual);
-    const weight = mul(mul(mul(ratio(BigInt(f.weight), BigInt(species.denominator)), abilityLikelihood), share), model.likelihood);
+    // The sheet's nature is a hard fact (gap row `open-team-sheet-contents`: the engine sends the nature, not the Stat Points): the named
+    // spreads of the other natures go, and the forme's weight carries the share left.
+    const listed = spreadDist(f.spreads.entries, f.spreads.residual);
+    const natured = sheet === null || sheet.nature === null ? null : natureSpreads(listed, sheet.nature, ctx.vocabulary.natures?.length ?? 1);
+    if (natured !== null && natured.dist.total === 0n) continue;
+    const spreads = natured === null ? listed : natured.dist;
+    const weight = mul(mul(mul(mul(ratio(BigInt(f.weight), BigInt(species.denominator)), abilityLikelihood), share), model.likelihood), natured === null ? ONE : natured.share);
     work.push({ id: f.id, mega, weight, abilities, spreads, moves: model.model, items });
   }
   if (work.length === 0) throw new BeliefError("evidence_has_no_support", "the evidence leaves no forme of the slot with a positive weight", slot);
@@ -164,6 +219,20 @@ function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: n
     current = applied.formes;
   }
   return current;
+}
+
+/**
+ * A spread list given the nature the sheet names: the named spreads of that nature and the "other spread" entry (its nature is
+ * the sheet's), with the probability of the nature under the list. The "other" entry holds ONE nature of `natures` (1 when the
+ * vocabulary lists none), so against the named spreads it counts for 1 / natures of its weight: the named weights are scaled by
+ * `natures` to stay integers, which makes the returned weights the posterior's and `share` = their sum over `total * natures`.
+ * (The nature is hard evidence of the open-sheet format, gap row `open-team-sheet-contents`.)
+ */
+export function natureSpreads(listed: Dist<string>, nature: string, natures: number): { dist: Dist<string>; share: Ratio } {
+  const scale = BigInt(natures);
+  const options = listed.options.flatMap((o) => (o.id === OTHER_SPREAD ? [o] : parseSpreadKey(o.id)?.nature === nature ? [{ id: o.id, weight: o.weight * scale }] : []));
+  const total = options.reduce((sum, o) => sum + o.weight, 0n);
+  return { dist: { total, options }, share: total === 0n ? ZERO : ratio(total, listed.total * scale) };
 }
 
 /** The options of a distribution that are not in `excluded`. */
@@ -201,6 +270,8 @@ interface Chosen {
   readonly damage: SlotDamage | null;
   /** The speed events about this slot and the check that answers them, null when the evidence is off. */
   readonly speed: SlotSpeed | null;
+  /** The slot's entry of the engine-sent team sheet (open-sheet formats), null without a sheet. */
+  readonly sheet: PublicSheetMon | null;
 }
 
 /** The speed-order evidence of one slot: its events, the port, the reviewed rules and the counts the work adds to. */
@@ -330,6 +401,7 @@ function solve(ctx: Context, chosen: readonly Chosen[], memo: Memo, known: Reado
       spreads,
       mode: { forme: mode(formes.map((f) => ({ id: f.id, p: f.p }))), ability: mode(abilities), item: mode(items) },
       cells: slotCells,
+      ...sheetOf((chosen[i] as Chosen).sheet),
       constraints: [`species:${species.id}`, ...(ev.shown === null ? [] : [`forme:${ev.shown}`]), ...(ev.level === null ? [] : [`level:${ev.level}`]), ...(ev.gender === null ? [] : [`gender:${ev.gender}`]), ...(ev.mega ? [`mega:${ev.megaStone ?? "unknown"}`] : []), ...(isSettled ? ["settled"] : []), ...(extra[i] as readonly string[]), ...(got[i] as { notes: readonly string[] }).notes],
     };
   });
@@ -344,7 +416,7 @@ function workOf(chosen: readonly Chosen[], ctx: Context, memo: Memo, known: Read
     const notes: string[] = [];
     try {
       notes.push(...(chosen[i] as Chosen).trapNotes);
-      hit = { work: slotWork((chosen[i] as Chosen).species, ev, ctx, i, notes, known, trap, (chosen[i] as Chosen).damage, (chosen[i] as Chosen).speed), notes };
+      hit = { work: slotWork((chosen[i] as Chosen).species, ev, ctx, i, notes, known, trap, (chosen[i] as Chosen).damage, (chosen[i] as Chosen).speed, (chosen[i] as Chosen).sheet), notes };
     } catch (e) {
       if (!(e instanceof BeliefError)) throw e;
       hit = e;
@@ -354,6 +426,9 @@ function workOf(chosen: readonly Chosen[], ctx: Context, memo: Memo, known: Read
   if (hit instanceof BeliefError) throw hit;
   return hit;
 }
+
+/** The `sheet` key of a slot's belief: present only when the slot was constrained by an engine-sent sheet, so a closed belief keeps its bytes. */
+const sheetOf = (sheet: PublicSheetMon | null): { sheet?: SlotSheet } => (sheet === null ? {} : { sheet: { item: sheet.item, ability: sheet.ability, moves: [...sheet.moves].sort(), nature: sheet.nature, gender: sheet.gender, level: sheet.level } });
 
 /** The belief mixed over the assignments: each marginal is the sum of the assignments' marginals weighted by p. */
 function mixSlot(i: number, list: readonly DisguiseAssignment[]): SlotMarginal {
@@ -390,6 +465,7 @@ function mixSlot(i: number, list: readonly DisguiseAssignment[]): SlotMarginal {
     spreads: fold((s) => s.spreads),
     mode: { forme: mode(formes), ability: mode(abilities), item: mode(items) },
     formes,
+    ...(first.sheet === undefined ? {} : { sheet: first.sheet }),
     constraints: common,
   };
 }
@@ -411,6 +487,8 @@ export function belief(input: BeliefInput): OpponentBelief {
   if (mons.length < vocabulary.rules.min_team_size || mons.length > vocabulary.rules.max_team_size || picked < 1 || picked > mons.length) {
     throw new BeliefError("team_size", "the opponent's preview is not a team of the format");
   }
+  const sheets = opponent.sheet;
+  if (sheets !== undefined && sheets.length !== mons.length) throw disagree("the engine-sent sheet does not list the previewed team", null);
   const ctx: Context = { vocabulary, roster: new Map(vocabulary.roster.map((r) => [r.id, r])), items: new Set(vocabulary.items) };
   const hiding = new Set(config.identity_hiding_abilities);
   const speciesById = new Map(prior.species.map((s) => [s.id, s]));
@@ -419,7 +497,15 @@ export function belief(input: BeliefInput): OpponentBelief {
     const species = speciesById.get(mon.base_species) ?? (mon.species === null ? undefined : speciesById.get(mon.species));
     if (species === undefined) throw new BeliefError("species_not_in_prior", "a previewed species has no entry in the usage prior", slot);
     const ids = [species.id, ...species.formes.map((f) => f.id)];
-    return { species, ev: slotEvidence(mon), hides: ids.some((id) => ctx.roster.get(id)?.abilities.some((a) => hiding.has(a))), trap: null, trapNotes: [], damage: null, speed: null };
+    const sheet = sheets?.[slot] ?? null;
+    if (sheet !== null) {
+      if (!ids.includes(sheet.species)) throw disagree("the engine-sent sheet's species is not the previewed species", slot);
+      if (sheet.item !== null && !ctx.items.has(sheet.item)) throw disagree("the engine-sent sheet's item is not an item of the format", slot);
+      if (sheet.nature !== null && vocabulary.natures !== undefined && !vocabulary.natures.some((n) => n.id === sheet.nature)) throw disagree("the engine-sent sheet's nature is not a nature of the format", slot);
+    }
+    // With a sheet the ability the Pokemon was built with decides whether it can hide its identity.
+    const hides = sheet === null ? ids.some((id) => ctx.roster.get(id)?.abilities.some((a) => hiding.has(a))) : hiding.has(sheet.ability);
+    return { species, ev: slotEvidence(mon), hides, trap: null, trapNotes: [], damage: null, speed: null, sheet };
   });
 
   // The shown positions (in play, so in the brought set if they are what they seem) and the hiding members still unrevealed.

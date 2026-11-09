@@ -33,11 +33,13 @@ import { type PolicyClient } from "./policy-worker.ts";
 import { type ActorFeatures, policyGame, type PolicySeat } from "./policy-actor.ts";
 import { type ExtraPlay, matchSuffix } from "./progress-modes.ts";
 import { PROGRESS_PAIRING, PROGRESS_SEED_DERIVATION, progressGameStreams, progressPairs } from "./progress-seed.ts";
-import { type BaselineCounts, omniscientLogHash, type SearchCounts, sumSearchCounts, progressRecordHash, sumBaselineCounts, tallyRows, type ProgressEvaluationRecordV2, type ProgressGameRecord, readProgressEvaluationRecordV2, readProgressGameRecord } from "./progress-records.ts";
+import { type BaselineCounts, omniscientLogHash, type SearchCounts, type SolveCounts, sumSearchCounts, sumSolveCounts, progressRecordHash, sumBaselineCounts, tallyRows, type ProgressEvaluationRecordV2, type ProgressGameRecord, readProgressEvaluationRecordV2, readProgressGameRecord } from "./progress-records.ts";
 import { randomLegalActor } from "./random-legal.ts";
 import type { Actor, Player } from "./runner.ts";
 import { searchPolicy, type SearchActor, type SearchSetup } from "./search-actor.ts";
 import { controlSeat, searchCountsRecord, searchSeat, type ControlTally } from "./search-progress.ts";
+import { type PreviewSolveActor, previewSolveBudgetMs, previewSolvePolicy, type PreviewSolveSetup } from "./preview-solve.ts";
+import { solveControlSeat, solveCountsRecord, solveSeat, type SolveControlTally } from "./preview-solve-progress.ts";
 import type { SyntheticTeamHashes } from "./team-class.ts";
 import { teamHash } from "./team-class.ts";
 import { runConfigHash, type TrainingRunConfig } from "./training-run-config.ts";
@@ -221,6 +223,19 @@ export interface ProgressOptions {
     mode: ProgressMode;
     play?: PlaySettings;
   };
+  /**
+   * The Team Preview solver as the candidate (ADR-029 section 8, #1260): the evaluated generation's frozen pair in ONE play `mode`,
+   * its Team Preview chosen by `previewSolveActor` with the reviewed records of `setup`. Evaluated alone (no ablation, no search, no
+   * anchors, no previous generation, no extra modes; its matches are `psolve-<opponent>-<mode>`), against the same baselines and
+   * pairs as the pair itself and head to head against the control `self-no-solve`: the same pair in the same mode without the
+   * solver. The games of such an evaluation run with a Team Preview budget of at least the config's `budget_ms`
+   * (`previewSolveBudgetMs`), the control's included. A pair that reads candidate features or the opponent sheet is refused.
+   */
+  preview_solve?: {
+    setup: PreviewSolveSetup;
+    mode: ProgressMode;
+    play?: PlaySettings;
+  };
   pool: ProgressPool;
   /** Games per baseline and previous match: even, two per pair; refused above twice the number of disjoint pairs. */
   games: number;
@@ -319,6 +334,9 @@ export interface GameFacts {
   /** Only a game of a search candidate: its seat, the search identity hash and its counts; and the self-no-search control's, if it played. */
   search?: { seat: Player; identity_hash: string; counts: SearchCounts };
   opponent_search?: { seat: Player; identity_hash: string; counts: SearchCounts };
+  /** Only a game of a Team Preview solver candidate: its seat, the solver identity hash and its counts; and the self-no-solve control's, if it played. */
+  solve?: { seat: Player; identity_hash: string; counts: SolveCounts };
+  opponent_solve?: { seat: Player; identity_hash: string; counts: SolveCounts };
 }
 
 /** Build the ProgressGameRecord of a played or forfeited game, and read it back so a bad one cannot leave. */
@@ -366,6 +384,8 @@ export function buildProgressGameRecord(facts: GameFacts): ProgressGameRecord {
     ...(facts.baseline === undefined ? {} : { baseline: facts.baseline }),
     ...(facts.search === undefined ? {} : { search: facts.search }),
     ...(facts.opponent_search === undefined ? {} : { opponent_search: facts.opponent_search }),
+    ...(facts.solve === undefined ? {} : { solve: facts.solve }),
+    ...(facts.opponent_solve === undefined ? {} : { opponent_solve: facts.opponent_solve }),
   });
 }
 
@@ -435,6 +455,9 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   const plan = progressPlan(options);
   const budget: LatencyBudget = { preview_ms: config.generation.latency_budget_ms.preview_ms, battle_ms: config.generation.latency_budget_ms.battle_ms };
   const manifest = resolveFormat(engine, config.format_id).manifest;
+  // The solver builds its table inside the Team Preview decision: its games run with at least the config's budget there (the control's too).
+  const solveBudgetMs = options.preview_solve === undefined ? undefined : previewSolveBudgetMs(options.preview_solve.setup);
+  const gameBudget: LatencyBudget = solveBudgetMs === undefined ? budget : { preview_ms: Math.max(budget.preview_ms, solveBudgetMs), battle_ms: budget.battle_ms };
   const matches: ProgressEvaluationRecordV2["matches"] = [];
   const rows: Row[] = [];
   const rowsByMatch = new Map<string, Row[]>();
@@ -442,7 +465,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   const wall_ms: Record<string, number> = {};
   const game_ms: Record<string, { mean: number; max: number }> = {};
   const clock = options.damage_aware?.clock ?? (() => performance.now());
-  type Seat = { seat: PolicySeat | Actor; report?: () => BaselineReport; control?: () => SearchCounts };
+  type Seat = { seat: PolicySeat | Actor; report?: () => BaselineReport; control?: () => SearchCounts; solveControl?: () => SolveCounts };
   type Opponent = {
     id: string;
     anchored?: true;
@@ -465,7 +488,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   }));
   const extraModes = options.extra_modes ?? [];
   if (extraModes.length > 0) {
-    if (ablation !== undefined || options.search !== undefined) throw new ProgressError("extra play modes are not played with the Preview ablation or the search candidate");
+    if (ablation !== undefined || options.search !== undefined || options.preview_solve !== undefined) throw new ProgressError("extra play modes are not played with the Preview ablation, the search candidate or the Team Preview solver candidate");
     const names = extraModes.map((extra) => matchSuffix(extra.play));
     if (names.some((name) => name === "") || new Set(names).size !== names.length) throw new ProgressError("an extra play mode sets a temperature or a threshold, and is given once");
     if (extraModes.some((extra) => (extra.versus_policy_id === undefined) === (versus !== undefined))) throw new ProgressError("an extra mode names the other run's policy id exactly when another run's pair is played");
@@ -491,6 +514,25 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
     });
   }
   const { previous, search } = options;
+  const solve = options.preview_solve;
+  if (solve !== undefined) {
+    if (ablation !== undefined || search !== undefined) throw new ProgressError("the Team Preview solver candidate is evaluated alone: no Preview ablation and no search");
+    if (previous !== undefined || anchors.length > 0) throw new ProgressError("the Team Preview solver candidate is evaluated alone: no anchors and no previous-generation matches");
+    if (options.features !== undefined) throw new ProgressError("the progress evaluation does not solve a features pair: the solver refuses it");
+    if (options.sheet !== undefined) throw new ProgressError("a pair that reads opponent_sheet is not solved: the solver refuses it");
+    if (!PROGRESS_MODES.includes(solve.mode)) throw new ProgressError("the solver mode is argmax or sample");
+    opponents.push({
+      id: "self-no-solve",
+      opponent: (mode) => ({ kind: "self-no-solve", policy_id: options.policy_ids[mode], checkpoints: options.checkpoints, mode }),
+      seat: (mode) => {
+        let tally: SolveControlTally | undefined;
+        const seat = solveControlSeat({ client, policy_id: options.policy_ids[mode], mode, ...(solve.play === undefined ? {} : { play: solve.play }), onTally: (made) => (tally = made) });
+        return { seat, solveControl: () => (tally as SolveControlTally).counts() };
+      },
+      policies: (mode) => options.policy_ids[mode],
+      begin: () => Promise.resolve(),
+    });
+  }
   if (search !== undefined) {
     if (ablation !== undefined) throw new ProgressError("the search candidate is evaluated alone: no Preview ablation");
     if (options.sheet !== undefined) throw new ProgressError("a pair that reads opponent_sheet is not searched: the search refuses it");
@@ -518,7 +560,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
     return { sheet: { builder } };
   };
   // The candidates: the generation's own pair, or the three Previews of the ablation (argmax only, against the baselines).
-  type Candidate = { prefix: string; client: PolicyClient & { beginGame?: () => Promise<void> }; policy_ids: Record<ProgressMode, string>; random_preview?: true; candidate_preview?: Match["candidate_preview"]; search?: { identity_hash: string } };
+  type Candidate = { prefix: string; client: PolicyClient & { beginGame?: () => Promise<void> }; policy_ids: Record<ProgressMode, string>; random_preview?: true; candidate_preview?: Match["candidate_preview"]; search?: { identity_hash: string }; solve?: { identity_hash: string } };
   const candidates: Candidate[] = [{ prefix: "", client, policy_ids: options.policy_ids }];
   let modes: readonly ProgressMode[] = PROGRESS_MODES;
   if (search !== undefined) {
@@ -527,6 +569,13 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
     modes = [search.mode];
     candidates.length = 0;
     candidates.push({ prefix: "search-", client, policy_ids: { ...options.policy_ids, [search.mode]: named.policy_id }, search: { identity_hash: named.identity_hash } });
+  }
+  if (solve !== undefined) {
+    // The solver policy's id carries the solver identity (ADR-029 section 4); the control keeps the pair's own id.
+    const named = previewSolvePolicy(solve.setup, manifest, options.checkpoints, solve.mode, solve.play ?? {});
+    modes = [solve.mode];
+    candidates.length = 0;
+    candidates.push({ prefix: "psolve-", client, policy_ids: { ...options.policy_ids, [solve.mode]: named.policy_id }, solve: { identity_hash: named.identity_hash } });
   }
   if (ablation !== undefined) {
     modes = ["argmax"];
@@ -597,6 +646,8 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       const searches: SearchCounts[] = [];
       const sheets: SheetCounts[] = [];
       const controls: SearchCounts[] = [];
+      const solves: SolveCounts[] = [];
+      const solveControls: SolveCounts[] = [];
       const gameMs: number[] = [];
       const started = clock();
       for (let game = 0; game < count; game++) {
@@ -608,9 +659,12 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
         const teams: Record<Player, PokemonSet[]> = { p1: first.sets, p2: second.sets };
         const streams = progressGameStreams(planKey, pair);
         let searcher: SearchActor | undefined;
+        let solver: PreviewSolveActor | undefined;
         const candidateBuilders: SheetBuilder[] = [];
         const seat: PolicySeat =
-          candidateKind.search !== undefined && search !== undefined
+          candidateKind.solve !== undefined && solve !== undefined
+            ? solveSeat({ setup: solve.setup, client: candidateKind.client as PolicyClient & Parameters<typeof solveSeat>[0]["client"], policy_id, identity_hash: candidateKind.solve.identity_hash, mode, ...(solve.play === undefined ? {} : { play: solve.play }), onActor: (made) => (solver = made) })
+            : candidateKind.search !== undefined && search !== undefined
             ? searchSeat({ setup: search.setup, client: candidateKind.client as PolicyClient & Parameters<typeof searchSeat>[0]["client"], policy_id, identity_hash: candidateKind.search.identity_hash, mode, pair: options.checkpoints, ...ownFeatures, ...(search.play === undefined ? {} : { play: search.play }), onActor: (made) => (searcher = made) })
             : { client: candidateKind.client, policy_id, sampling: mode, ...(extra === undefined ? {} : { play: extra.play }), ...ownFeatures, ...sheetSeat(options.sheet, candidateBuilders), ...(candidateKind.random_preview === undefined ? {} : { random_preview: true }) };
         await candidateKind.client.beginGame?.();
@@ -624,7 +678,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
           teams,
           known_synthetic: pool.known_synthetic,
           seats: { [candidate]: seat, [rival(candidate)]: opposing.seat } as Record<Player, PolicySeat | Actor>,
-          latency_budget: budget,
+          latency_budget: gameBudget,
           maxTurns: config.generation.max_turns,
         });
         // The baseline's own report of this game (an incident game throws in `rowOf` first, with its message).
@@ -637,12 +691,21 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
           if (made === undefined || made.policy_id !== policy_id || made.identity_hash !== candidateKind.search.identity_hash) throw new ProgressError("a search game carries another policy id or search identity than the evaluation names");
           searched = searchCountsRecord(made.counts);
         }
+        let solved: SolveCounts | undefined;
+        if (candidateKind.solve !== undefined) {
+          const made = (solver as PreviewSolveActor | undefined)?.report();
+          if (made === undefined || made.policy_id !== policy_id || made.identity_hash !== candidateKind.solve.identity_hash) throw new ProgressError("a solver game carries another policy id or solver identity than the evaluation names");
+          solved = solveCountsRecord(made.counts);
+          solves.push(solved);
+        }
+        const solveControlled = opposing.solveControl?.();
+        if (solveControlled !== undefined) solveControls.push(solveControlled);
         const controlled = opposing.control?.();
         controls.push(...(controlled === undefined ? [] : [controlled]));
         if (searched !== undefined) searches.push(searched);
         const sheeted = candidateBuilders.length === 0 ? undefined : sumSheetCounts(candidateBuilders.map((builder) => builder.counts()));
         if (sheeted !== undefined) sheets.push(sheeted);
-        matchRows.push({ ...row, ...(sheeted === undefined ? {} : { sheet: sheeted }), ...(report === undefined ? {} : { baseline_counts: report.counts }), ...(searched === undefined ? {} : { search: searched }), ...(controlled === undefined ? {} : { opponent_search: controlled }) });
+        matchRows.push({ ...row, ...(sheeted === undefined ? {} : { sheet: sheeted }), ...(report === undefined ? {} : { baseline_counts: report.counts }), ...(searched === undefined ? {} : { search: searched }), ...(controlled === undefined ? {} : { opponent_search: controlled }), ...(solved === undefined ? {} : { solve: solved }), ...(solveControlled === undefined ? {} : { opponent_solve: solveControlled }) });
         const now = clock();
         gameMs.push(now - gameStarted);
         // A match that outruns its budget fails the evaluation (fail closed): no partial record leaves.
@@ -664,6 +727,8 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
             ...(report === undefined ? {} : { baseline: { seat: rival(candidate), identity_hash: report.identity_hash, counts: report.counts } }),
             ...(searched === undefined || candidateKind.search === undefined ? {} : { search: { seat: candidate, identity_hash: candidateKind.search.identity_hash, counts: searched } }),
             ...(controlled === undefined || candidateKind.search === undefined ? {} : { opponent_search: { seat: rival(candidate), identity_hash: candidateKind.search.identity_hash, counts: controlled } }),
+            ...(solved === undefined || candidateKind.solve === undefined ? {} : { solve: { seat: candidate, identity_hash: candidateKind.solve.identity_hash, counts: solved } }),
+            ...(solveControlled === undefined || candidateKind.solve === undefined ? {} : { opponent_solve: { seat: rival(candidate), identity_hash: candidateKind.solve.identity_hash, counts: solveControlled } }),
           });
           stored.set(`${match_id}-${game}.json`, stored_game);
           hashes.push(progressRecordHash(stored_game));
@@ -672,7 +737,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       rowsByMatch.set(match_id, matchRows);
       wall_ms[match_id] = Math.round(clock() - started);
       game_ms[match_id] = { mean: Math.round(gameMs.reduce((a, b) => a + b, 0) / gameMs.length), max: Math.round(Math.max(...gameMs)) };
-      matches.push(summarise(match_id, policy_id, baseline.opponent(mode, extra), mode, matchRows, hashes, config.generation.max_turns, candidateKind.candidate_preview, reports, candidateKind.search === undefined ? undefined : { identity_hash: candidateKind.search.identity_hash, searches, controls }, extra?.play, sheets));
+      matches.push(summarise(match_id, policy_id, baseline.opponent(mode, extra), mode, matchRows, hashes, config.generation.max_turns, candidateKind.candidate_preview, reports, candidateKind.search === undefined ? undefined : { identity_hash: candidateKind.search.identity_hash, searches, controls }, extra?.play, sheets, candidateKind.solve === undefined ? undefined : { identity_hash: candidateKind.solve.identity_hash, solves, controls: solveControls }));
     }
     }
   }
@@ -701,6 +766,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       recorded_games_per_match: record_games,
       ...(anchors.length === 0 ? {} : { anchor_games_per_match: anchorGames }),
       ...(versus === undefined ? {} : { run_games_per_match: runGames }),
+      ...(solveBudgetMs === undefined ? {} : { preview_solve_budget_ms: gameBudget.preview_ms }),
       ...(evaluationKey === undefined ? {} : { evaluation_key: evaluationKey }),
       max_turns: config.generation.max_turns,
       latency_budget_ms: budget,
@@ -711,7 +777,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   return { record, game_records: stored, wall_ms, game_ms };
 }
 
-function summarise(match_id: string, policy_id: string, opponent: Match["opponent"], mode: ProgressMode, rows: readonly Row[], hashes: string[], maxTurns: number, candidate_preview: Match["candidate_preview"] | undefined, reports: readonly BaselineReport[], search?: { identity_hash: string; searches: readonly SearchCounts[]; controls: readonly SearchCounts[] }, play?: ExtraPlay, sheets: readonly SheetCounts[] = []): Match {
+function summarise(match_id: string, policy_id: string, opponent: Match["opponent"], mode: ProgressMode, rows: readonly Row[], hashes: string[], maxTurns: number, candidate_preview: Match["candidate_preview"] | undefined, reports: readonly BaselineReport[], search?: { identity_hash: string; searches: readonly SearchCounts[]; controls: readonly SearchCounts[] }, play?: ExtraPlay, sheets: readonly SheetCounts[] = [], solve?: { identity_hash: string; solves: readonly SolveCounts[]; controls: readonly SolveCounts[] }): Match {
   return {
     match_id,
     policy_id,
@@ -727,6 +793,8 @@ function summarise(match_id: string, policy_id: string, opponent: Match["opponen
     ...(search === undefined ? {} : { search: { identity_hash: search.identity_hash, counts: sumSearchCounts(search.searches) } }),
     ...(sheets.length === 0 ? {} : { sheet: sumSheetCounts(sheets) }),
     ...(search === undefined || search.controls.length === 0 ? {} : { opponent_search: { identity_hash: search.identity_hash, counts: sumSearchCounts(search.controls) } }),
+    ...(solve === undefined ? {} : { solve: { identity_hash: solve.identity_hash, counts: sumSolveCounts(solve.solves) } }),
+    ...(solve === undefined || solve.controls.length === 0 ? {} : { opponent_solve: { identity_hash: solve.identity_hash, counts: sumSolveCounts(solve.controls) } }),
   };
 }
 

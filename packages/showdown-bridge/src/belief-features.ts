@@ -43,7 +43,7 @@ export interface BeliefFeaturesPort {
   /** The usage prior's `format_id`. */
   readonly prior_format_id: string;
   readonly k: SheetKValues;
-  sheet(input: { readonly opponent: PublicSide; readonly flags: readonly PublicFlag[]; readonly trapping?: TrappingCheckPort | null }): OpponentSheet;
+  sheet(input: { readonly opponent: PublicSide; readonly flags: readonly PublicFlag[]; readonly trapping?: TrappingCheckPort | null }): OpponentSheet & { readonly refusal_detail?: string };
   /** The belief's move inclusions (`BeliefThreatsPort`); the composition root provides it, a stand-in for the sheet alone may not. */
   moveInclusions?: BeliefThreatsPort["moveInclusions"];
 }
@@ -127,12 +127,14 @@ export function createSheetBuilder(context: BeliefFeaturesContext): SheetBuilder
   return {
     build({ request, team, state, flags }) {
       const trapping = createTrappingCheck({ engine, vocabulary, scenario_id }, { request, team, state });
-      const block = port.sheet({ opponent: state.opponent, flags, trapping });
+      // A refusal caused by the engine-sent sheet (`refusal_detail`, not part of the closed block) is counted under its own key.
+      const { refusal_detail: detail, ...block } = port.sheet({ opponent: state.opponent, flags, trapping });
       requests += 1;
       const code = block.source.refusal;
       if (code !== undefined) {
         refused += 1;
-        byCode.set(code, (byCode.get(code) ?? 0) + 1);
+        const key = detail ?? code;
+        byCode.set(key, (byCode.get(key) ?? 0) + 1);
       }
       return block;
     },
@@ -157,7 +159,22 @@ export const sheetStatement = (setup: Pick<SheetSetup, "port">): { feature_set: 
 export const SHEET_FEATURE_SET = "opponent-sheet/1";
 
 /** Builds the port of the composition root for a vocabulary, reader and pin. */
-export type BeliefFeaturesFactory = (context: { readonly engine: Engine; readonly vocabulary: TeamVocabulary; readonly reader_sha256: string; readonly manifest: VersionManifest }) => BeliefFeaturesPort;
+export type BeliefFeaturesFactory = (context: BeliefFeaturesFactoryContext) => BeliefFeaturesPort;
+
+/** What the factory builds a port for; `evidence: "none"` selects the uninformative mode (#1309), which has its own hashes. */
+export interface BeliefFeaturesFactoryContext {
+  readonly engine: Engine;
+  readonly vocabulary: TeamVocabulary;
+  readonly reader_sha256: string;
+  readonly manifest: VersionManifest;
+  readonly evidence?: BeliefEvidenceMode;
+}
+
+/** The evidence modes a run config can name by the hash of its source: the informative belief (absent) and the prior alone. */
+export type BeliefEvidenceMode = "none";
+
+/** The modes to try, in order, when a run config names a hash: the informative belief first (undefined), then the uninformative one. */
+export const BELIEF_EVIDENCE_MODES: readonly (BeliefEvidenceMode | undefined)[] = [undefined, "none"];
 
 /** A channel that does not end in a request cannot be given a block. */
 export class SheetInputError extends Error {

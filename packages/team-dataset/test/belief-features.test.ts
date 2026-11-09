@@ -5,14 +5,14 @@ import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { OPPONENT_SHEET_FORMAT, SHEET_K, sheetFeatureSetHash } from "@areneon/opponent-model";
+import { OPPONENT_SHEET_FORMAT, SHEET_K, sheetFeatureSetHash, uninformativeOpponent } from "@areneon/opponent-model";
 import { createSheetBuilder, loadRulesSnapshot, readOpponentSheet, refusedSharePpm, resolveFormat, teamVocabularyHash } from "@areneon/showdown-bridge";
 import { afterAll, describe, expect, it } from "vitest";
 import { readerSha256 } from "../../public-state/src/index.ts";
 import { checkScenario } from "../../showdown-bridge/src/mechanics-scenario.ts";
 import { loadMechanicsConfig } from "../../showdown-bridge/src/mechanics-config.ts";
 import { goldenTeamVocabulary } from "../../showdown-bridge/src/golden.ts";
-import { cases } from "../../showdown-bridge/test/world-builder-support.ts";
+import { cases, casesOf, extraBattles } from "../../showdown-bridge/test/world-builder-support.ts";
 import { createBeliefFeatures, evidenceKey } from "../src/belief-features.ts";
 import { SearchWorldsError, searchWorldsFiles } from "../src/search-worlds.ts";
 import { engine, FORMAT } from "./support.ts";
@@ -38,7 +38,7 @@ describe("the port", () => {
     expect(port.k).toEqual(SHEET_K);
     expect(port.features_hash).toBe(sheetFeatureSetHash(port.identity_hash, SHEET_K));
     expect(port.features_hash).not.toBe(port.identity_hash);
-    expect(OPPONENT_SHEET_FORMAT).toBe("opponent-sheet-builder/1");
+    expect(OPPONENT_SHEET_FORMAT).toBe("opponent-sheet-builder/2");
   });
 
   it("a k value, the belief identity or the reader changes the feature set hash", () => {
@@ -72,6 +72,16 @@ describe("the builder over the committed random-play channels", () => {
       expect(b.slots.length).toBe((decisions[i] as (typeof decisions)[number]).input.state.opponent.roster.length);
     });
   });
+
+  it("sweep: every block of every random-play request and of every fifth request of the unavailable and search-fidelity battles passes the reader (slots_known never exceeds the moves held at 1,000,000 ppm)", () => {
+    const sweepBuilder = createSheetBuilder({ engine, vocabulary, port: portOf(), scenario_id });
+    const all = [...cases(), ...casesOf(extraBattles()).filter((_, i) => i % 5 === 0)];
+    expect(all.length).toBeGreaterThan(1000);
+    for (const c of all) {
+      const b = sweepBuilder.build({ request: c.input.request, team: c.input.team, state: c.input.state, flags: c.input.flags });
+      expect(() => readOpponentSheet(b), c.id).not.toThrow();
+    }
+  }, 600_000);
 
   it("a flagged request is a refused block with the fixed code, counted; every other block is predicted or revealed", () => {
     const counts = builder.counts();
@@ -127,6 +137,57 @@ describe("the memo", () => {
     const hurt = structuredClone(o);
     (hurt.roster[0] as (typeof hurt.roster)[number]).hp_num = 3;
     expect(evidenceKey(hurt, [])).toBe(evidenceKey(o, []));
+  });
+});
+
+describe("the memo and the engine-sent sheet", () => {
+  const c = decisions.find((d) => d.input.flags.length === 0 && d.input.state.turn > 0) as (typeof decisions)[number];
+  const blank = uninformativeOpponent(c.input.state.opponent);
+  const entry = (id: string) => vocabulary.roster.find((r) => r.id === id) as (typeof vocabulary.roster)[number];
+  /** An open-sheet opponent: the same preview, every Pokemon built with its own plain item and four moves of its pool from `shift` on (the first four where the pool is short). */
+  const stones = new Set(vocabulary.roster.flatMap((r) => (r.required_item === undefined ? [] : [r.required_item])));
+  const plain = vocabulary.items.filter((id) => !stones.has(id));
+  const built = (shift: number) => ({
+    ...structuredClone(blank),
+    sheet: blank.roster.map((m, i) => {
+      const e = entry(m.base_species);
+      return { species: e.id, item: plain[i] as string, ability: e.abilities[0] as string, moves: e.moves.length > shift + 3 ? e.moves.slice(shift, shift + 4) : e.moves.slice(0, 4), nature: "serious", gender: null, level: 50 };
+    }),
+  });
+
+  it("the key holds the sheet per slot: another build is another key, the order of the moves is not", () => {
+    const a = built(0);
+    const b = built(1);
+    expect(a.sheet.some((s, i) => JSON.stringify(s.moves) !== JSON.stringify((b.sheet[i] as (typeof b.sheet)[number]).moves))).toBe(true); // the pair really differs
+    expect(evidenceKey(a, [])).not.toBe(evidenceKey(b, []));
+    expect(evidenceKey(a, [])).not.toBe(evidenceKey(blank, []));
+    const flipped = structuredClone(a);
+    flipped.sheet.forEach((s) => s.moves.reverse());
+    expect(evidenceKey(flipped, [])).toBe(evidenceKey(a, []));
+    (flipped.sheet[0] as (typeof flipped.sheet)[number]).nature = "bold";
+    expect(evidenceKey(flipped, [])).not.toBe(evidenceKey(a, []));
+  });
+
+  it("two builds of one Team Preview never share a cached block or inclusions", () => {
+    const port = portOf();
+    const a = built(0);
+    const b = built(1);
+    const first = port.sheet({ opponent: a, flags: [] });
+    const second = port.sheet({ opponent: b, flags: [] });
+    expect(JSON.stringify(second)).not.toBe(JSON.stringify(first));
+    expect(JSON.stringify(second)).toBe(JSON.stringify(portOf().sheet({ opponent: b, flags: [] })));
+    expect(JSON.stringify(port.moveInclusions({ opponent: b, flags: [] }))).toBe(JSON.stringify(portOf().moveInclusions({ opponent: b, flags: [] })));
+    expect(JSON.stringify(port.moveInclusions({ opponent: a, flags: [] }))).not.toBe(JSON.stringify(port.moveInclusions({ opponent: b, flags: [] })));
+  });
+
+  it("a reveal the sheet cannot hold is a refused block with the sheet detail (counted apart), not a throw", () => {
+    const o = built(0);
+    const at = o.roster.findIndex((m) => entry(m.base_species).moves.length > 4);
+    const extra = entry((o.roster[at] as (typeof o.roster)[number]).base_species).moves.find((m) => !(o.sheet[at] as (typeof o.sheet)[number]).moves.includes(m)) as string;
+    (o.roster[at] as (typeof o.roster)[number]).moves_revealed = [extra];
+    const block = portOf().sheet({ opponent: o, flags: [] });
+    expect(block.source.refusal).toBe("evidence_has_no_support");
+    expect(block.refusal_detail).toBe("sheet_disagrees");
   });
 });
 

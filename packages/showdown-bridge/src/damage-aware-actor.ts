@@ -37,7 +37,7 @@ import { type ParsedMechanicsQuery } from "./mechanics-query.ts";
 import { randomBelow, type RandomLegalState, randomLegal } from "./random-legal.ts";
 import { loadRulesSnapshot } from "./rules-load.ts";
 import type { RulesSnapshot } from "./rules.ts";
-import type { Actor, ActorContext, Player, RequestRecord } from "./runner.ts";
+import { type Actor, type ActorContext, declareReadsLegal, type Player, type RequestRecord } from "./runner.ts";
 import type { TeamVocabulary } from "./team-vocabulary.ts";
 
 export { DamageAwareError };
@@ -382,7 +382,7 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
     }
   }
 
-  const actor: Actor = (request, context) => decide(request, context);
+  const actor: Actor = declareReadsLegal((request, context) => decide(request, context), true);
   return Object.assign(actor, {
     report: (): DamageAwareReport => ({
       policy_id,
