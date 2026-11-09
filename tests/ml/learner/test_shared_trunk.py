@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -37,6 +38,7 @@ from areneon_ml.model.network import (
     shared_trunk_of,
     tie_trunk,
 )
+from areneon_ml.model.options import OPPONENT_SHEET, read_options
 from areneon_ml.model.scorer import NetworkScorer, ScorerError
 
 from tests.ml.learner.support import edited_config, learner, networks, tiny_config
@@ -301,3 +303,17 @@ def test_the_target_kl_stop_is_joint() -> None:
     runs = {r.epochs_run for r in report.roles.values()}
     assert runs == {1}
     assert all(r.kl_stopped for r in report.roles.values())
+
+
+def test_every_trunk_key_is_tied_with_opponent_sheet() -> None:
+    """``tie_trunk`` ties exactly the keys ``trunk_keys`` names, the sheet embedding included."""
+    sheet = {"feature_set": "opponent-sheet/1", "feature_set_hash": "a" * 64}
+    base = shared_config().model
+    options = read_options("encoder", {OPPONENT_SHEET: sheet})
+    config = replace(base, encoder=replace(base.encoder, options=options))
+    battle = init_network("battle", game(), config, 1)
+    preview = init_network("preview", game(), config, 2)
+    assert any(k.startswith("sheet_other.") for k in battle.trunk_keys())
+    tie_trunk(battle, preview)
+    check_shared_trunk({"battle": battle, "preview": preview})
+    assert battle.sheet_other is preview.sheet_other

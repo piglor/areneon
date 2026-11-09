@@ -19,6 +19,10 @@ from areneon_ml.progress.records import (
     DAMAGE_AWARE_LABEL,
     SEARCH_LABEL,
     SEARCH_PRIOR_LABEL,
+    SOLVE_CONTROL_LABEL,
+    SOLVE_EVIDENCE_NOTE,
+    SOLVE_LABEL,
+    SOLVE_PRIOR_LABEL,
 )
 from areneon_ml.progress.run import VersusSpec, progress_generation
 
@@ -288,6 +292,42 @@ def search_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
     player = FakeProgressPlayer(config, committed_manifest(run, 0), make_consistent, previous=False)
     progress_generation(run, 1, root, player, GAMES, GAMES, (), 4, search_mode="argmax")
     return root
+
+
+@pytest.fixture(scope="module")
+def solve_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Generation 1 evaluated with the Team Preview solver as the candidate (ADR-029 section 8)."""
+    base = tmp_path_factory.mktemp("progress-solve")
+    run = base / "run"
+    config = make_run(run, generations=2)
+    root = base / "run.progress"
+    player = FakeProgressPlayer(config, committed_manifest(run, 0), make_consistent, previous=False)
+    progress_generation(run, 1, root, player, GAMES, GAMES, (), 4, preview_solve="argmax")
+    return root
+
+
+def test_a_solver_game_says_what_it_is_and_the_control_game_names_its_opponent(
+    solve_root: Path,
+) -> None:
+    first = games(solve_root, 1, match="psolve-self-no-solve-argmax", games=[0])[0]
+    text = page(first)
+    assert SOLVE_LABEL in text
+    assert SOLVE_PRIOR_LABEL in text
+    assert SOLVE_EVIDENCE_NOTE in text
+    assert "the same frozen pair without the solver" in text
+    assert SOLVE_CONTROL_LABEL in text
+    counts = first.solve["counts"]  # type: ignore[index]
+    assert (
+        f"{counts['decisions']} decisions of which {counts['solved']} Team Previews solved" in text
+    )
+    assert first.opponent_solve is not None
+    other = games(solve_root, 1, match="psolve-actor-rule-argmax", games=[0])[0]
+    assert other.opponent_solve is None
+    assert "the scripted baseline" in page(other)
+    index = html.unescape(
+        page_module.index_page([(1, "psolve-actor-rule-argmax", 0)], both_seats=[1])
+    )
+    assert SOLVE_LABEL in index
 
 
 def test_a_search_game_says_what_it_is_and_the_control_game_names_its_opponent(
