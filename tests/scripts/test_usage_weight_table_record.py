@@ -17,6 +17,9 @@ ROOT = Path(__file__).resolve().parents[2]
 FORMAT = "gen9championsvgc2026regmc"
 TABLE = ROOT / "config" / "teams" / FORMAT / "usage" / "2026-09-1630.json"
 INPUTS = ROOT / "config" / "opponent-model" / FORMAT / "smogon-chaos.2026-09-1630.inputs.json"
+LATER = ROOT / "config" / "teams" / FORMAT / "usage" / "2026-10-1630.json"
+LATER_INPUTS = ROOT / "config" / "opponent-model" / FORMAT / "smogon-chaos.2026-10-1630.inputs.json"
+LATER_HASH = "95d814d0d655c8a200d156c1f903560d5cc204b260770e792eacc4f44533d1fd"
 VOCABULARY = json.loads(
     (ROOT / "fixtures" / "showdown" / FORMAT / "team-vocabulary.json").read_text(encoding="utf-8")
 )
@@ -44,3 +47,18 @@ def test_the_sources_are_the_input_records_files() -> None:
     assert got == wanted
     assert (table["month"], table["cutoff"]) == (record["month"], record["cutoff"])
     assert (TABLE.parent / "2026-09-1630.NOTICE.txt").is_file()
+
+
+def test_the_later_month_table_is_pinned_and_sourced_from_its_own_input_record() -> None:
+    """The 2026-10 table (#1134): the later month of the usage-shaped held-out set."""
+    table = json.loads(LATER.read_text(encoding="utf-8"))
+    assert LATER.read_bytes() == jcs(table) + b"\n"
+    assert usage_table_hash(table) == LATER_HASH
+    read_usage_weight_table(table, VOCABULARY)
+    record = json.loads(LATER_INPUTS.read_text(encoding="utf-8"))
+    got = {s["source_id"]: (s["url"], s["size"], s["sha256"]) for s in table["sources"]}
+    wanted = {f["source_id"]: (f["url"], f["size"], f["sha256"]) for f in record["files"]}
+    assert got == wanted
+    assert (table["month"], table["cutoff"]) == ("2026-10", 1630)
+    assert all(u.startswith("https://www.smogon.com/stats/2026-10/") for u, _, _ in got.values())
+    assert (LATER.parent / "2026-10-1630.NOTICE.txt").is_file()

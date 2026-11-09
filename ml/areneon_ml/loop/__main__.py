@@ -97,6 +97,8 @@ from areneon_ml.progress.scripted import ARMS as SCRIPTED_ARMS
 from areneon_ml.progress.scripted import ScriptedError, ScriptedRequest, scripted_h2h
 from areneon_ml.report.command import report_run
 from areneon_ml.report.dominated import progress_diagnostics
+from areneon_ml.report.situational import SituationalError
+from areneon_ml.report.situational_run import situational_generation
 
 EXIT_REFUSED = 3
 EXIT_PLAY = 4
@@ -364,6 +366,21 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     progress = commands.add_parser("progress", help="progress evaluation of a committed generation")
     progress.add_argument("--run-dir", type=Path, required=True)
+    progress.add_argument(
+        "--situational",
+        action="store_true",
+        help="also run the situational move-use diagnostic (engine re-simulation of every stored "
+        "game, minutes, nice 19): the summary goes to <progress root>.situational/ and its "
+        "Protect and switch rates into the printed result. It runs after the generation is "
+        "committed: a failure exits 3 with the progress record already in place, "
+        "and a rerun is safe",
+    )
+    progress.add_argument(
+        "--situational-max-games",
+        type=int,
+        help="at most this many stored games per match for --situational (the summary is "
+        "g<N>.max<M>.json, so a capped run never overwrites a full one)",
+    )
     which = progress.add_mutually_exclusive_group(required=True)
     which.add_argument("--generation", type=int, help="the generation to evaluate")
     which.add_argument(
@@ -539,7 +556,7 @@ def _generation_list(text: str) -> tuple[int, ...]:
         raise argparse.ArgumentTypeError("--anchors takes comma-separated integers") from exc
 
 
-def _progress(args: argparse.Namespace) -> dict[str, object]:
+def _progress(args: argparse.Namespace) -> dict[str, object]:  # noqa: PLR0912
     run_dir = args.run_dir.resolve()
     config = read_run_config(layout.read_json(run_dir / layout.CONFIG))
     game = GameData.from_table(json.loads(args.engine_data.read_text(encoding="utf-8")))
@@ -554,6 +571,8 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
     )
     if args.preview_ablation and args.all:
         raise ProgressError("--preview-ablation needs --generation, not --all")
+    if args.situational_max_games is not None and not args.situational:
+        raise ProgressError("--situational-max-games needs --situational")
     if args.damage_aware_budget_minutes is not None and not args.damage_aware:
         raise ProgressError("--damage-aware-budget-minutes needs --damage-aware")
     if args.damage_aware_version is not None and not args.damage_aware:
@@ -632,6 +651,19 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
         number = int(result["generation"])
         # one pass over the stored games, one parsed game alive at a time
         result["move_use"], result["dominated"] = progress_diagnostics(root, number, config)
+    if args.situational:  # opt-in (#1286): outside the manifest, never part of a hash
+        for result in done:
+            try:
+                result["situational"] = situational_generation(
+                    root,
+                    int(result["generation"]),
+                    run_dir,
+                    repo=REPO,
+                    node=args.node,
+                    max_games=args.situational_max_games,
+                )
+            except SituationalError as exc:
+                raise ProgressError(f"--situational: {exc}") from exc
     # Everything above succeeded, so a validation result is about to be shown: log the look.
     looks = [
         Look(int(r["generation"]), str(m["match_id"]), int(m["games"]), args.evaluation_key)

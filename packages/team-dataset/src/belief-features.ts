@@ -9,7 +9,7 @@
 // whether any line was flagged). The memo is bypassed whenever the trapping check observes something: it then depends on the
 // player's own side, which the key does not hold. Memoised and recomputed blocks are equal (a test).
 
-import { belief, EVIDENCE_NONE, moveInclusions, opponentSheet, refusedSheet, SHEET_K, sheetFeatureSetHash, sheetRefusalOf, slotEvidence, uninformativeIdentityHash, uninformativeOpponent } from "@areneon/opponent-model";
+import { belief, EVIDENCE_NONE, moveInclusions, opponentSheet, refusedSheet, SHEET_K, sheetFeatureSetHash, sheetRefusalDetail, sheetRefusalOf, slotEvidence, uninformativeIdentityHash, uninformativeOpponent } from "@areneon/opponent-model";
 import type { BeliefFeaturesPort, BeliefThreatsPort, SheetKValues } from "@areneon/showdown-bridge";
 import { type SearchWorldsContext, type SearchWorldsFiles, armParts, searchWorldsFiles } from "./search-worlds.ts";
 
@@ -33,7 +33,9 @@ type SheetArgs = Parameters<BeliefFeaturesPort["sheet"]>[0];
 
 /** The canonical evidence projection of an opponent half: the key the memo uses. */
 export function evidenceKey(opponent: SheetArgs["opponent"], flags: SheetArgs["flags"]): string {
-  return JSON.stringify([flags.length > 0, opponent.roster.map((mon) => [slotEvidence(mon), mon.phantom === true, mon.base_species])]);
+  // The engine-sent sheet (open-sheet formats) is evidence of its own: two games with the same preview and different builds must not share a block.
+  const sheet = opponent.sheet?.map((s) => [s.species, s.item, s.ability, [...s.moves].sort(), s.nature, s.gender, s.level]) ?? null;
+  return JSON.stringify([flags.length > 0, opponent.roster.map((mon) => [slotEvidence(mon), mon.phantom === true, mon.base_species]), sheet]);
 }
 
 /**
@@ -43,13 +45,13 @@ export function evidenceKey(opponent: SheetArgs["opponent"], flags: SheetArgs["f
 const readerRefuses = (input: { readonly opponent: SheetArgs["opponent"]; readonly flags: SheetArgs["flags"] }): boolean => input.flags.length > 0 || input.opponent.roster.some((mon) => mon.phantom === true);
 
 /** Run `run`; a refusal of the model (a code a consumer falls back on) becomes `otherwise(code)`, a defect of the run throws. */
-function refusing<T>(run: () => T, otherwise: (code: NonNullable<ReturnType<typeof sheetRefusalOf>>) => T): T {
+function refusing<T>(run: () => T, otherwise: (code: NonNullable<ReturnType<typeof sheetRefusalOf>>, detail: string | null) => T): T {
   try {
     return run();
   } catch (error) {
     const code = sheetRefusalOf(error);
     if (code === null) throw error;
-    return otherwise(code);
+    return otherwise(code, sheetRefusalDetail(error));
   }
 }
 
@@ -107,7 +109,7 @@ export function createBeliefFeatures(context: BeliefFeaturesContext, files: Sear
       if (hit !== undefined) return structuredClone(hit);
       const block = refusing(
         () => opponentSheet(belief({ prior, vocabulary: view, config: beliefConfig, opponent, flags, trapping }), opponent, features_hash, k),
-        (code) => refusedSheet(opponent, code, features_hash),
+        (code, detail) => (detail === null ? refusedSheet(opponent, code, features_hash) : { ...refusedSheet(opponent, code, features_hash), refusal_detail: detail }),
       );
       if (key !== null) remember(memo, key, structuredClone(block));
       return block;
