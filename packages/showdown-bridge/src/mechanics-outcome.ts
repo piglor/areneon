@@ -57,17 +57,20 @@ class HitStepReached extends Error {
   }
 }
 
-/** The chance of a list of `randomChance` draws, in parts per million, rounded down: the exact product of the engine's own pairs. */
+/** The chance of a list of draws, in parts per million, rounded down: the exact product of the engine's own `randomChance` pairs (the caller has refused any other draw). */
 function chancePpm(draws: readonly Draw[]): number {
   let numerator = 1n;
   let denominator = 1n;
   for (const entry of draws) {
-    if (entry.kind !== "randomChance" || entry.denominator <= 0) throw new Error("not a chance draw");
+    if (entry.kind !== "randomChance") continue;
     numerator *= BigInt(Math.max(0, Math.min(entry.numerator, entry.denominator)));
     denominator *= BigInt(entry.denominator);
   }
   return Number((numerator * BigInt(MILLION)) / denominator);
 }
+
+/** A target the accuracy step never met: not hit. */
+const NOT_HIT = { draws: [] as Draw[], hit: false };
 
 const fails = (): Outcome => ({ kind: "computed", answer: { kind: "move_outcome", precondition: "fails", precondition_ppm: 0, hit_ppm: 0 } });
 
@@ -145,11 +148,7 @@ export function probeMoveOutcome(engine: Engine, scenarioId: string, query: Move
     try {
       battle.actions.useMoveInner((asked as { own: Queued & { moveid?: string } }).own.moveid as string, user, { target: target as OutcomeMon });
     } catch (error) {
-      if (!(error instanceof HitStepReached)) {
-        // A member of the engine's random source the recorder does not answer (`sample`, `shuffle`) hands the engine a number where it wants an object.
-        if (recorder.draws.some((entry) => entry.kind === "other")) return { kind: "unsupported", reason: "random_effect", position: query.asked };
-        throw error;
-      }
+      if (!(error instanceof HitStepReached)) throw error;
       reached = error.reached;
     }
     if (recorder.draws.some((entry) => entry.kind !== "randomChance")) return { kind: "unsupported", reason: "random_effect", position: query.asked };
@@ -157,12 +156,11 @@ export function probeMoveOutcome(engine: Engine, scenarioId: string, query: Move
     let hitPpm = MILLION;
     if (reached.targets !== null) {
       // The engine aims a move of its own side at the user whatever target the query names.
-      const own = reached.targets.get(target) ?? reached.targets.get(user);
-      if (own === undefined) return fails();
+      const own = reached.targets.get(target) ?? reached.targets.get(user) ?? NOT_HIT;
       hitPpm = own.hit ? chancePpm(own.draws) : 0;
     }
     const preconditionPpm = chancePpm(reached.pre);
-    const precondition = preconditionPpm === 0 ? "fails" : preconditionPpm === MILLION ? "passes" : "chance";
+    const precondition = preconditionPpm === MILLION ? "passes" : "chance";
     return { kind: "computed", answer: { kind: "move_outcome", precondition, precondition_ppm: preconditionPpm, hit_ppm: hitPpm } };
   } catch (error) {
     if (error instanceof RandomDraw) return { kind: "unsupported", reason: "random_effect", position: at };

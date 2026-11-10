@@ -111,6 +111,17 @@ describe("Protect: the stall counter and the action still to come", () => {
     expect(answer(protect({ stall_counter: known(0) }))).toEqual(PASSES);
   });
 
+  it("is aimed at the user whatever target the query names: a move of its own side has no foe target", () => {
+    expect(answer({ actions: [move(0, "protect"), tackle], target: { side: 1, position: 0 } })).toEqual(PASSES);
+  });
+
+  it("Wide Guard, a move of a side, has no accuracy step: its first hit is its hit step, and it reads the stall counter and the queue as Protect does", () => {
+    const guard = (own_history?: unknown, others = [tackle]) => ({ actions: [move(0, "wideguard"), ...others], target: { side: 0, position: 0 }, ...(own_history === undefined ? {} : { own_history }) });
+    expect(answer(guard())).toEqual(PASSES);
+    expect(answer(guard({ stall_counter: known(3) }))).toEqual({ precondition: "chance", precondition_ppm: 333_333, hit_ppm: 1_000_000 });
+    expect(answer(guard(undefined, []))).toEqual(FAILS);
+  });
+
   it("fails when no action remains after it", () => {
     expect(answer(protect(undefined, []))).toEqual(FAILS);
     // an action that went before it leaves nothing queued either: the foe's switch comes first
@@ -247,6 +258,13 @@ describe("the declared history is in the engine's fields", () => {
     // a volatile that has run out is a refusal
     const over = resolveHistory(fields({ volatiles: known([{ id: "taunt", started_turn: 1, after_residual: false, moved_before: false }]) }, { turn: 9 }).q as MechanicsQuery["query"], new Set()).history;
     expect(() => declaredOutcomeScenario(engine, scenario, q, sets, { resolved: over as never, stall: "stall" })).toThrow(MechanicsProbeError);
+  });
+
+  it("builds the scenario with no history at all as the declared state alone", () => {
+    const q = built(undefined);
+    const sets = [q.sides[0][0]?.set, q.sides[1][0]?.set].map((paste) => importPaste(engine, paste as string)[0] as PokemonSet);
+    const battle: any = declaredOutcomeScenario(engine, scenario, q, sets, null);
+    expect(battle.sides[0].pokemon[0].timesAttacked).toBe(0);
   });
 
   it("changes nothing when the history declares nothing", () => {
