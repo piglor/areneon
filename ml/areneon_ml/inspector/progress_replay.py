@@ -41,6 +41,7 @@ from areneon_ml.progress.records import (
     check_game_baseline,
     check_game_search,
     check_game_solve,
+    game_manifest,
     is_v2,
     preview_variant,
     read_game_record,
@@ -243,7 +244,7 @@ def _check_game(
         or record["generation"] != progress["generation"]
         or f"{record['match_id']}-{record['game']}.json" != name
         or record["match_id"] != match["match_id"]
-        or record["version_manifest"] != progress["version_manifest"]
+        or record["version_manifest"] != game_manifest(progress, match)
     ):
         raise InspectError(f"games/{name} is not the game it is named for")
     if record_hash(record) not in match["game_record_hashes"]:
