@@ -14,7 +14,8 @@ from typing import Any
 from .sheet import SheetMon
 
 # 2: `recent` per Pokemon, `condition_turns` per side, `elapsed` on the field (#1013).
-STATE_SCHEMA_VERSION = 2
+# 3: `history`, the history facts of `history.py` (ADR-022 E-22.5.2), with the engine's data.
+STATE_SCHEMA_VERSION = 3
 STAT_KEYS = ("atk", "def", "spa", "spd", "spe", "accuracy", "evasion")
 
 
@@ -207,9 +208,12 @@ class BattleState:
     winner: str | None = None
     own: SideState = field(default_factory=lambda: SideState(player=""))
     opponent: SideState = field(default_factory=lambda: SideState(player=""))
+    # The history facts (`history.HistoryTracker`), live while lines are fed; None when the
+    # engine's data for this pin has none. Position-keyed like the engine's own fields.
+    history: Any = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        document = {
             "schema_version": STATE_SCHEMA_VERSION,
             "player": self.player,
             "format_name": self.format_name,
@@ -235,3 +239,8 @@ class BattleState:
             "own": self.own.to_dict(self.turn),
             "opponent": self.opponent.to_dict(self.turn),
         }
+        if (
+            self.history is not None
+        ):  # only an engine with the data says so: other states keep their keys
+            document["history"] = self.history.facts()
+        return document
