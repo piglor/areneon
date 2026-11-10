@@ -28,6 +28,8 @@ from areneon_ml.progress.records import (
     SOLVE_LATENCY_INVALID,
     SOLVE_PRIOR_LABEL,
 )
+from areneon_ml.progress.team_sheets import OPEN_LABEL
+from areneon_ml.progress.team_sheets import VIEW_LABEL as TEAM_SHEETS_LABEL
 from areneon_ml.report.charts import Pt, Series, Stack, Tips, line_chart, stacked_chart
 from areneon_ml.report.dominated import INTERVAL_LABEL as DOMINATED_INTERVAL_LABEL
 from areneon_ml.report.dominated import LABEL as DOMINATED_LABEL
@@ -299,7 +301,11 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:  # noqa: PLR0915
                         )
             if pts:
                 series.append(Series(mode, slot, shape, tuple(pts)))
-        title = f"Score vs {stem}" + (f" ({seen_label})" if seen_label else "")
+        title = (
+            f"Score vs {stem}"
+            + (f" ({seen_label})" if seen_label else "")
+            + (" (open-sheet format)" if stem.startswith("open-") else "")
+        )
         charts.append(
             line_chart(
                 title,
@@ -326,6 +332,11 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:  # noqa: PLR0915
                     str(g),
                     esc(m.match_id)
                     + (f' <span class="muted">({esc(m.seen_label)})</span>' if m.seen_label else "")
+                    + (
+                        f' <span class="muted">({esc(OPEN_LABEL)})</span>'
+                        if m.team_sheets == "open"
+                        else ""
+                    )
                     + (f' <span class="muted">({esc(SEARCH_LABEL)})</span>' if m.search else "")
                     + (f' <span class="muted">({esc(SOLVE_LABEL)})</span>' if m.solve else "")
                     + (
@@ -369,6 +380,7 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:  # noqa: PLR0915
         ).replace('<td class="txt">', '<td class="txt">')
     )
     out.append(_gap_section(model, done))
+    out.append(_team_sheets_section(model, done))
     out.append(_anchor_section(model, done))
     out.append(_damage_aware_section(model, done))
     out.append(_search_section(model, done))
@@ -1324,6 +1336,45 @@ def _gap_section(model: ReportModel, done: list[int]) -> str:
     if unavailable:
         out.append(f'<p class="muted">{esc("; ".join(unavailable))}.</p>')
     return "".join(out)
+
+
+def _team_sheets_section(model: ReportModel, done: list[int]) -> str:
+    """The closed-versus-open row of each generation (ADR-027 section 8): the score against the
+    damage-aware baseline in the closed (target) and in the open-sheet format, side by side, each
+    with its own pair-level interval. Descriptive; no difference and no combined score."""
+    rows = []
+    for g in done:
+        for r in model.progress[g].team_sheets.get("rows", []):
+            closed, opened = r["closed"], r["open"]
+            rows.append(
+                [
+                    str(g),
+                    esc(r["opponent"]),
+                    esc(r["mode"]),
+                    str(r["pairs"]),
+                    f"{pct(closed['score_ppm'])} ({pct(closed['low_ppm'], down=True)} to "
+                    f"{pct(closed['high_ppm'], up=True)})",
+                    f"{pct(opened['score_ppm'])} ({pct(opened['low_ppm'], down=True)} to "
+                    f"{pct(opened['high_ppm'], up=True)})",
+                ]
+            )
+    if not rows:
+        return ""
+    return (
+        f'<h3>Closed versus open team sheets</h3><p class="note">{esc(TEAM_SHEETS_LABEL)}.</p>'
+        + _table(
+            [
+                ("Generation", True),
+                ("Opponent", False),
+                ("Mode", False),
+                ("Pairs", True),
+                ("Closed format (target)", True),
+                ("Open-sheet format", True),
+            ],
+            rows,
+            f"{OPEN_LABEL}. Each score has its own pair-level interval ({PAIRS}).",
+        )
+    )
 
 
 def _anchor_section(model: ReportModel, done: list[int]) -> str:

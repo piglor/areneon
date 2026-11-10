@@ -25,6 +25,8 @@ import { EVAL_DATASET_FLAGS, readEvalDataset, withEvalDataset } from "./eval-dat
 import { type ExtraMode, type ProgressMode, type ProgressPool, ProgressError, playProgress, writeProgress, PROGRESS_MODES, DAMAGE_AWARE_VERSIONS, type DamageAwareVersion } from "./progress-evaluation.ts";
 import { ProgressModeError, parseExtraMode } from "./progress-modes.ts";
 import { progressRecordHash } from "./progress-records.ts";
+import { loadRulesSnapshot } from "./rules-load.ts";
+import { sheetVariantPairs } from "./sheet-variants.ts";
 import { readTrainingRunConfig, runConfigHash, type TrainingRunConfig } from "./training-run-config.ts";
 
 export { UsageError };
@@ -89,8 +91,12 @@ const FLAGS = {
   // closed grammar of `progress-modes.ts` (`sample:t500000`, `sample:th30000`, `sample:t500000:th30000`); the third part is the other
   // run's pair's policy id in that mode, given exactly with `--versus`.
   "extra-mode": { type: "string", multiple: true },
+  // The open-sheet format (ADR-027 section 5a, ADR-017 erratum E4): `open` also plays an open twin (`open-<match id>`) of every match
+  // against a scripted baseline or another run's pair, on the same pairs, seeds and seats; the open format is the engine's open-sheet
+  // variant of the run's format, read from the rules snapshot.
+  "team-sheets": { type: "string" },
 } as const;
-const OPTIONAL = new Set<string>(["extra-mode", "previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "versus", "versus-dir", "versus-encoder-version", "versus-team-set", "versus-engine-data", "run-games", "ablation-preview", "ablation-random-policy-id", "damage-aware-budget-ms", "damage-aware-version", "eval-dataset-dir", "eval-dataset-hash", "evaluation-key", "search-mode", "preview-solve"]);
+const OPTIONAL = new Set<string>(["extra-mode", "previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "versus", "versus-dir", "versus-encoder-version", "versus-team-set", "versus-engine-data", "run-games", "ablation-preview", "ablation-random-policy-id", "damage-aware-budget-ms", "damage-aware-version", "eval-dataset-dir", "eval-dataset-hash", "evaluation-key", "search-mode", "preview-solve", "team-sheets"]);
 const VERSUS = ["versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games"] as const;
 const PREVIOUS = ["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax"] as const;
 
@@ -270,10 +276,18 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
     console.error("progress: the run config names no team dataset: a progress evaluation needs the validation split of one");
     return 1;
   }
+  if (values["team-sheets"] !== undefined && values["team-sheets"] !== "open") throw new UsageError("--team-sheets must be open (closed is what an evaluation plays without it)");
+  if (values["team-sheets"] !== undefined && (ablationParts !== undefined || searchMode !== undefined || solveMode !== undefined || anchorSpecs.length > 0 || given.length > 0)) throw new UsageError("open-sheet matches are played against the scripted baselines and another run's pair: no Preview ablation, search, solver, anchors or previous generation");
   const evalDataset = readEvalDataset(values);
   if (evalDataset !== undefined && evalDataset.dataset_hash === config.team_dataset.dataset_hash) throw new UsageError("--eval-dataset-hash is the run's own training dataset: leave the option out to evaluate on its validation split");
   const teamSet = JSON.parse(readFileSync(need("team-set"), "utf8")) as { teams: string[] };
   const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
+  let openFormat: string | undefined;
+  if (values["team-sheets"] !== undefined) {
+    const found = sheetVariantPairs(loadRulesSnapshot(engine.commit)).filter((pair) => pair.closed === config.format_id);
+    if (found.length !== 1) throw new UsageError("--team-sheets open needs exactly one open-sheet variant of the run's format in the rules snapshot");
+    openFormat = (found[0] as { open: string }).open;
+  }
   const readRunTeams = ports.run_teams ?? ((): never => { throw new UsageError("this command cannot read the run's own teams: --eval-dataset-dir needs the team-dataset script"); });
   // An evaluation dataset must hold none of the run's own dev or training teams (not only those it drew into team-set.json).
   const runTeams = evalDataset === undefined ? new Set<string>() : readRunTeams(engine, config);
@@ -380,6 +394,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
       ...(damageBudget === undefined ? {} : { damage_aware: { setup: damageAwareSetup(engine, config.format_id, damageVersion as DamageAwareVersion), version: damageVersion as DamageAwareVersion, match_budget_ms: damageBudget } }),
       ...(values["evaluation-key"] === undefined ? {} : { evaluation_key: values["evaluation-key"] }),
       ...(extraModes.length === 0 ? {} : { extra_modes: extraModes }),
+      ...(openFormat === undefined ? {} : { open_format: openFormat }),
       ...(searchMode === undefined || ports.search === undefined ? {} : { search: { setup: ports.search(engine, config.format_id), mode: searchMode } }),
       ...(solveMode === undefined || ports.preview_solve === undefined ? {} : { preview_solve: { setup: ports.preview_solve(engine, config.format_id), mode: solveMode } }),
       pool,

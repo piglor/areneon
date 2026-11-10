@@ -100,6 +100,9 @@ SOLVE_EVIDENCE_NOTE = "solver results are never held-out evidence"
 #: What the ``self-no-solve`` opponent is: the same pair, no solver, same mode.
 SOLVE_CONTROL_LABEL = "control: the same frozen pair without the solver"
 SOLVE_PREFIX = "psolve-"
+#: The prefix of an open-sheet match's id (ADR-027 section 5a, ADR-017 erratum E4); the rest is
+#: the name of its closed twin.
+OPEN_PREFIX = "open-"
 #: The numeric counts of a Team Preview solver policy's game, in the record's order.
 SOLVE_COUNT_KEYS = (
     "decisions",
@@ -276,6 +279,76 @@ def _check_sheet_of_match(match: dict[str, Any], rows: list[dict[str, Any]]) -> 
         raise ProgressRecordError(str(exc)) from exc
     if read_sheet_counts(match["sheet"]) != sheet_total(parsed):
         raise ProgressRecordError(f"{name}: sheet must be the sum of the game rows' counts")
+
+
+def is_open(match: dict[str, Any]) -> bool:
+    """Whether a match was played in the open-sheet format (absent ``team_sheets`` is closed)."""
+    return match.get("team_sheets") == "open"
+
+
+def _check_team_sheets_of_match(match: dict[str, Any]) -> None:
+    """ADR-027 section 5a: ``team_sheets`` is absent for a closed match and never stated; an open
+    match is named ``open-<name>``, plays a scripted baseline or another run's pair and is no
+    search, solver, ablation or sheet-block match."""
+    name = match["match_id"]
+    if match.get("team_sheets") == "closed":
+        raise ProgressRecordError(f"{name}: team_sheets is absent for a closed match, never stated")
+    if is_open(match) != name.startswith(OPEN_PREFIX):
+        raise ProgressRecordError(
+            f"{name}: a match is named open-<name> exactly when it carries team_sheets: open"
+        )
+    if not is_open(match):
+        return
+    if match["opponent"]["kind"] not in ("baseline", "run"):
+        raise ProgressRecordError(
+            f"{name}: an open-sheet match plays a scripted baseline or another run's pair"
+        )
+    if (
+        "search" in match
+        or "solve" in match
+        or "sheet" in match
+        or match.get("candidate_preview") is not None
+    ):
+        raise ProgressRecordError(
+            f"{name}: an open-sheet match is not a search, solver, ablation or sheet-block match"
+        )
+
+
+def check_game_manifests(raw: dict[str, Any]) -> None:
+    """A record with open matches keeps the closed manifest in ``version_manifest`` and lists the
+    manifests of its games in ``game_manifests``: exactly the closed one and the open format's,
+    sorted by JCS bytes, one commit and regulation. A record without open matches has none."""
+    given = raw.get("game_manifests")
+    if any(is_open(m) for m in raw["matches"]) != (given is not None):
+        raise ProgressRecordError(
+            "game_manifests is present exactly when the record has open-sheet matches"
+        )
+    if given is None:
+        return
+    keys = [jcs(m).decode() for m in given]
+    if not _ascending(keys):
+        raise ProgressRecordError("game_manifests must be sorted by their JCS bytes, each once")
+    if jcs(raw["version_manifest"]).decode() not in keys:
+        raise ProgressRecordError("version_manifest must be one of game_manifests")
+    first, second = given
+    if first["format_id"] == second["format_id"]:
+        raise ProgressRecordError(
+            "game_manifests must hold two formats: the closed one and the open one"
+        )
+    if first["showdown_commit"] != second["showdown_commit"] or (
+        first["regulation"] != second["regulation"]
+    ):
+        raise ProgressRecordError("game_manifests must share one engine commit and one regulation")
+
+
+def game_manifest(record: dict[str, Any], match: dict[str, Any]) -> dict[str, Any]:
+    """The version manifest a match's games used: the record's closed one, or for an open match
+    the other manifest of ``game_manifests``."""
+    manifest: dict[str, Any] = record["version_manifest"]
+    if not is_open(match):
+        return manifest
+    (other,) = (m for m in record["game_manifests"] if m != manifest)
+    return dict(other)
 
 
 def _check_search_of_match(  # noqa: PLR0912
@@ -639,6 +712,8 @@ def _check_play(match: dict[str, Any], name: str) -> str:
 def _usual_name(match: dict[str, Any]) -> str:
     """The match id without a candidate prefix: the usual opponent-and-mode name."""
     name: str = match["match_id"]
+    if is_open(match):
+        return name.removeprefix(OPEN_PREFIX)
     if "search" in match:
         return name.removeprefix(SEARCH_PREFIX)
     if "solve" in match:
@@ -657,6 +732,7 @@ def _check_match_v2(  # noqa: PLR0913, PLR0917
     solve_identities: set[str],
 ) -> None:
     opponent = match["opponent"]
+    _check_team_sheets_of_match(match)
     _check_search_of_match(match, rows, search_identities)
     _check_solve_of_match(match, rows, solve_identities)
     _check_sheet_of_match(match, rows)
@@ -819,6 +895,7 @@ def _read_v2(raw: dict[str, Any], config: RunConfig | None) -> dict[str, Any]:
     if not _ascending(ids):
         raise ProgressRecordError("matches must be sorted by match_id, each once")
     _check_not_mixed(matches)
+    check_game_manifests(raw)
     by_match: dict[str, list[dict[str, Any]]] = {i: [] for i in ids}
     for row in games:
         if row["match_id"] not in by_match:

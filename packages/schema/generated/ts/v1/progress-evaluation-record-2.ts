@@ -50,6 +50,13 @@ export interface ProgressEvaluationRecordV2 {
   generation_manifest_sha256: string;
   checkpoints: Checkpoints;
   version_manifest: VersionManifest;
+  /**
+   * Only a record with open-sheet matches (ADR-027 section 5a, ADR-017 erratum E4): the version manifests of its games, the closed one (version_manifest) and the open format's, sorted by their JCS bytes. A match's games use the manifest its team_sheets names. A minor change within version 2: absent keeps every existing record's bytes; a reader older than the field rejects a record that carries it.
+   *
+   * @minItems 2
+   * @maxItems 2
+   */
+  game_manifests?: [VersionManifest, VersionManifest, ...VersionManifest[]];
   teams: Teams;
   plan: Plan;
   /**
@@ -178,6 +185,10 @@ export interface Match {
    * Names the match: <opponent>-<mode>, e.g. random-legal-sample or anchor-g10-sample; a cross-run match is run-<mode>. Unique in the record; names the stored game files.
    */
   match_id: string;
+  /**
+   * Only a match played in the open-sheet format (ADR-027 section 5a, ADR-017 erratum E4): open. Absent means the closed (target) format, so every existing match keeps its bytes; the writer never states closed. An open match is named open-<name of its closed twin> and its games use the open manifest of game_manifests; its score is never pooled with the closed match's. A minor change within version 2.
+   */
+  team_sheets?: "closed" | "open";
   /**
    * The candidate's policy id in this match's mode: policy: plus SHA-256 of the JCS of {preview, battle, mode, temperature, precision}; for a candidate_preview of kind random the preview is the word random-preview@v1, for kind generation that generation's Preview checkpoint id.
    */

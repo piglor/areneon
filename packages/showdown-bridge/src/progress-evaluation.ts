@@ -26,6 +26,9 @@ import { damageAwareIdentity, damageAwareIdentityHash, damageAwarePolicyId } fro
 import type { Engine, PokemonSet } from "./engine.ts";
 import { guardActor, type LatencyBudget, type PlayedGame } from "./evaluation-harness.ts";
 import { resolveFormat } from "./formats.ts";
+import { checkSheetVariants } from "./sheet-variants.ts";
+import { teamSheetsOf } from "./rules.ts";
+import { loadRulesSnapshot } from "./rules-load.ts";
 import { firstLegal } from "./golden.ts";
 import type { DamageAwareSetup } from "./league-generation.ts";
 import type { PlaySettings } from "./policy-protocol.ts";
@@ -33,7 +36,7 @@ import { type PolicyClient } from "./policy-worker.ts";
 import { type ActorFeatures, policyGame, type PolicySeat } from "./policy-actor.ts";
 import { type ExtraPlay, matchSuffix } from "./progress-modes.ts";
 import { PROGRESS_PAIRING, PROGRESS_SEED_DERIVATION, progressGameStreams, progressPairs } from "./progress-seed.ts";
-import { type BaselineCounts, omniscientLogHash, type SearchCounts, type SolveCounts, sumSearchCounts, sumSolveCounts, progressRecordHash, sumBaselineCounts, tallyRows, type ProgressEvaluationRecordV2, type ProgressGameRecord, readProgressEvaluationRecordV2, readProgressGameRecord } from "./progress-records.ts";
+import { OPEN_PREFIX, type BaselineCounts, omniscientLogHash, type SearchCounts, type SolveCounts, sumSearchCounts, sumSolveCounts, progressRecordHash, sumBaselineCounts, tallyRows, type ProgressEvaluationRecordV2, type ProgressGameRecord, readProgressEvaluationRecordV2, readProgressGameRecord } from "./progress-records.ts";
 import { randomLegalActor } from "./random-legal.ts";
 import type { Actor, Player } from "./runner.ts";
 import { searchPolicy, type SearchActor, type SearchSetup } from "./search-actor.ts";
@@ -187,6 +190,15 @@ export interface ProgressOptions {
    * (`plan.evaluation_key`) and in every stored game; sampling labels and the run id are unchanged.
    */
   evaluation_key?: string;
+  /**
+   * The open-sheet format to play an open twin of every match in (ADR-027 section 5a, ADR-017 erratum E4; `--team-sheets open`):
+   * the engine's open-sheet variant of the run's closed format (`checkSheetVariants` must pass). Each match against a scripted
+   * baseline or another run's pair is played a second time as `open-<match id>` with `team_sheets: open`, on the same pairs, seeds
+   * and seats, and the record lists both formats' manifests in `game_manifests`. The closed matches and their bytes are unchanged;
+   * the regimes are never pooled. Refused with the search, solver and ablation candidates, anchors, a previous generation and a
+   * pair that reads `opponent_sheet` (the open block's builder is a later slice). Absent: today's record.
+   */
+  open_format?: string;
   /**
    * The Team Preview ablation (ticket #940): instead of the usual matches, the generation's Battle network plays
    * `random-legal` and `actor-rule` (argmax) with (i) its own learned Preview, (ii) a uniformly random Preview and
@@ -456,6 +468,21 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   const plan = progressPlan(options);
   const budget: LatencyBudget = { preview_ms: config.generation.latency_budget_ms.preview_ms, battle_ms: config.generation.latency_budget_ms.battle_ms };
   const manifest = resolveFormat(engine, config.format_id).manifest;
+  const openFormat = options.open_format;
+  let openManifest: ReturnType<typeof resolveFormat>["manifest"] | undefined;
+  if (openFormat !== undefined) {
+    if (options.ablation !== undefined || options.search !== undefined || options.preview_solve !== undefined) throw new ProgressError("open-sheet matches are not played with the Preview ablation, the search candidate or the Team Preview solver candidate");
+    if (options.previous !== undefined || anchors.length > 0) throw new ProgressError("open-sheet matches are played against the scripted baselines and another run's pair: no anchors and no previous-generation matches");
+    if (options.sheet !== undefined || options.versus?.sheet !== undefined) throw new ProgressError("a pair that reads opponent_sheet is not played in the open format here: its open block is a later slice");
+    try {
+      checkSheetVariants(engine, config.format_id, openFormat);
+    } catch (error) {
+      throw new ProgressError(`the open format is not the run's format plus the sheet rules: ${(error as Error).message}`);
+    }
+    const snapshot = loadRulesSnapshot(engine.commit);
+    if (teamSheetsOf(snapshot.formats[config.format_id] ?? {}) !== "closed" || teamSheetsOf(snapshot.formats[openFormat] ?? {}) !== "open") throw new ProgressError("--team-sheets open needs the run's format closed and the other format open");
+    openManifest = resolveFormat(engine, openFormat, snapshot).manifest;
+  }
   // The solver builds its table inside the Team Preview decision: its games run with at least the config's budget there (the control's too).
   const solveBudgetMs = options.preview_solve === undefined ? undefined : previewSolveBudgetMs(options.preview_solve.setup);
   const gameBudget: LatencyBudget = solveBudgetMs === undefined ? budget : { preview_ms: Math.max(budget.preview_ms, solveBudgetMs), battle_ms: budget.battle_ms };
@@ -635,9 +662,12 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
     const count = baseline.cross === true ? runGames : baseline.anchored === true ? anchorGames : games;
     const recorded = Math.min(record_games, count);
     // The plain modes, then (against the opponents that take them) each extra mode: a sample with declared play settings.
-    const runs: { mode: ProgressMode; extra?: ExtraMode }[] = [...modes.map((mode) => ({ mode })), ...(baseline.extras === true ? extraModes.map((extra) => ({ mode: "sample" as const, extra })) : [])];
-    for (const { mode, extra } of runs) {
-      const match_id = `${candidateKind.prefix}${baseline.id}-${mode}${extra === undefined ? "" : matchSuffix(extra.play)}`;
+    const closedRuns: { mode: ProgressMode; extra?: ExtraMode }[] = [...modes.map((mode) => ({ mode })), ...(baseline.extras === true ? extraModes.map((extra) => ({ mode: "sample" as const, extra })) : [])];
+    // The open twins (ADR-027 section 5a): the same matches in the open-sheet format, for the opponents that play it as they play the closed one.
+    const runs = [...closedRuns.map((run) => ({ ...run, open: false })), ...(openFormat !== undefined && baseline.extras === true ? closedRuns.map((run) => ({ ...run, open: true })) : [])];
+    for (const { mode, extra, open } of runs) {
+      const formatId = open ? (openFormat as string) : config.format_id;
+      const match_id = `${open ? OPEN_PREFIX : ""}${candidateKind.prefix}${baseline.id}-${mode}${extra === undefined ? "" : matchSuffix(extra.play)}`;
       const policy_id = extra?.policy_id ?? candidateKind.policy_ids[mode];
       const opponent_policy = baseline.policies(mode, extra);
       const matchRows: Row[] = [];
@@ -672,7 +702,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
         const opposing = baseline.seat(mode, pair, extra);
         const played = await policyGame({
           engine,
-          formatId: config.format_id,
+          formatId,
           seed: streams.seed,
           game: pair,
           teams,
@@ -737,7 +767,8 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       rowsByMatch.set(match_id, matchRows);
       wall_ms[match_id] = Math.round(clock() - started);
       game_ms[match_id] = { mean: Math.round(gameMs.reduce((a, b) => a + b, 0) / gameMs.length), max: Math.round(Math.max(...gameMs)) };
-      matches.push(summarise(match_id, policy_id, baseline.opponent(mode, extra), mode, matchRows, hashes, config.generation.max_turns, candidateKind.candidate_preview, reports, candidateKind.search === undefined ? undefined : { identity_hash: candidateKind.search.identity_hash, searches, controls }, extra?.play, sheets, candidateKind.solve === undefined ? undefined : { identity_hash: candidateKind.solve.identity_hash, solves, controls: solveControls }));
+      const summary = summarise(match_id, policy_id, baseline.opponent(mode, extra), mode, matchRows, hashes, config.generation.max_turns, candidateKind.candidate_preview, reports, candidateKind.search === undefined ? undefined : { identity_hash: candidateKind.search.identity_hash, searches, controls }, extra?.play, sheets, candidateKind.solve === undefined ? undefined : { identity_hash: candidateKind.solve.identity_hash, solves, controls: solveControls });
+      matches.push(open ? { ...summary, team_sheets: "open" } : summary);
     }
     }
   }
@@ -753,6 +784,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
     generation_manifest_sha256: options.generation_manifest_sha256,
     checkpoints: options.checkpoints,
     version_manifest: manifest,
+    ...(openManifest === undefined ? {} : { game_manifests: [manifest, openManifest].sort((a, b) => (jcs(a as unknown as Json) < jcs(b as unknown as Json) ? -1 : 1)) }),
     teams: {
       dataset_hash: ownDataset ?? pool.dataset_hash,
       ...(evaluationDataset === undefined ? {} : { evaluation_dataset_hash: evaluationDataset }),
