@@ -561,6 +561,18 @@ def _progress_facts(
     )
 
 
+@dataclass
+class MemberTie:
+    """What ties a population run's progress records to members (#1335).
+
+    ``manifests`` are the run's verified generation manifests; ``found`` is filled with the
+    member each progress generation evaluates.
+    """
+
+    manifests: dict[int, dict[str, Any]]
+    found: dict[int, str] = field(default_factory=dict)
+
+
 def _member_of(manifest: dict[str, Any], number: int, checkpoints: dict[str, str]) -> str:
     """The member of a population generation whose frozen pair a progress record names.
 
@@ -568,38 +580,27 @@ def _member_of(manifest: dict[str, Any], number: int, checkpoints: dict[str, str
     generation's manifest says which member holds them: exactly one must.
     """
     held = manifest.get("members")
-    found = (
-        [m for m, entry in held.items() if entry.get("checkpoints") == checkpoints]
-        if isinstance(held, dict)
-        else []
-    )
-    if len(found) != 1:
-        raise ReportError(
-            f"g{number:06d}: the progress record's pair is not exactly one member's frozen pair"
-        )
+    if not isinstance(held, dict) or not all(isinstance(e, dict) for e in held.values()):
+        raise ReportError(f"g{number:06d}: its manifest has no well-formed members")
+    found = [m for m, entry in held.items() if entry.get("checkpoints") == checkpoints]
+    if not found:
+        raise ReportError(f"g{number:06d}: the progress record's pair is no member's frozen pair")
+    if len(found) > 1:
+        raise ReportError(f"g{number:06d}: several members share this frozen pair")
     return str(found[0])
 
 
-def _tie_member(run_dir: Path, number: int, checkpoints: dict[str, str]) -> str:
-    try:
-        held = layout.read_json(layout.generation_dir(run_dir, number) / layout.MANIFEST)
-    except (layout.RunDirError, OSError, json.JSONDecodeError) as exc:
-        raise ReportError(f"g{number:06d}: {exc}") from exc
-    return _member_of(held, number, checkpoints)
-
-
-def read_progress_root(  # noqa: PLR0913, PLR0917
+def read_progress_root(
     root: Path,
     config: RunConfig,
     manifest_shas: dict[int, str],
     inputs: dict[str, str],
-    run_dir: Path | None = None,
-    members: dict[int, str] | None = None,
+    tie: MemberTie | None = None,
 ) -> dict[int, ProgressFacts]:
     """Every committed generation of a progress root, verified against its manifest and the run.
 
-    For a population run pass ``run_dir`` and ``members``: each record is also tied to the member
-    whose frozen pair of that generation it names, which is stored in ``members`` (#1335).
+    For a population run pass ``tie``: each record is also tied to the member whose frozen pair of
+    that generation it names, stored in ``tie.found`` (#1335).
     """
     found: dict[int, ProgressFacts] = {}
     for path in sorted(root.iterdir()):
@@ -622,8 +623,8 @@ def read_progress_root(  # noqa: PLR0913, PLR0917
             raise ReportError(f"{path.name}: its record is not of the run's committed generation")
         for name in ("progress.json", layout.MANIFEST):
             inputs[f"progress/{path.name}/{name}"] = sha256_hex((path / name).read_bytes())
-        if members is not None and run_dir is not None:
-            members[number] = _tie_member(run_dir, number, record["checkpoints"])
+        if tie is not None:
+            tie.found[number] = _member_of(tie.manifests[number], number, record["checkpoints"])
         used, rates = progress_diagnostics(root, number, config, record)  # one pass, both
         if used is not None:
             for file in class_files(config.format_id):
@@ -699,13 +700,16 @@ def read_report_model(run_dir: Path, progress_dir: Path | None) -> ReportModel:
     inputs: dict[str, str] = {layout.CONFIG: sha256_hex((run_dir / layout.CONFIG).read_bytes())}
     generations = []
     shas: dict[int, str] = {}
+    tie = MemberTie({}) if population else None
     numbers = generation_numbers(run_dir)
     for number in numbers:
         path = layout.generation_dir(run_dir, number)
         try:
-            layout.verify_generation(path, number)
+            verified = layout.verify_generation(path, number)
         except (layout.RunDirError, OSError, json.JSONDecodeError) as exc:
             raise ReportError(str(exc)) from exc
+        if tie is not None:
+            tie.manifests[number] = verified
         if not population:
             _check_synthetic(path, number)
         shas[number] = sha256_hex((path / layout.MANIFEST).read_bytes())
@@ -725,18 +729,8 @@ def read_report_model(run_dir: Path, progress_dir: Path | None) -> ReportModel:
         built, facts = read_population_model(run_dir, config, numbers, shas, inputs)
         generations = list(built)
     metrics = read_metrics(run_dir, config, sorted(shas), inputs, population=population)
-    progress_members: dict[int, str] = {}
     progress = (
-        {}
-        if progress_dir is None
-        else read_progress_root(
-            progress_dir,
-            config,
-            shas,
-            inputs,
-            run_dir,
-            progress_members if population else None,
-        )
+        {} if progress_dir is None else read_progress_root(progress_dir, config, shas, inputs, tie)
     )
     return ReportModel(
         config.run_key,
@@ -749,5 +743,5 @@ def read_report_model(run_dir: Path, progress_dir: Path | None) -> ReportModel:
         dict(sorted(inputs.items())),
         family=family_label(config),
         population=facts,
-        progress_members=progress_members,
+        progress_members=tie.found if tie is not None else {},
     )

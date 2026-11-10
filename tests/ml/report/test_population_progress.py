@@ -83,6 +83,10 @@ def test_the_member_of_a_pair_is_exactly_one() -> None:
     manifest = {"members": {"m0": {"checkpoints": pair}, "m1": {"checkpoints": {"x": "y"}}}}
     assert _member_of(manifest, 2, pair) == "m0"
     both = {"members": {"m0": {"checkpoints": pair}, "m1": {"checkpoints": pair}}}
-    for bad in (both, {"members": {"m0": {"checkpoints": {"x": "y"}}}}, {}):
-        with pytest.raises(ReportError, match="exactly one member's frozen pair"):
-            _member_of(bad, 2, pair)
+    with pytest.raises(ReportError, match="several members share"):
+        _member_of(both, 2, pair)
+    with pytest.raises(ReportError, match="no member's frozen pair"):
+        _member_of({"members": {"m0": {"checkpoints": {"x": "y"}}}}, 2, pair)
+    for odd in ({}, {"members": []}, {"members": {"m0": 3}}):
+        with pytest.raises(ReportError, match="no well-formed members"):
+            _member_of(odd, 2, pair)
