@@ -58,10 +58,12 @@ from areneon_ml.progress.gap import play_mode_gap
 from areneon_ml.progress.modes import match_extra, match_stem
 from areneon_ml.progress.records import (
     ProgressRecordError,
+    is_open,
     preview_variant,
     read_progress_record,
 )
 from areneon_ml.progress.run import summary_of
+from areneon_ml.progress.team_sheets import team_sheets_view
 from areneon_ml.report.dominated import config_file, progress_diagnostics
 from areneon_ml.report.move_use import class_files
 
@@ -228,6 +230,9 @@ class MatchFacts:
     #: its games, and for a self-no-solve match the control's; None for every other match.
     solve: dict[str, Any] | None = None
     opponent_solve: dict[str, Any] | None = None
+    #: ``open`` for a match played in the engine's open-sheet format (ADR-027 section 5a); the
+    #: closed (target) format otherwise. The two are never pooled.
+    team_sheets: str = "closed"
 
 
 @dataclass(frozen=True)
@@ -255,6 +260,9 @@ class ProgressFacts:
     #: The statically dominated damaging-move rate (#1025, ADR-022 M2), as ``dominated_rates``
     #: returns it; None when the generation stores no game or the repository has no config.
     dominated: dict[str, Any] | None = None
+    #: The closed-versus-open row against the damage-aware baseline (``team_sheets_view``:
+    #: integers only, derived on display, never pooled); empty without open matches.
+    team_sheets: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -542,6 +550,7 @@ def _progress_facts(
                 read_sheet_counts(match["sheet"]) if "sheet" in match else None,
                 match.get("solve"),
                 match.get("opponent_solve"),
+                "open" if is_open(match) else "closed",
             )
         )
     plan = record["plan"]
@@ -558,6 +567,7 @@ def _progress_facts(
         plan.get("evaluation_key"),
         play_mode_gap(record),
         dominated,
+        team_sheets_view(record) if any(is_open(m) for m in record["matches"]) else {},
     )
 
 
