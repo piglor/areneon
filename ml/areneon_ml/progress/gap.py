@@ -48,6 +48,7 @@ def _gapped(match: dict[str, Any]) -> bool:
     return (
         match["opponent"]["kind"] in ("baseline", "run")
         and "search" not in match
+        and "solve" not in match
         and match.get("candidate_preview") is None
     )
 

@@ -27,7 +27,8 @@ import { opponentSheetProblem } from "./opponent-sheet.ts";
 import { type ChunkLimits, ChunkedFileWriter, checkStringLength } from "./chunked-file.ts";
 import { enumerateCandidates, EnumerationError } from "./choices.ts";
 import { type Episode, episodeHash } from "./episode.ts";
-import { decisionObservations, readEpisode } from "./episode-io.ts";
+import { decisionObservations, readEpisodeObserved } from "./episode-io.ts";
+import type { Observation } from "./observation.ts";
 import { nodeSha256, playerChannel } from "./player-channel.ts";
 import { decodeRequest, RequestDecodeError } from "./request.ts";
 import type { SyntheticTeamHashes } from "./team-class.ts";
@@ -207,7 +208,13 @@ export interface TrainingInput {
    * own team (the block is derived, never stored in an Episode). One builder per Episode, as at play time (the counts are a
    * game's). A builder refusal is the `unknown` block, as it was sent; a defect of the run is thrown.
    */
-  sheet?: SheetSetup;
+  sheet?: SheetSetup & {
+    /**
+     * The blocks the play-time seats left for an Episode (`sheet-recompute.ts`, #1315), by its hash; used only when there is one per
+     * decision, otherwise the blocks are recomputed here. The same function of the same Episode, so no stream byte depends on it.
+     */
+    precomputed?: (hash: string, request_seqs: readonly number[]) => readonly NonNullable<TrainingExample["opponent_sheet"]>[] | undefined;
+  };
   /**
    * The formats the run's games may have (ADR-027 5a, only a run with `sheet_regimes`: the closed format and the open one): the loader
    * reads each game's regime from its Episode's own version manifest and refuses an Episode of any other format. With `sheet`, the
@@ -262,13 +269,16 @@ export function trainingExample(
 }
 
 /** The Episode's TrainingExamples, one per decision (only those of `only`'s request numbers when given: the label stream, #1290). */
-export async function examplesOf(episode: Episode, hash: string, features: TrainingInput["features"], sheet: TrainingInput["sheet"], only?: ReadonlySet<number>): Promise<TrainingExample[]> {
-  const observations = await decisionObservations(episode);
+export async function examplesOf(episode: Episode, hash: string, features: TrainingInput["features"], sheet: TrainingInput["sheet"], only?: ReadonlySet<number>, known?: readonly Observation[]): Promise<TrainingExample[]> {
+  // `known` are the observations `readTrainingObserved` built while checking this very Episode: the same bytes, built once (#1192).
+  const observations = known ?? (await decisionObservations(episode));
   const outcome = outcomeOf(episode);
   const memo = createFeatureMemo(); // one Episode is one game, as at play time; the memo never changes a byte
   const given = features?.precomputed?.(hash, observations.map((o) => o.identity.request_seq));
   const rows = given?.length === episode.decisions.length ? given : undefined;
-  const builder = sheet === undefined ? undefined : createSheetBuilder({ engine: sheet.engine, vocabulary: sheet.vocabulary, port: sheet.port, scenario_id: sheet.scenario_id });
+  const givenSheets = sheet?.precomputed?.(hash, observations.map((o) => o.identity.request_seq));
+  const sheets = givenSheets?.length === episode.decisions.length ? givenSheets : undefined;
+  const builder = sheet === undefined || sheets !== undefined ? undefined : createSheetBuilder({ engine: sheet.engine, vocabulary: sheet.vocabulary, port: sheet.port, scenario_id: sheet.scenario_id });
   return episode.decisions.flatMap(({ choice }, i) => {
     const observation = observations[i] as TrainingExample["observation"];
     if (only !== undefined && !only.has(observation.identity.request_seq)) return [];
@@ -278,7 +288,7 @@ export async function examplesOf(episode: Episode, hash: string, features: Train
       outcome,
       episode_hash: hash,
       ...(features === undefined ? {} : { candidate_features: rows?.[i] ?? featuresOf(episode, observation, hash, features, memo) }),
-      ...(builder === undefined ? {} : { opponent_sheet: sheetOf(builder, observation, episode) }),
+      ...(sheets !== undefined ? { opponent_sheet: sheets[i] as NonNullable<TrainingExample["opponent_sheet"]> } : builder === undefined ? {} : { opponent_sheet: sheetOf(builder, observation, episode) }),
     })];
   });
 }
@@ -411,20 +421,23 @@ export async function writeStoredTrainingStream(input: StoredTrainingInput, opti
 }
 
 /** Every Episode as `[hash, Episode]`, validated, in the order the stream lists them (hash order). */
-export type EpisodeFeed = (evaluated: ReadonlySet<string>) => AsyncGenerator<[string, Episode]>;
+export type EpisodeFeed = (evaluated: ReadonlySet<string>) => AsyncGenerator<[string, Episode] | [string, Episode, readonly Observation[] | undefined]>;
 
 function memoryFeed({ episodes, known_synthetic, behaviour_policy_id }: TrainingInput): EpisodeFeed {
   return async function* (evaluated) {
-    const accepted = new Map<string, Episode>();
+    const accepted = new Map<string, { episode: Episode; observations: readonly Observation[] | undefined }>();
     for (const [index, value] of episodes.entries()) {
-      const episode = await readTraining(value, index, known_synthetic, behaviour_policy_id);
+      const { episode, observations } = await readTrainingObserved(value, index, known_synthetic, behaviour_policy_id);
       const hash = await episodeHash(episode, nodeSha256);
       if (evaluated.has(hash)) throw new TrainingLoaderError(`Episode ${index} (${hash}) is listed in an EvaluationRunManifest: evaluation games never train`);
       if (accepted.has(hash)) throw new TrainingLoaderError(`Episode ${index} (${hash}) is given twice`);
-      accepted.set(hash, episode);
+      accepted.set(hash, { episode, observations });
     }
     if (accepted.size === 0) throw new TrainingLoaderError("no Episode to load");
-    for (const hash of [...accepted.keys()].sort()) yield [hash, accepted.get(hash) as Episode];
+    for (const hash of [...accepted.keys()].sort()) {
+      const kept = accepted.get(hash) as { episode: Episode; observations: readonly Observation[] | undefined };
+      yield [hash, kept.episode, kept.observations];
+    }
   };
 }
 
@@ -445,9 +458,9 @@ function fileFeed({ episodes, known_synthetic, behaviour_policy_id }: StoredTrai
       } catch (error) {
         throw new TrainingLoaderError(`Episode ${index} cannot be read from its file: ${(error as Error).name}`, { cause: error });
       }
-      const episode = await readTraining(stored, index, known_synthetic, behaviour_policy_id);
+      const { episode, observations } = await readTrainingObserved(stored, index, known_synthetic, behaviour_policy_id);
       if ((await episodeHash(episode, nodeSha256)) !== hash) throw new TrainingLoaderError(`Episode ${index} is stored under a hash that is not its own`);
-      yield [hash, episode];
+      yield [hash, episode, observations];
     }
   };
 }
@@ -473,10 +486,10 @@ export async function streamTraining(
   const hashes: string[] = [];
   const digest = createHash("sha256");
   let count = 0;
-  for await (const [hash, episode] of feed(evaluated)) {
+  for await (const [hash, episode, observed] of feed(evaluated)) {
     hashes.push(hash);
     checkRegime(episode, hash, formats, sheet);
-    for (const example of await examplesOf(episode, hash, features, sheet)) {
+    for (const example of await examplesOf(episode, hash, features, sheet, undefined, observed)) {
       const line = `${jcs(example as unknown as Json)}\n`;
       checkStringLength(line, limits, "a stream line");
       digest.update(line, "utf8");
@@ -499,7 +512,17 @@ export async function streamTraining(
 }
 
 export async function readTraining(value: unknown, index: number, known_synthetic: SyntheticTeamHashes, behaviour_policy_id: string): Promise<Episode> {
-  const episode = await readEpisode(value, { known_synthetic }).catch((error: Error) => {
+  return (await readTrainingObserved(value, index, known_synthetic, behaviour_policy_id)).episode;
+}
+
+/** `readTraining`, with the decision observations its `readEpisode` check built (`undefined` when they are not `decisionObservations`' regime, #1192). */
+export async function readTrainingObserved(
+  value: unknown,
+  index: number,
+  known_synthetic: SyntheticTeamHashes,
+  behaviour_policy_id: string,
+): Promise<{ episode: Episode; observations: Observation[] | undefined }> {
+  const { episode, observations } = await readEpisodeObserved(value, { known_synthetic }).catch((error: Error) => {
     throw new TrainingLoaderError(`Episode ${index} is refused: ${error.message}`, { cause: error });
   });
   const collection = episode.provenance.collection;
@@ -516,5 +539,5 @@ export async function readTraining(value: unknown, index: number, known_syntheti
   if (episode.provenance.behaviour_policy_id !== behaviour_policy_id) {
     throw new TrainingLoaderError(`Episode ${index} was played by ${episode.provenance.behaviour_policy_id}, not ${behaviour_policy_id}: only the trained policy's own seats train`);
   }
-  return episode;
+  return { episode, observations };
 }

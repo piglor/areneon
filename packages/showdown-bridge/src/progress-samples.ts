@@ -12,7 +12,7 @@ import type { Engine } from "./engine.ts";
 import { playGame } from "./evaluation-harness.ts";
 import { firstLegal, GOLDEN_FORMAT, syntheticTeam } from "./golden.ts";
 import { buildProgressGameRecord } from "./progress-evaluation.ts";
-import { omniscientLogHash, progressRecordHash, type SearchCounts, sumSearchCounts } from "./progress-records.ts";
+import { omniscientLogHash, progressRecordHash, type SearchCounts, type SolveCounts, sumSearchCounts, sumSolveCounts } from "./progress-records.ts";
 import { progressGameStreams } from "./progress-seed.ts";
 
 const hexOf = (c: string): string => c.repeat(64);
@@ -276,6 +276,74 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       g.opponent_search.counts = controlCountsOf(g.decisions.filter((d: any) => d.player === "p2").length);
       change(g);
     });
+  // The Team Preview solver (ADR-029 section 8, #1260): the candidate's match against a baseline, and against the self-no-solve control.
+  const solveHash = hexOf("c");
+  const solvePolicyId = `policy:${hexOf("9")}`;
+  const solveCountsOf = (decisions: number): SolveCounts => ({
+    decisions,
+    previews: 1,
+    solved: 1,
+    fallbacks: { belief_refusal: 0, clock_floor: 0, engine_failure: 0, too_few_worlds: 0, worker_failure: 0 },
+    belief_refusals: [],
+    worlds_asked: 16,
+    worlds_refused: 1,
+    worlds_unstarted: 0,
+    payoff: { back_draws: 0, clamped: 2, clamped_high: 1, clamped_low: 1, engine_refusals: 0, entries: 900, entry_attempts: 900, game_end_entries: 0, missing_entries: 0, not_move_request: 0, preview_queries: 16, rollout_capped: 0, rollout_choices: 0, value_queries: 900, worlds_asked: 16, worlds_dropped: 0, worlds_used: 15 },
+    exploitability_ppm: 4200,
+    support_size: 3,
+  });
+  const solveControlCountsOf = (decisions: number): SolveCounts => ({
+    ...solveCountsOf(decisions),
+    solved: 0,
+    worlds_asked: 0,
+    worlds_refused: 0,
+    payoff: { back_draws: 0, clamped: 0, clamped_high: 0, clamped_low: 0, engine_refusals: 0, entries: 0, entry_attempts: 0, game_end_entries: 0, missing_entries: 0, not_move_request: 0, preview_queries: 0, rollout_capped: 0, rollout_choices: 0, value_queries: 0, worlds_asked: 0, worlds_dropped: 0, worlds_used: 0 },
+    exploitability_ppm: 0,
+    support_size: 0,
+  });
+  const v2Solve = (change?: (e: Record<string, any>) => void) =>
+    withV2((e) => {
+      renameMatch(e, "psolve-actor-rule-argmax");
+      const per = solveCountsOf(answered("p1"));
+      e.plan.preview_solve_budget_ms = 30000;
+      Object.assign(e.matches[0], { policy_id: solvePolicyId, solve: { identity_hash: solveHash, counts: sumSolveCounts([per, per, per, per]) } });
+      e.games.forEach((g: any) => (g.solve = structuredClone(per)));
+      change?.(e);
+    });
+  const v2SolveControl = (change?: (e: Record<string, any>) => void) =>
+    withV2((e) => {
+      renameMatch(e, "psolve-self-no-solve-argmax");
+      const per = solveCountsOf(answered("p1"));
+      const control = solveControlCountsOf(answered("p2"));
+      e.plan.preview_solve_budget_ms = 30000;
+      Object.assign(e.matches[0], {
+        policy_id: solvePolicyId,
+        opponent: { kind: "self-no-solve", policy_id: `policy:${hexOf("b")}`, checkpoints, mode: "argmax" },
+        solve: { identity_hash: solveHash, counts: sumSolveCounts([per, per, per, per]) },
+        opponent_solve: { identity_hash: solveHash, counts: sumSolveCounts([control, control, control, control]) },
+      });
+      e.games.forEach((g: any) => Object.assign(g, { solve: structuredClone(per), opponent_solve: structuredClone(control) }));
+      change?.(e);
+    });
+  const solveGame = mutated(game, (g) => {
+    g.match_id = "psolve-actor-rule-argmax";
+    g.policies.p1 = solvePolicyId;
+    g.solve = { seat: "p1", identity_hash: solveHash, counts: solveCountsOf(answered("p1")) };
+  }) as unknown as typeof game;
+  const solveControlGame = mutated(solveGame, (g) => {
+    g.match_id = "psolve-self-no-solve-argmax";
+    g.policies.p2 = `policy:${hexOf("b")}`;
+    g.opponent_solve = { seat: "p2", identity_hash: solveHash, counts: solveControlCountsOf(answered("p2")) };
+  }) as unknown as typeof game;
+  const shortSolve = (change: (g: Record<string, any>) => void) =>
+    mutated(solveControlGame, (g) => {
+      g.omniscient_log = g.omniscient_log.slice(0, 3);
+      g.omniscient_log_sha256 = omniscientLogHash(g.omniscient_log);
+      g.decisions = g.decisions.slice(0, 2);
+      g.solve.counts = solveCountsOf(g.decisions.filter((d: any) => d.player === "p1").length);
+      g.opponent_solve.counts = solveControlCountsOf(g.decisions.filter((d: any) => d.player === "p2").length);
+      change(g);
+    });
   const withEval = (change: (e: Record<string, any>) => void) => mutated(evaluation, change);
   const withGame = (change: (g: Record<string, any>) => void) => mutated(game, change);
   // A faulty sample whose fault does not depend on the log's length carries a few lines, so the corpus stays small.
@@ -316,6 +384,10 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/damage-aware-v3-match": v2DamageV3(),
       "progress-evaluation-record-2/search-match": v2Search(),
       "progress-evaluation-record-2/search-self-no-search-match": v2SearchControl(),
+      "progress-evaluation-record-2/psolve-match": v2Solve(),
+      "progress-evaluation-record-2/psolve-self-no-solve-match": v2SolveControl(),
+      "progress-game-record/psolve": solveGame,
+      "progress-game-record/psolve-control": solveControlGame,
       "progress-game-record/search": searchGame,
       "progress-game-record/search-control": searchControlGame,
       "progress-game-record/damage-aware": damageGame,
@@ -357,6 +429,11 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/search-no-fallbacks": v2Search((e) => delete e.games[0].search.fallbacks),
       "progress-evaluation-record-2/self-no-search-no-mode": v2SearchControl((e) => delete e.matches[0].opponent.mode),
       "progress-game-record/search-no-identity": shortSearch((g) => delete g.search.identity_hash),
+      "progress-evaluation-record-2/psolve-fractional-count": v2Solve((e) => (e.games[0].solve.solved = 0.5)),
+      "progress-evaluation-record-2/psolve-no-fallbacks": v2Solve((e) => delete e.games[0].solve.fallbacks),
+      "progress-evaluation-record-2/psolve-unknown-payoff-field": v2Solve((e) => (e.games[0].solve.payoff.rate = 1)),
+      "progress-evaluation-record-2/self-no-solve-no-mode": v2SolveControl((e) => delete e.matches[0].opponent.mode),
+      "progress-game-record/psolve-no-identity": shortSolve((g) => delete g.solve.identity_hash),
       "progress-game-record/baseline-no-identity": shortDamage((g) => delete g.baseline.identity_hash),
       "progress-game-record/public-class": withShortGame((g) => (g.data_class = "public")),
       "progress-game-record/extra-field": withShortGame((g) => (g.notes = "x")),
@@ -454,6 +531,61 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-game-record/search-control-same-seat": shortSearch((g) => (g.opponent_search.seat = "p1")),
       "progress-game-record/search-control-other-identity": shortSearch((g) => (g.opponent_search.identity_hash = hexOf("d"))),
       "progress-game-record/search-control-without-search": shortSearch((g) => delete g.search),
+      "progress-evaluation-record-2/psolve-counts-disagree": v2Solve((e) => (e.matches[0].solve.counts.worlds_asked += 1)),
+      "progress-evaluation-record-2/psolve-row-missing": v2Solve((e) => delete e.games[0].solve),
+      "progress-evaluation-record-2/psolve-misnamed": v2Solve((e) => renameMatch(e, "actor-rule-argmax")),
+      "progress-evaluation-record-2/psolve-on-plain-match": withV2((e) => ((e.plan.preview_solve_budget_ms = 30000), (e.matches[0].solve = { identity_hash: solveHash, counts: solveCountsOf(5) }))),
+      "progress-evaluation-record-2/psolve-budget-below-preview": v2Solve((e) => (e.plan.preview_solve_budget_ms = e.plan.latency_budget_ms.preview_ms - 1)),
+      "progress-evaluation-record-2/psolve-no-budget": v2Solve((e) => delete e.plan.preview_solve_budget_ms),
+      "progress-evaluation-record-2/budget-on-plain-record": withV2((e) => (e.plan.preview_solve_budget_ms = 30000)),
+      "progress-evaluation-record-2/psolve-mixed-with-plain": v2Solve((e) => {
+        const plain = { ...structuredClone(e.matches[0]), match_id: "actor-rule-argmax" };
+        delete plain.solve;
+        const rows = e.games.map((g: any) => {
+          const row = { ...structuredClone(g), match_id: "actor-rule-argmax" };
+          delete row.solve;
+          return row;
+        });
+        e.matches = [plain, e.matches[0]];
+        e.games = [...rows, ...e.games];
+      }),
+      "progress-evaluation-record-2/psolve-solved-over-previews": v2Solve((e) => {
+        e.games[0].solve.solved = 2;
+        e.matches[0].solve.counts.solved += 1;
+      }),
+      "progress-evaluation-record-2/psolve-unsorted-refusals": v2Solve((e) => {
+        for (const c of [e.games[0].solve, e.matches[0].solve.counts]) {
+          c.previews = 2;
+          c.fallbacks.belief_refusal = 2;
+          c.solved = 0;
+          c.belief_refusals = [{ key: "b", count: 1 }, { key: "a", count: 1 }];
+        }
+      }),
+      "progress-evaluation-record-2/psolve-refusals-over-fallbacks": v2Solve((e) => {
+        for (const c of [e.games[0].solve, e.matches[0].solve.counts]) c.belief_refusals = [{ key: "a", count: 1 }];
+      }),
+      "progress-evaluation-record-2/psolve-control-without-solve": v2SolveControl((e) => {
+        e.matches[0].match_id = "self-no-solve-argmax";
+        delete e.matches[0].solve;
+        e.games.forEach((g: any) => ((g.match_id = "self-no-solve-argmax"), delete g.solve));
+        delete e.plan.preview_solve_budget_ms;
+      }),
+      "progress-evaluation-record-2/psolve-control-row-missing": v2SolveControl((e) => delete e.games[0].opponent_solve),
+      "progress-evaluation-record-2/psolve-control-solves": v2SolveControl((e) => {
+        e.games[0].opponent_solve.solved = 1;
+        e.matches[0].opponent_solve.counts.solved += 1;
+      }),
+      "progress-evaluation-record-2/psolve-control-other-identity": v2SolveControl((e) => (e.matches[0].opponent_solve.identity_hash = hexOf("d"))),
+      "progress-evaluation-record-2/psolve-control-mode-differs": v2SolveControl((e) => (e.matches[0].opponent.mode = "sample")),
+      "progress-evaluation-record-2/psolve-control-counts-on-baseline": v2Solve((e) => (e.matches[0].opponent_solve = { identity_hash: solveHash, counts: e.matches[0].solve.counts })),
+      "progress-evaluation-record-2/psolve-with-search": v2Solve((e) => {
+        e.matches[0].search = { identity_hash: searchHash, counts: sumSearchCounts([searchCountsOf(1)]) };
+      }),
+      "progress-game-record/psolve-decisions-differ": shortSolve((g) => (g.solve.counts.decisions += 5)),
+      "progress-game-record/psolve-control-same-seat": shortSolve((g) => (g.opponent_solve.seat = "p1")),
+      "progress-game-record/psolve-control-other-identity": shortSolve((g) => (g.opponent_solve.identity_hash = hexOf("d"))),
+      "progress-game-record/psolve-control-without-solve": shortSolve((g) => delete g.solve),
+      "progress-game-record/psolve-control-solves": shortSolve((g) => (g.opponent_solve.counts.solved = 1)),
       "progress-game-record/baseline-seat-wrong": shortDamage((g) => (g.baseline.seat = "p1")),
       "progress-game-record/baseline-missing": shortDamage((g) => delete g.baseline),
       "progress-game-record/baseline-decisions-differ": shortDamage((g) => (g.baseline.counts.decisions += 5)),

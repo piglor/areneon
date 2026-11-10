@@ -5,10 +5,11 @@ import { runProgressCli, UsageError } from "@areneon/showdown-bridge";
 import { datasetTrainingHashes, datasetValidationPool } from "../src/progress-pool.ts";
 import { createBeliefFeatures } from "../src/belief-features.ts";
 import { beliefWorldsFactory } from "../src/damage-aware-worlds.ts";
+import { progressPreviewSolveSetup } from "../src/progress-preview-solve-setup.ts";
 import { progressSearchSetup } from "../src/progress-search-setup.ts";
 
 try {
-  process.exitCode = await runProgressCli(process.argv.slice(2), console.log, datasetValidationPool, { search: progressSearchSetup, run_teams: datasetTrainingHashes, belief_worlds: beliefWorldsFactory, belief_features: (context) => createBeliefFeatures(context) });
+  process.exitCode = await runProgressCli(process.argv.slice(2), console.log, datasetValidationPool, { search: progressSearchSetup, preview_solve: (engine, formatId) => progressPreviewSolveSetup(engine, formatId), run_teams: datasetTrainingHashes, belief_worlds: beliefWorldsFactory, belief_features: (context) => createBeliefFeatures(context) });
 } catch (error) {
   console.error(`progress: ${(error as Error).message}`);
   process.exitCode = error instanceof UsageError ? 2 : 1;

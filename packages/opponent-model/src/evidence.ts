@@ -14,7 +14,7 @@
 // constraint in this slice: the belief stays wider, never wrong. Damage taken and move order are
 // slice 4. A Pokemon under Transform shows the copied Pokemon's moves, so its moves add none.
 
-import type { PublicMon } from "@areneon/public-state";
+import type { PublicMon, PublicSheetMon } from "@areneon/public-state";
 
 /** The `PublicMon` fields the belief reads. */
 export const EVIDENCE_FIELDS = [
@@ -54,6 +54,12 @@ export const IGNORED_FIELDS = [
   "pp",
   "can_mega_evo",
 ] as const satisfies readonly (keyof PublicMon)[];
+
+/**
+ * The `PublicSheetMon` fields the belief reads (ADR-025 erratum E1): the engine-sent sheet of an open-sheet format, the team as
+ * built. All of them are hard facts about the slot. `PublicSide.sheet` is the one side-level field the belief reads besides the roster.
+ */
+export const SHEET_FIELDS = ["species", "item", "ability", "moves", "nature", "gender", "level"] as const satisfies readonly (keyof PublicSheetMon)[];
 
 /** The reader's id for a Pokemon that has copied another (its moves are the copied Pokemon's). */
 const TRANSFORM = "transform";

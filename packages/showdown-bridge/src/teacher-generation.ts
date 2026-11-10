@@ -45,6 +45,7 @@ import {
 import { loadMechanicsConfig } from "./mechanics-config.ts";
 import { nodeSha256 } from "./player-channel.ts";
 import { loadRulesSnapshot } from "./rules-load.ts";
+import { goldenWorldFactsData } from "./world-facts-data.ts";
 import { sha256Hex } from "./rules.ts";
 import type { Actor, Player } from "./runner.ts";
 import { loadTrainingSet, type TrainingSet, writeTrainingStream } from "./training-loader.ts";
@@ -73,8 +74,8 @@ export interface TeacherSettings {
 export const TEACHER_GENERATION = 1;
 
 /** The committed `damage-aware` config record the teacher plays (`config/baselines/damage-aware.<version>.json`). */
-export type TeacherVersion = "v1" | "v3";
-export const TEACHER_VERSIONS: readonly TeacherVersion[] = ["v1", "v3"];
+export type TeacherVersion = "v1" | "v3" | "v4";
+export const TEACHER_VERSIONS: readonly TeacherVersion[] = ["v1", "v3", "v4"];
 export const TEACHER_CONFIG_VERSION: TeacherVersion = "v1";
 
 const RANDOM_OPPONENT: BaselineOpponent = { actor: "random-legal", policy_id: "random-legal@v1" };
@@ -96,7 +97,7 @@ export function checkTeacherSettings(settings: TeacherSettings): void {
   count("actor_rule_games", settings.actor_rule_games, 0);
   count("max_turns", settings.max_turns, 1);
   count("epsilon_ppm", settings.epsilon_ppm, 0);
-  if (settings.teacher_version !== undefined && !TEACHER_VERSIONS.includes(settings.teacher_version)) throw new RangeError("teacher_version is v1 or v3");
+  if (settings.teacher_version !== undefined && !TEACHER_VERSIONS.includes(settings.teacher_version)) throw new RangeError("teacher_version is v1, v3 or v4");
   if (settings.epsilon_ppm > PPM) throw new RangeError("epsilon_ppm is at most 1,000,000");
   if (settings.games + settings.random_games + settings.actor_rule_games < 1) throw new RangeError("a teacher run plays at least one game");
   if (settings.run_key === "" || settings.run_key.startsWith("CHANGE-ME")) throw new RangeError("run_key must name the run");
@@ -162,6 +163,8 @@ export function teacherContext(engine: Engine, settings: TeacherSettings): Teach
   const snapshot = loadRulesSnapshot(engine.commit);
   const policy_id = teacherPolicyId(settings.epsilon_ppm, settings.teacher_version);
   const commit = policy_id.slice(DAMAGE_AWARE_NAME.length + 1);
+  // v4 (situational weights) also reads the stall moves, once per run.
+  const facts_data = config.situational === undefined ? undefined : goldenWorldFactsData();
   return {
     config,
     policy_id,
@@ -174,6 +177,7 @@ export function teacherContext(engine: Engine, settings: TeacherSettings): Teach
         snapshot,
         data_class: "synthetic",
         commit,
+        ...(facts_data === undefined ? {} : { facts_data }),
         ...(settings.epsilon_ppm > 0 ? { seed: teacherSeatSeed(baseline_seed, player) } : {}),
       }),
   };

@@ -33,6 +33,7 @@ import { episodeHash } from "./episode.ts";
 import { addSince, countDecisions, profiling, startTimer, timedAsync } from "./profile.ts";
 import { guardActor, type LatencyBudget, type PlayedGame } from "./evaluation-harness.ts";
 import { firstLegal, GOLDEN_FORMAT, goldenTeamVocabulary, syntheticTeam, TEAMS_DIR, teamFixtureManifest } from "./golden.ts";
+import { goldenWorldFactsData } from "./world-facts-data.ts";
 import { resolveFormat, type VersionManifest } from "./formats.ts";
 import { nodeSha256 } from "./player-channel.ts";
 import { type PolicyClient } from "./policy-worker.ts";
@@ -46,6 +47,8 @@ import { stampTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
 import { loadTrainingSet, type StoredEpisode, type TrainingSet, writeStoredTrainingStream, writeTrainingStream } from "./training-loader.ts";
 import { type ChunkLimits } from "./chunked-file.ts";
 import { readFeatureRows, writeFeatureRows, writePlayRows } from "./feature-recompute.ts";
+import type { OpponentSheet } from "@areneon/schema/types/v1/opponent-sheet.ts";
+import { readSheetBlocks, writePlaySheets } from "./sheet-recompute.ts";
 import type { AnyCandidateFeatures } from "./feature-build.ts";
 import type { TrainingRunConfig } from "./training-run-config.ts";
 import type { Episode } from "./episode.ts";
@@ -105,16 +108,19 @@ export type DamageAwareSetup = Omit<DamageAwareOptions, "engine" | "seed" | "com
 /**
  * The reviewed records a damage-aware baseline reads, against the golden team vocabulary (the committed
  * export of the one supported format; another format is refused, never given another vocabulary).
- * `version` "v3" is the v1 scorer with the engine's choice-location convention (#1180).
+ * `version` "v3" is the v1 scorer with the engine's choice-location convention (#1180); "v4" is v3 plus the two situational
+ * actions (#1329), which also read the world facts' engine data (the stall moves) from the pinned checkout.
  */
-export function damageAwareSetup(engine: Engine, formatId: string, version: "v1" | "v3" = "v1"): DamageAwareSetup {
+export function damageAwareSetup(engine: Engine, formatId: string, version: "v1" | "v3" | "v4" = "v1"): DamageAwareSetup {
   if (formatId !== GOLDEN_FORMAT) throw new GenerationError(`the damage-aware baseline has a vocabulary for ${GOLDEN_FORMAT} only, not ${formatId}`);
   const vocabulary = goldenTeamVocabulary();
+  const config = loadDamageAwareConfig(version, vocabulary);
   return {
     vocabulary,
-    config: loadDamageAwareConfig(version, vocabulary),
+    config,
     mechanics: loadMechanicsConfig(formatId),
     snapshot: loadRulesSnapshot(engine.commit),
+    ...(config.situational === undefined ? {} : { facts_data: goldenWorldFactsData() }),
   };
 }
 
@@ -265,6 +271,9 @@ export const DAMAGE_AWARE_V2_POLICY_ID = damageAwarePolicyId("v2");
 /** The policy id of `damage-aware@v3`, the v1 scorer with the engine's choice-location convention (#1180, #1183). */
 export const DAMAGE_AWARE_V3_POLICY_ID = damageAwarePolicyId("v3");
 
+/** The policy id of `damage-aware@v4`, v3 plus the switch and Protect values (#1329). */
+export const DAMAGE_AWARE_V4_POLICY_ID = damageAwarePolicyId("v4");
+
 /**
  * The records `damage-aware@v2` reads: its config (which names the usage prior and the belief config by hash) and
  * the belief port the composition root builds from them. The bridge does not import the opponent model, so the
@@ -371,6 +380,8 @@ export interface GenerationOptions {
   damage_aware?: DamageAwareSetup;
   /** `damage-aware@v3`'s records, likewise (#1183). */
   damage_aware_v3?: DamageAwareSetup;
+  /** `damage-aware@v4`'s records, likewise (#1329). */
+  damage_aware_v4?: DamageAwareSetup;
   /** `damage-aware@v2`'s records, likewise (built from `belief_worlds` when a plan game needs them and this is absent). */
   damage_aware_v2?: DamageAwareSetup;
   /**
@@ -521,7 +532,7 @@ type StampSets = Parameters<typeof stampTeam>[0];
 const rival = (player: Player): Player => (player === "p1" ? "p2" : "p1");
 
 /** What a baseline game reads of the options: the engine and the damage-aware records. */
-export type BaselineRecordOptions = Pick<GenerationOptions, "engine" | "damage_aware" | "damage_aware_v2" | "damage_aware_v3" | "belief_worlds">;
+export type BaselineRecordOptions = Pick<GenerationOptions, "engine" | "damage_aware" | "damage_aware_v2" | "damage_aware_v3" | "damage_aware_v4" | "belief_worlds">;
 
 /**
  * The damage-aware records the config's baselines need and `options` lacks, read once from `config/`
@@ -529,13 +540,15 @@ export type BaselineRecordOptions = Pick<GenerationOptions, "engine" | "damage_a
  */
 export function baselineRecords(options: BaselineRecordOptions, config: Pick<TrainingRunConfig, "format_id" | "generation">): Partial<GenerationOptions> {
   const named = config.generation.baseline_games.filter((baseline) => baseline.actor === "damage-aware");
-  const needsV1 = named.some((baseline) => baseline.policy_id !== DAMAGE_AWARE_V2_POLICY_ID && baseline.policy_id !== DAMAGE_AWARE_V3_POLICY_ID);
+  const needsV1 = named.some((baseline) => baseline.policy_id !== DAMAGE_AWARE_V2_POLICY_ID && baseline.policy_id !== DAMAGE_AWARE_V3_POLICY_ID && baseline.policy_id !== DAMAGE_AWARE_V4_POLICY_ID);
   const needsV3 = named.some((baseline) => baseline.policy_id === DAMAGE_AWARE_V3_POLICY_ID);
+  const needsV4 = named.some((baseline) => baseline.policy_id === DAMAGE_AWARE_V4_POLICY_ID);
   const needsV2 = named.some((baseline) => baseline.policy_id === DAMAGE_AWARE_V2_POLICY_ID);
   if (needsV2 && options.damage_aware_v2 === undefined && options.belief_worlds === undefined) throw new GenerationError(`the plan names ${DAMAGE_AWARE_V2_POLICY_ID}: its script needs the belief port of the composition root (packages/team-dataset)`);
   return {
     ...(needsV1 && options.damage_aware === undefined ? { damage_aware: damageAwareSetup(options.engine, config.format_id) } : {}),
     ...(needsV3 && options.damage_aware_v3 === undefined ? { damage_aware_v3: damageAwareSetup(options.engine, config.format_id, "v3") } : {}),
+    ...(needsV4 && options.damage_aware_v4 === undefined ? { damage_aware_v4: damageAwareSetup(options.engine, config.format_id, "v4") } : {}),
     ...(needsV2 && options.damage_aware_v2 === undefined ? { damage_aware_v2: damageAwareSetupV2(options.engine, config.format_id, options.belief_worlds as BeliefWorldsFactory) } : {}),
   };
 }
@@ -553,7 +566,7 @@ export function baselineActor(options: BaselineRecordOptions, opponent: Baseline
     return profiling() ? (request, context) => timedAsync("e_probe", async () => inner(request, context)) : inner;
   };
   if (opponent.actor !== "damage-aware") return { actor: guarded(opponent.actor === "actor-rule" ? firstLegal : randomLegalActor(plan.baseline_seed)) };
-  const setup = opponent.policy_id === DAMAGE_AWARE_V2_POLICY_ID ? options.damage_aware_v2 : opponent.policy_id === DAMAGE_AWARE_V3_POLICY_ID ? options.damage_aware_v3 : options.damage_aware;
+  const setup = opponent.policy_id === DAMAGE_AWARE_V2_POLICY_ID ? options.damage_aware_v2 : opponent.policy_id === DAMAGE_AWARE_V3_POLICY_ID ? options.damage_aware_v3 : opponent.policy_id === DAMAGE_AWARE_V4_POLICY_ID ? options.damage_aware_v4 : options.damage_aware;
   if (setup === undefined) throw new GenerationError("a damage-aware baseline game needs the baseline's records");
   // A fresh actor per game: it keeps the reader's state, the game's memo and counts. The seed is drawn from only when epsilon_ppm is above 0.
   const damage: DamageAwareActor = damageAwareActor({
@@ -581,6 +594,8 @@ interface PlayedOne extends PlayedGame {
   feature_belief?: BeliefRowCounts;
   /** The pair's seats' sheet block counts, when the pair reads `opponent_sheet`. */
   sheet?: SheetCounts;
+  /** The pair's seats' sheet blocks as they were attached to the queries (with `features_dir`), per seat. */
+  play_sheets?: Partial<Record<Player, ReadonlyMap<number, OpponentSheet>>>;
 }
 
 async function playOne(options: GenerationOptions, plan: GamePlan, client: PolicyClient): Promise<PlayedOne> {
@@ -593,19 +608,24 @@ async function playOne(options: GenerationOptions, plan: GamePlan, client: Polic
   const rows: Partial<Record<Player, Map<number, AnyCandidateFeatures>>> = {};
   const keepRows = options.features !== undefined && options.features_dir !== undefined && options.episodes_dir !== undefined;
   const builders: ReturnType<typeof createSheetBuilder>[] = [];
-  const sheetFor = (): Pick<PolicySeat, "sheet"> => {
+  const keepSheets = options.sheet !== undefined && options.features_dir !== undefined && options.episodes_dir !== undefined;
+  const sheets: Partial<Record<Player, Map<number, OpponentSheet>>> = {};
+  const sheetFor = (player: Player): Pick<PolicySeat, "sheet"> => {
     if (options.sheet === undefined) return {};
     const builder = createSheetBuilder(options.sheet);
     builders.push(builder);
-    return { sheet: { builder } };
+    if (!keepSheets) return { sheet: { builder } };
+    const kept = new Map<number, OpponentSheet>();
+    sheets[player] = kept;
+    return { sheet: { builder, record: (seq: number, block: OpponentSheet) => void kept.set(seq, block) } };
   };
   const seatFor = (player: Player): PolicySeat => {
-    if (options.features === undefined) return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), ...sheetFor() };
+    if (options.features === undefined) return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), ...sheetFor(player) };
     const memo = createFeatureMemo();
     memos[player] = memo;
     const kept = new Map<number, AnyCandidateFeatures>();
     rows[player] = kept;
-    return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), features: { configs: options.features, memo, ...(keepRows ? { record: (seq: number, found: AnyCandidateFeatures) => void kept.set(seq, found) } : {}) }, ...sheetFor() };
+    return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), features: { configs: options.features, memo, ...(keepRows ? { record: (seq: number, found: AnyCandidateFeatures) => void kept.set(seq, found) } : {}) }, ...sheetFor(player) };
   };
   // The open regime's opponent-sheet block (engine-sheet) is a later slice: a run that reads blocks cannot play an open game yet.
   if (options.sheet !== undefined && plan.format_id !== undefined && plan.format_id !== config.format_id) throw new GenerationError("an open-format game needs the engine-sheet source of the opponent sheet block, which is not built yet");
@@ -632,6 +652,7 @@ async function playOne(options: GenerationOptions, plan: GamePlan, client: Polic
     ...played,
     ...(baseline?.report === undefined ? {} : { baseline: baseline.report() }),
     ...(keepRows ? { play_rows: rows } : {}),
+    ...(keepSheets ? { play_sheets: sheets } : {}),
     ...(belief === undefined ? {} : { feature_belief: belief }),
     ...(sheetCounts === undefined ? {} : { sheet: sheetCounts }),
   };
@@ -773,6 +794,15 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
           // Not renamed into place: the directory is the generation's partial one, discarded whole on a restart, and the loader checks each file against its name.
           writeDurable(join(options.episodes_dir, `${hash}.json`), `${jcs(episode as unknown as Json)}\n`);
           stored.push({ hash, behaviour_policy_id: episode.provenance.behaviour_policy_id });
+          // The sheet sidecar (#1315), the same way: the blocks the seat built at play time; a gap or a failure leaves the stream writer to recompute.
+          const playedSheets = game.play_sheets?.[seat === 0 ? "p1" : "p2"];
+          if (playedSheets !== undefined && options.sheet !== undefined && options.features_dir !== undefined && episode.provenance.behaviour_policy_id === policy_id) {
+            try {
+              await writePlaySheets(options.sheet.port.features_hash, episode, hash, playedSheets, options.features_dir);
+            } catch (error) {
+              process.stderr.write(`sheet sidecar skipped for game ${entry.game}: ${(error as Error).name}\n`);
+            }
+          }
           // The play-time sidecar: the pair's own seat leaves the rows it attached to its queries (a gap leaves nothing: the post-game pass builds them).
           const played = game.play_rows?.[seat === 0 ? "p1" : "p2"];
           if (played !== undefined && options.features !== undefined && options.features_dir !== undefined && episode.provenance.behaviour_policy_id === policy_id) {
@@ -913,7 +943,7 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
     const ownRefs = refs.filter((ref) => ref.behaviour_policy_id === policy_id);
     if (ownRefs.length === 0) throw new GenerationError("no Episode of the frozen pair: every game was forfeited");
     const stored: StoredEpisode[] = ownRefs.map(({ hash }) => ({ hash, path: join(dir, `${hash}.json`) }));
-    set = await writeStoredTrainingStream({ episodes: stored, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id, ...(options.features === undefined ? {} : { features: { engine, configs: options.features, ...(options.features_dir === undefined ? {} : { precomputed: readFeatureRows(engine, options.features, options.features_dir) }) } }), ...(options.sheet === undefined ? {} : { sheet: options.sheet }), ...formatsOf(config) }, { ...limits, path: options.stream_path });
+    set = await writeStoredTrainingStream({ episodes: stored, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id, ...(options.features === undefined ? {} : { features: { engine, configs: options.features, ...(options.features_dir === undefined ? {} : { precomputed: readFeatureRows(engine, options.features, options.features_dir) }) } }), ...(options.sheet === undefined ? {} : { sheet: { ...options.sheet, ...(options.features_dir === undefined ? {} : { precomputed: readSheetBlocks(options.sheet.port.features_hash, options.features_dir) }) } }), ...formatsOf(config) }, { ...limits, path: options.stream_path });
     episodeHashes = refs.map((ref) => ref.hash);
     if (labelsActive(options)) {
       if (options.labels_path === undefined) throw new GenerationError("labels need labels_path");

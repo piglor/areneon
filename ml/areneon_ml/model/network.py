@@ -710,6 +710,9 @@ def tie_trunk(shared: PolicyNetwork, other: PolicyNetwork) -> None:
     for name in ("mon_cat", "mon_num", "side", "field_cat", "field_num", "blocks", "final_norm"):
         setattr(other, name, getattr(shared, name))
     other.aggregate = shared.aggregate
+    # opponent_sheet: the "other" embedding is trunk too (`trunk_keys` names `sheet_other.`)
+    if hasattr(shared, "sheet_other"):
+        other.sheet_other = shared.sheet_other
 
 
 def check_shared_trunk(networks: Mapping[str, PolicyNetwork]) -> None:

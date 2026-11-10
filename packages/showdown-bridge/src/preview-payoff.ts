@@ -12,7 +12,7 @@
 
 import { jcs } from "./canonical-json.ts";
 import { decodeRequest } from "./request.ts";
-import { evaluateHypothetical, type HypotheticalCandidate, type HypotheticalObservation, type HypotheticalPreview, hypotheticalRequest } from "./hypothetical-preview.ts";
+import { evaluateHypothetical, HypotheticalFeatureError, type HypotheticalCandidate, type HypotheticalObservation, type HypotheticalPreview, hypotheticalRequest } from "./hypothetical-preview.ts";
 import type { PolicyClient, EvaluationClient } from "./policy-worker.ts";
 import { sha256Hex } from "./rules.ts";
 import { outcomeScore } from "./search-leaf.ts";
@@ -115,6 +115,9 @@ export interface PayoffCounts {
   missing_entries: number;
 }
 
+/** Worlds dropped because the pair's feature builder could not feature one of their requests, by the builder's code (not part of `PayoffCounts`: the records' counts are closed). */
+export type FeatureRefusals = Readonly<Record<string, number>>;
+
 export interface PayoffTable {
   readonly leaf: PayoffLeaf;
   /** Our strategies, the rows. */
@@ -129,6 +132,8 @@ export interface PayoffTable {
   readonly complete: boolean;
   readonly matrix: readonly (readonly number[])[] | null;
   readonly counts: PayoffCounts;
+  /** Worlds dropped for every cell because a request could not be featured (a pair that reads candidate features); empty otherwise. Also counted in `counts.worlds_dropped`. */
+  readonly feature_refusals: FeatureRefusals;
 }
 
 export const emptyCounts = (): PayoffCounts => ({
@@ -323,6 +328,7 @@ export async function buildPayoffTable(input: PayoffInput): Promise<PayoffTable>
     return argmax(answer.candidates, answer.evaluation.prior_ppm);
   };
 
+  const featureRefusals: Record<string, number> = {};
   for (const { index, preview } of worlds) {
     // Every cell of a world or none (ADR-029 section 3): a refused or non-move entry drops the world, so all cells average the same worlds.
     const values: number[][] = own.map(() => opp.map(() => 0));
@@ -337,21 +343,28 @@ export async function buildPayoffTable(input: PayoffInput): Promise<PayoffTable>
           break;
         }
         counts.entry_attempts += 1;
-        const turn = config.leaf.kind === "rollout" ? await preview.rollout(strategy.order, order, config.leaf.turns, choose, max_steps) : preview.play(strategy.order, order);
-        if (turn.kind === "refused") {
-          counts.engine_refusals += 1;
+        try {
+          const turn = config.leaf.kind === "rollout" ? await preview.rollout(strategy.order, order, config.leaf.turns, choose, max_steps) : preview.play(strategy.order, order);
+          if (turn.kind === "refused") {
+            counts.engine_refusals += 1;
+            dropped = true;
+          } else if (turn.kind === "ended") {
+            counts.game_end_entries += 1;
+            (values[r] as number[])[c] = outcomeScore(turn.outcome);
+          } else if (turn.request.phase !== "move" && turn.capped !== true) {
+            counts.not_move_request += 1;
+            dropped = true;
+          } else {
+            if (turn.capped === true) counts.rollout_capped += 1;
+            counts.value_queries += 1;
+            const answer = await evaluateHypothetical(client, battle, await preview.observation(turn.channel), policy_id);
+            (values[r] as number[])[c] = clamp(answer.evaluation.value_ppm);
+          }
+        } catch (error) {
+          // A request the pair's feature builder cannot feature drops the whole world, counted; never a rule fallback.
+          if (!(error instanceof HypotheticalFeatureError)) throw error;
+          featureRefusals[error.code] = (featureRefusals[error.code] ?? 0) + 1;
           dropped = true;
-        } else if (turn.kind === "ended") {
-          counts.game_end_entries += 1;
-          (values[r] as number[])[c] = outcomeScore(turn.outcome);
-        } else if (turn.request.phase !== "move" && turn.capped !== true) {
-          counts.not_move_request += 1;
-          dropped = true;
-        } else {
-          if (turn.capped === true) counts.rollout_capped += 1;
-          counts.value_queries += 1;
-          const answer = await evaluateHypothetical(client, battle, await preview.observation(turn.channel), policy_id);
-          (values[r] as number[])[c] = clamp(answer.evaluation.value_ppm);
         }
       }
     }
@@ -371,5 +384,5 @@ export async function buildPayoffTable(input: PayoffInput): Promise<PayoffTable>
   const entries = sums.map((row, r) => row.map((sum, c) => ((contributors[r] as number[])[c] === 0 ? null : Math.floor(sum / ((contributors[r] as number[])[c] as number)))));
   counts.missing_entries = entries.flat().filter((entry) => entry === null).length;
   const complete = counts.missing_entries === 0;
-  return { leaf: config.leaf, own, opp, entries, contributors, complete, matrix: complete ? (entries as number[][]) : null, counts };
+  return { leaf: config.leaf, own, opp, entries, contributors, complete, matrix: complete ? (entries as number[][]) : null, counts, feature_refusals: featureRefusals };
 }

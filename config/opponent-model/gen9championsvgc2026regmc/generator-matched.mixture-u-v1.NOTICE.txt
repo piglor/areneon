@@ -1,0 +1,14 @@
+generator-matched.mixture-u-v1.json: what the record is and how exact it is
+
+The record is the generator-matched prior of config/teams/gen9championsvgc2026regmc/generator.mixture-u.json
+(role_sets 200, uniform 300, usage 500 per mille). Its usage component reads the 2026-09 Smogon usage weight
+table (config/teams/gen9championsvgc2026regmc/usage/2026-09-1630.json; see its NOTICE for the source, credit and
+rights basis). The record holds aggregate numbers only.
+
+Estimated part. The set lists are exact integer arithmetic on the mixture; the usage component's SPECIES
+INCLUSION (how likely an entry is on a team it draws, which weights the component in the entry's lists and the
+entry's weight inside its preview species) is estimated by a fixed-seed simulation of 200,000 teams, with a
+Rao-Blackwellized count. Its standard error is at most sqrt(p / 200,000) for an inclusion p, that is 7% of the
+value at p = 0.001 and 22% at p = 0.0001; the estimate is reproducible byte for byte. A usage component with
+floor_permille 0 is refused, so an entry the table lacks still has a positive inclusion.
+Not modelled: the Item Clause, the validator's rejections and the stratum quotas.
