@@ -26,6 +26,7 @@ from typing import Any
 
 from areneon_contracts.contracts import jcs
 
+from areneon_ml.checkpoint.binding import BINDING_NAME, binding_bytes
 from areneon_ml.checkpoint.files import checkpoint_bytes, pack_safetensors, write_checkpoint
 from areneon_ml.checkpoint.record import CheckpointRecord, read_record
 from areneon_ml.learner.clone import Cloned
@@ -109,7 +110,15 @@ def write_clone(
     for role in ROLES:
         record = _record(config, role, ids[role], shared)
         layout.write_json(work / "records" / f"{ids[role]}.json", record.to_json())
-    layout.write_file(work / "sources.json", jcs({config.teacher_set_hash: []}))
+    registry = jcs({config.teacher_set_hash: []})
+    layout.write_file(work / "sources.json", registry)
+    layout.write_file(
+        work / BINDING_NAME,
+        binding_bytes(
+            {path.stem: path.read_bytes() for path in sorted((work / "records").glob("*.json"))},
+            registry,
+        ),
+    )
     layout.write_file(work / "clone-state.safetensors", packed)
     layout.write_file(work / "clone-state.json", jcs(sidecar))
     layout.write_json(work / "clone-run-config.json", config.raw)
