@@ -28,11 +28,12 @@ from areneon_ml.progress.stats import (
 #: Says what an open row is: the engine's open-sheet format, beside the target's closed one.
 OPEN_LABEL = (
     "open-sheet format (the engine's Bo3 variant, one game at a time): beside the closed "
-    "target format, never pooled with it"
+    "target format, never pooled with it; scripted baselines play it without using the sheets"
 )
 VIEW_LABEL = (
     "descriptive: the score against the damage-aware baseline in the closed and in the open "
-    "format, same pairs, seeds and seats; no difference and no combined score"
+    "format, same pairs, seeds and seats; no difference and no combined score. The scripted "
+    "baseline plays the open battles without using the sheets"
 )
 #: The fields an open twin shares with its closed match.
 _SAME = ("policy_id", "opponent", "mode", "games", "temperature_ppm", "truncation")

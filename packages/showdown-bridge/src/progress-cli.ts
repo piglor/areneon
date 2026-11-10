@@ -25,6 +25,7 @@ import { EVAL_DATASET_FLAGS, readEvalDataset, withEvalDataset } from "./eval-dat
 import { type ExtraMode, type ProgressMode, type ProgressPool, ProgressError, playProgress, writeProgress, PROGRESS_MODES, DAMAGE_AWARE_VERSIONS, type DamageAwareVersion } from "./progress-evaluation.ts";
 import { ProgressModeError, parseExtraMode } from "./progress-modes.ts";
 import { progressRecordHash } from "./progress-records.ts";
+import type { RulesSnapshot } from "./rules.ts";
 import { loadRulesSnapshot } from "./rules-load.ts";
 import { sheetVariantPairs } from "./sheet-variants.ts";
 import { readTrainingRunConfig, runConfigHash, type TrainingRunConfig } from "./training-run-config.ts";
@@ -122,6 +123,13 @@ export function committedPlanSeeds(runDir: string): Set<string> {
     for (const entry of JSON.parse(text) as { seed: string }[]) seeds.add(entry.seed);
   }
   return seeds;
+}
+
+/** The one open-sheet variant the rules snapshot pairs with a closed format (`--team-sheets open`); anything but exactly one is a usage error. */
+export function openFormatOf(snapshot: RulesSnapshot, closedFormat: string): string {
+  const found = sheetVariantPairs(snapshot).filter((pair) => pair.closed === closedFormat);
+  if (found.length !== 1) throw new UsageError("--team-sheets open needs exactly one open-sheet variant of the run's format in the rules snapshot");
+  return (found[0] as { open: string }).open;
 }
 
 /** The team hashes of a run's `team-set.json`; anything else is refused (this list is what keeps trained teams out of the pool). */
@@ -284,9 +292,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
   let openFormat: string | undefined;
   if (values["team-sheets"] !== undefined) {
-    const found = sheetVariantPairs(loadRulesSnapshot(engine.commit)).filter((pair) => pair.closed === config.format_id);
-    if (found.length !== 1) throw new UsageError("--team-sheets open needs exactly one open-sheet variant of the run's format in the rules snapshot");
-    openFormat = (found[0] as { open: string }).open;
+    openFormat = openFormatOf(loadRulesSnapshot(engine.commit), config.format_id);
   }
   const readRunTeams = ports.run_teams ?? ((): never => { throw new UsageError("this command cannot read the run's own teams: --eval-dataset-dir needs the team-dataset script"); });
   // An evaluation dataset must hold none of the run's own dev or training teams (not only those it drew into team-set.json).

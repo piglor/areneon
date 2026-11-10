@@ -1372,7 +1372,8 @@ def _team_sheets_section(model: ReportModel, done: list[int]) -> str:
                 ("Open-sheet format", True),
             ],
             rows,
-            f"{OPEN_LABEL}. Each score has its own pair-level interval ({PAIRS}).",
+            f"{OPEN_LABEL}. Each score has its own pair-level interval ({PAIRS}). The scripted "
+            "baseline plays the open battles without using the sheets.",
         )
     )
 

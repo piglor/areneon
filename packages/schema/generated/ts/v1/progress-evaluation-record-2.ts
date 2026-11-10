@@ -186,7 +186,7 @@ export interface Match {
    */
   match_id: string;
   /**
-   * Only a match played in the open-sheet format (ADR-027 section 5a, ADR-017 erratum E4): open. Absent means the closed (target) format, so every existing match keeps its bytes; the writer never states closed. An open match is named open-<name of its closed twin> and its games use the open manifest of game_manifests; its score is never pooled with the closed match's. A minor change within version 2.
+   * Only a match played in the open-sheet format (ADR-027 section 5a, ADR-017 erratum E4): open. Absent means the closed (target) format, so every existing match keeps its bytes; the writer never states closed. An open match is named open-<name of its closed twin> and its games use the open manifest of game_manifests; its score is never pooled with the closed match's. A minor change within version 2. Readers refuse an explicit closed: the value is listed only so the union is spelled out, and absence means closed.
    */
   team_sheets?: "closed" | "open";
   /**
