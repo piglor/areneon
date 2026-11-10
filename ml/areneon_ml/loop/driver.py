@@ -754,7 +754,8 @@ def export_provenance(run_dir: Path, out_dir: Path) -> str:
     registry = jcs(sources_registry(run_dir))
     (out_dir / "sources.json").write_bytes(registry)
     _write_binding(out_dir, registry)
-    return sha256_hex(registry)
+    digest: str = sha256_hex(registry)
+    return digest
 
 
 def _write_binding(out_dir: Path, registry: bytes) -> None:

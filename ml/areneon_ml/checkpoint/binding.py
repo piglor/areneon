@@ -28,13 +28,13 @@ class BindingError(ValueError):
 
 def binding_bytes(records: Mapping[str, bytes], registry: bytes) -> bytes:
     """The binding file: the registry's hash and each record file's hash by checkpoint id."""
-    return jcs(
-        {
-            "schema_version": BINDING_VERSION,
-            "sources_hash": sha256_hex(registry),
-            "records": {key: sha256_hex(data) for key, data in sorted(records.items())},
-        }
-    )
+    body = {
+        "schema_version": BINDING_VERSION,
+        "sources_hash": sha256_hex(registry),
+        "records": {key: sha256_hex(data) for key, data in sorted(records.items())},
+    }
+    encoded: bytes = jcs(body)
+    return encoded
 
 
 def verify_binding(binding: Path, registry: bytes, records: Mapping[str, bytes]) -> None:
