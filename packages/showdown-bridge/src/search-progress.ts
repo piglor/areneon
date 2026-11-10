@@ -6,7 +6,7 @@
 
 import { enumerateCandidates } from "./choices.ts";
 import type { Actor } from "./runner.ts";
-import { type PolicyActorOptions, policyActor, type PolicySeat } from "./policy-actor.ts";
+import { type ActorFeatures, type PolicyActorOptions, policyActor, type PolicySeat } from "./policy-actor.ts";
 import type { PlaySettings } from "./policy-protocol.ts";
 import type { EvaluationClient, PolicyClient } from "./policy-worker.ts";
 import { CONTROL_FALLBACK_KEYS, SEARCH_COUNT_KEYS, SEARCH_TABLE_KEYS, type SearchCounts } from "./progress-records.ts";
@@ -32,6 +32,9 @@ export interface SearchSeatOptions {
   identity_hash: string;
   mode: "sample" | "argmax";
   play?: PlaySettings;
+  /** The frozen pair's checkpoint ids and the feature configs, for a pair that reads candidate features (else both absent). */
+  pair?: { preview: string; battle: string };
+  features?: ActorFeatures;
   /** Called with each game's actor as it is built: the caller reads `report()` after the game. */
   onActor: (actor: SearchActor) => void;
 }
@@ -45,6 +48,8 @@ export function searchSeat(o: SearchSeatOptions): PolicySeat {
     ...(o.play === undefined ? {} : { play: o.play }),
     make: (options: PolicyActorOptions) => {
       const actor = searchActor({
+        ...(o.pair === undefined ? {} : { pair: o.pair }),
+        ...(o.features === undefined ? {} : { features: o.features }),
         setup: o.setup,
         client: o.client,
         battle: options.battle,
@@ -76,6 +81,7 @@ export interface ControlSeatOptions {
   policy_id: string;
   mode: "sample" | "argmax";
   play?: PlaySettings;
+  features?: ActorFeatures;
   onTally: (tally: ControlTally) => void;
 }
 
@@ -99,6 +105,7 @@ export function controlSeat(o: ControlSeatOptions): PolicySeat {
     policy_id: o.policy_id,
     sampling: o.mode,
     ...(o.play === undefined ? {} : { play: o.play }),
+    ...(o.features === undefined ? {} : { features: o.features }),
     make: (options: PolicyActorOptions) => {
       const inner: Actor = policyActor(options);
       const counts: ActorCounts = {

@@ -4,6 +4,8 @@
 // Two games with different hashes are different baselines and are never pooled; a change of any part
 // is a new baseline, never an edit.
 
+import { WORLD_FACTS_FORMAT } from "@areneon/public-state";
+import { featureSetHash } from "./candidate-features.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import { type AnyDamageAwareConfig, damageAwareConfigHash } from "./damage-aware-config.ts";
 import type { VersionManifest } from "./formats.ts";
@@ -12,6 +14,9 @@ import { MECHANICS_ADAPTER_FORMAT } from "./mechanics-result.ts";
 import { sha256Hex } from "./rules.ts";
 
 export const DAMAGE_AWARE_NAME = "damage-aware";
+
+/** The version of the situational scorer of `damage-aware@v4` (`damage-aware-situational.ts`); bump it when it scores a switch or a stalling move differently for the same input. Part of the identity only for a record with `situational` weights, so v1, v2 and v3 keep their bytes. */
+export const SITUATIONAL_SCORE_FORMAT = 1;
 
 /**
  * The parts a baseline's play depends on besides its policy id: five, and a sixth only when the config
@@ -25,6 +30,12 @@ export interface DamageAwareIdentity {
   version_manifest: VersionManifest;
   /** `belief_identity_hash` of the belief the record names; absent for v1. */
   belief_identity_hash?: string;
+  /** `SITUATIONAL_SCORE_FORMAT`; present only for a record with `situational` weights (v4). */
+  situational_format?: number;
+  /** v4 only: its choices read the world facts (the Protect streak) and the `probe-damage/2` arrays, so their formats are part of the baseline. */
+  world_facts_format?: string;
+  /** v4 only: `feature_set_hash` of the `probe-damage/2` set this checkout computes for the record's own assumed-set config. */
+  feature_set_hash?: string;
 }
 
 export interface IdentityParts {
@@ -50,6 +61,20 @@ export function damageAwareIdentity(parts: IdentityParts): DamageAwareIdentity {
     reader_sha256: parts.reader_sha256,
     version_manifest: parts.manifest,
     ...(parts.belief_identity_hash === undefined ? {} : { belief_identity_hash: parts.belief_identity_hash }),
+    ...(parts.config.schema_version === 1 && parts.config.situational !== undefined
+      ? {
+          situational_format: SITUATIONAL_SCORE_FORMAT,
+          world_facts_format: WORLD_FACTS_FORMAT,
+          feature_set_hash: featureSetHash({
+            feature_set: "probe-damage/2",
+            mechanics_config_hash: mechanicsConfigHash(parts.mechanics),
+            assumed_set_config_hash: damageAwareConfigHash(parts.config),
+            adapter_format: MECHANICS_ADAPTER_FORMAT,
+            reader_sha256: parts.reader_sha256,
+            version_manifest: parts.manifest,
+          }),
+        }
+      : {}),
   };
 }
 

@@ -34,7 +34,7 @@ from areneon_contracts.contracts import jcs, sha256_hex, validate
 
 from areneon_ml.loop import layout
 from areneon_ml.loop.play import PlayError
-from areneon_ml.loop.records import policy_id
+from areneon_ml.loop.records import features_hash, policy_id
 from areneon_ml.model.encoder import encoder_version
 from areneon_ml.model.gamedata import GameData
 from areneon_ml.progress import evaluation_key as ekey
@@ -409,7 +409,7 @@ def best_response(
             f"{limit * 2}"
         )
     source = _source(run_dir, config, request.generation)
-    mode_id = policy_id(source.preview, source.battle, request.mode)
+    mode_id = policy_id(source.preview, source.battle, request.mode, features=features_hash(config))
     game = GameData.from_table(json.loads(request.engine_data.read_text(encoding="utf-8")))
     out = request.out.resolve()
     if out.exists():

@@ -26,8 +26,11 @@ import {
 import { datasetHash, readDataset } from "./dataset-reader.ts";
 import { loadFixtureInputs } from "./fixtures.ts";
 
+/** The part of a run config the pool reads: the dataset it names, its format and the abilities it leaves out. */
+export type ValidationPoolInput = Pick<TrainingRunConfig, "format_id" | "team_dataset"> & { generation: Pick<TrainingRunConfig["generation"], "excluded_abilities"> };
+
 /** The pool a run config's `team_dataset` names, validation split only, sorted by canonical hash. */
-export function datasetValidationPool(engine: Engine, config: TrainingRunConfig): ProgressPool {
+export function datasetValidationPool(engine: Engine, config: ValidationPoolInput): ProgressPool {
   const named = config.team_dataset;
   if (named === undefined) throw new ProgressError("the run config names no team dataset");
   const dataset = readDataset(named.path, loadFixtureInputs(engine, config.format_id, named.path));

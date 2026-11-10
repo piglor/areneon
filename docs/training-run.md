@@ -132,7 +132,7 @@ the load flags by a digest over every tensor). None is in the run config.
 | `--policy-workers K` | policy worker processes per game process | 1 |
 | `--node-heap-mb M` | `--max-old-space-size` of each Node game process | Node's own |
 | `--generation-timeout-minutes M` | wall-clock limit of a generation's play phase; past it the driver kills the Node process group and the generation fails, nothing committed | 180 |
-| `--load-processes N` | worker processes that check and encode the stream in the load phase | 1 |
+| `--load-processes N\|auto` | worker processes that check and encode the stream in the load phase; `auto` sizes them at each load phase from the usable cores (half, at most 16) and the `MemAvailable` read at that moment (400 MB each above a 2 GB reserve; an estimate, not a guarantee), capped by `--load-memory-mb` | 1 |
 | `--load-memory-mb M` | cap on what the load workers may add (about 400 MB each); fewer run if `N` does not fit | none |
 
 What a process holds, measured on the 28-core, 24 GB, 16 GB GPU machine with the 20,000 team

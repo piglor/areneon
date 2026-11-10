@@ -10,6 +10,7 @@ import {
   damageAwareSetup,
   damageAwareSetupV2,
   DAMAGE_AWARE_V3_POLICY_ID,
+  DAMAGE_AWARE_V4_POLICY_ID,
   forfeitCauses,
   GenerationError,
   type GenerationOptions,
@@ -27,6 +28,7 @@ import { UnsupportedCandidateError } from "../src/evaluation-harness.ts";
 import { loadTrainingSet, readTrainingSet, TrainingLoaderError } from "../src/training-loader.ts";
 import { SAMPLES_DIR } from "../src/samples.ts";
 import { startShard } from "../src/generation-cli.ts";
+import { readPoolFile, writePoolFile } from "../src/pool-share.ts";
 import { teamHash } from "../src/team-class.ts";
 import { fakePort } from "./damage-aware-world-support.ts";
 
@@ -501,6 +503,29 @@ describe("several workers and game processes (#957)", () => {
     for (const ids of seen.values()) expect(ids.size).toBe(1);
   });
 
+  it("gives the same generation, file for file, from the pool a further game process reads back as from the pool it loads itself (#1192)", async () => {
+    const scratch = mkdtempSync(join(tmpdir(), "areneon-shared-pool-"));
+    try {
+      const request = { format_id: config.format_id, generation: config.generation };
+      const file = join(scratch, "pool.json");
+      const shared = readPoolFile(file, request, writePoolFile(file, pool, request));
+      const write = async (name: string, used: TrainingPool): Promise<string[]> => {
+        const out = join(scratch, name);
+        const episodes = join(out, "episodes");
+        mkdirSync(episodes, { recursive: true });
+        // A slice played from the shared pool and the rest from it too, as the processes of one generation are.
+        const there = playEntries(opts({ pool: used, episodes_dir: episodes, peers: [actorClient()] }), { index: 1, of: 2 });
+        writeGeneration(out, await playGeneration(opts({ pool: used, episodes_dir: episodes, stream_path: join(out, "stream.jsonl"), shard: { index: 0, of: 2 }, others: there })));
+        return ["stream.jsonl", "training-set.json", "plan.json", "league-run.json", "generation.json", ...readdirSync(episodes).sort().map((n) => `episodes/${n}`)].map((n) => `${n}\n${readFileSync(join(out, n), "utf8")}`);
+      };
+      const own = await write("own", pool);
+      expect(await write("shared", shared)).toEqual(own);
+      expect(own.length).toBeGreaterThan(10);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+
   it("gives the same generation when game processes each play a slice, in whatever order they finish", async () => {
     const of = 3;
     const slice = (index: number): Promise<Awaited<ReturnType<typeof playEntries>>> => playEntries(opts({ peers: [actorClient()] }), { index, of });
@@ -638,6 +663,33 @@ describe("damage-aware@v3 as a training opponent (#1183)", () => {
 
   it("never hands a v1 record to a config that names v3", async () => {
     await expect(play(v3Config(), { damage_aware_v3: damageAwareSetup(engine, "gen9championsvgc2026regmc") })).rejects.toThrow(/names another record version/);
+  }, 120_000);
+});
+
+describe("damage-aware@v4 as a training opponent (#1329)", () => {
+  const v4Config = () =>
+    readTrainingRunConfig({
+      ...(sample("tiny") as object),
+      generation: { ...config.generation, games: 2, baseline_games: [{ actor: "damage-aware", policy_id: DAMAGE_AWARE_V4_POLICY_ID, games: 2 }] },
+    });
+  const play = (cfg = v4Config(), extra: Partial<Parameters<typeof playGeneration>[0]> = {}) =>
+    playGeneration({ engine, config: cfg, generation: 1, policy_id: POLICY, client: actorClient(), pool, ...extra });
+
+  it("plays the v4 record: its own opponent entry and identity, byte-identical on a rerun", async () => {
+    const first = await play();
+    expect((await play()).stream).toBe(first.stream);
+    const record = readLeagueRunRecord(first.run_record);
+    expect(record.opponents).toContainEqual({ opponent_policy_id: DAMAGE_AWARE_V4_POLICY_ID, games: 2 });
+    const entry = at(record.baselines ?? [], 0);
+    expect(entry).toMatchObject({ policy_id: DAMAGE_AWARE_V4_POLICY_ID, games: 2 });
+    expect(entry.counts.decisions).toBeGreaterThan(0);
+    await expect(checkLeagueRunRecord(record, v4Config())).resolves.toBeUndefined();
+    const v3 = await play(readTrainingRunConfig({ ...(sample("tiny") as object), generation: { ...config.generation, games: 2, baseline_games: [{ actor: "damage-aware", policy_id: DAMAGE_AWARE_V3_POLICY_ID, games: 2 }] } }));
+    expect(entry.identity_hash).not.toBe(at(readLeagueRunRecord(v3.run_record).baselines ?? [], 0).identity_hash);
+  }, 400_000);
+
+  it("never hands a v3 record to a config that names v4", async () => {
+    await expect(play(v4Config(), { damage_aware_v4: damageAwareSetup(engine, "gen9championsvgc2026regmc", "v3") })).rejects.toThrow(/names another record version/);
   }, 120_000);
 });
 

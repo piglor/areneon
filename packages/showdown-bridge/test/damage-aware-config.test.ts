@@ -30,8 +30,8 @@ const edited = (change: (copy: DamageAwareConfig) => void): DamageAwareConfig =>
 };
 
 describe("the committed config", () => {
-  it("holds the v1, v2 and v3 records in config/baselines, reads against the vocabulary and equals the corpus sample", () => {
-    expect(readdirSync(DAMAGE_AWARE_CONFIG_DIR)).toEqual(["damage-aware.v1.json", "damage-aware.v2.json", "damage-aware.v3.json"]);
+  it("holds the v1 to v4 records in config/baselines, reads against the vocabulary and equals the corpus sample", () => {
+    expect(readdirSync(DAMAGE_AWARE_CONFIG_DIR)).toEqual(["damage-aware.v1.json", "damage-aware.v2.json", "damage-aware.v3.json", "damage-aware.v4.json"]);
     expect(config).toEqual(sample("valid", "v1"));
   });
 
@@ -42,6 +42,29 @@ describe("the committed config", () => {
 
   it("evaluates with no exploration", () => {
     expect(config.epsilon_ppm).toBe(0);
+  });
+});
+
+describe("the situational weights of damage-aware@v4 (#1329)", () => {
+  const v4 = loadDamageAwareConfig("v4", vocabulary);
+  it("the committed record is v3 plus the two weights, and equals the corpus sample", () => {
+    const { situational, ...rest } = v4;
+    expect(situational).toEqual({ switch_value_ppm: 1_000_000, protect_value_ppm: 600_000 });
+    expect(rest).toEqual(loadDamageAwareConfig("v3", vocabulary));
+    expect(v4).toEqual(sample("valid", "v4"));
+    expect(damageAwareConfigHash(v4)).not.toBe(damageAwareConfigHash(loadDamageAwareConfig("v3", vocabulary)));
+  });
+
+  it("v1 and v3 carry none (their bytes and hashes are unchanged)", () => {
+    expect(loadDamageAwareConfig("v1", vocabulary).situational).toBeUndefined();
+    expect(loadDamageAwareConfig("v3", vocabulary).situational).toBeUndefined();
+  });
+
+  it("refuses weights without the engine's target convention, and a half record", () => {
+    expect(() => readDamageAwareConfig(sample("reader-invalid", "situational-without-engine-convention"), vocabulary)).toThrow("engine's target convention");
+    expect(() => readDamageAwareConfig(sample("invalid", "situational-missing-protect"), vocabulary)).toThrow("invalid DamageAwareConfig");
+    expect(() => readDamageAwareConfig(sample("invalid", "situational-fractional-switch"), vocabulary)).toThrow("invalid DamageAwareConfig");
+    expect(() => readDamageAwareConfig(sample("invalid", "situational-weight-over-one"), vocabulary)).toThrow("invalid DamageAwareConfig");
   });
 });
 

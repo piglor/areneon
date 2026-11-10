@@ -14,8 +14,10 @@
 // What a solve reads is `PreviewSolveInput` (`hypothetical-preview.ts`): the format, the seat, the own team, the own channel to
 // the request and the harness stream. The live battle, the battle record, the omniscient log, hidden verdicts, the battle seed and the
 // opponent's team are not parameters of `solvePreview`; the seed reaches only the two harness derivations (the world stream and
-// `u`). Nothing solved is stored: the actor returns a choice string. A pair that reads candidate features or the opponent sheet is
-// refused (`features_pair`): rows would be needed at hypothetical requests.
+// `u`). Nothing solved is stored: the actor returns a choice string. A pair that reads the opponent sheet is refused
+// (`features_pair`). A pair that reads candidate features needs the run's `FeatureConfigs` (`features`): every hypothetical
+// observation then carries the rows of the pair's own builder, made on that seat's own hypothetical channel and own sets
+// (`hypothetical-preview.ts`); a request that cannot be featured drops its world, counted, never a rule fallback.
 //
 // The bridge does not import the opponent model: the belief's full-team draw and the matrix solver come in as structural ports,
 // joined by the composition root in `packages/team-dataset`.
@@ -23,6 +25,8 @@
 import { createHash } from "node:crypto";
 import type { PublicFlag, PublicSide } from "@areneon/public-state";
 import { readerSha256 } from "@areneon/public-state";
+import { configuredSetHash } from "./feature-build.ts";
+import type { FeatureConfigs } from "./candidate-features.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import { BELIEF_DEFECTS } from "./damage-aware-worlds.ts";
 import type { Engine } from "./engine.ts";
@@ -114,6 +118,7 @@ export function previewSolvePolicy(
   mode: "sample" | "argmax",
   play: PlaySettings = {},
   search?: string,
+  features?: string,
 ): PreviewSolvePolicyResult {
   const inputs = {
     belief_identity_hash: setup.teams.identity_hash,
@@ -124,7 +129,7 @@ export function previewSolvePolicy(
     hypothetical_battle_format: HYPOTHETICAL_BATTLE_FORMAT,
   };
   const identity_hash = previewSolveIdentityHash(setup.config, inputs);
-  return { policy_id: policyId(pair, mode, play, undefined, search, identity_hash), identity: previewSolveIdentity(setup.config, inputs), identity_hash };
+  return { policy_id: policyId(pair, mode, play, features, search, identity_hash), identity: previewSolveIdentity(setup.config, inputs), identity_hash };
 }
 
 const hexBytes = (hex: string): Uint8Array => Uint8Array.from(hex.match(/../g) as string[], (byte) => parseInt(byte, 16));
@@ -166,6 +171,8 @@ export interface SolveDeps {
   /** The solver policy id: it labels the worker queries. */
   policy_id: string;
   channel_class: DataClass;
+  /** The feature configs of a pair that reads candidate features (absent: the pair reads none). */
+  features?: { configs: FeatureConfigs };
 }
 
 /** What one solve produced, for the actor and for tests and tooling; never stored. */
@@ -214,7 +221,7 @@ export async function solvePreview(deps: SolveDeps, input: PreviewSolveInput, si
     if (BELIEF_DEFECTS.has(opened.code)) throw new PreviewSolveError("belief_defect", `the belief refused the run itself (${opened.code})`);
     return { kind: "fallback", reason: "belief_refusal", code: opened.code, worlds: none };
   }
-  const started = startPreviewWorlds({ engine, vocabulary, format_id: input.format_id, source: opened.source, count: asked, stream: input.stream, seat: input.seat, own_team: input.team, channel_class, own_request: view.request });
+  const started = startPreviewWorlds({ engine, vocabulary, format_id: input.format_id, source: opened.source, count: asked, stream: input.stream, seat: input.seat, own_team: input.team, channel_class, own_request: view.request, ...(deps.features === undefined ? {} : { features: deps.features }) });
   for (const code of Object.keys(started.refusal_codes)) if (BELIEF_DEFECTS.has(code)) throw new PreviewSolveError("belief_defect", `the belief refused the run itself (${code})`);
   const worlds: WorldCounts = { asked, refused: started.refused, unstarted: started.unstarted };
   if (started.worlds.length < config.worlds.min_valid) {
@@ -294,6 +301,8 @@ export interface PreviewSolveActorOptions {
   game: number;
   /** The channel class of the battle (`battleClass`): the hypothetical battles carry it. */
   channel_class: DataClass;
+  /** The feature configs of a pair that reads candidate features (`pairFeatureSetup(...).configs`); required exactly when the client states a feature set. */
+  features?: { configs: FeatureConfigs };
   /** The wrapped actor: every request that is not Team Preview, and the fallback's Team Preview. It was built with the solver policy id. */
   base: Actor;
   /** A2 only: the bank left in ms (null when unknown). Below `config.a2_clock_floor_ms` the solve is skipped (`clock_floor`). A1 never sets it. */
@@ -321,9 +330,12 @@ const failureReason = (error: unknown): FallbackReason | null => (error instance
 export function previewSolveActor(options: PreviewSolveActorOptions): PreviewSolveActor {
   const { setup, client, battle, player, policy_id, identity_hash, seed, game, channel_class, base, bank_ms } = options;
   const { config } = setup;
-  if ((client.featureSet ?? null) !== null) throw new PreviewSolveError("features_pair", "a pair that reads candidate features is not supported by the Team Preview solver");
+  const stated = client.featureSet ?? null;
+  if (stated !== null && options.features === undefined) throw new PreviewSolveError("features_pair", "a pair that reads candidate features needs the feature configs to build the rows of its hypothetical requests");
+  if (stated === null && options.features !== undefined) throw new PreviewSolveError("features_pair", "feature configs were given for a pair whose worker states no feature set");
+  if (stated !== null && options.features !== undefined && configuredSetHash(setup.engine, options.features.configs) !== stated.feature_set_hash) throw new PreviewSolveError("features_pair", "the feature configs build another feature set than the worker stated");
   if (((client as { sheetSource?: unknown }).sheetSource ?? null) !== null) throw new PreviewSolveError("features_pair", "a pair that reads the opponent sheet is not supported by the Team Preview solver");
-  const deps: SolveDeps = { engine: setup.engine, vocabulary: setup.vocabulary, config, teams: setup.teams, solver: setup.solver, client, battle, policy_id, channel_class };
+  const deps: SolveDeps = { engine: setup.engine, vocabulary: setup.vocabulary, config, teams: setup.teams, solver: setup.solver, client, battle, policy_id, channel_class, ...(options.features === undefined ? {} : { features: options.features }) };
   const counts = emptyCounts();
 
   const actor: Actor = async (request, context) => {

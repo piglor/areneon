@@ -37,7 +37,7 @@ const engine = {} as Engine;
 // A wait request: the trapping check declines it (null) without touching the engine.
 const input = { request: { wait: true, side: { id: "p1", pokemon: [] } }, team: [], state: { opponent: { roster: [] }, player: "p1" }, flags: [] } as unknown as SheetInput;
 
-function portOf(results: (OpponentSheet | Error)[], format = "testformat"): BeliefFeaturesPort & { calls: unknown[] } {
+function portOf(results: ((OpponentSheet & { refusal_detail?: string }) | Error)[], format = "testformat"): BeliefFeaturesPort & { calls: unknown[] } {
   const calls: unknown[] = [];
   return {
     identity_hash: "e".repeat(64),
@@ -49,7 +49,7 @@ function portOf(results: (OpponentSheet | Error)[], format = "testformat"): Beli
     calls,
     sheet(args) {
       calls.push(args);
-      const next = results.shift() as OpponentSheet | Error;
+      const next = results.shift() as (OpponentSheet & { refusal_detail?: string }) | Error;
       if (next instanceof Error) throw next;
       return next;
     },
@@ -70,6 +70,14 @@ describe("the sheet builder", () => {
     expect(builder.counts()).toEqual({ requests: 4, refused: 3, refusals: [{ code: "disguise_unsettled", count: 1 }, { code: "reader_flagged", count: 2 }] });
     expect(refusedSharePpm(builder.counts())).toBe(750000);
     expect(refusedSharePpm({ requests: 0, refused: 0 })).toBe(0);
+  });
+
+  it("a refusal caused by the engine-sent sheet is counted under its own key, and the detail never reaches the block", () => {
+    const disagreeing = { ...block("evidence_has_no_support"), refusal_detail: "sheet_disagrees" };
+    const builder = createSheetBuilder({ engine, vocabulary, port: portOf([disagreeing, block("evidence_has_no_support"), { ...disagreeing }]), scenario_id: "scenario" });
+    const built = [builder.build(input), builder.build(input), builder.build(input)];
+    expect(built[0]).toEqual(block("evidence_has_no_support"));
+    expect(builder.counts()).toEqual({ requests: 3, refused: 3, refusals: [{ code: "evidence_has_no_support", count: 1 }, { code: "sheet_disagrees", count: 2 }] });
   });
 
   it("a defect of the run propagates and is not counted as a refusal", () => {

@@ -25,6 +25,7 @@
 import { type OwnChannel, ownChannel, type WorldFactsData, worldFactsAtRequests } from "@areneon/public-state";
 import type { CandidateFeatures2 } from "./candidate-features-2.ts";
 import { parseJointChoice, type SlotPart } from "./damage-aware-choice.ts";
+import { classifySlot, reaches as reachesRows, SITUATIONS, type Situation } from "./situation.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { createFeatureService, type FeatureService, type FeatureServiceSpec } from "./feature-service.ts";
 import { ResimulationInputError, resimulate } from "./resimulate.ts";
@@ -33,8 +34,7 @@ import { BattleAbortedError, type Player } from "./runner.ts";
 export const SITUATIONAL_FORMAT = "situational-move-use/1";
 export const SITUATIONAL_LABEL = "situational move-use diagnostic on assumed opponent sets: descriptive, not a strength measure";
 
-export const SITUATIONS = ["threatened", "safe", "exposed_slower"] as const;
-export type Situation = (typeof SITUATIONS)[number];
+export { SITUATIONS, type Situation };
 /** The switch classes: a Threatened slot splits by whether a bench Pokemon offered by a `switch` candidate is safe. */
 export const SWITCH_CLASSES = ["bad_matchup", "threatened_no_safe_bench", "safe", "exposed_slower"] as const;
 
@@ -67,39 +67,15 @@ export function tallyDecision(counts: Counts, input: DecisionInput): void {
   if (chosen.length !== active.length || parsed.some((p) => p.length !== active.length)) throw new Error("a choice has a different number of parts than the request has active Pokemon");
   bump(counts, "decisions");
 
-  // A row reaches the HP when some no-crit roll does: `ohko_rolls > 0`, or, when the probe gives no KO counts (a defender on
-  // `ko_blockers`, e.g. a Sash), `max_ppm >= 1,000,000` (the largest roll as a share of HP, clamped at HP). The blockers' own
-  // effects (a Sash surviving at full HP) are second order for this diagnostic on assumed sets, which the label already says.
-  const reaches = (position: number): { foe: number; move: string; fallback: boolean }[] =>
-    features.threats
-      .filter((t) => t.own === position && !t.mega && t.kind === "computed" && (t.ohko_rolls === null ? t.max_ppm >= 1_000_000 : t.ohko_rolls > 0))
-      .map((t) => ({ foe: t.foe, move: t.move, fallback: (t as { ohko_rolls: number | null }).ohko_rolls === null }));
-  const priorityOf = (foe: number, move: string): number => {
-    const row = features.foe_priorities.find((p) => p.foe === foe && p.move === move);
-    if (row === undefined || row.kind !== "computed") {
-      bump(counts, "unknown_foe_priority");
-      return 0;
-    }
-    return row.priority;
-  };
-  const foeFirst = (position: number, foe: number, move: string): boolean => {
-    const priority = priorityOf(foe, move);
-    if (priority !== 0) return priority > 0;
-    const row = features.speeds.find((s) => s.own === position && !s.mega && s.foe === foe);
-    if (row === undefined || row.kind !== "computed") {
-      bump(counts, "unknown_speed_relation");
-      return false;
-    }
-    return row.relation === "foe_first";
-  };
+  // The reading itself (a row reaches the HP when some no-crit roll does, who acts first) is `situation.ts`, shared with `damage-aware@v4`.
+  const unknown = (kind: "foe_priority" | "speed_relation"): void => bump(counts, kind === "foe_priority" ? "unknown_foe_priority" : "unknown_speed_relation");
+  const reaches = (position: number): ReturnType<typeof reachesRows> => reachesRows(features, position);
   for (const t of features.threats) if (t.kind === "computed" && t.ohko_rolls === null) bump(counts, "ko_fallback_rows");
   const moveId = (slot: number, part: SlotPart): string | null => (part.kind === "move" ? ((asList(asRecord(active[slot]).moves)[part.index - 1] as { id?: string } | undefined)?.id ?? null) : null);
 
   for (let slot = 0; slot < active.length; slot++) {
     if (/ fnt$/.test(String(asRecord(pokemon[slot]).condition))) continue;
-    const reached = reaches(slot);
-    const first = reached.filter((r) => foeFirst(slot, r.foe, r.move));
-    const situation: Situation = reached.length === 0 ? "safe" : first.length > 0 ? "threatened" : "exposed_slower";
+    const { situation, first } = classifySlot(features, slot, unknown);
     if (situation === "threatened" && first.every((r) => r.fallback)) bump(counts, "threatened_by_max_fallback");
     bump(counts, `slots.${situation}`);
 

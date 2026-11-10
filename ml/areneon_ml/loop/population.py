@@ -61,7 +61,7 @@ from areneon_ml.checkpoint.files import checkpoint_bytes, checkpoint_id, write_c
 from areneon_ml.checkpoint.record import CheckpointRecord, read_record
 from areneon_ml.learner.config import PPOSettings, RunConfig
 from areneon_ml.learner.data import trajectories
-from areneon_ml.learner.parallel import fit_processes
+from areneon_ml.learner.parallel import load_workers
 from areneon_ml.learner.state import pack_state, restore_state
 from areneon_ml.learner.trainer import Learner, TrainReport, configure_learner
 from areneon_ml.loop import (
@@ -297,6 +297,8 @@ class PopulationLoop:
         self._anchors_digest = ""
         #: Operational: worker processes that check and encode a member's stream (#1069).
         self.load_processes = 1
+        #: Size the workers at each load phase from the machine (``--load-processes auto``).
+        self.load_auto = False
         self.load_memory_mb: int | None = None
         self._on_stage = on_stage or (lambda _generation, _stage: None)
         self.clock: Callable[[], float] = time.monotonic
@@ -986,7 +988,7 @@ class PopulationLoop:
                 training_set,
                 self._encoders,
                 pair,
-                fit_processes(self.load_processes, self.load_memory_mb),
+                load_workers(self.load_processes, self.load_auto, self.load_memory_mb),
             )
         bring_up(learner, self.device)
         guard = health.Guard(learner)

@@ -99,7 +99,7 @@ DEFAULT_DAMAGE_AWARE_BUDGET_MINUTES = 30
 DAMAGE_AWARE_POLICY = "damage-aware@v1"
 #: The versions of the baseline an evaluation can play (#1183); v1 is the default and keeps every
 #: record's bytes.
-DAMAGE_AWARE_VERSIONS = ("v1", "v3")
+DAMAGE_AWARE_VERSIONS = ("v1", "v3", "v4")
 #: The damage-aware baseline's match ids.
 DAMAGE_AWARE_MATCHES = ("damage-aware-argmax", "damage-aware-sample")
 
@@ -1586,12 +1586,10 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
             "--previous-matches, --preview-ablation, --versus-run-dir, --search-mode "
             "or --preview-solve"
         )
-    if preview_solve is not None and (
-        features_hash(config) is not None or sheet_set(config.model.encoder.options) is not None
-    ):
+    if preview_solve is not None and sheet_set(config.model.encoder.options) is not None:
         raise ProgressError(
-            "the Team Preview solver is not played for a pair that reads candidate features or "
-            "the opponent sheet: the run's config names one"
+            "the Team Preview solver is not played for a pair that reads the opponent sheet: "
+            "the run's config names one"
         )
     modes = _with_run_mode(
         config, modes, preview_ablation or search_mode is not None or preview_solve is not None
