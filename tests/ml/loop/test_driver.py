@@ -603,9 +603,12 @@ def test_the_checkpoint_cli_derives_from_the_run_and_binds_the_export(
     assert checkpoint_main(["classify", "--run-dir", str(finished), *tail]) == 0
     derived = json.loads(capsys.readouterr().out)
     assert derived["sources_hash"] == digest
+    assert derived["basis"] == "run-dir"
     bound = ["classify", "--records", str(out / "records"), "--sources", str(out / "sources.json")]
     assert checkpoint_main([*bound, *tail]) == 0
-    assert json.loads(capsys.readouterr().out) == derived
+    exported = json.loads(capsys.readouterr().out)
+    assert exported["basis"] == "exported-binding"
+    assert {**exported, "basis": "run-dir"} == derived
     # a registry that differs from the derived one is refused, whoever supplies it
     registry = json.loads((out / "sources.json").read_text())
     key = next(iter(registry))

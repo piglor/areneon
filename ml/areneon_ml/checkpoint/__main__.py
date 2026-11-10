@@ -23,7 +23,7 @@ from typing import Any
 
 from areneon_contracts.contracts import ContractError, jcs, sha256_hex
 
-from areneon_ml.checkpoint.binding import BINDING_NAME, BindingError, verify_binding
+from areneon_ml.checkpoint.binding import BINDING_NAME, BindingError, record_files, verify_binding
 from areneon_ml.checkpoint.files import (
     CheckpointFileError,
     checkpoint_bytes,
@@ -45,12 +45,13 @@ def _load_json(path: Path) -> Any:
 SOURCES_HELP = (
     "the sources registry written by `loop provenance` or `learner clone`: a canonical (RFC 8785) "
     "JSON object, training-set hash to the sorted checkpoint ids that generated it ([] for an "
-    "outside source). It is accepted only with the provenance.json beside it, which binds its "
-    "hash and the records' hashes; its hash is printed so a plan can bind it"
+    "outside source). It is accepted only with the provenance.json beside it, a self-consistency "
+    "check that catches a single-file edit or a corrupted copy; it is not proof against "
+    "someone who rewrites both files. --run-dir is the authoritative path; a plan pins its hash"
 )
 
 
-def _graph(args: argparse.Namespace) -> tuple[ProvenanceGraph, str]:
+def _graph(args: argparse.Namespace) -> tuple[ProvenanceGraph, str, str]:
     if args.run_dir is not None:
         if args.records is not None or args.sources is not None:
             raise ProvenanceError("--run-dir replaces --records and --sources")
@@ -62,7 +63,7 @@ def _graph(args: argparse.Namespace) -> tuple[ProvenanceGraph, str]:
 
         try:
             graph = provenance_graph(args.run_dir)
-            return graph, sha256_hex(jcs(sources_registry(args.run_dir)))
+            return graph, sha256_hex(jcs(sources_registry(args.run_dir))), "run-dir"
         except LoopError as exc:
             raise ProvenanceError(str(exc)) from exc
     if args.records is None or args.sources is None:
@@ -78,13 +79,9 @@ def _graph(args: argparse.Namespace) -> tuple[ProvenanceGraph, str]:
     if raw not in (canonical, canonical + b"\n"):
         raise ProvenanceError("the sources registry is not canonical JSON (RFC 8785)")
     records = [read_record(_load_json(f)) for f in files]
-    verify_binding(
-        args.sources.parent / BINDING_NAME,
-        canonical,
-        {r.checkpoint_id: f.read_bytes() for r, f in zip(records, files, strict=True)},
-    )
+    verify_binding(args.sources.parent / BINDING_NAME, canonical, record_files(args.records))
     graph = ProvenanceGraph(records, registry)
-    return graph, sha256_hex(canonical)
+    return graph, sha256_hex(canonical), "exported-binding"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -139,15 +136,21 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "init":
             result = _init(args)
         elif args.command == "classify":
-            graph, sources_hash = _graph(args)
+            graph, sources_hash, basis = _graph(args)
             opponent = args.opponent[0] if len(args.opponent) == 1 else args.opponent
             found = graph.classify(args.candidate, opponent)
-            result = {"label": found.label, "reason": found.reason, "sources_hash": sources_hash}
+            result = {
+                "label": found.label,
+                "reason": found.reason,
+                "sources_hash": sources_hash,
+                "basis": basis,
+            }
         else:
-            graph, sources_hash = _graph(args)
+            graph, sources_hash, basis = _graph(args)
             found_independence = graph.independent(args.a, args.b)
             result = {
                 "sources_hash": sources_hash,
+                "basis": basis,
                 "independent": found_independence.independent,
                 "shared_checkpoints": list(found_independence.shared_checkpoints),
                 "shared_sources": list(found_independence.shared_sources),

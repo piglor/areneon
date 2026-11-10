@@ -13,9 +13,14 @@ from typing import Any
 import pytest
 from areneon_contracts.contracts import jcs
 from areneon_ml.checkpoint.__main__ import EXIT_REFUSED, main
-from areneon_ml.checkpoint.binding import BINDING_NAME, binding_bytes
+from areneon_ml.checkpoint.binding import (
+    BINDING_NAME,
+    BindingError,
+    binding_bytes,
+    record_files,
+    verify_binding,
+)
 from areneon_ml.checkpoint.files import checkpoint_bytes, load_checkpoint
-from areneon_ml.checkpoint.record import read_record
 from areneon_ml.model.encoder import encoder_version
 from areneon_ml.model.network import init_network
 
@@ -113,18 +118,16 @@ def provenance(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def bind(records: Path, sources: Path) -> None:
-    files = {
-        read_record(json.loads(f.read_bytes())).checkpoint_id: f.read_bytes()
-        for f in records.glob("*.json")
-    }
-    (sources.parent / BINDING_NAME).write_bytes(binding_bytes(files, sources.read_bytes()))
+    (sources.parent / BINDING_NAME).write_bytes(
+        binding_bytes(record_files(records), sources.read_bytes())
+    )
 
 
 def test_classify_prints_the_c1_class(provenance: tuple[Path, Path]) -> None:
     records, sources = provenance
     base = ["classify", "--records", str(records), "--sources", str(sources)]
     code, out = run(*base, "--candidate", h("A2"), "--opponent", h("B1"))
-    assert (code, out["label"]) == (0, "held_out")
+    assert (code, out["label"], out["basis"]) == (0, "held_out", "exported-binding")
     assert out["sources_hash"] == hashlib.sha256(jcs(SOURCES)).hexdigest()
     _, out = run(*base, "--candidate", h("A2"), "--opponent", h("C0"))
     assert out["label"] == "seen"
@@ -140,6 +143,7 @@ def test_independent_prints_c6(provenance: tuple[Path, Path]) -> None:
     code, out = run(*base, "--a", h("A2"), "--b", h("C0"))
     assert code == 0
     assert out == {
+        "basis": "exported-binding",
         "independent": False,
         "shared_checkpoints": [],
         "shared_sources": [h("bc")],
@@ -266,3 +270,26 @@ def test_the_inputs_are_run_dir_or_records_with_sources(
     assert "replaces" in capsys.readouterr().err
     assert run("classify", "--run-dir", str(tmp_path), *tail)[0] == EXIT_REFUSED
     assert "no committed generation" in capsys.readouterr().err
+
+
+def test_two_record_files_naming_one_checkpoint_are_refused(provenance: tuple[Path, Path]) -> None:
+    records, _ = provenance
+    first = sorted(records.glob("*.json"))[0]
+    (records / "copy.json").write_bytes(first.read_bytes())
+    with pytest.raises(BindingError, match="two record files"):
+        record_files(records)
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        (b"not json", "is not JSON"),
+        (b'{ "a": 1 }', "not a canonical"),
+        (jcs({"records": {}, "schema_version": 2, "sources_hash": "x"}), "not a version 1"),
+    ],
+)
+def test_verify_binding_branches(tmp_path: Path, text: bytes, message: str) -> None:
+    binding = tmp_path / BINDING_NAME
+    binding.write_bytes(text)
+    with pytest.raises(BindingError, match=message):
+        verify_binding(binding, b"{}", {})

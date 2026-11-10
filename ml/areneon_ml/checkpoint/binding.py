@@ -2,12 +2,14 @@
 
 The C1/C6 checker's ``sources`` registry says which checkpoints generated each training set. A
 wrong entry (an empty list for a set that really came from lineage X) makes two lineages look
-independent, so the registry is never a free input: the exporters (``loop provenance``,
-``learner clone``) derive it from the run's own manifests and write ``provenance.json`` beside
-``sources.json``, naming the registry's SHA-256 and the SHA-256 of every record file by
-checkpoint id. ``verify_binding`` refuses a registry, a record or a record set that differs from
-what was bound; ``python -m areneon_ml.checkpoint classify|independent --run-dir R`` derives
-everything from the run again instead.
+independent. The authoritative source is the run itself: ``classify|independent --run-dir R``
+derives the registry from the run's verified manifests. The exporters (``loop provenance``,
+``learner clone``) also write ``provenance.json`` beside ``sources.json``, naming the registry's
+SHA-256 and the SHA-256 of every record file by checkpoint id. ``verify_binding`` refuses a
+registry, a record or a record set that differs from it. That is a self-consistency check of an
+exported directory: it catches a single-file edit or a corrupted copy, and it is NOT proof
+against someone who rewrites both files. An evaluation plan pins the ``sources_hash`` computed
+with ``--run-dir``.
 """
 
 from __future__ import annotations
@@ -18,12 +20,29 @@ from pathlib import Path
 
 from areneon_contracts.contracts import jcs, sha256_hex
 
+from areneon_ml.checkpoint.record import read_record
+
 BINDING_NAME = "provenance.json"
 BINDING_VERSION = 1
 
 
 class BindingError(ValueError):
     """The registry or the records are not what the exporter bound."""
+
+
+def record_files(directory: Path) -> dict[str, bytes]:
+    """Each ``*.json`` record of ``directory`` by its own ``checkpoint_id`` (never the file stem).
+
+    Two files naming one checkpoint are refused.
+    """
+    found: dict[str, bytes] = {}
+    for path in sorted(directory.glob("*.json")):
+        data = path.read_bytes()
+        key = read_record(json.loads(data)).checkpoint_id
+        if key in found:
+            raise BindingError(f"two record files name checkpoint {key}")
+        found[key] = data
+    return found
 
 
 def binding_bytes(records: Mapping[str, bytes], registry: bytes) -> bytes:

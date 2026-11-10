@@ -26,7 +26,7 @@ from typing import Any
 
 from areneon_contracts.contracts import jcs
 
-from areneon_ml.checkpoint.binding import BINDING_NAME, binding_bytes
+from areneon_ml.checkpoint.binding import BINDING_NAME, binding_bytes, record_files
 from areneon_ml.checkpoint.files import checkpoint_bytes, pack_safetensors, write_checkpoint
 from areneon_ml.checkpoint.record import CheckpointRecord, read_record
 from areneon_ml.learner.clone import Cloned
@@ -114,10 +114,7 @@ def write_clone(
     layout.write_file(work / "sources.json", registry)
     layout.write_file(
         work / BINDING_NAME,
-        binding_bytes(
-            {path.stem: path.read_bytes() for path in sorted((work / "records").glob("*.json"))},
-            registry,
-        ),
+        binding_bytes(record_files(work / "records"), registry),
     )
     layout.write_file(work / "clone-state.safetensors", packed)
     layout.write_file(work / "clone-state.json", jcs(sidecar))
