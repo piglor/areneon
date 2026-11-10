@@ -759,6 +759,10 @@ class Match(BaseModel):
     """
     Names the match: <opponent>-<mode>, e.g. random-legal-sample or anchor-g10-sample; a cross-run match is run-<mode>. Unique in the record; names the stored game files.
     """
+    team_sheets: Literal["closed", "open"] | MISSING = MISSING
+    """
+    Only a match played in the open-sheet format (ADR-027 section 5a, ADR-017 erratum E4): open. Absent means the closed (target) format, so every existing match keeps its bytes; the writer never states closed. An open match is named open-<name of its closed twin> and its games use the open manifest of game_manifests; its score is never pooled with the closed match's. A minor change within version 2. Readers refuse an explicit closed: the value is listed only so the union is spelled out, and absence means closed.
+    """
     policy_id: Annotated[StrictStr, Field(pattern="^policy:[0-9a-f]{64}$")]
     """
     The candidate's policy id in this match's mode: policy: plus SHA-256 of the JCS of {preview, battle, mode, temperature, precision}; for a candidate_preview of kind random the preview is the word random-preview@v1, for kind generation that generation's Preview checkpoint id.
@@ -857,6 +861,12 @@ class ProgressEvaluationRecordV2(BaseModel):
     """
     checkpoints: Checkpoints
     version_manifest: VersionManifest
+    game_manifests: Annotated[
+        list[VersionManifest] | MISSING, Field(max_length=2, min_length=2)
+    ] = MISSING
+    """
+    Only a record with open-sheet matches (ADR-027 section 5a, ADR-017 erratum E4): the version manifests of its games, the closed one (version_manifest) and the open format's, sorted by their JCS bytes. A match's games use the manifest its team_sheets names. A minor change within version 2: absent keeps every existing record's bytes; a reader older than the field rejects a record that carries it.
+    """
     teams: Teams
     plan: Plan
     matches: list[Match]

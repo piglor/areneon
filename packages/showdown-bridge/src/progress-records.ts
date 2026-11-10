@@ -269,6 +269,7 @@ export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluati
   if (matches.some((match) => match.solve !== undefined) && matches.some((match) => match.search !== undefined)) fail("a record holds search matches or solver matches, never both");
   if (matches.some((match) => match.solve !== undefined) !== (plan.preview_solve_budget_ms !== undefined)) fail("plan.preview_solve_budget_ms is present exactly when the record has solver matches");
   if (plan.preview_solve_budget_ms !== undefined && plan.preview_solve_budget_ms < plan.latency_budget_ms.preview_ms) fail("plan.preview_solve_budget_ms is the Team Preview budget the games ran with: at least latency_budget_ms.preview_ms");
+  checkGameManifests(record);
   const flat = ids.flatMap((id) => rowsOf.get(id) as RowV2[]);
   if (flat.some((row, index) => row !== games[index])) fail("game rows must be in match then game order");
   const identities = new Set<string>();
@@ -279,9 +280,12 @@ export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluati
     const searched = match.search !== undefined;
     // A search candidate's matches carry the prefix `search-`; the rest of the id is the usual opponent-and-mode name.
     const solved = match.solve !== undefined;
-    const name = searched ? match.match_id.slice("search-".length) : solved ? match.match_id.slice("psolve-".length) : match.match_id;
-    if (searched !== match.match_id.startsWith("search-")) fail(`${match.match_id}: a match is named search-<opponent>-<mode> exactly when it carries search counts`);
-    if (solved !== match.match_id.startsWith("psolve-")) fail(`${match.match_id}: a match is named psolve-<opponent>-<mode> exactly when it carries solver counts`);
+    // An open-sheet match (ADR-027 section 5a) is named open-<its closed twin's name>.
+    const opened = checkTeamSheetsOfMatch(match);
+    const bare = opened ? match.match_id.slice(OPEN_PREFIX.length) : match.match_id;
+    const name = searched ? bare.slice("search-".length) : solved ? bare.slice("psolve-".length) : bare;
+    if (searched !== bare.startsWith("search-")) fail(`${match.match_id}: a match is named search-<opponent>-<mode> exactly when it carries search counts`);
+    if (solved !== bare.startsWith("psolve-")) fail(`${match.match_id}: a match is named psolve-<opponent>-<mode> exactly when it carries solver counts`);
     checkSearchOfMatch(match, rows, searchIdentities);
     checkSolveOfMatch(match, rows, solveIdentities);
     checkSheetOfMatch(match, rows);
@@ -328,6 +332,42 @@ export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluati
 }
 
 type MatchV2 = ProgressEvaluationRecordV2["matches"][number];
+
+/** The prefix of an open-sheet match's id (ADR-027 section 5a, ADR-017 erratum E4). */
+export const OPEN_PREFIX = "open-";
+
+/**
+ * A match's `team_sheets` (ADR-027 section 5a): absent means closed and the writer never states it; an open match is named
+ * open-<name>, plays a scripted baseline or another run's pair (the opponents that are the same in both formats), and is no
+ * search, solver, ablation or sheet-block match. Returns whether the match is open.
+ */
+function checkTeamSheetsOfMatch(match: MatchV2): boolean {
+  if (match.team_sheets === "closed") fail(`${match.match_id}: team_sheets is absent for a closed match, never stated`);
+  const open = match.team_sheets === "open";
+  if (open !== match.match_id.startsWith(OPEN_PREFIX)) fail(`${match.match_id}: a match is named open-<name> exactly when it carries team_sheets: open`);
+  if (!open) return false;
+  if (match.opponent.kind !== "baseline" && match.opponent.kind !== "run") fail(`${match.match_id}: an open-sheet match plays a scripted baseline or another run's pair`);
+  if (match.search !== undefined || match.solve !== undefined || match.candidate_preview !== undefined || match.sheet !== undefined) fail(`${match.match_id}: an open-sheet match is not a search, solver, ablation or sheet-block match`);
+  return true;
+}
+
+/**
+ * ADR-027 section 5a: a record with open matches keeps the closed manifest in `version_manifest` and lists the manifests of its
+ * games in `game_manifests` (exactly the closed one and the open format's, sorted by JCS bytes, one commit and regulation); a
+ * record without open matches has none.
+ */
+function checkGameManifests(record: ProgressEvaluationRecordV2): void {
+  const given = record.game_manifests;
+  const opened = record.matches.some((match) => match.team_sheets === "open");
+  if (opened !== (given !== undefined)) fail("game_manifests is present exactly when the record has open-sheet matches");
+  if (given === undefined) return;
+  const keys = given.map((manifest) => jcs(manifest as unknown as Json));
+  if (!strictlyAscending(keys)) fail("game_manifests must be sorted by their JCS bytes, each once");
+  if (!keys.includes(jcs(record.version_manifest as unknown as Json))) fail("version_manifest must be one of game_manifests");
+  const [a, b] = given as [(typeof given)[number], (typeof given)[number]];
+  if (a.format_id === b.format_id) fail("game_manifests must hold two formats: the closed one and the open one");
+  if (a.showdown_commit !== b.showdown_commit || a.regulation !== b.regulation) fail("game_manifests must share one engine commit and one regulation");
+}
 
 /**
  * ADR-018 sections 4 and 5: a match against the damage-aware baseline carries its identity hash and the sum of its
