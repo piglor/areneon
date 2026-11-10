@@ -64,7 +64,9 @@ from areneon_ml.progress.records import (
     check_game_baseline,
     check_game_search,
     check_game_solve,
+    game_manifest,
     is_damage_aware,
+    is_open,
     is_v2,
     read_game_record,
     read_progress_record,
@@ -80,6 +82,13 @@ from areneon_ml.progress.stats import (
     match_pair_scores,
     pair_interval,
     wilson,
+)
+from areneon_ml.progress.team_sheets import (
+    OPEN_LABEL,
+    TeamSheetsError,
+    check_team_sheets,
+    closed_view,
+    team_sheets_view,
 )
 
 PROGRESS = "progress.json"
@@ -287,6 +296,9 @@ class ProgressRequest:
     #: Extra play modes (#1044): samples at a declared temperature and/or threshold, played against
     #: the baselines and the other run's pair beside argmax and sample; empty plays today's matches.
     extra_modes: tuple[PlayMode, ...] = ()
+    #: Also play the open twin (``open-<match id>``) of every baseline and cross-run match in the
+    #: engine's open-sheet format (ADR-027 section 5a, ADR-017 erratum E4).
+    team_sheets_open: bool = False
 
 
 class ProgressPlayer(Protocol):
@@ -383,6 +395,7 @@ class NodeProgressPlayer(NodePlayer):
             *cross,
             *(() if request.eval_dataset is None else request.eval_dataset.node_args()),
             *ekey.node_args(request.evaluation_key),
+            *(("--team-sheets", "open") if request.team_sheets_open else ()),
             *(() if request.search_mode is None else ("--search-mode", request.search_mode)),
             *(
                 ()
@@ -1067,6 +1080,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
     search_mode: str | None = None,
     extra_modes: Sequence[PlayMode] = (),
     preview_solve: str | None = None,
+    team_sheets_open: bool = False,
 ) -> dict[str, Any]:
     """The simulator side's files are the record's: read both kinds, check every hash and name."""
     record = read_progress_record(layout.read_json(work / PROGRESS), config)
@@ -1082,16 +1096,18 @@ def _verify_output(  # noqa: PLR0913, PLR0917
         raise ProgressError("progress.json is not the record asked for")
     if record["schema_version"] != SCHEMA_V2:
         raise ProgressError("a new evaluation is a schema version 2 record")
-    _check_previous(record, previous, legacy=False)
-    _check_anchors(record, anchors, run_dir, config)
+    _check_team_sheets(record, team_sheets_open, legacy=False)
+    closed = closed_view(record)  # the checks below were written for the closed matches
+    _check_previous(closed, previous, legacy=False)
+    _check_anchors(closed, anchors, run_dir, config)
     if plan.get("anchor_games_per_match", 0) != anchor_games:
         raise ProgressError("progress.json is not the record asked for")
-    _check_ablation(record, ablation, run_dir, config, fresh=True)
-    _check_search(record, search_mode, legacy=False)
-    _check_solve(record, preview_solve, legacy=False)
-    _check_damage_aware(record, damage_aware, legacy=False)
-    _check_versus(record, versus, legacy=False)
-    _check_extra_modes(record, extra_modes, versus, legacy=False)
+    _check_ablation(closed, ablation, run_dir, config, fresh=True)
+    _check_search(closed, search_mode, legacy=False)
+    _check_solve(closed, preview_solve, legacy=False)
+    _check_damage_aware(closed, damage_aware, legacy=False)
+    _check_versus(closed, versus, legacy=False)
+    _check_extra_modes(closed, extra_modes, versus, legacy=False)
     _check_eval_dataset(record, eval_dataset, config, strict=True)
     _check_evaluation_key(record, evaluation_key, strict=True)
     rows = {(r["match_id"], r["game"]): r for r in record["games"]}
@@ -1109,7 +1125,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
                 or stored["game"] != game
                 or stored.get("pair") != game // 2
                 or stored.get("evaluation_key") != evaluation_key
-                or stored["version_manifest"] != record["version_manifest"]
+                or stored["version_manifest"] != game_manifest(record, match)
             ):
                 raise ProgressError(f"games/{name} is not the game it is named for")
             try:
@@ -1279,6 +1295,7 @@ def summary_of(record: dict[str, Any]) -> list[dict[str, Any]]:
                 else {}
             )
             | ({"sheet": _sheet_summary(match["sheet"])} if "sheet" in match else {})
+            | ({"team_sheets": "open", "format": OPEN_LABEL} if is_open(match) else {})
             | (
                 {
                     "solve": {
@@ -1389,16 +1406,18 @@ def verify_progress_dir(  # noqa: PLR0913, PLR0917
         or record["generation"] != generation
     ):
         raise ProgressError(f"{target.name}: the record is not of the committed generation")
+    _check_team_sheets(record, False, legacy=True)
+    closed = closed_view(record)  # the open twins are checked above; the rest read closed matches
     # Previous-generation matches are optional (a record may hold them or not).
-    _check_previous(record, _previous_pair(run_dir, config, generation), legacy=True)
-    _check_anchors(record, None, run_dir, config)
-    _check_ablation(record, None, run_dir, config, fresh=False)
-    _check_search(record, None, legacy=True)
-    _check_solve(record, None, legacy=True)
+    _check_previous(closed, _previous_pair(run_dir, config, generation), legacy=True)
+    _check_anchors(closed, None, run_dir, config)
+    _check_ablation(closed, None, run_dir, config, fresh=False)
+    _check_search(closed, None, legacy=True)
+    _check_solve(closed, None, legacy=True)
     # The damage-aware matches are optional (a record may hold them or not), never half a set.
-    _check_damage_aware(record, None, legacy=True)
-    _check_versus(record, versus, legacy=True)
-    _check_extra_modes(record, (), versus, legacy=True)
+    _check_damage_aware(closed, None, legacy=True)
+    _check_versus(closed, versus, legacy=True)
+    _check_extra_modes(closed, (), versus, legacy=True)
     _check_eval_dataset(record, eval_dataset, config, strict=strict_dataset)
     _check_evaluation_key(record, evaluation_key, strict=strict_dataset)
     rows = {(r["match_id"], r["game"]): r for r in record["games"]}
@@ -1419,6 +1438,8 @@ def verify_progress_dir(  # noqa: PLR0913, PLR0917
                 raise ProgressError(f"games/{name}: its evaluation key is not the record's")
             if is_v2(record) and stored.get("pair") != stored["game"] // 2:
                 raise ProgressError(f"games/{name}: a both-seats game must name its pair")
+            if is_v2(record) and stored["version_manifest"] != game_manifest(record, match):
+                raise ProgressError(f"games/{name}: its version manifest is not its match's")
             if is_v2(record):
                 try:
                     check_game_baseline(stored, match, rows[(match["match_id"], stored["game"])])
@@ -1435,13 +1456,30 @@ def verify_progress_dir(  # noqa: PLR0913, PLR0917
     return record
 
 
-def _check_asked(  # noqa: PLR0913, PLR0917
+def _check_team_sheets(record: dict[str, Any], asked: bool, *, legacy: bool) -> None:
+    """The open-sheet matches are the open twins asked for (``asked``) or, for a committed record,
+    all of them or none."""
+    try:
+        check_team_sheets(record, asked, legacy=legacy)
+    except TeamSheetsError as exc:
+        raise ProgressError(str(exc)) from exc
+
+
+def _team_sheets_part(record: dict[str, Any]) -> dict[str, Any]:
+    """The closed-versus-open row of the generation (ADR-027 section 8), derived; absent without
+    an open match against the damage-aware baseline."""
+    view = team_sheets_view(record)
+    return {"team_sheets": view} if view["rows"] else {}
+
+
+def _check_asked(  # noqa: PLR0912, PLR0913, PLR0917
     generation: int,
     sizes: tuple[int, int, int],
     asked: tuple[Sequence[int], bool, bool, VersusSpec | None],
     search_mode: str | None = None,
     modes: Sequence[ExtraMode] = (),
     preview_solve: str | None = None,
+    team_sheets_open: bool = False,
 ) -> tuple[list[int], list[int]]:
     """Refuse a request that cannot be played; returns the anchors played and left out."""
     games, record_games, anchor_games = sizes
@@ -1480,6 +1518,18 @@ def _check_asked(  # noqa: PLR0913, PLR0917
             "--modes names extra play modes for the baselines and the head-to-head: "
             "not with --preview-ablation, --search-mode or --preview-solve"
         )
+    if team_sheets_open and (
+        preview_ablation
+        or anchors
+        or previous_matches
+        or search_mode is not None
+        or preview_solve is not None
+    ):
+        raise ProgressError(
+            "--team-sheets open plays the scripted baselines and --versus-run-dir in the "
+            "open-sheet format: no --preview-ablation, --anchors, --previous-matches, "
+            "--search-mode or --preview-solve"
+        )
     if len(set(modes)) != len(modes):
         raise ProgressError("an extra play mode is listed once")
     if versus is not None and (versus.games < MIN_GAMES or versus.games % 2):
@@ -1514,6 +1564,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
     modes: Sequence[ExtraMode] = (),
     member: str | None = None,
     preview_solve: str | None = None,
+    team_sheets_open: bool = False,
 ) -> dict[str, Any]:
     """Evaluate one generation into ``root``; a committed directory is verified and kept.
 
@@ -1538,6 +1589,14 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
     holds nothing else (use a progress directory of its own); each match carries the search
     identity hash and counts. Labelled "learned pair with decision-time search (one-ply re-rank)";
     search results are never held-out evidence.
+
+    ``team_sheets_open`` (ADR-027 section 5a, ADR-017 erratum E4) also plays the open twin
+    (``open-<match id>``, ``team_sheets: "open"``) of every match against a scripted baseline or
+    the other run's pair, in the engine's open-sheet variant of the run's format, on the same
+    pairs, seeds and seats; the closed matches are unchanged and the regimes are never pooled
+    (a generation row puts the damage-aware score closed and open side by side). Not with the
+    ablation, search, solver, anchors or previous generation; a committed generation is never
+    rewritten.
 
     ``eval_dataset`` measures on the validation split of another verified dataset than the run's
     own (ADR-020 E-17.1; the same refusals, plus: the dataset is not the run's own training
@@ -1573,6 +1632,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
         search_mode,
         modes,
         preview_solve,
+        team_sheets_open,
     )
     damage_budget_ms = _damage_budget_ms(
         damage_aware_budget_minutes, preview_ablation, damage_aware_version
@@ -1628,6 +1688,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
                 modes,
                 member,
                 preview_solve,
+                team_sheets_open,
             )
         source = _source(run_dir, config, generation, member=member)
         previous = _previous_pair(run_dir, config, generation) if previous_matches else None
@@ -1688,6 +1749,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
                     search_mode=search_mode,
                     preview_solve_mode=preview_solve,
                     extra_modes=extra_modes,
+                    team_sheets_open=team_sheets_open,
                 )
             )
             record = _verify_output(
@@ -1708,6 +1770,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
                 search_mode,
                 extra_modes,
                 preview_solve,
+                team_sheets_open,
             )
             layout.fsync_tree(work)
             layout.write_json(
@@ -1738,6 +1801,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
             }
             | _member_part(source.member)
             | _gap_part(record)
+            | _team_sheets_part(record)
             | _ablation_part(record)
             | _versus_part(record, relation, versus)
             | _warned(sheet_status(record) | solve_status(record))
@@ -1758,6 +1822,7 @@ def _skipped(  # noqa: PLR0913, PLR0917
     modes: Sequence[ExtraMode] = (),
     member: str | None = None,
     preview_solve: str | None = None,
+    team_sheets_open: bool = False,
 ) -> dict[str, Any]:
     """A committed directory is verified and reported, never rewritten."""
     pair = None if versus is None else _versus_pair(run_dir, config, versus, eval_dataset)
@@ -1796,6 +1861,12 @@ def _skipped(  # noqa: PLR0913, PLR0917
             f"{'a solver record of another kind' if _is_solve(record) else 'a normal record'}: "
             "use a progress directory of its own for the other kind"
         )
+    if team_sheets_open != any(is_open(m) for m in record["matches"]):
+        raise ProgressError(
+            f"{target.name} already holds a record "
+            f"{'with' if team_sheets_open is False else 'without'} open-sheet matches: "
+            "use a progress directory of its own for the other kind"
+        )
     if preview_ablation != bool(ablation_summary(record)):
         raise ProgressError(
             f"{target.name} already holds a "
@@ -1813,7 +1884,8 @@ def _skipped(  # noqa: PLR0913, PLR0917
         }
         | _member_part(kept)
         | _gap_part(record)
-        | _modes_status(record, modes)
+        | _team_sheets_part(record)
+        | _modes_status(closed_view(record), modes)
         | _ablation_part(record)
         | _versus_part(record, held, versus)
         | sheet_status(record)

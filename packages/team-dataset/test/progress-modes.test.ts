@@ -42,4 +42,10 @@ describe("the command's --extra-mode flag", () => {
     await expect(run("--extra-mode", `sample:t500000,${mine}`, "--ablation-preview", "0,a,c", "--ablation-random-policy-id", "r")).rejects.toThrow(/not played with the Preview ablation/);
     await expect(run("--extra-mode", `sample:t500000,${mine}`, "--search-mode", "argmax")).rejects.toThrow();
   });
+
+  it("takes --team-sheets open only, alone of the other kinds of candidate", async () => {
+    await expect(run("--team-sheets", "closed")).rejects.toThrow(/--team-sheets must be open/);
+    await expect(run("--team-sheets", "open", "--ablation-preview", "0,a,c", "--ablation-random-policy-id", "r")).rejects.toThrow(/open-sheet matches are played against the scripted baselines/);
+    await expect(run("--team-sheets", "open", "--anchor", "0,a,b,c,d", "--anchor-games", "2")).rejects.toThrow(/open-sheet matches are played against the scripted baselines/);
+  });
 });
