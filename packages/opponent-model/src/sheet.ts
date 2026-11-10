@@ -68,6 +68,9 @@ export const sheetRefusalOf = (error: unknown): SheetRefusalCode | null => {
   return (SHEET_REFUSAL_CODES as readonly string[]).includes(error.code) ? (error.code as SheetRefusalCode) : null;
 };
 
+/** The finer reason of a refusal that becomes a refused block (`SHEET_DISAGREES` for the engine-sent sheet), else null. */
+export const sheetRefusalDetail = (error: unknown): string | null => (error instanceof BeliefError ? error.detail : null);
+
 /** round half up of `r * 10^6`, exact (`r` is non-negative). */
 export const roundPpm = (r: Ratio): number => Number((2n * r.num * PPM + r.den) / (2n * r.den));
 

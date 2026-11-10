@@ -45,10 +45,13 @@ import {
   loadRulesSnapshot,
 } from "@areneon/showdown-bridge";
 import { describe, expect, it } from "vitest";
+import { AssumedSetError } from "../../showdown-bridge/src/damage-aware-assumed-set.ts";
 import { firstLegal, goldenTeamVocabulary } from "../../showdown-bridge/src/golden.ts";
 import { loadRandomCorpus, type RandomBattleFile } from "../../showdown-bridge/src/random-corpus.ts";
 import { mutated, withGenders } from "../../showdown-bridge/test/damage-aware-invariance-support.ts";
 import { createPreviewSolvePorts } from "../src/preview-solver-port.ts";
+import { type FeatureConfigs, featureSetHash, featureSetIdentity } from "../../showdown-bridge/src/candidate-features.ts";
+import { config as baselineConfig, mechanics, snapshot as featureSnapshot, vocabulary as featureVocabulary } from "../../showdown-bridge/test/damage-aware-support.ts";
 import { StandInWorker } from "./search-actor-support.ts";
 import { engine, FORMAT } from "./support.ts";
 
@@ -68,7 +71,7 @@ class Worker extends StandInWorker implements PayoffClient {
     if (this.fault === "unsupported") throw new UnsupportedCandidateError("the stand-in cannot parse a candidate");
     if (this.fault === "protocol") throw new PolicyProtocolError("the stand-in's worker is gone");
     const observation = query.observation as unknown as { kind: string; team: unknown; log?: readonly string[] };
-    this.queries.push({ kind: "evaluate", log_lines: observation.log?.length ?? 0, candidates: query.candidates.length, rows: false });
+    this.queries.push({ kind: "evaluate", log_lines: observation.log?.length ?? 0, candidates: query.candidates.length, rows: query.candidate_features !== undefined });
     const digest = (text: string): number => createHash("sha256").update(text).digest().readUInt32BE(0);
     const own = jcs(observation.team as Json);
     const prior_ppm = query.candidates.map(({ choice }) => 1 + (digest(`${observation.kind}|${own}|${choice}`) % 1000));
@@ -110,7 +113,7 @@ interface Game {
 
 async function play(
   battle: RandomBattleFile,
-  change: { p2?: PokemonSet[]; p2Actor?: Actor; setup?: PreviewSolveSetup; worker?: Worker; bank_ms?: () => number | null; seed?: string; options?: Partial<PreviewSolveActorOptions> } = {},
+  change: { p2?: PokemonSet[]; p2Actor?: Actor; setup?: PreviewSolveSetup; worker?: Worker; bank_ms?: () => number | null; seed?: string; options?: Partial<PreviewSolveActorOptions>; features?: FeatureConfigs } = {},
 ): Promise<Game> {
   const teams = { p1: withGenders(battle.teams.p1), p2: change.p2 ?? withGenders(battle.teams.p2) };
   const seed = change.seed ?? battle.seed;
@@ -118,8 +121,9 @@ async function play(
   const worker = change.worker ?? new Worker();
   const known = syntheticTeamHashes([teamHash(teams.p1), teamHash(teams.p2)]);
   const channel_class = battleClass({ p1: teamHash(teams.p1), p2: teamHash(teams.p2) }, known);
-  const { policy_id, identity_hash } = previewSolvePolicy(setup, manifest, pair, "argmax");
-  const base = policyActor({ client: worker, battle: "game-0-p1", player: "p1", team: stampTeam(teams.p1 as never, known), manifest, channel_class, seed, game: 0, policy_id, sampling: "argmax", engine });
+  const featuresHash = change.features === undefined ? undefined : featureSetHash(featureSetIdentity(engine, change.features));
+  const { policy_id, identity_hash } = previewSolvePolicy(setup, manifest, pair, "argmax", {}, undefined, featuresHash);
+  const base = policyActor({ client: worker, battle: "game-0-p1", player: "p1", team: stampTeam(teams.p1 as never, known), manifest, channel_class, seed, game: 0, policy_id, sampling: "argmax", engine, ...(change.features === undefined ? {} : { features: { configs: change.features } }) });
   const solved: Game["solved"] = [];
   const actor = previewSolveActor({
     setup,
@@ -133,6 +137,7 @@ async function play(
     channel_class,
     base,
     on_solve: (decision) => solved.push(decision),
+    ...(change.features === undefined ? {} : { features: { configs: change.features } }),
     ...(change.bank_ms === undefined ? {} : { bank_ms: change.bank_ms }),
     ...change.options,
   });
@@ -410,11 +415,38 @@ describe("fallbacks and refusals", () => {
     expect(previewSolvePolicy(setup, manifest, pair, "argmax").policy_id).not.toBe(previewSolvePolicy(setupFor(), manifest, pair, "argmax").policy_id);
   }, 600_000);
 
+  it("solves a pair that reads candidate features: every query carries the pair's rows, the policy id names the feature set", async () => {
+    const configs: FeatureConfigs = { vocabulary: featureVocabulary, config: baselineConfig, mechanics, snapshot: featureSnapshot, data_class: "synthetic" };
+    const identity = featureSetIdentity(engine, configs);
+    const stated = { feature_set: identity.feature_set, feature_set_hash: featureSetHash(identity) };
+    class Featured extends Worker {
+      override readonly featureSet = stated;
+    }
+    const plain = await play(battle);
+    const g = await play(battle, { worker: new Featured(), features: configs });
+    expect(g.actor.report().counts).toMatchObject({ solved: 1 });
+    const evaluations = g.worker.queries.filter((q) => q.kind === "evaluate");
+    expect(evaluations.length).toBeGreaterThan(0);
+    expect(evaluations.every((q) => q.rows)).toBe(true);
+    // Another policy id is another world stream, so the entries are not the plain pair's; the table is whole.
+    expect(g.solved[0]?.solved.table.complete).toBe(true);
+    expect(g.solved[0]?.solved.table.feature_refusals).toEqual({});
+    expect(g.policy_id).not.toBe(plain.policy_id);
+    // A request the builder cannot feature drops its world: all of them dropped leaves no table and the wrapped actor plays the Preview.
+    const refusing = { ...configs, assume: () => { throw new AssumedSetError("refused"); } };
+    const dropped = await play(battle, { worker: new Featured(), features: { ...refusing, ...{} } as FeatureConfigs });
+    expect(dropped.actor.report().counts).toMatchObject({ solved: 0 });
+    expect(dropped.actor.report().counts.payoff.worlds_dropped).toBeGreaterThan(0);
+  }, 600_000);
+
   it("refuses a pair that reads candidate features or the opponent sheet, and a missing own view", async () => {
     const g = await play(battle);
     const options = (client: unknown): PreviewSolveActorOptions => ({ setup: setupFor(), client: client as PayoffClient, battle: "b", player: "p1", policy_id: g.policy_id, identity_hash: "d".repeat(64), seed: battle.seed, game: 0, channel_class: "synthetic", base: firstLegal });
     const featured = Object.assign(new Worker(), { featureSet: { feature_set: "probe-damage/1", feature_set_hash: "e".repeat(64) } });
-    expect(() => previewSolveActor(options(featured))).toThrow(/candidate features/);
+    expect(() => previewSolveActor(options(featured))).toThrow(/needs the feature configs/);
+    const configs: FeatureConfigs = { vocabulary: featureVocabulary, config: baselineConfig, mechanics, snapshot: featureSnapshot, data_class: "synthetic" };
+    expect(() => previewSolveActor({ ...options(new Worker()), features: { configs } })).toThrow(/states no feature set/);
+    expect(() => previewSolveActor({ ...options(featured), features: { configs } })).toThrow(/another feature set than the worker stated/);
     const sheet = Object.assign(new Worker(), { sheetSource: "belief" });
     expect(() => previewSolveActor(options(sheet))).toThrow(/opponent sheet/);
     const actor = previewSolveActor(options(new Worker()));

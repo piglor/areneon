@@ -81,11 +81,13 @@ describe("the search candidate of the progress evaluation", () => {
     expect(jcs(second.record as unknown as Json)).toBe(jcs(record as unknown as Json));
   }, 600_000);
 
-  it("is refused beside the ablation and for a pair that reads candidate features, and in an unknown mode", async () => {
+  it("is refused beside the ablation, for a features pair whose worker answers no value queries, and in an unknown mode", async () => {
     const worker = new Worker();
     const ablation = { generation: { generation: 0, checkpoint: "3".repeat(64), policy_id: `policy:${"e".repeat(64)}`, client: new Worker() }, random_policy_id: `policy:${"f".repeat(64)}` };
     await expect(playProgress(options({ client: worker, ablation }))).rejects.toThrow(/evaluated alone/);
-    await expect(playProgress(options({ features: {} as never }))).rejects.toThrow(/does not search a features pair/);
+    // A features pair is searched (#1307) when its worker states value queries; the actor refuses one that does not.
+    const stating = Object.assign(new Worker(), { featureSet: { feature_set: "probe-damage/1", feature_set_hash: "c".repeat(64) } });
+    await expect(playProgress(options({ client: stating, features: {} as never }))).rejects.toThrow(/answers value queries/);
     await expect(playProgress(options({ search: { setup: setupFor(), mode: "greedy" as never } }))).rejects.toThrow(ProgressError);
   });
 

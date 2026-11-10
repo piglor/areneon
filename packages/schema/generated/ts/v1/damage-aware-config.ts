@@ -30,6 +30,19 @@ export interface DamageAwareConfig {
    */
   target_convention?: "engine";
   /**
+   * The two situational actions of damage-aware@v4 (#1329): the value of switching a Threatened own active out to a bench Pokemon the same foes' revealed moves do not threaten, and of a stalling move by a Threatened own active. Absent: the record scores a switch and a status move 0 (v1 and v3). A record that has it must select target_convention engine (reader rule) and is damage-aware@v4. A minor change within v1: an older reader refuses such a record.
+   */
+  situational?: {
+    /**
+     * The score of a switch of a Threatened own active to a bench Pokemon no revealed foe move reaches, times one minus the bench Pokemon's threat share (the largest mean share of its hit points a revealed foe move takes).
+     */
+    switch_value_ppm: number;
+    /**
+     * The score of a stalling move (the engine's stall list) by a Threatened own active that did not use a stalling move successfully last turn.
+     */
+    protect_value_ppm: number;
+  };
+  /**
    * The rule for every opponent field that is not revealed. A revealed species, forme, level, gender, move, item, ability or Mega is used as revealed; an unrevealed move is never invented.
    */
   assumed_set: {

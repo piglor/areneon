@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:run-input-manifest",
+  "title": "RunInputManifest",
+  "description": "The public inputs of one training run as the owner put them in the inputs bucket (ADR-024 section 3.5): the run config and the synthetic team dataset directory the run reads, each file with its relative path, size and SHA-256, the frozen commit of the repository the run is started from, the run config hash and the dataset hash. It is the one object a rented machine trusts after the commit SHA: the fetch-and-verify command downloads exactly these files, checks every size and hash, then checks the dataset hash with the dataset reader before the loop starts. Everything in git (engine data, the Showdown pin, lockfiles, code) is fetched from the repository at the commit and is not listed. Written as JCS bytes; its own hash is the SHA-256 of those bytes. Safe relative paths (no empty, dot or dot-dot segment, no absolute path), sorted and unique paths, the config file among the files, a non-empty dataset directory that does not hold the config file and the size ceiling of one object are enforced by the reader (the contract profile cannot say them).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "data_class",
+    "run_key",
+    "commit",
+    "run_config_hash",
+    "dataset_hash",
+    "config_file",
+    "dataset_dir",
+    "files"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "data_class": {
+      "description": "Always synthetic: a manifest of private data is refused.",
+      "const": "synthetic"
+    },
+    "run_key": {
+      "description": "The run (TrainingRunConfig.seeds.run_key); the objects live under runs/<run_key>/inputs/.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "commit": {
+      "description": "The frozen commit of the repository the run is started from (40 lower-case hex). The fetch command checks it against the checked-out repository.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "run_config_hash": {
+      "description": "SHA-256 of the JCS bytes of the run config (runConfigHash).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "dataset_hash": {
+      "description": "The run config's team_dataset.dataset_hash (datasetHash of the verified dataset).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "config_file": {
+      "description": "The run config's relative path among the files.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "dataset_dir": {
+      "description": "The relative directory that holds the dataset files; every file under it belongs to the dataset directory the loop reads.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "files": {
+      "description": "Every file of the inputs, sorted by path (code units), each once.",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/InputFile"
+      }
+    }
+  },
+  "$defs": {
+    "InputFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "size",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "description": "Relative path, with / separators (reader-checked: safe segments only).",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "size": {
+          "description": "Size in bytes; at most the object store's one-object ceiling (268435456).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 268435456
+        },
+        "sha256": {
+          "description": "SHA-256 of the file's bytes.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

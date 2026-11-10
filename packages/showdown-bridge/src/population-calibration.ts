@@ -29,6 +29,7 @@ export interface CalibrationOptions {
   pool: TrainingPool;
   damage_aware?: DamageAwareSetup;
   damage_aware_v3?: DamageAwareSetup;
+  damage_aware_v4?: DamageAwareSetup;
   damage_aware_v2?: DamageAwareSetup;
   belief_worlds?: BeliefWorldsFactory | undefined;
 }

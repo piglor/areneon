@@ -31,6 +31,7 @@ import { observe, recordedChannel } from "./player-channel.ts";
 import { privateSamples, privateSnapshotSamples } from "./private-samples.ts";
 import { privateTestSamples } from "./private-test-samples.ts";
 import { ladderRecordSamples } from "./ladder-record-samples.ts";
+import { runInputManifestSamples } from "./run-input-manifest-samples.ts";
 import { bestResponseSamples } from "./best-response-samples.ts";
 import { scriptedH2HSamples } from "./scripted-h2h-samples.ts";
 import { leagueRunV2Samples } from "./league-run-v2-samples.ts";
@@ -46,6 +47,9 @@ import type { RequestRecord } from "./runner.ts";
 
 export const SAMPLES_DIR = fileURLToPath(new URL("../../../fixtures/contracts", import.meta.url));
 export const SAMPLE_HASHES = "hashes.json";
+
+/** The bytes a sample file holds: two-space JSON and a newline. */
+export const sampleBytes = (content: unknown): string => `${JSON.stringify(content, null, 2)}\n`;
 
 const TIMER = { starting: 420, grace: 90, add_per_turn: 0, max_per_turn: 55, max_first_turn: 90, tick: 5 };
 
@@ -1744,16 +1748,18 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const scriptedOnes = scriptedH2HSamples();
   const bestOnes = bestResponseSamples();
   const ladderOnes = ladderRecordSamples();
+  const runInputOnes = runInputManifestSamples();
   for (const kind of ["valid", "invalid", "readerInvalid"] as const) Object.assign(privateOnes[kind], privateManifests[kind], privateTests[kind]);
-  for (const [kind, cases] of [["valid", { ...valid, ...evalSamples.valid, ...progressOnes.valid, ...mechanicsOnes.valid, ...damageAwareOnes.valid, ...usagePriorOnes.valid, ...usageWeightOnes.valid, ...worldWritersOnes.valid, ...searchConfigOnes.valid, ...previewSolveOnes.valid, ...scriptedOnes.valid, ...bestOnes.valid, ...leagueV2Ones.valid, ...ladderOnes.valid, ...privateOnes.valid }], ["invalid", { ...invalid, ...evalSamples.invalid, ...progressOnes.invalid, ...mechanicsOnes.invalid, ...damageAwareOnes.invalid, ...usagePriorOnes.invalid, ...usageWeightOnes.invalid, ...worldWritersOnes.invalid, ...searchConfigOnes.invalid, ...previewSolveOnes.invalid, ...scriptedOnes.invalid, ...bestOnes.invalid, ...leagueV2Ones.invalid, ...ladderOnes.invalid, ...privateOnes.invalid }], ["reader-invalid", { ...readerInvalid, ...evalSamples.readerInvalid, ...progressOnes.readerInvalid, ...mechanicsOnes.readerInvalid, ...damageAwareOnes.readerInvalid, ...usagePriorOnes.readerInvalid, ...usageWeightOnes.readerInvalid, ...worldWritersOnes.readerInvalid, ...searchConfigOnes.readerInvalid, ...previewSolveOnes.readerInvalid, ...scriptedOnes.readerInvalid, ...bestOnes.readerInvalid, ...leagueV2Ones.readerInvalid, ...ladderOnes.readerInvalid, ...privateOnes.readerInvalid }]] as const) {
+  for (const [kind, cases] of [["valid", { ...valid, ...evalSamples.valid, ...progressOnes.valid, ...mechanicsOnes.valid, ...damageAwareOnes.valid, ...usagePriorOnes.valid, ...usageWeightOnes.valid, ...worldWritersOnes.valid, ...searchConfigOnes.valid, ...previewSolveOnes.valid, ...scriptedOnes.valid, ...bestOnes.valid, ...leagueV2Ones.valid, ...ladderOnes.valid, ...runInputOnes.valid, ...privateOnes.valid }], ["invalid", { ...invalid, ...evalSamples.invalid, ...progressOnes.invalid, ...mechanicsOnes.invalid, ...damageAwareOnes.invalid, ...usagePriorOnes.invalid, ...usageWeightOnes.invalid, ...worldWritersOnes.invalid, ...searchConfigOnes.invalid, ...previewSolveOnes.invalid, ...scriptedOnes.invalid, ...bestOnes.invalid, ...leagueV2Ones.invalid, ...ladderOnes.invalid, ...runInputOnes.invalid, ...privateOnes.invalid }], ["reader-invalid", { ...readerInvalid, ...evalSamples.readerInvalid, ...progressOnes.readerInvalid, ...mechanicsOnes.readerInvalid, ...damageAwareOnes.readerInvalid, ...usagePriorOnes.readerInvalid, ...usageWeightOnes.readerInvalid, ...worldWritersOnes.readerInvalid, ...searchConfigOnes.readerInvalid, ...previewSolveOnes.readerInvalid, ...scriptedOnes.readerInvalid, ...bestOnes.readerInvalid, ...leagueV2Ones.readerInvalid, ...ladderOnes.readerInvalid, ...runInputOnes.readerInvalid, ...privateOnes.readerInvalid }]] as const) {
     for (const [key, value] of Object.entries(cases)) {
       const [contract, name] = key.split("/") as [string, string];
       samples[`v1/${contract}/${kind}/${name}.json`] = value;
     }
   }
+  // Sorted by path (code units), so the committed file's key order never depends on the order the samples are built in (#1298).
   const hashes: Record<string, string> = {};
-  for (const [path, value] of Object.entries(samples)) {
-    hashes[path] = createHash("sha256").update(jcs(value as Json)).digest("hex");
+  for (const path of Object.keys(samples).sort()) {
+    hashes[path] = createHash("sha256").update(jcs(samples[path] as Json)).digest("hex");
   }
   samples[SAMPLE_HASHES] = hashes;
   return samples;

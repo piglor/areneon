@@ -48,6 +48,24 @@ class FixedItem(BaseModel):
     """
 
 
+class Situational(BaseModel):
+    """
+    The two situational actions of damage-aware@v4 (#1329): the value of switching a Threatened own active out to a bench Pokemon the same foes' revealed moves do not threaten, and of a stalling move by a Threatened own active. Absent: the record scores a switch and a status move 0 (v1 and v3). A record that has it must select target_convention engine (reader rule) and is damage-aware@v4. A minor change within v1: an older reader refuses such a record.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    switch_value_ppm: Ppm
+    """
+    The score of a switch of a Threatened own active to a bench Pokemon no revealed foe move reaches, times one minus the bench Pokemon's threat share (the largest mean share of its hit points a revealed foe move takes).
+    """
+    protect_value_ppm: Ppm
+    """
+    The score of a stalling move (the engine's stall list) by a Threatened own active that did not use a stalling move successfully last turn.
+    """
+
+
 class StatPointsModel(BaseModel):
     """
     The Stat Point spread of every assumed set. The sum and each value must pass the target format's validator; the reader checks the sum against the format's Stat Point limit.
@@ -132,6 +150,10 @@ class DamageAwareConfig(BaseModel):
     target_convention: Literal["engine"] | MISSING = MISSING
     """
     Which foe a choice location names (#1180). Absent: the legacy numbering that damage-aware@v1 played, location 1 being the foe in the LAST active slot (the reverse of the engine's; kept bug-for-bug so that record's behaviour and identity stand). "engine": the pinned engine's convention (Pokemon.getAtLoc: location L is the foe in active slot L - 1); a record that says so is damage-aware@v3. A minor change within v1: an older reader refuses such a record.
+    """
+    situational: Situational | MISSING = MISSING
+    """
+    The two situational actions of damage-aware@v4 (#1329): the value of switching a Threatened own active out to a bench Pokemon the same foes' revealed moves do not threaten, and of a stalling move by a Threatened own active. Absent: the record scores a switch and a status move 0 (v1 and v3). A record that has it must select target_convention engine (reader rule) and is damage-aware@v4. A minor change within v1: an older reader refuses such a record.
     """
     assumed_set: AssumedSet
     """

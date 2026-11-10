@@ -38,7 +38,7 @@ from areneon_ml.checkpoint.record import CheckpointRecord, read_record
 from areneon_ml.learner.config import RunConfig
 from areneon_ml.learner.data import trajectories
 from areneon_ml.learner.labels import LabelReader, LabelStep
-from areneon_ml.learner.parallel import fit_processes
+from areneon_ml.learner.parallel import load_workers
 from areneon_ml.learner.state import pack_state, restore_state
 from areneon_ml.learner.trainer import Learner, configure_learner
 from areneon_ml.loop import layout
@@ -201,6 +201,8 @@ class Loop:
         #: Worker processes that check and encode the generation's stream in the load phase
         #: (#1069). Operational: the trajectories, and so every hash, are the same for any number.
         self.load_processes = 1
+        #: Size the workers at each load phase from the machine (``--load-processes auto``).
+        self.load_auto = False
         #: A cap on the memory the load workers may add, in MB (``None``: no cap).
         self.load_memory_mb: int | None = None
         #: Time the phases and processes of each generation into its metrics file (#1191).
@@ -429,7 +431,7 @@ class Loop:
                     training_set,
                     self._encoders,
                     pair,
-                    fit_processes(self.load_processes, self.load_memory_mb),
+                    load_workers(self.load_processes, self.load_auto, self.load_memory_mb),
                 )
                 labels, label_sets = self._load_labels(generation, work, summary, pair)
             if self.profile:

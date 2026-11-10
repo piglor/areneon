@@ -25,6 +25,10 @@ from areneon_ml.progress.records import (
     SEARCH_EVIDENCE_NOTE,
     SEARCH_LABEL,
     SEARCH_PRIOR_LABEL,
+    SOLVE_CONTROL_LABEL,
+    SOLVE_EVIDENCE_NOTE,
+    SOLVE_LABEL,
+    SOLVE_PRIOR_LABEL,
 )
 
 PAGES = "progress-replays"
@@ -64,13 +68,18 @@ def species_in(game: ProgressGame) -> set[str]:
     return found
 
 
+_FIXED_OPPONENTS = {
+    "previous": "the previous generation's frozen pair",
+    "self-no-search": "the same frozen pair without search",
+    "self-no-solve": "the same frozen pair without the solver",
+}
+
+
 def _opponent_words(game: ProgressGame) -> str:
-    if game.opponent_kind == "previous":
-        return "the previous generation's frozen pair"
+    if game.opponent_kind in _FIXED_OPPONENTS:
+        return _FIXED_OPPONENTS[game.opponent_kind]
     if game.opponent_kind == "anchor":
         return f"generation {game.opponent_generation}'s frozen pair, an anchor"
-    if game.opponent_kind == "self-no-search":
-        return "the same frozen pair without search"
     if game.baseline is not None:
         # v1's wording is the one its pages always had; another version is named (#1183).
         policy = game.record["policies"][game.baseline["seat"]]
@@ -150,6 +159,8 @@ def _context(game: ProgressGame) -> str:
         words += f" ({CROSS_RUN})"
     if game.opponent_kind == "self-no-search":
         words += f" ({CONTROL_LABEL})"
+    if game.opponent_kind == "self-no-solve":
+        words += f" ({SOLVE_CONTROL_LABEL})"
     prefix = ""
     if game.search is not None:
         c = game.search["counts"]
@@ -157,6 +168,13 @@ def _context(game: ProgressGame) -> str:
             f"{SEARCH_LABEL} ({SEARCH_PRIOR_LABEL}; {SEARCH_EVIDENCE_NOTE}; this game, "
             f"{game.search['seat']}: {c['decisions']} decisions of which {c['searched_decisions']} "
             f"searched, {c['worlds_built']} worlds built, {c['turns']} turns simulated), "
+        )
+    if game.solve is not None:
+        c = game.solve["counts"]
+        prefix = (
+            f"{SOLVE_LABEL} ({SOLVE_PRIOR_LABEL}; {SOLVE_EVIDENCE_NOTE}; this game, "
+            f"{game.solve['seat']}: {c['decisions']} decisions of which {c['solved']} Team "
+            f"Previews solved, {c['worlds_asked']} worlds asked), "
         )
     return f"{prefix}{game.mode} mode against {words}. Pair {game.pair}, game {game.game % 2 + 1} of 2: each pair is played from both seats with the same teams and battle seed."
 
@@ -210,6 +228,8 @@ def _seen(match: str) -> str:
     """The label of a match that plays an earlier generation of the same lineage (by its id)."""
     if match.startswith("search-"):
         return f" ({esc(SEARCH_LABEL)}; {esc(SEARCH_EVIDENCE_NOTE)})"
+    if match.startswith("psolve-"):
+        return f" ({esc(SOLVE_LABEL)}; {esc(SOLVE_EVIDENCE_NOTE)})"
     if match.startswith("damage-aware-"):
         return f" ({esc(DAMAGE_AWARE_LABEL)})"
     if match.startswith("run-"):

@@ -89,7 +89,7 @@ export {
   PrivateTrainingLoaderError,
 } from "./private-training-loader.ts";
 export { interimPoolSource, type PoolSource, runGenerationCli, UsageError } from "./generation-cli.ts";
-export { DAMAGE_AWARE_V2_POLICY_ID, DAMAGE_AWARE_V3_POLICY_ID, type DamageAwareSetup, damageAwareSetup, damageAwareSetupV2, type FeatureSetup, featureSetup, GenerationError, LABEL_CONFIG_NAME, labelSetup, type RunSheetSetup, type SearchSetupFactory, sheetSetup, type PoolRequest, type PoolShape, type PrivateComponent, poolShape, planGeneration, type TrainingPool as GenerationTeamPool, playGeneration } from "./league-generation.ts";
+export { DAMAGE_AWARE_V2_POLICY_ID, DAMAGE_AWARE_V3_POLICY_ID, DAMAGE_AWARE_V4_POLICY_ID, type DamageAwareSetup, damageAwareSetup, damageAwareSetupV2, type FeatureSetup, featureSetup, GenerationError, LABEL_CONFIG_NAME, labelSetup, type RunSheetSetup, type SearchSetupFactory, sheetSetup, type PoolRequest, type PoolShape, type PrivateComponent, poolShape, planGeneration, type TrainingPool as GenerationTeamPool, playGeneration } from "./league-generation.ts";
 export { readTrainingRunConfig, runConfigHash, type TrainingRunConfig, TrainingRunConfigError } from "./training-run-config.ts";
 export { type CloneRunConfig, CloneRunConfigError, cloneRunConfigHash, readCloneRunConfig } from "./clone-run-config.ts";
 export { EpisodeError, episodeFromRecord, type EpisodeOptions, readEpisode } from "./episode-io.ts";
@@ -177,6 +177,7 @@ export {
   BattleAbortedError,
   type BattleOptions,
   type BattleRecord,
+  declareReadsLegal,
   FORFEIT_CAUSES,
   type ForfeitCause,
   ForfeitSignal,
@@ -287,6 +288,7 @@ export {
 export { ITERATIVE_SOLVERS, loadPreviewSolveConfig, PREVIEW_SOLVE_POLICY_LABEL, type PreviewSolveConfig, PreviewSolveConfigError, previewSolveConfigHash, previewSolveIdentity, previewSolveIdentityHash, type PreviewSolveIdentityInputs, readPreviewSolveConfig } from "./preview-solve-config.ts";
 export { LEAF_FORMAT, loadSearchConfig, readSearchConfig, type SearchConfig, SearchConfigError, searchConfigHash, searchIdentity, searchIdentityHash, type SearchIdentityInputs, SEARCH_POLICY_LABEL } from "./search-config.ts";
 export { deriveRoleSetsPrior, ROLE_SETS_PRIOR_SCRIPT, RoleSetsPriorError, type RoleSetsPriorInput } from "./role-sets-prior.ts";
+export { apportion, deriveMixturePrior, MIXTURE_DENOMINATOR, MIXTURE_PRIOR_SCRIPT, MixturePriorError, type MixturePriorInput, successiveInclusion } from "./mixture-prior.ts";
 export { deriveGeneratorPrior, GENERATOR_PRIOR_SCRIPT, GeneratorPriorError, type GeneratorPriorInput, generatorConfigHash, megaHolderAbilities, megaPreviewSpecies } from "./generator-prior.ts";
 export { DAMAGE_CHECK_FORMAT } from "./damage-check.ts";
 export { SPEED_CHECK_FORMAT, evidenceCheckFormats } from "./speed-check.ts";
@@ -397,6 +399,7 @@ export {
   readLeagueRunRecord,
   readLeagueRunRecordV2,
 } from "./league-run-record.ts";
+export { isSafeRelativePath, readRunInputManifest, type RunInputFile, type RunInputManifest, RunInputManifestError, runInputManifestBytes, runInputManifestHash } from "./run-input-manifest.ts";
 export { checkLadderRecord, type LadderRecord, LadderRecordError, LADDER_REFERENCE_ANCHOR, LADDER_REFERENCE_STRENGTH, ladderRecordHash, readLadderRecord } from "./ladder-record.ts";
 export { type AssumedSet, type AssumedSetContext, AssumedSetError, assumedHp, buildAssumedSet, buildWorldAssumedSet, WorldMismatchError, type WorldSetLike } from "./damage-aware-assumed-set.ts";
 export { type LegalityWorldSet, type SetLegalityPort, createSetLegality } from "./set-legality.ts";
@@ -480,6 +483,7 @@ export { type ExtraPlay, matchSuffix, modeName, parseExtraMode, parseModes, Prog
 export { EVAL_DATASET_FLAGS, type EvalDataset, readEvalDataset, withEvalDataset } from "./eval-dataset.ts";
 export { committedPlanSeeds, type ProgressPoolSource, type ProgressPorts, runProgressCli } from "./progress-cli.ts";
 export { controlSeat, searchCountsRecord, searchSeat } from "./search-progress.ts";
+export { solveControlSeat, solveCountsRecord, solveSeat } from "./preview-solve-progress.ts";
 export { H2H_FILE, runScriptedH2HCli } from "./scripted-h2h-cli.ts";
 export {
   type ScriptedGameRow,
@@ -751,6 +755,7 @@ export {
   HYPOTHETICAL_BATTLE_FORMAT,
   HYPOTHETICAL_ENGINE_PURPOSE,
   HypotheticalError,
+  HypotheticalFeatureError,
   hypotheticalCandidates,
   hypotheticalEngineSeed,
   hypotheticalRequest,
@@ -814,4 +819,7 @@ export {
 export { readPreviewChannel, startPreviewWorlds } from "./preview-worlds.ts";
 export { type BeliefFeaturesContext, BELIEF_REFUSAL_CODES, type BeliefMoveInclusion, type BeliefMoveInclusions, type BeliefRefusalCode, type BeliefThreatsPort, type BeliefFeaturesFactory, type BeliefFeaturesFactoryContext, type BeliefEvidenceMode, BELIEF_EVIDENCE_MODES, type BeliefFeaturesPort, BeliefFeaturesError, createSheetBuilder, SHEET_FEATURE_SET, SheetInputError, SheetTotals, sheetForChannel, sheetStatement, type SheetBuilder, type SheetCounts, type SheetInput, type SheetKValues, type SheetSetup } from "./belief-features.ts";
 export { OpponentSheetError, opponentSheetProblem, readOpponentSheet } from "./opponent-sheet.ts";
+export { ENGINE_SHEET_FEATURE_SET, ENGINE_SHEET_HASH, REVEALED_ONLY_FEATURE_SET, REVEALED_ONLY_HASH, revealedOnlySheet, SHEET_BUILDERS_FORMAT, SheetBuildError, sheetFromChannel } from "./sheet-builders.ts";
 export { MAX_REFUSED_PPM, refusedSharePpm, sheetCountsProblem, sheetCountsValid, sumSheetCounts } from "./sheet-counts.ts";
+export * from "./s0-measures.ts";
+export { type CostComponent, type CostSink, COST_COMPONENTS } from "./search-cost.ts";

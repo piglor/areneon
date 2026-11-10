@@ -15,6 +15,7 @@ export { drawStatPoints, Proposal, ProposalError } from "./proposal.ts";
 export { type BeliefWorldsFiles, BeliefWorldsError, beliefWorldsFactory, beliefWorldsFiles, createBeliefWorlds } from "./damage-aware-worlds.ts";
 export { createOpponentTeams, type OpponentTeamCounts, type OpponentTeamPort, type TeamDraw, type TeamSourceResult } from "./opponent-teams.ts";
 export { createPreviewSolvePorts, previewSolverPort } from "./preview-solver-port.ts";
+export { progressPreviewSolveSetup } from "./progress-preview-solve-setup.ts";
 export { createSearchWorlds, SearchWorldsError, type SearchWorldsContext, type SearchWorldsFiles, searchWorldsFiles } from "./search-worlds.ts";
 export { type GeneratorSpreadSampler, generatorSpreadSampler, type StatPointSpread } from "./spread-sampler.ts";
 export { fillQuantile, provision, type Provision } from "./provision.ts";
@@ -91,3 +92,23 @@ export { listPool, type ListedSet, type ListedTeam, type PoolListing } from "./p
 export { drawRolePicks, type RolePick, RoleSetProposalError, type RoleSetsSource, roleSetsSource } from "./role-set-proposal.ts";
 export { pickWeighted, type UsageSource, UsageProposalError, UsageSampler, usageMembers, usageSource } from "./usage-proposal.ts";
 export { createBeliefFeatures, evidenceKey, type BeliefFeaturesContext } from "./belief-features.ts";
+export {
+  buildRunInputs,
+  DATASET_DIR,
+  fetchRunInputs,
+  fileKey,
+  filesPrefix,
+  inputsPrefix,
+  manifestKey,
+  RUN_CONFIG_FILE,
+  RUN_INPUT_REFUSALS,
+  RunInputError,
+  runInputLayout,
+  type BuildRunInputsInput,
+  type FetchedRunInputs,
+  type FetchRunInputsInput,
+  type RunInputRefusal,
+  type RunInputs,
+  uploadRunInputs,
+} from "./run-inputs.ts";
+export { runInputsCli, type RunInputsDeps } from "./run-inputs-cli.ts";

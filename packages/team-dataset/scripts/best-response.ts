@@ -4,12 +4,16 @@
 import { loadRulesSnapshot, resolveFormat, runBestResponseCli, UsageError } from "@areneon/showdown-bridge";
 import { readerSha256 } from "../../public-state/src/index.ts";
 import { goldenTeamVocabulary } from "../../showdown-bridge/src/golden.ts";
+import { beliefWorldsFactory } from "../src/damage-aware-worlds.ts";
+import { createBeliefFeatures } from "../src/belief-features.ts";
 import { createOpponentTeams } from "../src/opponent-teams.ts";
 import { datasetTrainingHashes, datasetValidationPool } from "../src/progress-pool.ts";
 
 try {
   process.exitCode = await runBestResponseCli(process.argv.slice(2), console.log, datasetValidationPool, {
     run_teams: datasetTrainingHashes,
+    belief_worlds: beliefWorldsFactory,
+    belief_features: (context) => createBeliefFeatures(context),
     teams: (engine, formatId) =>
       createOpponentTeams({ engine, vocabulary: goldenTeamVocabulary(), reader_sha256: readerSha256(), manifest: resolveFormat(engine, formatId, loadRulesSnapshot(engine.commit)).manifest, arm: "generator-matched" }),
   });

@@ -9,7 +9,7 @@ import { EngineDataError, readEngineData, readEngineDataV2 } from "../src/engine
 import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, readRoleSetTable, RoleSetError, readMoveClassTable, MoveClassError, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readEvaluationReply, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readTrainingRunConfig, readCloneRunConfig, CloneRunConfigError, readLeagueRunRecord, readLeagueRunRecordV2, LeagueRunRecordError, TrainingRunConfigError, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
 import { EvaluationConfigError, readEvaluationParameters, readEntry, RegisterError, readEvaluationPlan, readSealedSetCommitment, readTrainingGateRule, readEvaluationConfig, readSealedTeamSetManifest, readRetiredSealedManifest } from "../src/index.ts";
 import { OpponentSheetError, readOpponentSheet } from "../src/index.ts";
-import { contractSamples, SAMPLE_HASHES, SAMPLES_DIR } from "../src/samples.ts";
+import { contractSamples, SAMPLE_HASHES, sampleBytes, SAMPLES_DIR } from "../src/samples.ts";
 import { exportEngineData } from "../src/engine-data.ts";
 import { GOLDEN_FORMAT } from "../src/golden.ts";
 
@@ -33,6 +33,16 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       .map((e) => join(e.parentPath, e.name).slice(SAMPLES_DIR.length + 1));
     expect([...files, SAMPLE_HASHES].sort()).toEqual(Object.keys(fresh).sort());
     for (const [file, content] of Object.entries(fresh)) expect(committed(file), file).toEqual(content);
+  });
+
+  it("holds hashes.json byte for byte as a fresh capture writes it: keys sorted, so no builder's reorder churn (#1298)", () => {
+    const text = readFileSync(join(SAMPLES_DIR, SAMPLE_HASHES), "utf8");
+    expect(text).toBe(sampleBytes(fresh[SAMPLE_HASHES]));
+    const keys = Object.keys(JSON.parse(text) as Record<string, string>);
+    expect(keys).toEqual([...keys].sort());
+    // Negative control: the same entries in another order are another file, and the comparison sees it.
+    const reordered = Object.fromEntries(Object.entries(fresh[SAMPLE_HASHES] as Record<string, string>).reverse());
+    expect(sampleBytes(reordered)).not.toBe(text);
   });
 
   it("covers every contract, with a valid and an invalid case each", () => {
@@ -114,6 +124,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/clone-run-config/reader-invalid/picks-exceed-team.json",
       "v1/damage-aware-config-2/reader-invalid/other-format.json",
       "v1/damage-aware-config/reader-invalid/other-format.json",
+      "v1/damage-aware-config/reader-invalid/situational-without-engine-convention.json",
       "v1/damage-aware-config/reader-invalid/stat-points-over-limit.json",
       "v1/damage-aware-config/reader-invalid/unknown-fixed-item.json",
       "v1/damage-aware-config/reader-invalid/unknown-nature.json",
@@ -346,6 +357,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/progress-evaluation-record-2/reader-invalid/baseline-on-other-match.json",
       "v1/progress-evaluation-record-2/reader-invalid/baseline-probe-runs-exceed-queries.json",
       "v1/progress-evaluation-record-2/reader-invalid/baseline-row-missing.json",
+      "v1/progress-evaluation-record-2/reader-invalid/budget-on-plain-record.json",
       "v1/progress-evaluation-record-2/reader-invalid/control-counts-on-baseline.json",
       "v1/progress-evaluation-record-2/reader-invalid/control-mode-differs.json",
       "v1/progress-evaluation-record-2/reader-invalid/control-other-identity.json",
@@ -364,6 +376,23 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/progress-evaluation-record-2/reader-invalid/pair-is-game.json",
       "v1/progress-evaluation-record-2/reader-invalid/pairs-used-wrong.json",
       "v1/progress-evaluation-record-2/reader-invalid/plan-label-is-run-id.json",
+      "v1/progress-evaluation-record-2/reader-invalid/psolve-budget-below-preview.json",
+      "v1/progress-evaluation-record-2/reader-invalid/psolve-control-counts-on-baseline.json",
+      "v1/progress-evaluation-record-2/reader-invalid/psolve-control-mode-differs.json",
+      "v1/progress-evaluation-record-2/reader-invalid/psolve-control-other-identity.json",
+      "v1/progress-evaluation-record-2/reader-invalid/psolve-control-row-missing.json",
+      "v1/progress-evaluation-record-2/reader-invalid/psolve-control-solves.json",
+      "v1/progress-evaluation-record-2/reader-invalid/psolve-control-without-solve.json",
+      "v1/progress-evaluation-record-2/reader-invalid/psolve-counts-disagree.json",
+      "v1/progress-evaluation-record-2/reader-invalid/psolve-misnamed.json",
+      "v1/progress-evaluation-record-2/reader-invalid/psolve-mixed-with-plain.json",
+      "v1/progress-evaluation-record-2/reader-invalid/psolve-no-budget.json",
+      "v1/progress-evaluation-record-2/reader-invalid/psolve-on-plain-match.json",
+      "v1/progress-evaluation-record-2/reader-invalid/psolve-refusals-over-fallbacks.json",
+      "v1/progress-evaluation-record-2/reader-invalid/psolve-row-missing.json",
+      "v1/progress-evaluation-record-2/reader-invalid/psolve-solved-over-previews.json",
+      "v1/progress-evaluation-record-2/reader-invalid/psolve-unsorted-refusals.json",
+      "v1/progress-evaluation-record-2/reader-invalid/psolve-with-search.json",
       "v1/progress-evaluation-record-2/reader-invalid/rows-incomplete.json",
       "v1/progress-evaluation-record-2/reader-invalid/run-games-missing.json",
       "v1/progress-evaluation-record-2/reader-invalid/run-games-odd.json",
@@ -402,6 +431,11 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/progress-game-record/reader-invalid/plan-label-is-run-id.json",
       "v1/progress-game-record/reader-invalid/plan-label-seed-from-run-id.json",
       "v1/progress-game-record/reader-invalid/plan-label-without-pair.json",
+      "v1/progress-game-record/reader-invalid/psolve-control-other-identity.json",
+      "v1/progress-game-record/reader-invalid/psolve-control-same-seat.json",
+      "v1/progress-game-record/reader-invalid/psolve-control-solves.json",
+      "v1/progress-game-record/reader-invalid/psolve-control-without-solve.json",
+      "v1/progress-game-record/reader-invalid/psolve-decisions-differ.json",
       "v1/progress-game-record/reader-invalid/search-control-other-identity.json",
       "v1/progress-game-record/reader-invalid/search-control-same-seat.json",
       "v1/progress-game-record/reader-invalid/search-control-without-search.json",
@@ -417,6 +451,23 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/role-set-table/reader-invalid/unsorted-moves.json",
       "v1/role-set-table/reader-invalid/unsorted-sets.json",
       "v1/role-set-table/reader-invalid/unsorted-species.json",
+      "v1/run-input-manifest/reader-invalid/config-file-unlisted.json",
+      "v1/run-input-manifest/reader-invalid/config-file-unsafe.json",
+      "v1/run-input-manifest/reader-invalid/config-inside-dataset.json",
+      "v1/run-input-manifest/reader-invalid/dataset-dir-empty.json",
+      "v1/run-input-manifest/reader-invalid/dataset-dir-is-file.json",
+      "v1/run-input-manifest/reader-invalid/dataset-dir-unsafe.json",
+      "v1/run-input-manifest/reader-invalid/duplicate-path.json",
+      "v1/run-input-manifest/reader-invalid/file-is-directory.json",
+      "v1/run-input-manifest/reader-invalid/files-unsorted.json",
+      "v1/run-input-manifest/reader-invalid/path-absolute.json",
+      "v1/run-input-manifest/reader-invalid/path-backslash.json",
+      "v1/run-input-manifest/reader-invalid/path-dot-segment.json",
+      "v1/run-input-manifest/reader-invalid/path-empty-segment.json",
+      "v1/run-input-manifest/reader-invalid/path-parent-segment.json",
+      "v1/run-input-manifest/reader-invalid/path-space.json",
+      "v1/run-input-manifest/reader-invalid/path-trailing-slash.json",
+      "v1/run-input-manifest/reader-invalid/paths-differ-by-case.json",
       "v1/scripted-head-to-head-record/reader-invalid/a-seat-not-parity.json",
       "v1/scripted-head-to-head-record/reader-invalid/arm-counts-not-sum.json",
       "v1/scripted-head-to-head-record/reader-invalid/belief-missing-on-v2.json",
