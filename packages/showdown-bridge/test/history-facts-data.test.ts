@@ -6,16 +6,25 @@ import { loadEngine } from "../src/engine.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT } from "../src/golden.ts";
 import { DEFAULT_SHOWDOWN_DIR } from "../src/engine.ts";
 import {
+  directEndItems,
+  eatenBerries,
   eatTags,
   exportHistoryFactsData,
+  externalActionSources,
+  gemTags,
   goldenHistoryFactsData,
   HISTORY_FACTS_DIR,
   HistoryFactsDataError,
   historyFactsDataHash,
   historyFactsFile,
+  itemUseSources,
+  lastItemClearers,
+  nullCantReasons,
+  protectBreakers,
   readHistoryFactsData,
   slotConditions,
   stallCounter,
+  stealEatTags,
 } from "../src/history-facts-data.ts";
 import { type FactsTable } from "../src/world-facts-data.ts";
 
@@ -34,6 +43,8 @@ describe("the history facts' data of the pinned engine", () => {
     expect(data.external_action_sources).toEqual(["ability: Dancer"]);
     expect(data.item_use_sources).toEqual(["move: Fling"]);
     expect(data.eat_tags).toEqual(["eat", "weaken"]);
+    expect(data.steal_eat_tags).toEqual(["stealeat"]);
+    expect(data.gem_tags).toEqual(["gem"]);
     expect(data.direct_end_items).toEqual(["airballoon"]);
     expect(data.last_item_restorers).toEqual(["ability: Harvest", "move: Recycle"]);
     expect(data.last_item_takers).toEqual(["ability: Pickup"]);
@@ -62,15 +73,17 @@ describe("a source that no longer has the shape the reader expects is a typed fa
   afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
   /** A copy of the engine's data files the reader reads, with one text replaced. */
-  function doctored(name: string, file: string, from: RegExp | string, to: string): string {
+  function doctored(name: string, file: string, from: RegExp | string, to: string, more: [string, RegExp | string, string][] = []): string {
     const dir = join(tmp, name);
     mkdirSync(join(dir, "data"), { recursive: true });
     mkdirSync(join(dir, "sim"), { recursive: true });
     for (const f of ["data/conditions.ts", "data/moves.ts", "data/items.ts", "data/abilities.ts", "sim/pokemon.ts", "sim/battle-actions.ts"]) cpSync(join(DEFAULT_SHOWDOWN_DIR, f), join(dir, f));
-    const text = readFileSync(join(dir, file), "utf8");
-    const changed = text.replace(from, to);
-    expect(changed).not.toBe(text);
-    writeFileSync(join(dir, file), changed);
+    for (const [f, a, b] of [[file, from, to] as [string, RegExp | string, string], ...more]) {
+      const text = readFileSync(join(dir, f), "utf8");
+      const changed = text.replace(a, b);
+      expect(changed).not.toBe(text);
+      writeFileSync(join(dir, f), changed);
+    }
     return dir;
   }
 
@@ -93,5 +106,21 @@ describe("a source that no longer has the shape the reader expects is a typed fa
     const bare = readHistoryFactsData({ terrains: table.terrains, moves: table.moves, abilities: table.abilities }, GOLDEN_FORMAT);
     expect(bare.direct_end_items).toEqual([]);
     expect(bare.eaten_berries).toEqual([]);
+  });
+
+  it("an extractor that finds nothing in a source that has it at this pin fails closed", () => {
+    const empty = /no .* found in the engine source/;
+    const dancer = /externalMove: true/g;
+    expect(() => externalActionSources(doctored("external", "sim/battle-actions.ts", dancer, "externalMove: false"), table)).toThrow(empty);
+    expect(() => itemUseSources(doctored("itemuse", "data/moves.ts", /pokemon\.lastItem = item\.id;/g, "pokemon.lastItem = '';"), table)).toThrow(empty);
+    expect(() => nullCantReasons(doctored("nullcant", "data/conditions.ts", /this\.add\('cant', pokemon, 'recharge'\)/g, "this.add('cant', pokemon, reason)"))).toThrow(HistoryFactsDataError);
+    expect(() => directEndItems(doctored("direct", "data/items.ts", /target\.item = ''/g, "target.item = null"), table)).toThrow(empty);
+    expect(() => eatenBerries(doctored("berries", "data/items.ts", /isBerry: true/g, "isBerry: false"), table)).toThrow(empty);
+    expect(() => lastItemClearers(doctored("clearers", "data/moves.ts", /\.lastItem = '';/g, ".lastItem = null;", [["data/abilities.ts", /\.lastItem = '';/g, ".lastItem = null;"]]), table)).toThrow(empty);
+    expect(() => protectBreakers(doctored("breakers", "data/moves.ts", /breaksProtect: true/g, "breaksProtect: false"), table)).toThrow(empty);
+    expect(() => stealEatTags(doctored("steal", "data/moves.ts", /'\[move\] (Bug Bite|Pluck)'/g, "'[moved] $1'"))).toThrow(empty);
+    expect(() => gemTags(doctored("gem", "sim/pokemon.ts", /`\[move\] \$\{this\.battle\.activeMove!\.name\}`/g, "`[moved] x`"))).toThrow(empty);
+    // the one live extraction of each stays untouched
+    expect(gemTags(DEFAULT_SHOWDOWN_DIR)).toEqual(["gem"]);
   });
 });

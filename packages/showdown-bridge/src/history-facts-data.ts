@@ -20,6 +20,12 @@ export class HistoryFactsDataError extends Error {
   override name = "HistoryFactsDataError";
 }
 
+/** Fails closed: an extractor that finds nothing in a source that has it at this pin means the source's shape changed. */
+function found<T>(list: T[], what: string, applicable = true): T[] {
+  if (applicable && list.length === 0) throw new HistoryFactsDataError(`no ${what} found in the engine source`);
+  return list;
+}
+
 /** The stall condition's counter: the start value, the factor of each further use and the ceiling, read from the pinned `stall` condition. */
 export function stallCounter(dir: string): HistoryFactsData["stall_counter"] {
   const source = readFileSync(join(dir, "data", "conditions.ts"), "utf8");
@@ -35,7 +41,7 @@ export function stallCounter(dir: string): HistoryFactsData["stall_counter"] {
 export function externalActionSources(dir: string, table: FactsTable): string[] {
   const actions = readFileSync(join(dir, "sim", "battle-actions.ts"), "utf8");
   const external = new Set([...actions.matchAll(/this\.runMove\([^)]*sourceEffect: this\.dex\.abilities\.get\('([a-z0-9]+)'\), externalMove: true/g)].map((match) => match[1]));
-  return table.abilities.filter((ability) => external.has(ability.id)).map((ability) => `ability: ${ability.name}`).sort();
+  return found(table.abilities.filter((ability) => external.has(ability.id)).map((ability) => `ability: ${ability.name}`).sort(), "external action source", table.abilities.length > 0);
 }
 
 /** The `[from] move: M` texts of the `-enditem` lines that set the user's `lastItem` (Fling's condition does it for the thrower). */
@@ -47,7 +53,7 @@ export function itemUseSources(dir: string, table: FactsTable): string[] {
     const id = /^([a-z0-9]+): \{/.exec(block)?.[1];
     if (id !== undefined && names.has(id) && /pokemon\.lastItem = item\.id;[\s\S]*?'-enditem', pokemon, item\.name, '\[from\] move: /.test(block)) out.push(`move: ${names.get(id)}`);
   }
-  return out.sort();
+  return found(out.sort(), "item use source", table.moves.length > 0);
 }
 
 /**
@@ -98,7 +104,7 @@ export function nullCantReasons(dir: string): string[] {
       for (const reason of body.matchAll(/this\.add\('cant', [a-zA-Z.]+, '([^']+)'\)/g)) out.add(reason[1] as string);
     }
   }
-  return [...out].sort();
+  return found([...out].sort(), "null BeforeMove reason");
 }
 
 /** The tags of the `-enditem` lines of eaten berries: the one `eatItem` prints and the ones the weakening berries print after a successful `eatItem()`. */
@@ -111,6 +117,20 @@ export function eatTags(dir: string): string[] {
   return [...out].sort();
 }
 
+/** The `[from]` tag of the `-enditem` line a thrown berry's eating prints (`stealeat`: Bug Bite, Pluck), read from the pinned moves. */
+export function stealEatTags(dir: string): string[] {
+  const source = readFileSync(join(dir, "data", "moves.ts"), "utf8");
+  const out = new Set([...source.matchAll(/'-enditem', \w+, [\w.]+, '\[from\] (\w+)', '\[move\] [^']+', `\[of\]/g)].map((m) => m[1] as string));
+  return found([...out].sort(), "steal-eat tag");
+}
+
+/** The `[from]` tag of the `-enditem` line of a consumed gem (the move it boosted follows as `[move]`), read from the pinned Pokemon source. */
+export function gemTags(dir: string): string[] {
+  const source = readFileSync(join(dir, "sim", "pokemon.ts"), "utf8");
+  const out = new Set([...source.matchAll(/'-enditem', this, item, '\[from\] (\w+)', `\[move\]/g)].map((m) => m[1] as string));
+  return found([...out].sort(), "gem tag");
+}
+
 /** The items whose `-enditem` line is printed where the engine clears the item itself, without `useItem` or `eatItem` (so no `lastItem`). */
 export function directEndItems(dir: string, table: FactsTable): string[] {
   const source = readFileSync(join(dir, "data", "items.ts"), "utf8");
@@ -120,7 +140,7 @@ export function directEndItems(dir: string, table: FactsTable): string[] {
     const id = /^([a-z0-9]+): \{/.exec(block)?.[1];
     if (id !== undefined && ids.has(id) && /this\.add\('-enditem', target, '[^']+'\);\s*target\.item = ''/.test(block)) out.push(id);
   }
-  return out.sort();
+  return found(out.sort(), "directly cleared item", ids.size > 0);
 }
 
 /** The berries with an `onEat` effect, read from the pinned items (a thrown one is eaten by the target). */
@@ -132,7 +152,7 @@ export function eatenBerries(dir: string, table: FactsTable): string[] {
     const id = /^([a-z0-9]+): \{/.exec(block)?.[1];
     if (id !== undefined && ids.has(id) && /isBerry: true/.test(block) && /\n\t\tonEat\(/.test(block)) out.push(id);
   }
-  return out.sort();
+  return found(out.sort(), "eaten berry", ids.size > 0);
 }
 
 /**
@@ -157,7 +177,8 @@ export function lastItemClearers(dir: string, table: FactsTable): { restorers: s
       (cleared === shown[1] ? restorers : takers).add(shown[2] as string);
     }
   }
-  return { restorers: [...restorers].sort(), takers: [...takers].sort() };
+  const applicable = table.moves.length > 0 && table.abilities.length > 0;
+  return { restorers: found([...restorers].sort(), "last-item restorer", applicable), takers: found([...takers].sort(), "last-item taker", applicable) };
 }
 
 /** The moves that break Protect-like volatiles (`breaksProtect`), restricted to the format's moves. */
@@ -169,7 +190,7 @@ export function protectBreakers(dir: string, table: FactsTable): string[] {
     const id = /^([a-z0-9]+): \{/.exec(block)?.[1];
     if (id !== undefined && ids.has(id) && /breaksProtect: true/.test(block)) out.push(id);
   }
-  return out.sort();
+  return found(out.sort(), "Protect breaker", ids.size > 0);
 }
 
 /** The history facts' data for an engine checkout, an engine-data table and a format. */
@@ -184,6 +205,8 @@ export function readHistoryFactsData(table: FactsTable, formatId: string = GOLDE
     external_action_sources: externalActionSources(engineDir, table),
     item_use_sources: itemUseSources(engineDir, table),
     eat_tags: eatTags(engineDir),
+    steal_eat_tags: stealEatTags(engineDir),
+    gem_tags: gemTags(engineDir),
     last_item_restorers: lastItemClearers(engineDir, table).restorers,
     last_item_takers: lastItemClearers(engineDir, table).takers,
     eaten_berries: eatenBerries(engineDir, table),
@@ -216,6 +239,8 @@ export interface HistoryFactsDataFile {
   external_action_sources: string[];
   item_use_sources: string[];
   eat_tags: string[];
+  steal_eat_tags: string[];
+  gem_tags: string[];
   last_item_restorers: string[];
   last_item_takers: string[];
   eaten_berries: string[];
@@ -241,6 +266,8 @@ export function exportHistoryFactsData(commit: string, formatId: string, data: H
     external_action_sources: [...(data.external_action_sources ?? [])],
     item_use_sources: [...data.item_use_sources],
     eat_tags: [...data.eat_tags],
+    steal_eat_tags: [...data.steal_eat_tags],
+    gem_tags: [...data.gem_tags],
     last_item_restorers: [...data.last_item_restorers],
     last_item_takers: [...data.last_item_takers],
     eaten_berries: [...data.eaten_berries],

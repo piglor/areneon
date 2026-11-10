@@ -28,6 +28,8 @@ export function committedHistoryData(): HistoryFactsData {
     external_action_sources: file.external_action_sources,
     item_use_sources: file.item_use_sources,
     eat_tags: file.eat_tags,
+    steal_eat_tags: file.steal_eat_tags,
+    gem_tags: file.gem_tags,
     eaten_berries: file.eaten_berries,
     last_item_restorers: file.last_item_restorers,
     last_item_takers: file.last_item_takers,

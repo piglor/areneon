@@ -21,6 +21,12 @@
     "eat",
     "weaken"
   ],
+  "steal_eat_tags": [
+    "stealeat"
+  ],
+  "gem_tags": [
+    "gem"
+  ],
   "last_item_restorers": [
     "ability: Harvest",
     "move: Recycle"
@@ -84,5 +90,5 @@
     "feint",
     "phantomforce"
   ],
-  "history_facts_data_hash": "24ff8849d2b939e84698dd7a7f50e75200dad9098c19e496e72f262d798550e2"
+  "history_facts_data_hash": "0e6b932810229b81605a8ad75e27689e5aa513b080744bb510f0aade03bd0bbb"
 }

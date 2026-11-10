@@ -29,6 +29,8 @@ DATA: dict[str, Any] = {
     "external_action_sources": ["ability: Dancer"],
     "item_use_sources": ["move: Fling"],
     "eat_tags": ["eat", "weaken"],
+    "steal_eat_tags": ["stealeat"],
+    "gem_tags": ["gem"],
     "eaten_berries": ["oranberry"],
     "last_item_restorers": ["move: Recycle"],
     "last_item_takers": ["ability: Pickup"],
@@ -802,3 +804,16 @@ def test_a_malformed_or_doctored_data_file_is_refused(
     put({**body, "history_facts_data_hash": sha256_hex(jcs(body))})
     with pytest.raises(VocabularyError, match="another format"):
         vocab_module.read_history_facts(VOCAB.showdown_commit, VOCAB.format_id)
+
+
+def test_only_the_modules_own_refusals_are_kept_an_unexpected_exception_propagates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tracker = HistoryTracker("p1", DATA)
+
+    def broken(_line: Any) -> None:
+        raise KeyError("defect")
+
+    monkeypatch.setattr(tracker, "_line", broken)
+    with pytest.raises(KeyError):
+        tracker.feed("|turn|1")

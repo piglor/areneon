@@ -174,6 +174,8 @@ class HistoryTracker:
         self._takers = frozenset(_to_id(s) for s in data["last_item_takers"])
         self._berries = frozenset(data["eaten_berries"])
         self._eat_tags = frozenset(data["eat_tags"])
+        self._steal_eat = frozenset(data["steal_eat_tags"])
+        self._gem = frozenset(data["gem_tags"])
         self._direct_end = frozenset(data["direct_end_items"])
         self._item_use = frozenset(_to_id(s) for s in data["item_use_sources"])
         self._null_cant = frozenset(data["null_cant_reasons"])
@@ -197,15 +199,14 @@ class HistoryTracker:
     # -- feeding -----------------------------------------------------------------
 
     def feed(self, raw: str) -> None:
-        """Reads one line. Never raises: a refusal is kept and facts() reports it."""
+        """Reads one line. A refused line keeps the module's own typed refusal (facts() reports
+        it); any other exception is a defect and propagates."""
         if self._failure is not None:
             return
         try:
             self._line(_split(raw))
         except _Refusal as error:
             self._failure = error.code
-        except (ValueError, KeyError, TypeError, IndexError):
-            self._failure = "malformed_line"
 
     # -- output ------------------------------------------------------------------
 
@@ -452,7 +453,7 @@ class HistoryTracker:
         }
 
     def _turn_line(self, line: _Line) -> None:
-        turn = int(line.args[0])
+        turn = _int(_arg(line, 0))
         if turn < self._turn:
             raise _Refusal("malformed_line")
         self._turn = turn
@@ -546,7 +547,7 @@ class HistoryTracker:
 
     def _swap(self, text: str | None, target: str | None) -> None:
         side_id, letter, _ = self._ident(text)
-        index = int(target) if target is not None else -1
+        index = _int(target) if target is not None else -1
         to = chr(97 + index)
         active = self._sides[side_id].active
         if letter is None or letter not in active or to not in active:
@@ -708,7 +709,7 @@ class HistoryTracker:
             if entry is not None:
                 entry.ate = True
                 entry.last_item = item
-        elif origin == "stealeat":
+        elif origin is not None and origin in self._steal_eat:
             of = line.tags.get("of")
             eater = None if of is None else _IDENT.match(of)
             roster = (
@@ -716,13 +717,13 @@ class HistoryTracker:
             )
             if roster is not None:
                 roster.ate = True
-        elif origin is None or origin == "gem" or _to_id(origin) in self._item_use:
+        elif origin is None or origin in self._gem or _to_id(origin) in self._item_use:
             if entry is not None and item not in self._direct_end:
                 entry.last_item = item
             target = self._action.target if self._action is not None else None
             if (
                 origin is not None
-                and origin != "gem"
+                and origin not in self._gem
                 and target is not None
                 and item in self._berries
             ):
@@ -803,6 +804,14 @@ class HistoryTracker:
         found = self._at(text)
         if found is not None:
             found[2].volatiles.pop(_effect_id(name or ""), None)
+
+
+def _int(text: str | None) -> int:
+    """An integer argument, or the typed refusal for a missing or non-numeric one."""
+    try:
+        return int(text if text is not None else "")
+    except ValueError:
+        raise _Refusal("malformed_line") from None
 
 
 def _arg(line: _Line, index: int) -> str | None:

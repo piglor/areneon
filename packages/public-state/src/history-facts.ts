@@ -70,6 +70,10 @@ export interface HistoryFactsData {
   readonly external_action_sources?: readonly string[];
   /** The tags of `-enditem` lines that mark an eaten berry (`eat`, and the one the damage-weakening berries print). */
   readonly eat_tags: readonly string[];
+  /** The `[from]` tags of `-enditem` lines of a berry the move's target ate (`stealeat`): the `[of]` Pokemon ate it. */
+  readonly steal_eat_tags: readonly string[];
+  /** The `[from]` tags of `-enditem` lines of a consumed gem: the user's `lastItem` is set. */
+  readonly gem_tags: readonly string[];
   /** Ids of the items whose `-enditem` line is printed where the item is cleared directly, not used: no `lastItem` is set (the balloon that pops). */
   readonly direct_end_items: readonly string[];
   /** Ids of the berries with an `onEat` effect: one thrown at a target is eaten by it (`ateBerry`), with no line of its own. */
@@ -280,6 +284,8 @@ export class HistoryFactsReader {
   readonly #takers: ReadonlySet<string>;
   readonly #berries: ReadonlySet<string>;
   readonly #eatTags: ReadonlySet<string>;
+  readonly #stealEat: ReadonlySet<string>;
+  readonly #gem: ReadonlySet<string>;
   readonly #directEnd: ReadonlySet<string>;
   readonly #itemUse: ReadonlySet<string>;
   readonly #nullCant: ReadonlySet<string>;
@@ -314,6 +320,8 @@ export class HistoryFactsReader {
     this.#takers = new Set(data.last_item_takers.map(toId));
     this.#berries = new Set(data.eaten_berries);
     this.#eatTags = new Set(data.eat_tags);
+    this.#stealEat = new Set(data.steal_eat_tags);
+    this.#gem = new Set(data.gem_tags);
     this.#directEnd = new Set(data.direct_end_items);
     this.#itemUse = new Set(data.item_use_sources.map(toId));
     this.#nullCant = new Set(data.null_cant_reasons);
@@ -732,16 +740,16 @@ export class HistoryFactsReader {
         entry.ate = true;
         entry.last_item = item;
       }
-    } else if (from === "stealeat") {
+    } else if (from !== undefined && this.#stealEat.has(from)) {
       const of = line.tags.get("of");
       const eater = of === undefined ? null : IDENT.exec(of);
       const roster = eater === null ? undefined : this.#sides[eater[1] as HistoryPlayer].roster.get(eater[3] as string);
       if (roster !== undefined) roster.ate = true;
-    } else if (from === undefined || from === "gem" || this.#itemUse.has(toId(from))) {
+    } else if (from === undefined || this.#gem.has(from) || this.#itemUse.has(toId(from))) {
       if (entry !== undefined && !this.#directEnd.has(item)) entry.last_item = item;
       // A berry thrown at a target is eaten by it, which the engine records without a line of the target's own.
       const target = this.#action?.target;
-      if (from !== undefined && from !== "gem" && target !== null && target !== undefined && this.#berries.has(item)) {
+      if (from !== undefined && !this.#gem.has(from) && target !== null && target !== undefined && this.#berries.has(item)) {
         const eater = this.#sides[target.side].active.get(target.letter);
         const roster = eater === undefined || eater === null ? undefined : this.#sides[target.side].roster.get(eater.name);
         if (roster !== undefined) roster.ate = true;

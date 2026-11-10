@@ -125,6 +125,8 @@ _HISTORY_KEYS = frozenset(
         "showdown_commit",
         "slot_conditions",
         "stall_counter",
+        "steal_eat_tags",
+        "gem_tags",
     }
 )
 

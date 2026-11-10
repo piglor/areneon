@@ -30,6 +30,8 @@ const data: HistoryFactsData = {
   external_action_sources: ["ability: Dancer"],
   item_use_sources: ["move: Fling"],
   eat_tags: ["eat", "weaken"],
+  steal_eat_tags: ["stealeat"],
+  gem_tags: ["gem"],
   eaten_berries: ["oranberry"],
   last_item_restorers: ["move: Recycle"],
   last_item_takers: ["ability: Pickup"],
@@ -89,7 +91,24 @@ describe("identity and input", () => {
     expect(source).not.toMatch(/require\(/);
     const code = source.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
     const literals = [...code.matchAll(/"([^"\n]*)"|`([^`\n]*)`/g)].map((m) => (m[1] ?? m[2] ?? "").toLowerCase());
-    for (const id of ["protect", "fling", "recycle", "pickup", "harvest", "wish", "futuresight", "feint", "quickguard", "wideguard", "dancer", "round", "berry", "tackle"]) {
+    // Every string literal of the module must be a protocol wire token, an error code or a structural word listed here. A new
+    // literal (a game id such as a move, item or ability, or a `[from]` text) fails until a reviewer adds it on purpose; game
+    // facts come from `HistoryFactsData`. `stall` is the engine's condition id of the Baton Pass / Shed Tail copy table,
+    // `recoil` and `confusion` are the `[from]` wire tokens of the engine's own damage sources, `slot` a wire word, `}` a fragment of the error-message template.
+    const accepted = new Set([
+      "history-facts/1", "p1", "p2", "bad_player", "secret_marker", "malformed_line", "unattributable_line", "stall_unresolved",
+      "historyfactserror", "|", "|split", "|split|", "unsettled", "ok", "failed",
+      "unknown", "none", "", "request", "move", "cant", "switch", "drag", "faint", "turn", "upkeep", "replace", "swap", "win", "tie",
+      "-damage", "-heal", "-boost", "-unboost", "-status", "-start", "-sidestart", "-fieldstart", "-weather", "-singleturn",
+      "-singlemove", "-curestatus", "-setboost", "-item", "-ability", "-clearallboost", "-clearboost", "-clearnegativeboost",
+      "-clearpositiveboost", "-copyboost", "-swapboost", "-invertboost", "-cureteam", "-sethp", "-transform", "-formechange",
+      "-prepare", "-mustrecharge", "-sideend", "-fieldend", "-end", "-enditem", "pending_slot", "?", "-fail", "-notarget", "-miss",
+      "-immune", "-activate", "from", "string", "number", "baton pass", "shed tail", "slot", "of", "move: ", "|request|",
+      "stall", "recoil", "confusion", "}",
+    ]);
+    const unexpected = literals.filter((l) => !accepted.has(l) && !l.includes("${"));
+    expect(unexpected).toEqual([]);
+    for (const id of ["protect", "fling", "recycle", "pickup", "harvest", "wish", "futuresight", "feint", "quickguard", "wideguard", "dancer", "round", "berry", "tackle", "gem", "stealeat"]) {
       expect(literals.filter((l) => l.includes(id)), id).toEqual([]);
     }
     // the only move names are the wire's `[from]` texts of the two copying switches
