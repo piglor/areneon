@@ -8,6 +8,7 @@ import type { PublicFlag, PublicSide } from "@areneon/public-state";
 import type { WorldSetLike } from "./damage-aware-assumed-set.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { resolveFormat } from "./formats.ts";
+import type { FeatureConfigs } from "./candidate-features.ts";
 import { type HypotheticalPreview, startHypothetical } from "./hypothetical-preview.ts";
 import type { Player } from "./runner.ts";
 import { validateTeam } from "./teams.ts";
@@ -59,11 +60,13 @@ export interface StartWorldsInput {
   channel_class: DataClass;
   /** The body of our real Team Preview request. */
   own_request: string;
+  /** The feature configs of a pair that reads candidate features: each hypothetical observation then carries the rows of its own builder. */
+  features?: { configs: FeatureConfigs };
 }
 
 /** Draw `count` full teams by index and start a hypothetical battle for each that maps to a startable team. */
 export function startPreviewWorlds(input: StartWorldsInput): PreviewWorlds {
-  const { engine, vocabulary, format_id, source, count, stream, seat, own_team, channel_class, own_request } = input;
+  const { engine, vocabulary, format_id, source, count, stream, seat, own_team, channel_class, own_request, features } = input;
   const format = resolveFormat(engine, format_id);
   const worlds: { index: number; preview: HypotheticalPreview }[] = [];
   let refused = 0;
@@ -83,7 +86,7 @@ export function startPreviewWorlds(input: StartWorldsInput): PreviewWorlds {
       const sets = mapWorld({ engine, vocabulary }, format_id, world).map((member) => member.set);
       // Called for its in-place normalisation (nicknames), not its verdict: startHypothetical validates the team again and refuses it.
       validateTeam(engine, format, sets);
-      worlds.push({ index, preview: startHypothetical({ engine, format_id, seat, own_team, world_team: sets, stream, world: index, data_class: channel_class, own_request }) });
+      worlds.push({ index, preview: startHypothetical({ engine, format_id, seat, own_team, world_team: sets, stream, world: index, data_class: channel_class, own_request, ...(features === undefined ? {} : { features }) }) });
     } catch (error) {
       if (!UNSTARTABLE.has((error as Error).name)) throw error;
       unstarted += 1;

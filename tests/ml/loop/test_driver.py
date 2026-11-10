@@ -242,6 +242,37 @@ def test_load_workers_change_no_hash(
     ).read_bytes()
 
 
+def test_auto_load_workers_are_sized_at_each_load_phase_not_at_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sampled: list[int] = []
+    answers = iter([3, 2, 5, 5])
+
+    def auto() -> int:
+        sampled.append(len(used))
+        return next(answers)
+
+    used: list[int] = []
+    real = parallel.parallel_trajectories
+
+    def spy(stream: Any, manifest: Any, encoders: Any, processes: int, *rest: Any) -> Any:
+        used.append(processes)
+        return real(stream, manifest, encoders, processes, *rest)
+
+    monkeypatch.setattr(parallel, "auto_processes", auto)
+    monkeypatch.setattr(parallel, "parallel_trajectories", spy)
+    monkeypatch.setattr(parallel, "MIN_PIECE_BYTES", 1)
+    loop = make_loop(tmp_path)
+    loop.load_auto = True
+    assert sampled == []  # nothing is sampled when the loop is built or configured
+    loop.run(2)
+    assert sampled == [0, 1]  # once before each load phase
+    assert used == [3, 2]
+    # A memory cap applies to the sampled count.
+    assert parallel.load_workers(1, True, 2 * parallel.WORKER_MB) == 2
+    assert parallel.load_workers(4, False, None) == 4
+
+
 @pytest.mark.parametrize("generation", [1, 2])
 @pytest.mark.parametrize("stage", ["played", "trained", "written"])
 def test_a_run_killed_in_a_generation_resumes_with_identical_hashes(

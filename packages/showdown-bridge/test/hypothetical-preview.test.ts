@@ -45,6 +45,12 @@ import {
   stampTeam,
 } from "../src/index.ts";
 import { buildObservation, observe } from "../src/index.ts";
+import { candidateFeatures, createFeatureMemo, type FeatureConfigs, featureSetHash, featureSetIdentity } from "../src/candidate-features.ts";
+import { toId } from "@areneon/public-state";
+import { exportPaste } from "../src/teams.ts";
+import { AssumedSetError } from "../src/damage-aware-assumed-set.ts";
+import { HypotheticalFeatureError } from "../src/index.ts";
+import { config as baselineConfig, mechanics, snapshot, vocabulary } from "./damage-aware-support.ts";
 
 const STREAM = new Uint8Array(32).fill(7);
 let engine: Engine;
@@ -306,7 +312,7 @@ describe("invariance: the same public Team Preview, other hidden sets", () => {
 });
 
 describe("the worker entry", () => {
-  it("refuses a pair that reads candidate features, and sends the module's own frozen copy of the observation", async () => {
+  it("refuses a pair that reads candidate features when the battle was started without its configs, and sends the module's own frozen copy of the observation", async () => {
     const preview = start();
     const observation = await preview.observation(preview.foe_channel);
     const featured = Object.assign(recorder(), { featureSet: { feature_set: "probe-damage/1", feature_set_hash: "a".repeat(64) } });
@@ -318,6 +324,97 @@ describe("the worker entry", () => {
     expect(Object.isFrozen(plain.queries[0]?.observation)).toBe(true);
     expect(Object.isFrozen((plain.queries[0]?.observation as { identity: object }).identity)).toBe(true);
   });
+});
+
+describe("a pair that reads candidate features (probe-damage/1)", () => {
+  const configs = (change: Partial<FeatureConfigs> = {}): FeatureConfigs => ({ vocabulary, config: baselineConfig, mechanics, snapshot, data_class: "synthetic", ...change });
+  let stated: { feature_set: string; feature_set_hash: string };
+  beforeAll(() => {
+    const identity = featureSetIdentity(engine, configs());
+    stated = { feature_set: identity.feature_set, feature_set_hash: featureSetHash(identity) };
+  });
+  type Query = Parameters<EvaluationClient["evaluate"]>[1];
+  type Stated = { feature_set: string; feature_set_hash: string };
+  const featured = (set: Stated | null | undefined = stated): ReturnType<typeof recorder> & { featureSet: Stated | null } => Object.assign(recorder(), { featureSet: set ?? null });
+  const startWith = (change: Partial<FeatureConfigs> = {}, overrides: Partial<Parameters<typeof startHypothetical>[0]> = {}): HypotheticalPreview => start({ features: { configs: configs(change) }, ...overrides });
+  /** Our first move request of a hypothetical battle: our first order against the opponent's first. */
+  const firstRequest = (preview: HypotheticalPreview): HypotheticalChannel => {
+    const turn = preview.play(hypotheticalCandidates(preview.own_channel)[0]?.order as string, hypotheticalCandidates(preview.foe_channel)[0]?.order as string);
+    if (turn.kind !== "request") throw new Error("expected a request");
+    return turn.channel;
+  };
+
+  it("sends the rows the builder makes on the same hypothetical channel and our own team, and none at Team Preview", async () => {
+    const preview = startWith();
+    const client = featured();
+    await evaluateHypothetical(client, "b", await preview.observation(preview.own_channel), "x");
+    const channel = firstRequest(preview);
+    await evaluateHypothetical(client, "b", await preview.observation(channel), "x");
+    const [atPreview, atMove] = client.queries as [Query, Query];
+    expect(atPreview.candidate_features).toMatchObject({ ...stated, rows: [] });
+    const moveChannel = playerChannel({ schema_version: 1, data_class: "synthetic", player: "p1", lines: atMove.observation.log });
+    const expected = candidateFeatures(engine, configs(), moveChannel, own, atMove.candidates, createFeatureMemo());
+    expect(atMove.candidate_features?.rows.length).toBeGreaterThan(0);
+    expect(jcs(atMove.candidate_features as never)).toBe(jcs(expected as never));
+  }, 120_000);
+
+  it("reads nothing of the hypothetical opponent's sets: the rows equal the builder's on our channel and team alone, and a builder handed those sets differs (negative control)", async () => {
+    const preview = startWith();
+    const client = featured();
+    await evaluateHypothetical(client, "b", await preview.observation(firstRequest(preview)), "x");
+    const query = client.queries[0] as Query;
+    const channel = playerChannel({ schema_version: 1, data_class: "synthetic", player: "p1", lines: query.observation.log });
+    // A world of other items, natures and spreads: the opponent's real sets differ, our channel's text may too, but the rows are a function of the channel and our team.
+    const alone = candidateFeatures(engine, configs(), channel, own, query.candidates, createFeatureMemo());
+    expect(jcs(query.candidate_features as never)).toBe(jcs(alone as never));
+    const cheating = candidateFeatures(
+      engine,
+      configs({
+        assume: (mon) => {
+          const real = structuredClone(world.find((set) => [mon.species, mon.base_species].includes(toId(set.species)))) as PokemonSet;
+          return { set: real, paste: exportPaste(engine, [structuredClone(real)]), revealed_moves: real.moves.map(toId), filler_moves: [], unplaceable_moves: [], shown_hp_percent: mon.fainted ? 0 : mon.hp_num, mega: mon.mega };
+        },
+      }),
+      channel,
+      own,
+      query.candidates,
+      createFeatureMemo(),
+    );
+    expect(jcs(cheating as never)).not.toBe(jcs(alone as never));
+  }, 120_000);
+
+  it("refuses a worker and an observation that disagree about the feature set", async () => {
+    const withRows = startWith();
+    const observation = await withRows.observation(withRows.own_channel);
+    await expect(evaluateHypothetical(featured(null), "b", observation, "x")).rejects.toThrow(/states no feature set/);
+    await expect(evaluateHypothetical(featured({ ...stated, feature_set_hash: "b".repeat(64) }), "b", observation, "x")).rejects.toThrow(/another feature set/);
+    const none = start();
+    await expect(evaluateHypothetical(featured(), "b", await none.observation(none.own_channel), "x")).rejects.toThrow(/start the hypothetical battle with the pair's feature configs/);
+  });
+
+  it("raises HypotheticalFeatureError, with the builder's code and no content, for a request it cannot feature", async () => {
+    const preview = startWith({ assume: () => { throw new AssumedSetError("a secret-looking message"); } });
+    await expect(preview.observation(preview.own_channel)).resolves.toBeDefined();
+    const error = await preview.observation(firstRequest(preview)).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(HypotheticalFeatureError);
+    expect((error as HypotheticalFeatureError).code).toBe("assumed_set");
+    expect((error as Error).message).toBe("no candidate features: assumed_set");
+    expect(error).toBeInstanceOf(HypotheticalError);
+  }, 120_000);
+
+  it("rolls out with rows for both seats from their own channels and teams", async () => {
+    const preview = startWith();
+    const client = featured();
+    const seats: string[] = [];
+    const turn = await preview.rollout(hypotheticalCandidates(preview.own_channel)[0]?.order as string, hypotheticalCandidates(preview.foe_channel)[0]?.order as string, 1, async (observation) => {
+      seats.push(observation.player);
+      const answer = await evaluateHypothetical(client, "b", observation, "x");
+      return (answer.candidates.find((c) => !c.pending) as HypotheticalCandidate).order;
+    });
+    expect(turn.kind).toMatch(/request|ended/);
+    expect(new Set(seats)).toEqual(new Set(["p1", "p2"]));
+    for (const query of client.queries) expect(query.candidate_features).toMatchObject(stated);
+  }, 180_000);
 });
 
 describe("an engine that gives no Team Preview, ends at once or sends no request (stand-in battle)", () => {

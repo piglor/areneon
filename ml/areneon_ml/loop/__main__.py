@@ -105,6 +105,11 @@ EXIT_PLAY = 4
 REPO = Path(__file__).resolve().parents[3]
 
 
+def _workers(text: str) -> int | str:
+    """A positive count, or ``auto``."""
+    return text if text == "auto" else _positive(text)
+
+
 def _positive(text: str) -> int:
     value = int(text)
     if value < 1:
@@ -188,10 +193,12 @@ def _add_run(commands: Any) -> None:
     )
     run.add_argument(
         "--load-processes",
-        type=_positive,
+        type=_workers,
         default=1,
-        help="worker processes that check and encode a generation's stream in the load phase "
-        "(operational: the trajectories and every hash are the same for any number; each worker "
+        help="worker processes that check and encode a generation's stream in the load phase, "
+        "or 'auto': sized at each load phase from the usable cores (half, at most 16) and the "
+        "memory available at that moment (an estimate), capped by --load-memory-mb (default 1; "
+        "operational: the trajectories and every hash are the same for any number; each worker "
         "adds its piece's tensors to memory while it runs, see docs/training-run.md)",
     )
     run.add_argument(
@@ -432,7 +439,8 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         choices=DAMAGE_AWARE_VERSIONS,
         default=None,
         help="with --damage-aware: which baseline record plays, v1 (default; matches "
-        "damage-aware-<mode>) or v3 (the corrected scorer, #1180; matches damage-aware-v3-<mode>)",
+        "damage-aware-<mode>) v3 (the corrected scorer, #1180; matches damage-aware-v3-<mode>) "
+        "or v4 (v3 plus switch and Protect values, #1329; matches damage-aware-v4-<mode>)",
     )
     progress.add_argument(
         "--member",
@@ -700,6 +708,8 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
             else "packages/showdown-bridge/scripts/play-generation.ts"
         ),
     )
+    auto = args.load_processes == "auto"
+    load_processes = 1 if auto else args.load_processes
     if config.population:
         if args.profile:
             raise LoopError("population: --profile does not apply to a population run")
@@ -709,11 +719,13 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
                 "per member; --policy-workers and --game-processes do not apply"
             )
         pop = PopulationLoop(config, args.run_dir.resolve(), game, player)
-        pop.load_processes = args.load_processes
+        pop.load_processes = load_processes
+        pop.load_auto = auto
         pop.load_memory_mb = args.load_memory_mb
         return pop.run(args.generations).as_dict(pop.frozen)
     loop = Loop(config, args.run_dir.resolve(), game, player)
-    loop.load_processes = args.load_processes
+    loop.load_processes = load_processes
+    loop.load_auto = auto
     loop.load_memory_mb = args.load_memory_mb
     loop.profile = args.profile
     result = loop.run(args.generations)

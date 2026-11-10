@@ -228,6 +228,26 @@ describe("exploration", () => {
   }, 120_000);
 });
 
+describe("the damage-aware@v4 teacher (#1329)", () => {
+  const v4 = (change: Partial<TeacherSettings> = {}): TeacherSettings => settings({ teacher_version: "v4", games: 1, random_games: 0, ...change });
+
+  it("names the teacher damage-aware@v4 and plays the record with situational weights", async () => {
+    expect(teacherPolicyId(0, "v4")).toBe("damage-aware@v4");
+    expect(teacherPolicyId(50_000, "v4")).toBe("damage-aware@v4-eps50000");
+    expect(() => checkTeacherSettings(v4())).not.toThrow();
+    const context = teacherContext(engine, v4());
+    expect(context.policy_id).toBe("damage-aware@v4");
+    expect(context.config.situational).toEqual({ switch_value_ppm: 1_000_000, protect_value_ppm: 600_000 });
+    expect(context.makeActor("p1", 1).report().policy_id).toBe("damage-aware@v4");
+    mkdirSync(join(dir, "v4a"), { recursive: true });
+    const result = await playTeacherRun({ engine, settings: v4(), pool, stream_path: join(dir, "v4a", "stream.jsonl") });
+    expect(result.set).toMatchObject({ data_class: "synthetic", learner_ready: true, behaviour_policy_id: "damage-aware@v4" });
+    const setup = damageAwareSetup(engine, GOLDEN_FORMAT, "v4");
+    const manifest = resolveFormat(engine, GOLDEN_FORMAT, setup.snapshot).manifest;
+    expect(result.teacher.identity_hash).toBe(damageAwareIdentityHash(damageAwareIdentity({ config: setup.config, mechanics: setup.mechanics, manifest, reader_sha256: readerSha256() })));
+  }, 240_000);
+});
+
 describe("the damage-aware@v3 teacher (#1182)", () => {
   const v3 = (change: Partial<TeacherSettings> = {}): TeacherSettings => settings({ teacher_version: "v3", games: 1, random_games: 0, ...change });
   const cache: { run?: Awaited<ReturnType<typeof playTeacherRun>> } = {};
@@ -237,7 +257,7 @@ describe("the damage-aware@v3 teacher (#1182)", () => {
     expect(teacherPolicyId(0, "v3")).toBe("damage-aware@v3");
     expect(teacherPolicyId(50_000, "v3")).toBe("damage-aware@v3-eps50000");
     expect(teacherPolicyId(0)).toBe("damage-aware@v1");
-    expect(() => checkTeacherSettings({ ...settings(), teacher_version: "v2" as never })).toThrow(/v1 or v3/);
+    expect(() => checkTeacherSettings({ ...settings(), teacher_version: "v2" as never })).toThrow(/v1, v3 or v4/);
   });
 
   it("writes a learner-ready synthetic set of v3, with v3's baseline identity; v1 cannot load it", async () => {

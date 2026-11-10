@@ -18,7 +18,10 @@ from areneon_ml.progress.records import (
 )
 from areneon_ml.progress.run import (
     DAMAGE_AWARE_LABEL,
+    DAMAGE_AWARE_VERSIONS,
     ProgressError,
+    damage_aware_matches,
+    damage_aware_policy,
     verify_progress_dir,
 )
 from areneon_ml.progress.run import progress_generation as _progress_generation
@@ -388,3 +391,10 @@ def test_a_record_that_mixes_a_match_id_and_a_policy_is_refused(run: Path, tmp_p
             "damage_aware_budget_minutes": 30,
         },
     )
+
+
+def test_v4_is_a_known_version_with_its_own_policy_id_and_match_ids() -> None:
+    assert DAMAGE_AWARE_VERSIONS == ("v1", "v3", "v4")
+    assert damage_aware_policy("v4") == "damage-aware@v4"
+    assert damage_aware_matches("v4") == ("damage-aware-v4-argmax", "damage-aware-v4-sample")
+    assert damage_aware_matches("v1") == ("damage-aware-argmax", "damage-aware-sample")

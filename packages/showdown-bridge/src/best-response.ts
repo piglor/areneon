@@ -28,6 +28,8 @@ import type { PlayedGame } from "./evaluation-harness.ts";
 import { resolveFormat } from "./formats.ts";
 import { HYPOTHETICAL_BATTLE_FORMAT } from "./hypothetical-preview.ts";
 import { progressGameStreams, PROGRESS_PAIRING, PROGRESS_SEED_DERIVATION } from "./progress-seed.ts";
+import type { FeatureConfigs } from "./candidate-features.ts";
+import { configuredSetHash } from "./feature-build.ts";
 import { type PayoffClient, type PayoffConfig, type PayoffTable, PAYOFF_LEAF_FORMAT, type OwnRule, type PayoffLeaf, buildPayoffTable } from "./preview-payoff.ts";
 import { type PolicyActorOptions, policyActor, type PolicySeat, policyGame } from "./policy-actor.ts";
 import type { PolicyClient } from "./policy-worker.ts";
@@ -149,6 +151,8 @@ export interface ResponderDeps {
   /** The evaluated pair's policy id in the mode. */
   policy_id: string;
   mode: PlayMode;
+  /** The feature configs of a pair that reads candidate features (absent: it reads none): its hypothetical observations carry the rows of its own builder. */
+  features?: { configs: FeatureConfigs };
 }
 
 /** A Team Preview decision: what the record keeps, and the `team ...` order each arm plays (none: the evaluated pair's own Preview). */
@@ -164,14 +168,14 @@ const ARM_MODEL = (arm: ResponderArm, mode: PlayMode): PlayMode | "blind" => (ar
  * (`PreviewContext`), the evaluated pair's weights (through the worker's `evaluate`) and the belief's draws.
  */
 export async function decidePreview(deps: ResponderDeps, ctx: PreviewContext, arms: readonly ResponderArm[]): Promise<PreviewResult> {
-  const { engine, vocabulary, format_id, teams, settings, client, policy_id, mode } = deps;
+  const { engine, vocabulary, format_id, teams, settings, client, policy_id, mode, features } = deps;
   const fallback = (code: string): PreviewResult => ({ decision: { kind: "fallback", code }, orders: {} });
   const view = readPreviewChannel(ctx.seat, ctx.channel);
   const realRequest = view.request;
   const opened = teams.open({ opponent: view.opponent, flags: view.flags });
   if (opened.kind === "refused") return fallback(opened.code);
   const stream = responderStream({ seed: ctx.seed, game: ctx.game, player: ctx.seat, policy_id, request_seq: ctx.request_seq });
-  const { worlds, refused, unstarted } = startPreviewWorlds({ engine, vocabulary, format_id, source: opened.source, count: settings.worlds, stream, seat: ctx.seat, own_team: ctx.team, channel_class: ctx.channel_class, own_request: realRequest });
+  const { worlds, refused, unstarted } = startPreviewWorlds({ engine, vocabulary, format_id, source: opened.source, count: settings.worlds, stream, seat: ctx.seat, own_team: ctx.team, channel_class: ctx.channel_class, own_request: realRequest, ...(features === undefined ? {} : { features }) });
   if (worlds.length === 0) return fallback("no_world");
   const config: PayoffConfig = { k_own: settings.k_own, k_opp: ALL_COLUMNS, own_rule: settings.own_rule, leaf: settings.leaf, argmax_columns: true };
   const table = await buildPayoffTable({ config, worlds, client, battle: ctx.battle, policy_id, own_request: realRequest, stream });
@@ -220,6 +224,8 @@ export interface BestResponseOptions {
     /** The pair's policy id in that mode. */
     policy_id: string;
     client: BestResponseClient;
+    /** The feature configs of a pair that reads candidate features (`pairFeatureSetup(...).configs`; absent: it reads none). */
+    features?: FeatureConfigs;
   };
   responder: {
     settings: ResponderSettings;
@@ -245,7 +251,10 @@ export async function playBestResponse(options: BestResponseOptions): Promise<Be
   const evaluationKey = options.evaluation_key;
   if (evaluationKey !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(evaluationKey)) throw new BestResponseError("--evaluation-key must be an id token ([A-Za-z0-9][A-Za-z0-9._:-]{0,127})");
   if (evaluationKey === config.seeds.run_key) throw new BestResponseError("--evaluation-key is the run's own key: omit the option to key the plan by it");
-  if (evaluated.client.featureSet !== undefined && evaluated.client.featureSet !== null) throw new BestResponseError("features_pair: a pair that reads candidate features is not supported by the responder");
+  const stated = evaluated.client.featureSet ?? null;
+  if (stated !== null && evaluated.features === undefined) throw new BestResponseError("features_pair: a pair that reads candidate features needs its feature configs");
+  if (stated === null && evaluated.features !== undefined) throw new BestResponseError("features_pair: feature configs were given for a pair whose worker states no feature set");
+  if (stated !== null && evaluated.features !== undefined && configuredSetHash(engine, evaluated.features) !== stated.feature_set_hash) throw new BestResponseError("features_pair: the feature configs build another feature set than the worker stated");
   let plan;
   try {
     plan = progressPlan({ config, pool, games: pairs * 2, training_teams: options.training_teams, league_seeds: options.league_seeds, ...(evaluationKey === undefined ? {} : { evaluation_key: evaluationKey }) });
@@ -254,12 +263,12 @@ export async function playBestResponse(options: BestResponseOptions): Promise<Be
   }
   const planKey = evaluationKey ?? config.seeds.run_key;
   const { client, mode, policy_id } = evaluated;
-  const deps: ResponderDeps = { engine, vocabulary: responder.vocabulary, format_id: config.format_id, teams: responder.teams, settings, client, policy_id, mode };
+  const deps: ResponderDeps = { engine, vocabulary: responder.vocabulary, format_id: config.format_id, teams: responder.teams, settings, client, policy_id, mode, ...(evaluated.features === undefined ? {} : { features: { configs: evaluated.features } }) };
   const budget = { preview_ms: responder.preview_budget_ms, battle_ms: config.generation.latency_budget_ms.battle_ms };
   const failures: Error[] = [];
   /** One decision per (game, side): the responder and blind arms of team B share one table. */
   const memo = new Map<string, Promise<PreviewResult>>();
-  const evaluatedSeat = (): PolicySeat => ({ client, policy_id, sampling: mode });
+  const evaluatedSeat = (): PolicySeat => ({ client, policy_id, sampling: mode, ...(evaluated.features === undefined ? {} : { features: { configs: evaluated.features } }) });
   const responderSeat = (arm: ResponderArm, side: "a" | "b"): PolicySeat => ({
     ...evaluatedSeat(),
     make: (o: PolicyActorOptions): Actor => {
