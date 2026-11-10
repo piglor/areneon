@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 from pydantic import (
+    MISSING,
     BaseModel,
     ConfigDict,
     Field,
@@ -36,30 +37,6 @@ class Boosts(BaseModel):
     spa: Annotated[StrictInt, Field(ge=-6, le=6)]
     spd: Annotated[StrictInt, Field(ge=-6, le=6)]
     spe: Annotated[StrictInt, Field(ge=-6, le=6)]
-
-
-class Combatant(BaseModel):
-    """
-    One Pokemon with its declared state.
-    """
-
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-    set: Paste
-    boosts: Boosts
-    status: Annotated[StrictStr | None, Field(pattern="^[a-z0-9]+$")]
-    """
-    The engine's id of the major status, or null.
-    """
-    hp: Annotated[StrictInt | None, Field(ge=1, le=9999)]
-    """
-    The current HP, or null for full HP.
-    """
-    mega: StrictBool
-    """
-    True when the Pokemon has Mega Evolved or does so this turn, as the query kind says.
-    """
 
 
 class SideState(BaseModel):
@@ -134,6 +111,387 @@ class StatsQuery(BaseModel):
     set: Paste
 
 
+class Count(RootModel[StrictInt]):
+    root: Annotated[StrictInt, Field(ge=0, le=9999)]
+    """
+    A non-negative count.
+    """
+
+
+class Attacker(BaseModel):
+    """
+    A Pokemon that hit the declared Pokemon this turn: its side and position in the query's sides, and the damage it dealt (the engine's attackedBy entry).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    side: Annotated[StrictInt, Field(ge=0, le=1)]
+    position: Annotated[StrictInt, Field(ge=0, le=1)]
+    damage: Count
+
+
+class VolatileEntry(BaseModel):
+    """
+    A volatile the Pokemon holds, added through the engine's own addVolatile. started_turn and after_residual date it as the world facts do; starts (default 1) is how many times the engine's start handler ran (a stacking volatile such as Stockpile restarts once per layer).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: Annotated[StrictStr, Field(pattern="^[a-z0-9]+$")]
+    started_turn: Count
+    after_residual: StrictBool
+    starts: Annotated[StrictInt | MISSING, Field(ge=1, le=9)] = MISSING
+
+
+class SlotEntry(BaseModel):
+    """
+    A timed slot condition (Wish, Future Sight) at a position of a side, started at started_turn.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    position: Annotated[StrictInt, Field(ge=0, le=1)]
+    id: Annotated[StrictStr, Field(pattern="^[a-z0-9]+$")]
+    started_turn: Count
+    after_residual: StrictBool
+
+
+class KnownCount(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["known"]
+    value: Count
+
+
+class UnknownCount(BaseModel):
+    """
+    The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["unknown"]
+    ends: Annotated[list[Count], Field(max_length=2, min_length=2)]
+
+
+class CountFact(RootModel[KnownCount | UnknownCount]):
+    root: Annotated[KnownCount | UnknownCount, Field(discriminator="kind")]
+
+
+class KnownBool(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["known"]
+    value: StrictBool
+
+
+class UnknownBool(BaseModel):
+    """
+    The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["unknown"]
+    ends: Annotated[list[StrictBool], Field(max_length=2, min_length=2)]
+
+
+class BoolFact(RootModel[KnownBool | UnknownBool]):
+    root: Annotated[KnownBool | UnknownBool, Field(discriminator="kind")]
+
+
+class KnownId(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["known"]
+    value: Annotated[StrictStr | None, Field(pattern="^[a-z0-9]+$")]
+
+
+class End(RootModel[StrictStr | None]):
+    root: Annotated[StrictStr | None, Field(pattern="^[a-z0-9]+$")]
+
+
+class UnknownId(BaseModel):
+    """
+    The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["unknown"]
+    ends: Annotated[list[End | None], Field(max_length=2, min_length=2)]
+
+
+class IdFact(RootModel[KnownId | UnknownId]):
+    root: Annotated[KnownId | UnknownId, Field(discriminator="kind")]
+
+
+class KnownAttackers(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["known"]
+    value: Annotated[list[Attacker], Field(max_length=4)]
+
+
+class End1(RootModel[list[Attacker]]):
+    root: Annotated[list[Attacker], Field(max_length=4)]
+
+
+class UnknownAttackers(BaseModel):
+    """
+    The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["unknown"]
+    ends: Annotated[list[End1], Field(max_length=2, min_length=2)]
+
+
+class AttackersFact(RootModel[KnownAttackers | UnknownAttackers]):
+    root: Annotated[KnownAttackers | UnknownAttackers, Field(discriminator="kind")]
+
+
+class ValueItem(RootModel[StrictStr]):
+    root: Annotated[StrictStr, Field(pattern="^[a-z0-9]+$")]
+
+
+class KnownIds(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["known"]
+    value: Annotated[list[ValueItem], Field(max_length=4)]
+
+
+class End2Item(RootModel[StrictStr]):
+    root: Annotated[StrictStr, Field(pattern="^[a-z0-9]+$")]
+
+
+class End2(RootModel[list[End2Item]]):
+    root: Annotated[list[End2Item], Field(max_length=4)]
+
+
+class UnknownIds(BaseModel):
+    """
+    The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["unknown"]
+    ends: Annotated[list[End2], Field(max_length=2, min_length=2)]
+
+
+class IdsFact(RootModel[KnownIds | UnknownIds]):
+    root: Annotated[KnownIds | UnknownIds, Field(discriminator="kind")]
+
+
+class KnownVolatiles(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["known"]
+    value: Annotated[list[VolatileEntry], Field(max_length=8)]
+
+
+class End3(RootModel[list[VolatileEntry]]):
+    root: Annotated[list[VolatileEntry], Field(max_length=8)]
+
+
+class UnknownVolatiles(BaseModel):
+    """
+    The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["unknown"]
+    ends: Annotated[list[End3], Field(max_length=2, min_length=2)]
+
+
+class VolatilesFact(RootModel[KnownVolatiles | UnknownVolatiles]):
+    root: Annotated[KnownVolatiles | UnknownVolatiles, Field(discriminator="kind")]
+
+
+class KnownSlots(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["known"]
+    value: Annotated[list[SlotEntry], Field(max_length=4)]
+
+
+class End4(RootModel[list[SlotEntry]]):
+    root: Annotated[list[SlotEntry], Field(max_length=4)]
+
+
+class UnknownSlots(BaseModel):
+    """
+    The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["unknown"]
+    ends: Annotated[list[End4], Field(max_length=2, min_length=2)]
+
+
+class SlotsFact(RootModel[KnownSlots | UnknownSlots]):
+    root: Annotated[KnownSlots | UnknownSlots, Field(discriminator="kind")]
+
+
+class CombatantHistory(BaseModel):
+    """
+    The history facts of one Pokemon (ADR-022 erratum E-22.5.2), each declared through the engine's own field. A fact left out keeps the scenario's fresh value. Opponent PP is never declared.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    move_actions: CountFact | MISSING = MISSING
+    """
+    activeMoveActions: the move actions it has run since it switched in (before the asked action).
+    """
+    stall_counter: CountFact | MISSING = MISSING
+    """
+    The stall condition's counter (the engine's own: 0 is no stall volatile).
+    """
+    times_attacked: CountFact | MISSING = MISSING
+    """
+    timesAttacked.
+    """
+    hurt_this_turn: BoolFact | MISSING = MISSING
+    """
+    hurtThisTurn is set.
+    """
+    attacked_by: AttackersFact | MISSING = MISSING
+    """
+    attackedBy: the Pokemon that hit it this turn.
+    """
+    last_move_failed: BoolFact | MISSING = MISSING
+    """
+    moveLastTurnResult is false.
+    """
+    stats_raised_this_turn: BoolFact | MISSING = MISSING
+    """
+    statsRaisedThisTurn.
+    """
+    stats_lowered_this_turn: BoolFact | MISSING = MISSING
+    """
+    statsLoweredThisTurn.
+    """
+    ate_berry: BoolFact | MISSING = MISSING
+    """
+    ateBerry.
+    """
+    last_item: IdFact | MISSING = MISSING
+    """
+    lastItem: the engine's id of the last item it used or ate, or null.
+    """
+    moves_used: IdsFact | MISSING = MISSING
+    """
+    moveSlots[].used: the ids of its moves it has used since it switched in.
+    """
+    volatiles: VolatilesFact | MISSING = MISSING
+    """
+    Volatiles it holds, with their ages.
+    """
+
+
+class SideHistory(BaseModel):
+    """
+    The history facts of one side.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    total_fainted: CountFact | MISSING = MISSING
+    """
+    side.totalFainted.
+    """
+    pending_slots: SlotsFact | MISSING = MISSING
+    """
+    The timed slot conditions pending on the side.
+    """
+
+
+class BattleHistory(BaseModel):
+    """
+    History facts of the battle and its sides, declared through the engine's own fields (ADR-022 erratum E-22.5.3). Optional on every kind; a query without it keeps its bytes and its answer.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    turn: Count | MISSING = MISSING
+    """
+    The battle's turn; required when a volatile or a slot condition is declared, so its remaining turns are the engine's own length less the turns since it began.
+    """
+    field_last_move: IdFact | MISSING = MISSING
+    """
+    battle.lastMove: the engine's id of the battle's last move, or null.
+    """
+    sides: Annotated[list[SideHistory] | MISSING, Field(max_length=2, min_length=2)] = (
+        MISSING
+    )
+    """
+    Side 0 then side 1.
+    """
+
+
+class TargetRef(BaseModel):
+    """
+    One declared Pokemon: its side and its index in the side's list.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    side: Annotated[StrictInt, Field(ge=0, le=1)]
+    position: Annotated[StrictInt, Field(ge=0, le=1)]
+
+
+class Combatant(BaseModel):
+    """
+    One Pokemon with its declared state.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    set: Paste
+    boosts: Boosts
+    status: Annotated[StrictStr | None, Field(pattern="^[a-z0-9]+$")]
+    """
+    The engine's id of the major status, or null.
+    """
+    hp: Annotated[StrictInt | None, Field(ge=1, le=9999)]
+    """
+    The current HP, or null for full HP.
+    """
+    mega: StrictBool
+    """
+    True when the Pokemon has Mega Evolved or does so this turn, as the query kind says.
+    """
+    history: CombatantHistory | MISSING = MISSING
+
+
 class Side(RootModel[list[Combatant]]):
     root: Annotated[list[Combatant], Field(max_length=2, min_length=1)]
 
@@ -156,6 +514,7 @@ class SpeedOrderQuery(BaseModel):
     One action per acting Pokemon.
     """
     state: FieldState
+    history: BattleHistory | MISSING = MISSING
 
 
 class DamageQuery(BaseModel):
@@ -174,6 +533,33 @@ class DamageQuery(BaseModel):
     The engine's move id.
     """
     state: FieldState
+    history: BattleHistory | MISSING = MISSING
+
+
+class MoveOutcomeQuery(BaseModel):
+    """
+    Whether the asked action's move works, and with what chance, given the other actions queued this turn (one opposing-action branch). The engine's own move step runs for the asked action with a random source that answers every chance with success and records each (n, d): the precondition chance is the product of the draws made before the hit step, the hit chance the accuracy draw of the target. A move that never reaches its hit step fails.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["move_outcome"]
+    sides: Annotated[list[Side], Field(max_length=2, min_length=2)]
+    """
+    Side 0 then side 1, one or two Pokemon each.
+    """
+    actions: Annotated[list[Action], Field(max_length=4, min_length=1)]
+    """
+    The actions queued this turn, the asked one included. The engine's own order decides which stay in the queue after the asked one.
+    """
+    asked: Annotated[StrictInt, Field(ge=0, le=3)]
+    """
+    The index in actions of the asked action (a move).
+    """
+    target: TargetRef
+    state: FieldState
+    history: BattleHistory | MISSING = MISSING
 
 
 class MechanicsQuery(BaseModel):
@@ -194,8 +580,9 @@ class MechanicsQuery(BaseModel):
     The target format (a format of the rules snapshot).
     """
     query: Annotated[
-        StatsQuery | SpeedOrderQuery | DamageQuery, Field(discriminator="kind")
+        StatsQuery | SpeedOrderQuery | DamageQuery | MoveOutcomeQuery,
+        Field(discriminator="kind"),
     ]
     """
-    The question, tagged by kind: stats (the six stats of one set), speed_order (the turn order of up to two Pokemon per side) or damage (two 16-roll vectors and the KO counts of one move).
+    The question, tagged by kind: stats (the six stats of one set), speed_order (the turn order of up to two Pokemon per side), damage (two 16-roll vectors and the KO counts of one move) or move_outcome (whether a move works and with what chance).
     """

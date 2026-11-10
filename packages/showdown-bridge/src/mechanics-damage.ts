@@ -11,6 +11,8 @@
 
 import type { Engine, PokemonSet, SimBattle } from "./engine.ts";
 import type { MechanicsConfig } from "./mechanics-config.ts";
+import { RandomDraw, refusingSource } from "./mechanics-guard.ts";
+import { declareHistory, type HBattle, type HistoryDeclaration } from "./mechanics-history.ts";
 import { koBlocked, koCounts } from "./mechanics-ko.ts";
 import { acceptedDraws, critDraw, type Draw, type RecordingRandom, recordingRandom } from "./mechanics-random.ts";
 import { scenarioPokemon, startScenario } from "./mechanics-scenario.ts";
@@ -179,7 +181,7 @@ function startedScenario(engine: Engine, scenarioId: string, attackerSet: Pokemo
 }
 
 /** The scenario battle with the whole declared state, ready to be cloned. */
-function declaredBattle(engine: Engine, scenarioId: string, query: DamageQuery, attackerSet: PokemonSet, defenderSet: PokemonSet, reference = false): DmgBattle {
+function declaredBattle(engine: Engine, scenarioId: string, query: DamageQuery, attackerSet: PokemonSet, defenderSet: PokemonSet, reference = false, history: HistoryDeclaration | null = null): DmgBattle {
   // The reference path starts the scenario itself every time, so a test comparing the paths also compares the kept start with a fresh one.
   const battle = reference ? asDmg(startScenario(engine, scenarioId, { p1: [attackerSet, partnerOf(attackerSet)], p2: [defenderSet, partnerOf(defenderSet)] })) : startedScenario(engine, scenarioId, attackerSet, defenderSet);
   const attacker = declare(battle, 0, query.attacker);
@@ -210,6 +212,19 @@ function declaredBattle(engine: Engine, scenarioId: string, query: DamageQuery, 
   // A Mega Evolution's ability (Intimidate) or the declared field (a Seed item) can change a stage or consume an item after the state was written: the declared stages and item are written last, absolute (#1243).
   restoreStagesAndItem(battle, attacker, query.attacker);
   restoreStagesAndItem(battle, defender, query.defender);
+  if (history !== null) {
+    // The declared history (ADR-022 E-22.5.3) through the engine's own fields. A draw the declaration makes (a volatile with a random length) is refused;
+    // a volatile with a stage effect (Stockpile) is followed by the declared stages and items again.
+    const real = battle.prng;
+    battle.prng = refusingSource(real as object);
+    try {
+      declareHistory(battle as unknown as HBattle, history.resolved, { stall: history.stall, at: () => undefined });
+    } finally {
+      battle.prng = real;
+    }
+    restoreStagesAndItem(battle, attacker, query.attacker);
+    restoreStagesAndItem(battle, defender, query.defender);
+  }
   return battle;
 }
 
@@ -473,14 +488,21 @@ export function probeDamage(
   defenderSet: PokemonSet,
   koBlockers: MechanicsConfig["ko_blockers"],
   path: DamagePath = "one-clone",
+  history: HistoryDeclaration | null = null,
 ): DamageOutcome {
-  const base = declaredBattle(engine, scenarioId, query, attackerSet, defenderSet, path === "per-roll");
+  let base: DmgBattle;
+  try {
+    base = declaredBattle(engine, scenarioId, query, attackerSet, defenderSet, path === "per-roll", history);
+  } catch (error) {
+    if (error instanceof RandomDraw) return { kind: "unsupported", reason: "random_effect", position: null };
+    throw error;
+  }
   const move = base.dex.moves.get(query.move);
   if (!move.exists || move.id !== query.move) throw new DamageStateError("the move is not an engine move");
   // Outside the v1 scope (ADR-016 section 3): a move that deals no damage of its own, and a multi-hit move.
   // Also fixed and HP-based damage (`damage`, `damageCallback`, `ohko`): a number that is no roll vector.
   if (move.category === "Status" || move.multihit !== undefined || move.damage !== undefined || move.damageCallback !== undefined || move.ohko !== undefined) return { kind: "unsupported", reason: "query_kind", position: null };
-  const rebuild = (): DmgBattle => declaredBattle(engine, scenarioId, query, attackerSet, defenderSet, path === "per-roll");
+  const rebuild = (): DmgBattle => declaredBattle(engine, scenarioId, query, attackerSet, defenderSet, path === "per-roll", history);
   if (path === "one-clone") {
     const fast = oneClone(engine, base, rebuild, query.move, koBlockers);
     if (fast !== null) {
@@ -497,5 +519,5 @@ export function probeDamage(
  * The scenario battle with the declared state and nothing played, for a test
  * that plays the same state as a real battle (damage equals the HP lost).
  */
-export const declaredDamageScenario = (engine: Engine, scenarioId: string, query: DamageQuery, attackerSet: PokemonSet, defenderSet: PokemonSet): SimBattle =>
-  declaredBattle(engine, scenarioId, query, attackerSet, defenderSet) as unknown as SimBattle;
+export const declaredDamageScenario = (engine: Engine, scenarioId: string, query: DamageQuery, attackerSet: PokemonSet, defenderSet: PokemonSet, history: HistoryDeclaration | null = null): SimBattle =>
+  declaredBattle(engine, scenarioId, query, attackerSet, defenderSet, false, history) as unknown as SimBattle;

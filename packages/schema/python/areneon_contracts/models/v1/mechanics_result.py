@@ -75,9 +75,9 @@ class Unsupported(BaseModel):
     """
     The gap ledger rows the result depends on, sorted and unique (reader rule).
     """
-    reason: Literal["query_kind", "random_effect", "scenario_rule_table"]
+    reason: Literal["history_unknown", "query_kind", "random_effect", "scenario_rule_table"]
     """
-    query_kind: the kind is not in the mechanics config's scope. scenario_rule_table: the engine's rule tables differ from the config's scenario. random_effect: the engine drew a random number the probe does not expect.
+    query_kind: the kind is not in the mechanics config's scope. scenario_rule_table: the engine's rule tables differ from the config's scenario. random_effect: the engine drew a random number the probe does not expect. history_unknown: a history fact the channel cannot settle was asked at both ends of its range and the answers differ.
     """
     position: Annotated[StrictInt | None, Field(ge=0, le=15)]
     """
@@ -237,6 +237,20 @@ class KoUnsupported(BaseModel):
     reason: Literal["ko_state_change"]
 
 
+class MoveOutcomeAnswer(BaseModel):
+    """
+    Whether the asked move works. precondition: passes (no chance before the hit step), chance (the engine drew a chance before it) or fails (the move never reaches its hit step). Both chances are integers in parts per million, the product of the engine's own draws rounded down.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["move_outcome"]
+    precondition: Literal["chance", "fails", "passes"]
+    precondition_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    hit_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+
+
 class StatsAnswer(BaseModel):
     """
     The six stats at the format's level.
@@ -335,7 +349,8 @@ class Computed(BaseModel):
     The gap ledger rows the result depends on, sorted and unique (reader rule).
     """
     answer: Annotated[
-        StatsAnswer | SpeedOrderAnswer | DamageAnswer, Field(discriminator="kind")
+        StatsAnswer | SpeedOrderAnswer | DamageAnswer | MoveOutcomeAnswer,
+        Field(discriminator="kind"),
     ]
     """
     The engine's values, tagged by the query kind.

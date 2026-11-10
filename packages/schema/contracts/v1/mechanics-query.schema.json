@@ -28,7 +28,7 @@
       "pattern": "^[a-z0-9]+$"
     },
     "query": {
-      "description": "The question, tagged by kind: stats (the six stats of one set), speed_order (the turn order of up to two Pokemon per side) or damage (two 16-roll vectors and the KO counts of one move).",
+      "description": "The question, tagged by kind: stats (the six stats of one set), speed_order (the turn order of up to two Pokemon per side), damage (two 16-roll vectors and the KO counts of one move) or move_outcome (whether a move works and with what chance).",
       "type": "object",
       "oneOf": [
         {
@@ -39,6 +39,9 @@
         },
         {
           "$ref": "#/$defs/DamageQuery"
+        },
+        {
+          "$ref": "#/$defs/MoveOutcomeQuery"
         }
       ],
       "discriminator": {
@@ -130,6 +133,9 @@
         "mega": {
           "description": "True when the Pokemon has Mega Evolved or does so this turn, as the query kind says.",
           "type": "boolean"
+        },
+        "history": {
+          "$ref": "#/$defs/CombatantHistory"
         }
       }
     },
@@ -291,6 +297,9 @@
         },
         "state": {
           "$ref": "#/$defs/FieldState"
+        },
+        "history": {
+          "$ref": "#/$defs/BattleHistory"
         }
       }
     },
@@ -322,6 +331,672 @@
         },
         "state": {
           "$ref": "#/$defs/FieldState"
+        },
+        "history": {
+          "$ref": "#/$defs/BattleHistory"
+        }
+      }
+    },
+    "Count": {
+      "description": "A non-negative count.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9999
+    },
+    "Attacker": {
+      "description": "A Pokemon that hit the declared Pokemon this turn: its side and position in the query's sides, and the damage it dealt (the engine's attackedBy entry).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "side",
+        "position",
+        "damage"
+      ],
+      "properties": {
+        "side": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "position": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "damage": {
+          "$ref": "#/$defs/Count"
+        }
+      }
+    },
+    "VolatileEntry": {
+      "description": "A volatile the Pokemon holds, added through the engine's own addVolatile. started_turn and after_residual date it as the world facts do; starts (default 1) is how many times the engine's start handler ran (a stacking volatile such as Stockpile restarts once per layer).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "started_turn",
+        "after_residual"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$"
+        },
+        "started_turn": {
+          "$ref": "#/$defs/Count"
+        },
+        "after_residual": {
+          "type": "boolean"
+        },
+        "starts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9
+        }
+      }
+    },
+    "SlotEntry": {
+      "description": "A timed slot condition (Wish, Future Sight) at a position of a side, started at started_turn.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "position",
+        "id",
+        "started_turn",
+        "after_residual"
+      ],
+      "properties": {
+        "position": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$"
+        },
+        "started_turn": {
+          "$ref": "#/$defs/Count"
+        },
+        "after_residual": {
+          "type": "boolean"
+        }
+      }
+    },
+    "KnownCount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "const": "known"
+        },
+        "value": {
+          "$ref": "#/$defs/Count"
+        }
+      }
+    },
+    "UnknownCount": {
+      "description": "The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ends"
+      ],
+      "properties": {
+        "kind": {
+          "const": "unknown"
+        },
+        "ends": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/Count"
+          }
+        }
+      }
+    },
+    "CountFact": {
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/KnownCount"
+        },
+        {
+          "$ref": "#/$defs/UnknownCount"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "KnownBool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "const": "known"
+        },
+        "value": {
+          "type": "boolean"
+        }
+      }
+    },
+    "UnknownBool": {
+      "description": "The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ends"
+      ],
+      "properties": {
+        "kind": {
+          "const": "unknown"
+        },
+        "ends": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "BoolFact": {
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/KnownBool"
+        },
+        {
+          "$ref": "#/$defs/UnknownBool"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "KnownId": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "const": "known"
+        },
+        "value": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z0-9]+$"
+        }
+      }
+    },
+    "UnknownId": {
+      "description": "The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ends"
+      ],
+      "properties": {
+        "kind": {
+          "const": "unknown"
+        },
+        "ends": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[a-z0-9]+$"
+          }
+        }
+      }
+    },
+    "IdFact": {
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/KnownId"
+        },
+        {
+          "$ref": "#/$defs/UnknownId"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "KnownAttackers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "const": "known"
+        },
+        "value": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/Attacker"
+          }
+        }
+      }
+    },
+    "UnknownAttackers": {
+      "description": "The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ends"
+      ],
+      "properties": {
+        "kind": {
+          "const": "unknown"
+        },
+        "ends": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "$ref": "#/$defs/Attacker"
+            }
+          }
+        }
+      }
+    },
+    "AttackersFact": {
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/KnownAttackers"
+        },
+        {
+          "$ref": "#/$defs/UnknownAttackers"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "KnownIds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "const": "known"
+        },
+        "value": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+$"
+          }
+        }
+      }
+    },
+    "UnknownIds": {
+      "description": "The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ends"
+      ],
+      "properties": {
+        "kind": {
+          "const": "unknown"
+        },
+        "ends": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+$"
+            }
+          }
+        }
+      }
+    },
+    "IdsFact": {
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/KnownIds"
+        },
+        {
+          "$ref": "#/$defs/UnknownIds"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "KnownVolatiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "const": "known"
+        },
+        "value": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/VolatileEntry"
+          }
+        }
+      }
+    },
+    "UnknownVolatiles": {
+      "description": "The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ends"
+      ],
+      "properties": {
+        "kind": {
+          "const": "unknown"
+        },
+        "ends": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "$ref": "#/$defs/VolatileEntry"
+            }
+          }
+        }
+      }
+    },
+    "VolatilesFact": {
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/KnownVolatiles"
+        },
+        {
+          "$ref": "#/$defs/UnknownVolatiles"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "KnownSlots": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "const": "known"
+        },
+        "value": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/SlotEntry"
+          }
+        }
+      }
+    },
+    "UnknownSlots": {
+      "description": "The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ends"
+      ],
+      "properties": {
+        "kind": {
+          "const": "unknown"
+        },
+        "ends": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "$ref": "#/$defs/SlotEntry"
+            }
+          }
+        }
+      }
+    },
+    "SlotsFact": {
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/KnownSlots"
+        },
+        {
+          "$ref": "#/$defs/UnknownSlots"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "CombatantHistory": {
+      "description": "The history facts of one Pokemon (ADR-022 erratum E-22.5.2), each declared through the engine's own field. A fact left out keeps the scenario's fresh value. Opponent PP is never declared.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "move_actions": {
+          "description": "activeMoveActions: the move actions it has run since it switched in (before the asked action).",
+          "$ref": "#/$defs/CountFact"
+        },
+        "stall_counter": {
+          "description": "The stall condition's counter (the engine's own: 0 is no stall volatile).",
+          "$ref": "#/$defs/CountFact"
+        },
+        "times_attacked": {
+          "description": "timesAttacked.",
+          "$ref": "#/$defs/CountFact"
+        },
+        "hurt_this_turn": {
+          "description": "hurtThisTurn is set.",
+          "$ref": "#/$defs/BoolFact"
+        },
+        "attacked_by": {
+          "description": "attackedBy: the Pokemon that hit it this turn.",
+          "$ref": "#/$defs/AttackersFact"
+        },
+        "last_move_failed": {
+          "description": "moveLastTurnResult is false.",
+          "$ref": "#/$defs/BoolFact"
+        },
+        "stats_raised_this_turn": {
+          "description": "statsRaisedThisTurn.",
+          "$ref": "#/$defs/BoolFact"
+        },
+        "stats_lowered_this_turn": {
+          "description": "statsLoweredThisTurn.",
+          "$ref": "#/$defs/BoolFact"
+        },
+        "ate_berry": {
+          "description": "ateBerry.",
+          "$ref": "#/$defs/BoolFact"
+        },
+        "last_item": {
+          "description": "lastItem: the engine's id of the last item it used or ate, or null.",
+          "$ref": "#/$defs/IdFact"
+        },
+        "moves_used": {
+          "description": "moveSlots[].used: the ids of its moves it has used since it switched in.",
+          "$ref": "#/$defs/IdsFact"
+        },
+        "volatiles": {
+          "description": "Volatiles it holds, with their ages.",
+          "$ref": "#/$defs/VolatilesFact"
+        }
+      }
+    },
+    "SideHistory": {
+      "description": "The history facts of one side.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "total_fainted": {
+          "description": "side.totalFainted.",
+          "$ref": "#/$defs/CountFact"
+        },
+        "pending_slots": {
+          "description": "The timed slot conditions pending on the side.",
+          "$ref": "#/$defs/SlotsFact"
+        }
+      }
+    },
+    "BattleHistory": {
+      "description": "History facts of the battle and its sides, declared through the engine's own fields (ADR-022 erratum E-22.5.3). Optional on every kind; a query without it keeps its bytes and its answer.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "turn": {
+          "description": "The battle's turn; required when a volatile or a slot condition is declared, so its remaining turns are the engine's own length less the turns since it began.",
+          "$ref": "#/$defs/Count"
+        },
+        "field_last_move": {
+          "description": "battle.lastMove: the engine's id of the battle's last move, or null.",
+          "$ref": "#/$defs/IdFact"
+        },
+        "sides": {
+          "description": "Side 0 then side 1.",
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/SideHistory"
+          }
+        }
+      }
+    },
+    "TargetRef": {
+      "description": "One declared Pokemon: its side and its index in the side's list.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "side",
+        "position"
+      ],
+      "properties": {
+        "side": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "position": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "MoveOutcomeQuery": {
+      "description": "Whether the asked action's move works, and with what chance, given the other actions queued this turn (one opposing-action branch). The engine's own move step runs for the asked action with a random source that answers every chance with success and records each (n, d): the precondition chance is the product of the draws made before the hit step, the hit chance the accuracy draw of the target. A move that never reaches its hit step fails.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sides",
+        "actions",
+        "asked",
+        "target",
+        "state"
+      ],
+      "properties": {
+        "kind": {
+          "const": "move_outcome"
+        },
+        "sides": {
+          "description": "Side 0 then side 1, one or two Pokemon each.",
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 2,
+            "items": {
+              "$ref": "#/$defs/Combatant"
+            }
+          }
+        },
+        "actions": {
+          "description": "The actions queued this turn, the asked one included. The engine's own order decides which stay in the queue after the asked one.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/Action"
+          }
+        },
+        "asked": {
+          "description": "The index in actions of the asked action (a move).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "target": {
+          "$ref": "#/$defs/TargetRef"
+        },
+        "state": {
+          "$ref": "#/$defs/FieldState"
+        },
+        "history": {
+          "$ref": "#/$defs/BattleHistory"
         }
       }
     }

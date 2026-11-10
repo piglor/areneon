@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "format_id": "gen9championsvgc2026regmc",
+  "query": {
+    "kind": "move_outcome",
+    "sides": [
+      [
+        {
+          "set": "Venusaur @ Leftovers  \nAbility: Overgrow  \nLevel: 50  \nEVs: 32 HP / 2 Def / 32 SpA  \nModest Nature  \n- Giga Drain  \n- Sludge Bomb  \n- Protect  \n- Sleep Powder  \n\n",
+          "boosts": {
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 0
+          },
+          "status": null,
+          "hp": null,
+          "mega": false,
+          "history": {
+            "move_actions": {
+              "kind": "known",
+              "value": 2
+            },
+            "stall_counter": {
+              "kind": "known",
+              "value": 3
+            },
+            "times_attacked": {
+              "kind": "unknown",
+              "ends": [
+                0,
+                4
+              ]
+            },
+            "hurt_this_turn": {
+              "kind": "known",
+              "value": true
+            },
+            "attacked_by": {
+              "kind": "known",
+              "value": [
+                {
+                  "side": 1,
+                  "position": 0,
+                  "damage": 30
+                }
+              ]
+            },
+            "last_move_failed": {
+              "kind": "known",
+              "value": false
+            },
+            "stats_raised_this_turn": {
+              "kind": "known",
+              "value": false
+            },
+            "stats_lowered_this_turn": {
+              "kind": "known",
+              "value": true
+            },
+            "ate_berry": {
+              "kind": "known",
+              "value": true
+            },
+            "last_item": {
+              "kind": "known",
+              "value": "sitrusberry"
+            },
+            "moves_used": {
+              "kind": "known",
+              "value": [
+                "protect"
+              ]
+            },
+            "volatiles": {
+              "kind": "known",
+              "value": [
+                {
+                  "id": "stockpile",
+                  "started_turn": 2,
+                  "after_residual": false,
+                  "starts": 2
+                }
+              ]
+            }
+          }
+        }
+      ],
+      [
+        {
+          "set": "Tyranitar @ Smooth Rock  \nAbility: Sand Stream  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 SpD  \nAdamant Nature  \n- Rock Slide  \n- Crunch  \n- Low Kick  \n- Stone Edge  \n\n",
+          "boosts": {
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 0
+          },
+          "status": null,
+          "hp": null,
+          "mega": false
+        }
+      ]
+    ],
+    "actions": [
+      {
+        "side": 0,
+        "position": 0,
+        "move": "protect",
+        "mega": false
+      },
+      {
+        "side": 1,
+        "position": 0,
+        "move": "tackle",
+        "mega": false
+      }
+    ],
+    "asked": 0,
+    "target": {
+      "side": 0,
+      "position": 0
+    },
+    "state": {
+      "weather": null,
+      "terrain": null,
+      "trick_room": false,
+      "sides": [
+        {
+          "aurora_veil": false,
+          "light_screen": false,
+          "reflect": false,
+          "tailwind": false
+        },
+        {
+          "aurora_veil": false,
+          "light_screen": false,
+          "reflect": false,
+          "tailwind": false
+        }
+      ]
+    },
+    "history": {
+      "turn": 3,
+      "field_last_move": {
+        "kind": "known",
+        "value": "tackle"
+      },
+      "sides": [
+        {
+          "total_fainted": {
+            "kind": "known",
+            "value": 1
+          }
+        },
+        {
+          "pending_slots": {
+            "kind": "known",
+            "value": [
+              {
+                "position": 0,
+                "id": "wish",
+                "started_turn": 2,
+                "after_residual": false
+              }
+            ]
+          }
+        }
+      ],
+      "rng": 1
+    }
+  }
+}

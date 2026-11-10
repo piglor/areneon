@@ -35,7 +35,7 @@ import { type VersionManifest, resolveFormat } from "./formats.ts";
 import { type MechanicsConfig, mechanicsConfigHash } from "./mechanics-config.ts";
 import { type MechanicsContext, type ProbeOutcome, probeMechanics } from "./mechanics-probe.ts";
 import { type ParsedMechanicsQuery } from "./mechanics-query.ts";
-import { MECHANICS_ADAPTER_FORMAT, type MechanicsResult } from "./mechanics-result.ts";
+import { MECHANICS_ADAPTER_FORMAT, type MechanicsResult, type PlainReason, plainReason } from "./mechanics-result.ts";
 import type { PlayerChannel } from "./observation.ts";
 import { loadRulesSnapshot } from "./rules-load.ts";
 import type { RulesSnapshot } from "./rules.ts";
@@ -129,7 +129,7 @@ export interface FeatureConfigs {
 /** One row: a damaging move part of some candidate against one opposing target. */
 export type FeatureRow = { slot: number; move: number; target: number; mega: boolean } & (
   | { kind: "computed"; mean_ppm: number; max_ppm: number; min_ppm: number; ohko_rolls: number | null }
-  | { kind: "unsupported"; reason: Extract<MechanicsResult, { kind: "unsupported" }>["reason"] }
+  | { kind: "unsupported"; reason: PlainReason }
 );
 
 export interface CandidateFeatures {
@@ -312,11 +312,11 @@ export function candidateFeatures(
 /** The values of a computed damage answer or the probe's closed reason, the part of a row every damage-based array shares. */
 export type DamageValues =
   | { kind: "computed"; mean_ppm: number; max_ppm: number; min_ppm: number; ohko_rolls: number | null }
-  | { kind: "unsupported"; reason: Extract<MechanicsResult, { kind: "unsupported" }>["reason"] };
+  | { kind: "unsupported"; reason: PlainReason };
 
 /** Integers from the engine's rolls, or the probe's closed reason. */
 export function damageValues(result: MechanicsResult | null): DamageValues {
-  if (result?.kind === "unsupported") return { kind: "unsupported", reason: result.reason };
+  if (result?.kind === "unsupported") return { kind: "unsupported", reason: plainReason(result.reason) };
   if (result?.kind !== "computed" || result.answer.kind !== "damage") throw new DamageAwareError("the probe gave no damage answer to a damage query");
   const { no_crit: rolls, hp_current: hp, ko } = result.answer;
   return {

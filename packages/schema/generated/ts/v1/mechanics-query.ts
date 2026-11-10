@@ -7,6 +7,108 @@
  * via the `definition` "Paste".
  */
 export type Paste = string;
+/**
+ * activeMoveActions: the move actions it has run since it switched in (before the asked action).
+ */
+export type CountFact = KnownCount | UnknownCount;
+/**
+ * A non-negative count.
+ *
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "Count".
+ */
+export type Count = number;
+/**
+ * The stall condition's counter (the engine's own: 0 is no stall volatile).
+ */
+export type CountFact1 = KnownCount | UnknownCount;
+/**
+ * timesAttacked.
+ */
+export type CountFact2 = KnownCount | UnknownCount;
+/**
+ * hurtThisTurn is set.
+ */
+export type BoolFact = KnownBool | UnknownBool;
+/**
+ * attackedBy: the Pokemon that hit it this turn.
+ */
+export type AttackersFact = KnownAttackers | UnknownAttackers;
+/**
+ * moveLastTurnResult is false.
+ */
+export type BoolFact1 = KnownBool | UnknownBool;
+/**
+ * statsRaisedThisTurn.
+ */
+export type BoolFact2 = KnownBool | UnknownBool;
+/**
+ * statsLoweredThisTurn.
+ */
+export type BoolFact3 = KnownBool | UnknownBool;
+/**
+ * ateBerry.
+ */
+export type BoolFact4 = KnownBool | UnknownBool;
+/**
+ * lastItem: the engine's id of the last item it used or ate, or null.
+ */
+export type IdFact = KnownId | UnknownId;
+/**
+ * moveSlots[].used: the ids of its moves it has used since it switched in.
+ */
+export type IdsFact = KnownIds | UnknownIds;
+/**
+ * Volatiles it holds, with their ages.
+ */
+export type VolatilesFact = KnownVolatiles | UnknownVolatiles;
+/**
+ * battle.lastMove: the engine's id of the battle's last move, or null.
+ */
+export type IdFact1 = KnownId | UnknownId;
+/**
+ * side.totalFainted.
+ */
+export type CountFact3 = KnownCount | UnknownCount;
+/**
+ * The timed slot conditions pending on the side.
+ */
+export type SlotsFact = KnownSlots | UnknownSlots;
+/**
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "CountFact".
+ */
+export type CountFact4 = KnownCount | UnknownCount;
+/**
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "BoolFact".
+ */
+export type BoolFact5 = KnownBool | UnknownBool;
+/**
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "IdFact".
+ */
+export type IdFact2 = KnownId | UnknownId;
+/**
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "AttackersFact".
+ */
+export type AttackersFact1 = KnownAttackers | UnknownAttackers;
+/**
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "IdsFact".
+ */
+export type IdsFact1 = KnownIds | UnknownIds;
+/**
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "VolatilesFact".
+ */
+export type VolatilesFact1 = KnownVolatiles | UnknownVolatiles;
+/**
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "SlotsFact".
+ */
+export type SlotsFact1 = KnownSlots | UnknownSlots;
 
 /**
  * A question to the mechanics probe (ADR-016 section 2): declared sets and declared state, never a battle. The probe asks the pinned engine on a scenario battle built from them; it takes no Battle, BattleRecord, OmniscientLog, PlayerChannel or opponent's real set, and an opponent's set in an analysis is stated here as an assumption. Sets are PokePaste in the engine's canonical form (as importPaste accepts it), one Pokemon per set. State uses engine ids; boosts are absolute stages set after the battle starts, so a switch-in effect is replaced by the declared value, never added silently. data_class is synthetic or private: a query holding a private set is private and is never committed. query_hash is the SHA-256 of this document's JCS bytes. A document that fails this schema is not a query: the CLI reports an error and writes no result.
@@ -22,9 +124,9 @@ export interface MechanicsQuery {
    */
   format_id: string;
   /**
-   * The question, tagged by kind: stats (the six stats of one set), speed_order (the turn order of up to two Pokemon per side) or damage (two 16-roll vectors and the KO counts of one move).
+   * The question, tagged by kind: stats (the six stats of one set), speed_order (the turn order of up to two Pokemon per side), damage (two 16-roll vectors and the KO counts of one move) or move_outcome (whether a move works and with what chance).
    */
-  query: StatsQuery | SpeedOrderQuery | DamageQuery;
+  query: StatsQuery | SpeedOrderQuery | DamageQuery | MoveOutcomeQuery;
 }
 /**
  * The six stats of one set at the format's level.
@@ -59,6 +161,7 @@ export interface SpeedOrderQuery {
    */
   actions: [Action, ...Action[]];
   state: FieldState;
+  history?: BattleHistory;
 }
 /**
  * One Pokemon with its declared state.
@@ -81,6 +184,7 @@ export interface Combatant {
    * True when the Pokemon has Mega Evolved or does so this turn, as the query kind says.
    */
   mega: boolean;
+  history?: CombatantHistory;
 }
 /**
  * Absolute stat stages, set after the battle starts.
@@ -94,6 +198,190 @@ export interface Boosts {
   spa: number;
   spd: number;
   spe: number;
+}
+/**
+ * The history facts of one Pokemon (ADR-022 erratum E-22.5.2), each declared through the engine's own field. A fact left out keeps the scenario's fresh value. Opponent PP is never declared.
+ *
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "CombatantHistory".
+ */
+export interface CombatantHistory {
+  move_actions?: CountFact;
+  stall_counter?: CountFact1;
+  times_attacked?: CountFact2;
+  hurt_this_turn?: BoolFact;
+  attacked_by?: AttackersFact;
+  last_move_failed?: BoolFact1;
+  stats_raised_this_turn?: BoolFact2;
+  stats_lowered_this_turn?: BoolFact3;
+  ate_berry?: BoolFact4;
+  last_item?: IdFact;
+  moves_used?: IdsFact;
+  volatiles?: VolatilesFact;
+}
+/**
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "KnownCount".
+ */
+export interface KnownCount {
+  kind: "known";
+  value: Count;
+}
+/**
+ * The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).
+ *
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "UnknownCount".
+ */
+export interface UnknownCount {
+  kind: "unknown";
+  /**
+   * @minItems 2
+   * @maxItems 2
+   */
+  ends: [Count, Count, ...Count[]];
+}
+/**
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "KnownBool".
+ */
+export interface KnownBool {
+  kind: "known";
+  value: boolean;
+}
+/**
+ * The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).
+ *
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "UnknownBool".
+ */
+export interface UnknownBool {
+  kind: "unknown";
+  /**
+   * @minItems 2
+   * @maxItems 2
+   */
+  ends: [boolean, boolean, ...boolean[]];
+}
+/**
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "KnownAttackers".
+ */
+export interface KnownAttackers {
+  kind: "known";
+  /**
+   * @maxItems 4
+   */
+  value: Attacker[];
+}
+/**
+ * A Pokemon that hit the declared Pokemon this turn: its side and position in the query's sides, and the damage it dealt (the engine's attackedBy entry).
+ *
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "Attacker".
+ */
+export interface Attacker {
+  side: number;
+  position: number;
+  damage: Count;
+}
+/**
+ * The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).
+ *
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "UnknownAttackers".
+ */
+export interface UnknownAttackers {
+  kind: "unknown";
+  /**
+   * @minItems 2
+   * @maxItems 2
+   */
+  ends: [Attacker[], Attacker[], ...Attacker[][]];
+}
+/**
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "KnownId".
+ */
+export interface KnownId {
+  kind: "known";
+  value: string | null;
+}
+/**
+ * The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).
+ *
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "UnknownId".
+ */
+export interface UnknownId {
+  kind: "unknown";
+  /**
+   * @minItems 2
+   * @maxItems 2
+   */
+  ends: [string | null, string | null, ...(string | null)[]];
+}
+/**
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "KnownIds".
+ */
+export interface KnownIds {
+  kind: "known";
+  /**
+   * @maxItems 4
+   */
+  value: string[];
+}
+/**
+ * The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).
+ *
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "UnknownIds".
+ */
+export interface UnknownIds {
+  kind: "unknown";
+  /**
+   * @minItems 2
+   * @maxItems 2
+   */
+  ends: [string[], string[], ...string[][]];
+}
+/**
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "KnownVolatiles".
+ */
+export interface KnownVolatiles {
+  kind: "known";
+  /**
+   * @maxItems 8
+   */
+  value: VolatileEntry[];
+}
+/**
+ * A volatile the Pokemon holds, added through the engine's own addVolatile. started_turn and after_residual date it as the world facts do; starts (default 1) is how many times the engine's start handler ran (a stacking volatile such as Stockpile restarts once per layer).
+ *
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "VolatileEntry".
+ */
+export interface VolatileEntry {
+  id: string;
+  started_turn: Count;
+  after_residual: boolean;
+  starts?: number;
+}
+/**
+ * The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).
+ *
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "UnknownVolatiles".
+ */
+export interface UnknownVolatiles {
+  kind: "unknown";
+  /**
+   * @minItems 2
+   * @maxItems 2
+   */
+  ends: [VolatileEntry[], VolatileEntry[], ...VolatileEntry[][]];
 }
 /**
  * One Pokemon's action this turn.
@@ -153,6 +441,73 @@ export interface SideState {
   tailwind: boolean;
 }
 /**
+ * History facts of the battle and its sides, declared through the engine's own fields (ADR-022 erratum E-22.5.3). Optional on every kind; a query without it keeps its bytes and its answer.
+ *
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "BattleHistory".
+ */
+export interface BattleHistory {
+  /**
+   * A non-negative count.
+   */
+  turn?: number;
+  field_last_move?: IdFact1;
+  /**
+   * Side 0 then side 1.
+   *
+   * @minItems 2
+   * @maxItems 2
+   */
+  sides?: [SideHistory, SideHistory, ...SideHistory[]];
+}
+/**
+ * The history facts of one side.
+ *
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "SideHistory".
+ */
+export interface SideHistory {
+  total_fainted?: CountFact3;
+  pending_slots?: SlotsFact;
+}
+/**
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "KnownSlots".
+ */
+export interface KnownSlots {
+  kind: "known";
+  /**
+   * @maxItems 4
+   */
+  value: SlotEntry[];
+}
+/**
+ * A timed slot condition (Wish, Future Sight) at a position of a side, started at started_turn.
+ *
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "SlotEntry".
+ */
+export interface SlotEntry {
+  position: number;
+  id: string;
+  started_turn: Count;
+  after_residual: boolean;
+}
+/**
+ * The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).
+ *
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "UnknownSlots".
+ */
+export interface UnknownSlots {
+  kind: "unknown";
+  /**
+   * @minItems 2
+   * @maxItems 2
+   */
+  ends: [SlotEntry[], SlotEntry[], ...SlotEntry[][]];
+}
+/**
  * One move from the attacker into the defender.
  *
  * This interface was referenced by `MechanicsQuery`'s JSON-Schema
@@ -167,4 +522,45 @@ export interface DamageQuery {
    */
   move: string;
   state: FieldState;
+  history?: BattleHistory;
+}
+/**
+ * Whether the asked action's move works, and with what chance, given the other actions queued this turn (one opposing-action branch). The engine's own move step runs for the asked action with a random source that answers every chance with success and records each (n, d): the precondition chance is the product of the draws made before the hit step, the hit chance the accuracy draw of the target. A move that never reaches its hit step fails.
+ *
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "MoveOutcomeQuery".
+ */
+export interface MoveOutcomeQuery {
+  kind: "move_outcome";
+  /**
+   * Side 0 then side 1, one or two Pokemon each.
+   *
+   * @minItems 2
+   * @maxItems 2
+   */
+  sides: [[Combatant, ...Combatant[]], [Combatant, ...Combatant[]], ...[Combatant, ...Combatant[]][]];
+  /**
+   * The actions queued this turn, the asked one included. The engine's own order decides which stay in the queue after the asked one.
+   *
+   * @minItems 1
+   * @maxItems 4
+   */
+  actions: [Action, ...Action[]];
+  /**
+   * The index in actions of the asked action (a move).
+   */
+  asked: number;
+  target: TargetRef;
+  state: FieldState;
+  history?: BattleHistory;
+}
+/**
+ * One declared Pokemon: its side and its index in the side's list.
+ *
+ * This interface was referenced by `MechanicsQuery`'s JSON-Schema
+ * via the `definition` "TargetRef".
+ */
+export interface TargetRef {
+  side: number;
+  position: number;
 }
