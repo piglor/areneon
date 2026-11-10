@@ -115,10 +115,10 @@ describe("Protect: the stall counter and the action still to come", () => {
     expect(answer({ actions: [move(0, "protect"), tackle], target: { side: 1, position: 0 } })).toEqual(PASSES);
   });
 
-  it("Wide Guard, a move of a side, has no accuracy step: its first hit is its hit step, and it reads the stall counter and the queue as Protect does", () => {
+  it("Wide Guard, a move of a side, has no accuracy step: its first hit is its hit step; it reads the queue and, in this engine's data, not the stall counter", () => {
     const guard = (own_history?: unknown, others = [tackle]) => ({ actions: [move(0, "wideguard"), ...others], target: { side: 0, position: 0 }, ...(own_history === undefined ? {} : { own_history }) });
     expect(answer(guard())).toEqual(PASSES);
-    expect(answer(guard({ stall_counter: known(3) }))).toEqual({ precondition: "chance", precondition_ppm: 333_333, hit_ppm: 1_000_000 });
+    expect(answer(guard({ stall_counter: known(3) }))).toEqual(PASSES);
     expect(answer(guard(undefined, []))).toEqual(FAILS);
   });
 
