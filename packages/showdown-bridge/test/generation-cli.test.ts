@@ -150,7 +150,7 @@ describe("a population run (ADR-021 slice 4)", () => {
   });
 
   it("forwards its own flags, one --member per member, to a further game process and none of its internal ones", () => {
-    const flagsOf = forwardedFlags({ config: "c.json", member: ["m0,x", "m1,y"], "policy-workers": "2", out: "o", shard: "1/2", "episodes-dir": "e", profile: true, calibrate: undefined });
+    const flagsOf = forwardedFlags({ config: "c.json", member: ["m0,x", "m1,y"], "policy-workers": "2", out: "o", shard: "1/2", "episodes-dir": "e", profile: true, calibrate: true, quiet: false });
     expect(flagsOf).toEqual(["--config", "c.json", "--member", "m0,x", "--member", "m1,y", "--policy-workers", "2"]);
   });
 
