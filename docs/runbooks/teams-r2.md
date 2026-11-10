@@ -44,7 +44,7 @@ Create an R2 API token with **object read and write**, scoped to **this bucket o
 1. Create the environment `teams-public` (Settings, Environments) with **required reviewers** (the owner) and restrict deployment to the `main` branch.
 2. In that environment add the secrets `TEAMS_R2_ACCESS_KEY_ID`, `TEAMS_R2_SECRET_ACCESS_KEY` and `TEAMS_R2_ENDPOINT_URL` (`https://<account id>.r2.cloudflarestorage.com`).
 3. Add the repository variable `TEAMS_R2_BUCKET` (the bucket name; not a secret).
-4. Last, add the repository variable `TEAMS_PUBLISH_ENABLED` with the value `true`. **Until this variable exists the publish job is skipped**, and without the environment's secrets and bucket variable it verifies the plan and then does nothing (no attestation, Release or upload), so a half-finished setup cannot publish.
+4. Last, add the repository variable `TEAMS_PUBLISH_ENABLED` with the value `true`. **Until this variable exists the publish job is skipped**, and with it set but the environment's secrets or the bucket variable missing the publish job **fails** with a message naming the empty value (nothing is uploaded, attested or released), so a half-finished setup can neither publish nor look green. The credentials are visible only to the verify and upload steps.
 
 ## 6. Run the workflow
 
@@ -52,7 +52,7 @@ Actions, `teams-publish`, Run workflow (on `main`) with the dataset directory an
 
 1. `build` (x86-64 and arm64): writes the snapshot with the pinned DuckDB tool (`--require-pinned`), reads the shards back against the dataset byte for byte and writes a report of the logical hashes.
 2. `check`: the two reports must agree (the two-platform check), then plans the publication (SHA-256 of every shard and of the manifest).
-3. `publish` (after your approval): verifies the plan again, attests the manifest, creates the Release `teams-<snapshot_hash>` and uploads the shards and then the manifest. Rerunning is safe: an existing identical object counts as present; different bytes under a key are refused.
+3. `publish` (after your approval): verifies the plan again, uploads the shards and then the manifest to R2, attests the manifest and only then creates the Release `teams-<snapshot_hash>`, so a Release never exists for a snapshot that is not in R2. Rerunning is safe: an existing identical object counts as present; different bytes under a key are refused; an existing Release is accepted only if its asset's SHA-256 equals the plan's `manifest_sha256`, else the job fails. The `check` job also requires the amd64 report's `logical_snapshot_hash` to equal the released snapshot manifest's.
 
 Above the size bound (ADR-013 section 2) the check compares 16 HMAC-chosen ranges of the draw stream instead of the whole pipeline: `checkPlan` and `comparePlatforms` (`packages/team-dataset/src/publish/`) choose and compare them; the workflow runs the full-pipeline comparison, which is all a fixture-sized dataset needs. Wiring the range digests into the workflow comes with the first dataset above the bound.
 

@@ -10,9 +10,10 @@ name: teams-publish
 #   publish protected environment `teams-public`, skipped until the owner sets
 #           the repository variable TEAMS_PUBLISH_ENABLED to `true` (after
 #           creating the bucket and the environment, docs/runbooks/teams-r2.md).
-#           Verifies the plan again, attests the manifest, creates the Release
-#           `teams-<snapshot_hash>` and uploads the shards with If-None-Match: *.
-#           Without the environment's R2 secrets it does nothing and succeeds.
+#           Verifies the plan again, uploads the shards with If-None-Match: *,
+#           attests the manifest and only then creates the Release
+#           `teams-<snapshot_hash>`. Without the environment's R2 secrets or the
+#           bucket variable it FAILS with a message.
 on:
   workflow_dispatch:
     inputs:
@@ -148,6 +149,14 @@ jobs:
           path: dist/snapshot
       - name: two-platform check
         run: node packages/team-dataset/scripts/teams-publish.ts compare dist/reports/linux-amd64.json dist/reports/linux-arm64.json
+      - name: the released manifest carries the amd64 build's logical snapshot hash
+        run: |
+          a=$(jq -r .logical_snapshot_hash dist/reports/linux-amd64.json)
+          m=$(jq -r .logical_snapshot_hash dist/snapshot/snapshot.json)
+          if [ "$a" != "$m" ]; then
+            echo "::error::the amd64 report's logical_snapshot_hash differs from the teams-snapshot manifest's"
+            exit 1
+          fi
       - name: plan (sha256 of every shard and of the manifest)
         run: node packages/team-dataset/scripts/teams-publish.ts plan --snapshot dist/snapshot
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -167,13 +176,6 @@ jobs:
       contents: write
       id-token: write
       attestations: write
-    env:
-      # Set in the environment by the owner (runbook section 5); empty until then.
-      AWS_ACCESS_KEY_ID: ${{ secrets.TEAMS_R2_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.TEAMS_R2_SECRET_ACCESS_KEY }}
-      AWS_ENDPOINT_URL: ${{ secrets.TEAMS_R2_ENDPOINT_URL }}
-      AWS_DEFAULT_REGION: auto
-      TEAMS_R2_BUCKET: ${{ vars.TEAMS_R2_BUCKET }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -193,29 +195,49 @@ jobs:
           node packages/team-dataset/scripts/teams-publish.ts verify --snapshot dist/snapshot
           tag=teams-$(jq -r .snapshot_hash dist/snapshot/plan.json)
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          if [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ] && [ -n "$AWS_ENDPOINT_URL" ] && [ -n "$TEAMS_R2_BUCKET" ]; then
-            echo "store=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "store=false" >> "$GITHUB_OUTPUT"
-            echo "No R2 credentials or bucket in the environment: nothing is attested, released or uploaded."
-          fi
+      - name: require the R2 credentials and bucket
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.TEAMS_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TEAMS_R2_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL: ${{ secrets.TEAMS_R2_ENDPOINT_URL }}
+          TEAMS_R2_BUCKET: ${{ vars.TEAMS_R2_BUCKET }}
+        run: |
+          for v in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_ENDPOINT_URL TEAMS_R2_BUCKET; do
+            if [ -z "${!v}" ]; then
+              echo "::error::TEAMS_PUBLISH_ENABLED is true but the environment is incomplete: $v is empty (docs/runbooks/teams-r2.md section 5)."
+              exit 1
+            fi
+          done
+      - name: upload the shards and the manifest to R2 (conditional writes, never overwriting)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.TEAMS_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TEAMS_R2_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL: ${{ secrets.TEAMS_R2_ENDPOINT_URL }}
+          AWS_DEFAULT_REGION: auto
+          TEAMS_R2_BUCKET: ${{ vars.TEAMS_R2_BUCKET }}
+        run: node packages/team-dataset/scripts/teams-publish.ts upload --snapshot dist/snapshot --bucket "$TEAMS_R2_BUCKET"
       - name: attest the manifest
-        if: steps.verify.outputs.store == 'true'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/snapshot/release/*.json
-      - name: release the manifest (idempotent per tag)
-        if: steps.verify.outputs.store == 'true'
+      # Last: a Release exists only for a snapshot whose objects are already in R2.
+      - name: release the manifest (idempotent per tag; an existing asset must match the plan)
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.verify.outputs.tag }}
         run: |
-          if gh release view "$TAG" --json isDraft,assets --jq '(.isDraft | not) and ([.assets[].name] | index("'"$TAG"'.json") != null)' | grep -qx true; then
-            echo "$TAG is already released"
+          set -euo pipefail
+          want=$(jq -r .manifest_sha256 dist/snapshot/plan.json)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            mkdir -p dist/existing
+            gh release download "$TAG" --pattern "$TAG.json" --dir dist/existing --clobber
+            got=$(sha256sum "dist/existing/$TAG.json" | cut -d' ' -f1)
+            if [ "$got" != "$want" ]; then
+              echo "::error::Release $TAG exists with an asset whose SHA-256 differs from the plan's manifest_sha256."
+              exit 1
+            fi
+            echo "$TAG is already released with the planned manifest"
           else
             gh release create "$TAG" "dist/snapshot/release/$TAG.json" --target "$GITHUB_SHA" --title "$TAG" \
               --notes "ADR-013 snapshot manifest, attested by teams-publish (build provenance)."
           fi
-      - name: upload the shards and the manifest (conditional writes, never overwriting)
-        if: steps.verify.outputs.store == 'true'
-        run: node packages/team-dataset/scripts/teams-publish.ts upload --snapshot dist/snapshot --bucket "$TEAMS_R2_BUCKET"
