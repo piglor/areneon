@@ -713,11 +713,6 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
     if config.population:
         if args.profile:
             raise LoopError("population: --profile does not apply to a population run")
-        if args.policy_workers != 1 or args.game_processes != 1:
-            raise LoopError(
-                "population: a population generation is played in one process with one worker "
-                "per member; --policy-workers and --game-processes do not apply"
-            )
         pop = PopulationLoop(config, args.run_dir.resolve(), game, player)
         pop.load_processes = load_processes
         pop.load_auto = auto

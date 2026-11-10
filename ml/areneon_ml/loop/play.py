@@ -218,8 +218,9 @@ class NodePlayer:
     def play_population(self, request: PopulationPlayRequest) -> None:
         """One population generation: ``--member m<k>,PREVIEW,BATTLE,POLICY_ID`` per member.
 
-        The play script runs in one process with one worker per member (it refuses
-        ``--game-processes`` and ``--policy-workers``), so the operational counts do not apply.
+        With ``game_processes`` above 1 the games are shared over further game processes, each
+        with ``policy_workers`` workers for every member that plays in its slice (#1333); the
+        generation's files are the same for any counts (operational, and absent at 1).
         """
         self.resource_usage.clear()
         out = self._run(
@@ -237,6 +238,8 @@ class NodePlayer:
                 for arg in ("--member", f"{m.member},{m.preview},{m.battle},{m.policy_id}")
             ),
             *(() if request.past_pool is None else ("--past-pool", str(request.past_pool))),
+            *(("--policy-workers", str(self.policy_workers)) if self.policy_workers != 1 else ()),
+            *(("--game-processes", str(self.game_processes)) if self.game_processes != 1 else ()),
             heap_mb=self.node_heap_mb,
             timeout_s=self.generation_timeout_s,
         )

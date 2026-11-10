@@ -668,7 +668,7 @@ export interface StoredRef {
   behaviour_policy_id: string;
 }
 
-function checkShard(shard: Shard): void {
+export function checkShard(shard: Shard): void {
   if (!Number.isInteger(shard.of) || shard.of < 1 || !Number.isInteger(shard.index) || shard.index < 0 || shard.index >= shard.of) {
     throw new RangeError("a shard is an index below a positive count");
   }
@@ -830,7 +830,7 @@ function labelContext(options: GenerationOptions, client: PolicyClient): LabelCo
 }
 
 /** How long a generation may stand with no live game process and no game in flight (#1100). */
-const IDLE_GRACE_MS = 60_000;
+export const IDLE_GRACE_MS = 60_000;
 
 /**
  * The idle watchdog (#1100): while the other game processes' entries are still awaited, a
@@ -838,7 +838,7 @@ const IDLE_GRACE_MS = 60_000;
  * progress is not going to finish. `tripped` rejects after `graceMs` of that state; it never
  * resolves. Without a `live` probe (one game process) there is nothing to watch.
  */
-function watchIdle(live: (() => number) | undefined, activity: { busy: number }, graceMs: number, awaited: Promise<unknown>): { tripped: Promise<never>; stop: () => void } {
+export function watchIdle(live: (() => number) | undefined, activity: { busy: number }, graceMs: number, awaited: Promise<unknown>): { tripped: Promise<never>; stop: () => void } {
   let timer: ReturnType<typeof setInterval> | undefined;
   let settled = false;
   awaited.then(() => (settled = true), () => (settled = true));

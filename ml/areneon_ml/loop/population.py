@@ -108,6 +108,7 @@ from areneon_ml.loop.warm_start import WarmPair, WarmStartError, load_warm_start
 from areneon_ml.model.encoder import Encoder, encoder_version
 from areneon_ml.model.gamedata import GameData
 from areneon_ml.model.network import MAX_SEED, ROLES, PolicyNetwork, init_network
+from areneon_ml.model.options import sheet_set
 
 #: Index of the ``member-init`` draw that seeds a member's Preview and Battle networks.
 INIT_INDEX = {"preview": 0, "battle": 1}
@@ -205,12 +206,15 @@ class PopulationFrozen:
     members: tuple[MemberFrozen, ...]
     team_hashes: tuple[str, ...]
     temperature_ppm: int | None = None
+    #: The run's candidate feature set hash (ADR-022): in every member's policy id, or None.
+    features: str | None = None
 
     def policy_id(self, member: MemberFrozen) -> str:
         return policy_id(
             member.checkpoints["preview"],
             member.checkpoints["battle"],
             temperature_ppm=self.temperature_ppm,
+            features=self.features,
         )
 
 
@@ -279,8 +283,8 @@ class PopulationLoop:
             raise LoopError("this driver runs a population config; use Loop for a single lineage")
         if config.raw["population"]["exploiters"] != 0:
             raise LoopError("population: exploiter seats are refused until they are built")
-        if features_hash(config) is not None:
-            raise LoopError("population: a run that names candidate features is refused")
+        if sheet_set(config.model.encoder.options) is not None:
+            raise LoopError("population: a run that names an opponent sheet is refused")
         try:
             self.anchor_ids = ladder_write.anchor_ids(config)
         except ladder_write.LadderBuildError as exc:
@@ -406,7 +410,10 @@ class PopulationLoop:
             {r: checkpoint_id(checkpoint_bytes(learner.networks[r], self.game)) for r in ROLES}
             for learner in self._learners.values()
         ]
-        pairs = [policy_id(found["preview"], found["battle"]) for found in ids]
+        pairs = [
+            policy_id(found["preview"], found["battle"], features=features_hash(self.config))
+            for found in ids
+        ]
         if len(set(pairs)) != len(pairs):
             raise LoopError("population: two members start from the same frozen pair")
         work = layout.partial_dir(self.run_dir, 0)
@@ -534,6 +541,7 @@ class PopulationLoop:
             tuple(members),
             tuple(teams["teams"]),
             self.config.generation.temperature_ppm,
+            features_hash(self.config),
         )
 
     # -- the ladder files ----------------------------------------------------
@@ -1082,6 +1090,7 @@ class PopulationLoop:
                     m.checkpoints["preview"],
                     m.checkpoints["battle"],
                     temperature_ppm=self.config.generation.temperature_ppm,
+                    features=features_hash(self.config),
                 ),
                 m.checkpoints["preview"],
                 m.checkpoints["battle"],
@@ -1234,7 +1243,11 @@ class PopulationLoop:
             ),
         )
         return PopulationFrozen(
-            generation, tuple(members), teams, self.config.generation.temperature_ppm
+            generation,
+            tuple(members),
+            teams,
+            self.config.generation.temperature_ppm,
+            features_hash(self.config),
         )
 
 
