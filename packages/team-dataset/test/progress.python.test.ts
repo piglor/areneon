@@ -136,6 +136,32 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     expect(refused.stderr).toMatch(/needs --damage-aware/);
   }, 900_000);
 
+  it("plays the open-sheet twins with --team-sheets open through the Python command: both manifests, a closed-versus-open row, byte-identical on rerun, never pooled (ADR-027 section 5a)", () => {
+    const a = join(dir, "oa.progress");
+    const b = join(dir, "ob.progress");
+    const flags = ["--generation", "1", "--damage-aware", "--damage-aware-budget-minutes", "30", "--team-sheets", "open"];
+    const printed = progress(a, ...flags) as unknown as { generations: { matches: { match_id: string; team_sheets?: string }[]; team_sheets: { rows: { opponent: string; mode: string; closed: { score_ppm: number }; open: { score_ppm: number } }[] } }[] };
+    const done = printed.generations[0] as (typeof printed.generations)[number];
+    const opened = ["actor-rule", "damage-aware", "random-legal"].flatMap((opponent) => ["argmax", "sample"].map((mode) => `open-${opponent}-${mode}`));
+    expect(done.matches.filter((m) => m.team_sheets === "open").map((m) => m.match_id)).toEqual(opened);
+    expect(done.team_sheets.rows.map((r) => [r.opponent, r.mode])).toEqual([["damage-aware@v1", "argmax"], ["damage-aware@v1", "sample"]]);
+    progress(b, ...flags);
+    const files = tree(join(a, gen(1)));
+    expect(tree(join(b, gen(1)))).toEqual(files);
+    for (const file of files) expect(readFileSync(join(a, gen(1), file), "utf8"), file).toBe(readFileSync(join(b, gen(1), file), "utf8"));
+    const record = readProgressEvaluationRecordV2(json<ProgressEvaluationRecordV2>(a, gen(1), "progress.json"));
+    expect(record.game_manifests).toHaveLength(2);
+    const open = readProgressGameRecord(json(a, gen(1), "games", "open-damage-aware-sample-1.json"));
+    const closed = readProgressGameRecord(json(a, gen(1), "games", "damage-aware-sample-1.json"));
+    expect(open.version_manifest.format_id).not.toBe(closed.version_manifest.format_id);
+    expect(open.seed).toBe(closed.seed);
+    // A committed root is kept only for the same kind of request.
+    expect(progress(a, "--generation", "1", "--damage-aware", "--damage-aware-budget-minutes", "30", "--team-sheets", "open").generations.map((g) => g.skipped)).toEqual([true]);
+    const refused = spawnSync(PYTHON, ["-I", "-m", "areneon_ml.loop", "progress", "--run-dir", runDir, "--engine-data", DATA, "--generation", "1", "--damage-aware", "--damage-aware-budget-minutes", "30", "--progress-dir", a], { encoding: "utf8", env, cwd: ROOT });
+    expect(refused.status).toBe(3);
+    expect(refused.stderr).toMatch(/already holds a record with open-sheet matches/);
+  }, 1_200_000);
+
   it("plays damage-aware@v3 through the Python command, twice with byte-identical files, and a lone version is a usage error (#1183)", () => {
     const a = join(dir, "d3a.progress");
     const b = join(dir, "d3b.progress");

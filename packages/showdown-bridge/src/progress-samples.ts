@@ -184,6 +184,18 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       e.matches[0].sheet = { requests: 10 * e.games.length, refused: e.games.length, refusals: [{ code: "reader_flagged", count: e.games.length }] };
       change?.(e);
     });
+  // The open-sheet format (ADR-027 section 5a, ADR-017 erratum E4): the closed match and its open twin, on the same pairs, and both manifests.
+  const openManifest = { ...(evaluation.version_manifest as unknown as Record<string, string>), format_id: "gen9championsvgc2026regmcbo3", ruleset_hash: hexOf("e"), format_rules_hash: hexOf("f") };
+  const canon = (m: Record<string, string>) => JSON.stringify(Object.fromEntries(Object.entries(m).sort()));
+  const manifestsOf = (...manifests: Record<string, string>[]) => manifests.sort((a, b) => (canon(a) < canon(b) ? -1 : 1));
+  const v2Open = (change?: (e: Record<string, any>) => void) =>
+    withV2((e) => {
+      const twin = { ...structuredClone(e.matches[0]), match_id: "open-actor-rule-argmax", team_sheets: "open" };
+      e.matches.push(twin);
+      e.games.push(...e.games.map((g: any) => ({ ...structuredClone(g), match_id: "open-actor-rule-argmax" })));
+      e.game_manifests = manifestsOf(e.version_manifest, openManifest);
+      change?.(e);
+    });
   const v2DamageV3 = () =>
     withV2((e) => {
       renameMatch(e, "damage-aware-v3-argmax");
@@ -381,6 +393,7 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       }),
       "progress-evaluation-record-2/damage-aware-match": v2Damage(),
       "progress-evaluation-record-2/sheet-match": v2Sheet(),
+      "progress-evaluation-record-2/open-match": v2Open(),
       "progress-evaluation-record-2/damage-aware-v3-match": v2DamageV3(),
       "progress-evaluation-record-2/search-match": v2Search(),
       "progress-evaluation-record-2/search-self-no-search-match": v2SearchControl(),
@@ -423,6 +436,9 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-game-record/plan-label-malformed": withShortGame((g) => ((g.game = 1), (g.pair = 0), (g.evaluation_key = ""))),
       "progress-evaluation-record-2/fractional-wins": withV2((e) => (e.matches[0].wins = 0.5)),
       "progress-evaluation-record-2/baseline-fractional-count": v2Damage((e) => (e.games[0].baseline_counts.queries = 0.5)),
+      "progress-evaluation-record-2/open-team-sheets-unknown": v2Open((e) => (e.matches[1].team_sheets = "both")),
+      "progress-evaluation-record-2/open-one-manifest": v2Open((e) => (e.game_manifests = [e.version_manifest])),
+      "progress-evaluation-record-2/open-manifest-extra-field": v2Open((e) => (e.game_manifests[0].note = "x")),
       "progress-evaluation-record-2/sheet-fractional-count": v2Sheet((e) => (e.games[0].sheet.requests = 0.5)),
       "progress-evaluation-record-2/sheet-unknown-field": v2Sheet((e) => (e.games[0].sheet.rate = 1)),
       "progress-evaluation-record-2/search-fractional-count": v2Search((e) => (e.games[0].search.turns = 0.5)),
@@ -486,6 +502,27 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/baseline-on-other-match": withV2((e) => (e.matches[0].baseline = { identity_hash: identity, counts: gameCounts })),
       "progress-evaluation-record-2/baseline-probe-runs-exceed-queries": v2Damage((e) => ((e.games[0].baseline_counts.probe_runs = 13), (e.matches[0].baseline.counts.probe_runs += 4))),
       "progress-evaluation-record-2/baseline-identities-differ": v2DamageBoth((e) => (e.matches[1].baseline.identity_hash = hexOf("8"))),
+      "progress-evaluation-record-2/open-stated-closed": v2Open((e) => (e.matches[0].team_sheets = "closed")),
+      "progress-evaluation-record-2/open-misnamed": v2Open((e) => {
+        e.matches[1].match_id = "random-legal-argmax";
+        e.games.forEach((g: any, i: number) => i >= 4 && (g.match_id = "random-legal-argmax"));
+      }),
+      "progress-evaluation-record-2/open-name-without-field": v2Open((e) => delete e.matches[1].team_sheets),
+      "progress-evaluation-record-2/open-manifests-missing": v2Open((e) => delete e.game_manifests),
+      "progress-evaluation-record-2/manifests-without-open-match": withV2((e) => (e.game_manifests = manifestsOf(e.version_manifest, openManifest))),
+      "progress-evaluation-record-2/open-manifests-unsorted": v2Open((e) => e.game_manifests.reverse()),
+      "progress-evaluation-record-2/open-manifests-lack-closed": v2Open((e) => (e.game_manifests = manifestsOf(openManifest, { ...openManifest, format_id: "gen9championsvgc2026regmcbo5" }))),
+      "progress-evaluation-record-2/open-manifests-one-format": v2Open((e) => (e.game_manifests = manifestsOf(e.version_manifest, { ...e.version_manifest, ruleset_hash: hexOf("e") }))),
+      "progress-evaluation-record-2/open-manifests-other-commit": v2Open((e) => (e.game_manifests = manifestsOf(e.version_manifest, { ...openManifest, showdown_commit: hexOf("1").slice(0, 40) }))),
+      "progress-evaluation-record-2/open-vs-anchor": v2Open((e) => {
+        Object.assign(e.matches[1], { match_id: "open-anchor-g0-argmax", opponent: { kind: "anchor", generation: 0, policy_id: `policy:${hexOf("b")}`, checkpoints: { preview: hexOf("6"), battle: hexOf("7") } } });
+        e.games.forEach((g: any, i: number) => i >= 4 && (g.match_id = "open-anchor-g0-argmax"));
+        e.plan.anchor_games_per_match = 4;
+      }),
+      "progress-evaluation-record-2/open-with-sheet-counts": v2Open((e) => {
+        e.games.forEach((g: any, i: number) => i >= 4 && (g.sheet = structuredClone(sheetGame)));
+        e.matches[1].sheet = { requests: 40, refused: 4, refusals: [{ code: "reader_flagged", count: 4 }] };
+      }),
       "progress-evaluation-record-2/sheet-counts-disagree": v2Sheet((e) => (e.matches[0].sheet.requests += 1)),
       "progress-evaluation-record-2/sheet-row-missing": v2Sheet((e) => delete e.games[0].sheet),
       "progress-evaluation-record-2/sheet-on-rows-only": withV2((e) => (e.games[0].sheet = structuredClone(sheetGame))),

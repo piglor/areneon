@@ -353,3 +353,29 @@ def test_a_search_game_says_what_it_is_and_the_control_game_names_its_opponent(
         page_module.index_page([(1, "search-actor-rule-argmax", 0)], both_seats=[1])
     )
     assert SEARCH_LABEL in index
+
+
+def test_an_open_sheet_game_is_checked_against_the_open_manifest_and_replays(
+    tmp_path: Path,
+) -> None:
+    from tests.ml.progress.test_team_sheets import add_open  # noqa: PLC0415
+
+    run = tmp_path / "run"
+    config = make_run(run, generations=2)
+    root = tmp_path / "run.progress"
+
+    def change(out: Path, request: Any) -> None:
+        make_consistent(out, request)
+        add_open(out, request)
+
+    player = FakeProgressPlayer(config, committed_manifest(run, 0), change, previous=False)
+    progress_generation(run, 1, root, player, GAMES, GAMES, (), 4, team_sheets_open=True)
+    (found,) = games(root, 1, match="open-actor-rule-argmax", games=[0])[:1]
+    assert found.match_id == "open-actor-rule-argmax"
+    assert found.record["version_manifest"]["format_id"] == "gen9championsvgc2026regmcbo3"
+    assert page(found)
+    # the engine data is the closed format's: the progress record's manifest, not the open game's
+    done = command.replay_progress(
+        root, 1, tmp_path / "out", repo=Path(__file__).parents[3], match="open-actor-rule-argmax"
+    )
+    assert done

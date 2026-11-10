@@ -109,7 +109,11 @@ def replay_progress(  # noqa: PLR0913
         selected[0].run_id,
         [Look(g, m, n, keys[(g, m)]) for (g, m), n in shown.items()],
     )
-    manifest = selected[0].record["version_manifest"]
+    # The engine data is the closed format's (an open game's own manifest names the open format,
+    # whose mod and vocabularies are the same): the progress record's version manifest.
+    manifest = layout.read_json(
+        progress_dir / layout.generation_name(generation) / "progress.json"
+    )["version_manifest"]
     table = read_engine_data(
         engine_data or repo / "fixtures" / "showdown" / manifest["format_id"] / "engine-data.json",
         manifest["format_id"],
