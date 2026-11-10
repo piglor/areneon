@@ -29,6 +29,7 @@ export interface VolatileEntry {
   started_turn: number;
   after_residual: boolean;
   starts?: number;
+  moved_before?: boolean;
 }
 export interface SlotEntry {
   position: number;
@@ -281,7 +282,7 @@ function declareFacts(battle: HBattle, mon: HMon, facts: CombatantFacts, stall: 
   for (const volatile of facts.volatiles ?? []) {
     need(battle.dex.conditions.get(volatile.id).exists, "the declared volatile is not an engine condition");
     // A stacking volatile (Stockpile) restarts once per start; each start is the engine's own handler.
-    for (let start = 0; start < (volatile.starts ?? 1); start += 1) addVolatileAt(battle, mon, volatile.id, true);
+    for (let start = 0; start < (volatile.starts ?? 1); start += 1) addVolatileAt(battle, mon, volatile.id, volatile.moved_before ?? true);
     need(mon.volatiles[volatile.id] !== undefined, "the engine refused the declared volatile");
     if (turn !== undefined) {
       const remaining = remainingTurns(mon.volatiles[volatile.id], volatile, turn);

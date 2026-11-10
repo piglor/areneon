@@ -229,13 +229,24 @@ describe("the declared history is in the engine's fields", () => {
     expect(mon.statsRaisedThisTurn && mon.statsLoweredThisTurn && mon.ateBerry).toBe(true);
     expect(mon.lastItem).toBe("sitrusberry");
     expect(mon.moveSlots.filter((slot: any) => slot.used).map((slot: any) => slot.id)).toEqual(["protect"]);
-    // the engine's own length of Taunt less the turns since it began (3 turns, begun at turn 2, now turn 3)
-    expect(mon.volatiles.taunt.duration).toBe(2);
+    // the engine's own length of Taunt (3, one more for a target that had already moved: the default) less the turns since it began (begun at turn 2, now turn 3)
+    expect(mon.volatiles.taunt.duration).toBe(3);
     expect(battle.sides[0].totalFainted).toBe(2);
     expect(battle.lastMove.id).toBe("tackle");
     // the slot condition began at turn 3: the engine's own start handler read that turn
     expect(battle.sides[1].slotConditions[0].wish.startingTurn).toBe(2);
     expect(battle.sides[1].slotConditions[0].wish.hp).toBeGreaterThan(0);
+  });
+
+  it("dates a volatile as the engine's start handler reads it: a target that had not moved gets Taunt's base length", async () => {
+    const { resolveHistory } = await import("../src/mechanics-history.ts");
+    const { q, sets } = fields({ volatiles: known([{ id: "taunt", started_turn: 2, after_residual: false, moved_before: false }]) }, { turn: 3 });
+    const resolved = resolveHistory(q as MechanicsQuery["query"], new Set()).history;
+    const battle: any = declaredOutcomeScenario(engine, scenario, q, sets, { resolved: resolved as never, stall: "stall" });
+    expect(battle.sides[0].pokemon[0].volatiles.taunt.duration).toBe(2);
+    // a volatile that has run out is a refusal
+    const over = resolveHistory(fields({ volatiles: known([{ id: "taunt", started_turn: 1, after_residual: false, moved_before: false }]) }, { turn: 9 }).q as MechanicsQuery["query"], new Set()).history;
+    expect(() => declaredOutcomeScenario(engine, scenario, q, sets, { resolved: over as never, stall: "stall" })).toThrow(MechanicsProbeError);
   });
 
   it("changes nothing when the history declares nothing", () => {

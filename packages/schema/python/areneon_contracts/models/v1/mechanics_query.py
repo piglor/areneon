@@ -133,7 +133,7 @@ class Attacker(BaseModel):
 
 class VolatileEntry(BaseModel):
     """
-    A volatile the Pokemon holds, added through the engine's own addVolatile. started_turn and after_residual date it as the world facts do; starts (default 1) is how many times the engine's start handler ran (a stacking volatile such as Stockpile restarts once per layer).
+    A volatile the Pokemon holds, added through the engine's own addVolatile. started_turn and after_residual date it as the world facts do; starts (default 1) is how many times the engine's start handler ran (a stacking volatile such as Stockpile restarts once per layer); moved_before (default true, as the world builder reads an unsaid fact) says the Pokemon had moved when the volatile began, which the engine's start handler of Taunt reads through the queue.
     """
 
     model_config = ConfigDict(
@@ -143,6 +143,7 @@ class VolatileEntry(BaseModel):
     started_turn: Count
     after_residual: StrictBool
     starts: Annotated[StrictInt | MISSING, Field(ge=1, le=9)] = MISSING
+    moved_before: StrictBool | MISSING = MISSING
 
 
 class SlotEntry(BaseModel):

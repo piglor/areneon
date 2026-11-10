@@ -358,7 +358,7 @@ export interface KnownVolatiles {
   value: VolatileEntry[];
 }
 /**
- * A volatile the Pokemon holds, added through the engine's own addVolatile. started_turn and after_residual date it as the world facts do; starts (default 1) is how many times the engine's start handler ran (a stacking volatile such as Stockpile restarts once per layer).
+ * A volatile the Pokemon holds, added through the engine's own addVolatile. started_turn and after_residual date it as the world facts do; starts (default 1) is how many times the engine's start handler ran (a stacking volatile such as Stockpile restarts once per layer); moved_before (default true, as the world builder reads an unsaid fact) says the Pokemon had moved when the volatile began, which the engine's start handler of Taunt reads through the queue.
  *
  * This interface was referenced by `MechanicsQuery`'s JSON-Schema
  * via the `definition` "VolatileEntry".
@@ -368,6 +368,7 @@ export interface VolatileEntry {
   started_turn: Count;
   after_residual: boolean;
   starts?: number;
+  moved_before?: boolean;
 }
 /**
  * The channel cannot settle the fact (an Illusion, a hit whose source is not shown). The probe asks the query with the fact at each of its two ends; equal answers are kept, different answers are unsupported (history_unknown).

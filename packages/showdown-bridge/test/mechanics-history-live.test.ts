@@ -47,7 +47,7 @@ const FIELD = { weather: null, terrain: null, trick_room: false, sides: [NO_SIDE
 const slotOf = (viewer: number, entry: string): string => `p${(entry.startsWith("own") ? viewer : 1 - viewer) + 1}${entry.split(":")[1]}`;
 
 /** The scenario's history of the live battle's Pokemon in play, read from the facts of one seat. Null when a side's positions do not line up with the scenario's (a side with a gap). */
-function historyOf(facts: HistoryFacts, live: any, seat: number): { sets: any[][]; history: ResolvedHistory; liveMons: any[][] } | null {
+function historyOf(facts: HistoryFacts, live: any, seat: number): { sets: any[][]; history: ResolvedHistory; liveMons: any[][]; undeclared: Set<string> } | null {
   const sets: any[][] = [[], []];
   const liveMons: any[][] = [[], []];
   const combatants: ResolvedHistory["combatants"] = [];
@@ -88,7 +88,14 @@ function historyOf(facts: HistoryFacts, live: any, seat: number): { sets: any[][
   }
   if (sets[0]?.length === 0 || sets[1]?.length === 0) return null;
   // an attacker must be a declared Pokemon of the scenario
-  for (const c of combatants) for (const a of c.facts.attacked_by ?? []) if (sets[a.side]?.[a.position] === undefined) delete c.facts.attacked_by;
+  // an attacker that has left play is no declared Pokemon of the scenario: its entry is not declared and not compared
+  const undeclared = new Set<string>();
+  for (const c of combatants) {
+    if ((c.facts.attacked_by ?? []).some((a) => sets[a.side]?.[a.position] === undefined)) {
+      delete c.facts.attacked_by;
+      undeclared.add(`${c.side}/${c.position}`);
+    }
+  }
   const slots = (label: "own" | "opponent") =>
     Object.entries(facts[label].pending_slot).flatMap(([letter, byId]) => Object.entries(byId).map(([id, began]) => ({ position: letter.charCodeAt(0) - 97, id, started_turn: began.started_turn, after_residual: began.after_residual })));
   const sideSlots = (label: "own" | "opponent", sideIndex: number) => slots(label).filter((slot) => slot.position < (sets[sideIndex] as any[]).length);
@@ -101,7 +108,7 @@ function historyOf(facts: HistoryFacts, live: any, seat: number): { sets: any[][
     }),
     combatants,
   };
-  return { sets, history, liveMons };
+  return { sets, history, liveMons, undeclared };
 }
 
 const engineAttackers = (p: any): string[] => p.attackedBy.filter((a: any) => a.thisTurn && typeof a.damageValue === "number").map((a: any) => String(a.slot)).sort();
@@ -125,7 +132,7 @@ function compareDeclared(scenario: any, live: any, declared: NonNullable<ReturnT
       check(`${at} hurtThisTurn`, s.hurtThisTurn !== null, l.hurtThisTurn !== null && l.hurtThisTurn !== undefined);
       check(`${at} statsRaisedThisTurn`, !!s.statsRaisedThisTurn, !!l.statsRaisedThisTurn);
       check(`${at} statsLoweredThisTurn`, !!s.statsLoweredThisTurn, !!l.statsLoweredThisTurn);
-      check(`${at} attackedBy`, engineAttackers(s), engineAttackers(l));
+      if (!declared.undeclared.has(`${sideIndex}/${position}`)) check(`${at} attackedBy`, engineAttackers(s), engineAttackers(l));
       const combatant = declared.history.combatants.find((c) => c.side === sideIndex && c.position === position);
       if (combatant?.facts.last_move_failed !== undefined) check(`${at} moveLastTurnResult`, s.moveLastTurnResult === false, l.moveLastTurnResult === false);
       if (combatant?.facts.ate_berry !== undefined) check(`${at} ateBerry`, !!s.ateBerry, !!l.ateBerry);
