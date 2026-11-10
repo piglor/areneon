@@ -486,6 +486,18 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "progress directory of its own for a generation already committed",
     )
     progress.add_argument(
+        "--team-sheets",
+        choices=("open",),
+        default=None,
+        help="also play the open twin (open-<match id>, team_sheets: open) of every match "
+        "against a scripted baseline and --versus-run-dir in the engine's open-sheet format "
+        "(ADR-027 section 5a, ADR-017 erratum E4), on the same pairs, seeds and seats; the closed "
+        "matches are unchanged and the two formats are never pooled (the result's team_sheets "
+        "row puts the damage-aware score in both side by side). Not with --preview-ablation, "
+        "--anchors, --previous-matches, --search-mode or --preview-solve; use a progress "
+        "directory of its own for a generation already committed",
+    )
+    progress.add_argument(
         "--damage-aware-budget-minutes",
         type=int,
         help="with --damage-aware: the most wall-clock minutes one damage-aware match may take; "
@@ -652,6 +664,7 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:  # noqa: PLR0912
             modes=modes,
             member=args.member,
             preview_solve=args.preview_solve,
+            team_sheets_open=args.team_sheets == "open",
         )
         for g in generations
     ]
