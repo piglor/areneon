@@ -20,6 +20,7 @@ from typing import Any
 from areneon_contracts.contracts import ContractError, jcs, sha256_hex, validate
 
 from areneon_ml.learner.config import RunConfig
+from areneon_ml.loop.sheet_regimes import SheetRegimeError, check_plan_formats, manifests_problem
 
 VERSION_2 = 2
 
@@ -67,6 +68,8 @@ class LeagueRunRecord:
     opponents: tuple[tuple[str, int], ...]
     forfeit_causes: tuple[tuple[str, int], ...]
     raw: dict[str, Any]
+    #: ``regimes`` (ADR-027 5a), only for a run with ``sheet_regimes``: games per regime.
+    regimes: tuple[int, int] | None = None
 
 
 def read_league_run_record(raw: object, config: RunConfig) -> LeagueRunRecord:
@@ -91,6 +94,7 @@ def read_league_run_record(raw: object, config: RunConfig) -> LeagueRunRecord:
     if "forfeit_causes" in raw and sum(count for _, count in causes) != raw["forfeits"]:
         raise LeagueRecordError("the forfeit causes' counts must sum to forfeits")
     _check_baselines(raw)
+    regimes = _check_regimes(raw, config)
     if raw["run_id"] != config.run_key:
         raise LeagueRecordError(f"run_id {raw['run_id']} is not the config's run key")
     if raw["run_config_hash"] != config.hash:
@@ -118,7 +122,29 @@ def read_league_run_record(raw: object, config: RunConfig) -> LeagueRunRecord:
         opponents=opponents,
         forfeit_causes=causes,
         raw=raw,
+        regimes=regimes,
     )
+
+
+def _check_regimes(raw: dict[str, Any], config: RunConfig) -> tuple[int, int] | None:
+    """The mixed-format fields (ADR-027 5a): both or neither, only for a ``sheet_regimes`` config,
+    the counts sum to games and the manifests are sorted by JCS bytes, each once."""
+    has = ("regimes" in raw, "game_manifests" in raw)
+    if has[0] != has[1]:
+        raise LeagueRecordError("regimes and game_manifests come together or not at all")
+    if has[0] != (config.sheet_regimes is not None):
+        raise LeagueRecordError(
+            "regimes and game_manifests exist exactly for a config with sheet_regimes"
+        )
+    if not has[0]:
+        return None
+    counts = raw["regimes"]
+    if counts["open"] + counts["closed"] != raw["games"]:
+        raise LeagueRecordError("the regimes' counts must sum to games")
+    problem = manifests_problem(raw["game_manifests"], config)
+    if problem is not None:
+        raise LeagueRecordError(problem)
+    return (counts["open"], counts["closed"])
 
 
 def _check_baselines(raw: dict[str, Any], what: str = "") -> None:
@@ -393,6 +419,16 @@ def check_generation_plan(
             raise LeagueRecordError(
                 f"game {index} does not carry the seed the run key gives it ({expected})"
             )
+    try:
+        counts = check_plan_formats(plan, config, record.generation)
+    except SheetRegimeError as exc:
+        raise LeagueRecordError(str(exc)) from exc
+    if (
+        isinstance(record, LeagueRunRecord)
+        and counts
+        and record.regimes != (counts["open"], counts["closed"])
+    ):
+        raise LeagueRecordError("the record's regimes are not the plan's formats")
 
 
 def check_population_plan(record: LeagueRunRecordV2, plan: object, config: RunConfig) -> None:

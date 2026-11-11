@@ -99,6 +99,35 @@
       "items": {
         "$ref": "#/$defs/BaselineRecord"
       }
+    },
+    "game_manifests": {
+      "description": "The version manifests of the games the generation's games were played under (ADR-027 section 5a): present only for a run with sheet_regimes, sorted by their JCS bytes, each once. The closed (target) format's manifest is the one whose format_id is the config's format_id; the others are the open-sheet formats of the same regulation. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/VersionManifest"
+      }
+    },
+    "regimes": {
+      "description": "Games per sheet regime (ADR-027 section 5a): present only for a run with sheet_regimes. open + closed = games; a baseline game counts as closed. The counts equal those of the plan's per-entry formats. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "open",
+        "closed"
+      ],
+      "properties": {
+        "open": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "closed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
     }
   },
   "$defs": {
@@ -252,6 +281,43 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 9007199254740991
+        }
+      }
+    },
+    "VersionManifest": {
+      "description": "Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "showdown_commit",
+        "format_id",
+        "regulation",
+        "ruleset_hash",
+        "format_rules_hash"
+      ],
+      "properties": {
+        "showdown_commit": {
+          "description": "The pinned engine commit.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "format_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$"
+        },
+        "regulation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ruleset_hash": {
+          "description": "SHA-256 of the canonical engine ruleset.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "format_rules_hash": {
+          "description": "SHA-256 of Areneon's format rules record (ADR-007).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
         }
       }
     }
