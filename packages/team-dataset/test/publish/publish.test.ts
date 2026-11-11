@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { InMemoryObjectStore, type ObjectStore, ObjectStoreError } from "@areneon/object-store";
 import { jcsBytes, snapshotHash } from "@areneon/showdown-bridge";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { convertDataset } from "../../src/shards/convert.ts";
 import { DuckdbWriter } from "../../src/shards/duckdb.ts";
 import { runPublishCli } from "../../src/publish/command.ts";
@@ -20,6 +20,9 @@ import { buildPlan, parsePlan, PublishError, readPlan, readSnapshotDir, releaseF
 import { uploadSnapshot } from "../../src/publish/upload.ts";
 import { DATASET_DIR } from "../shards/paths.ts";
 import { labelSet, SHARD_KEY, standInRunner } from "../shards/support.ts";
+
+// a stuck async test fails after 30 s instead of holding the runner (a synchronous loop cannot be interrupted, so the code under test must not have one)
+vi.setConfig({ testTimeout: 30_000 });
 
 const scratch = mkdtempSync(join(tmpdir(), "teams-publish-"));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));

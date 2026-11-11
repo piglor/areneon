@@ -39,9 +39,12 @@ export function checkPlan(totalDraws: number, sizeBound: number, key: string, ra
   const n = Math.ceil(totalDraws / rangeDraws);
   const chosen = new Set<number>();
   if (n <= CHECKED_RANGES) for (let i = 0; i < n; i++) chosen.add(i);
-  for (let attempt = 0; chosen.size < CHECKED_RANGES; attempt++) {
-    const mac = createHmac("sha256", Buffer.from(key, "hex")).update(jcs({ attempt, purpose: "two-platform-range" })).digest();
-    chosen.add(Number(mac.readBigUInt64BE(0) % BigInt(n)));
+  else {
+    // more ranges than are checked: pick distinct ones (with n above CHECKED_RANGES this ends; with n at or below it the loop would never fill)
+    for (let attempt = 0; chosen.size < CHECKED_RANGES; attempt++) {
+      const mac = createHmac("sha256", Buffer.from(key, "hex")).update(jcs({ attempt, purpose: "two-platform-range" })).digest();
+      chosen.add(Number(mac.readBigUInt64BE(0) % BigInt(n)));
+    }
   }
   const ranges = [...chosen].sort((a, b) => a - b).map((i) => ({ first: i * rangeDraws, count: Math.min(rangeDraws, totalDraws - i * rangeDraws) }));
   return { mode: "ranges", ranges };
