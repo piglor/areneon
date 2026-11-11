@@ -201,6 +201,11 @@ describe("refused states and unsupported draws", () => {
     expect(result).toMatchObject({ kind: "unsupported", reason: "random_effect", position: 1 });
   });
 
+  it("is unsupported when a declared volatile draws its length: the position is the Pokemon being declared", () => {
+    const { result } = run({ actions: [move(0, "protect"), tackle], target: { side: 0, position: 0 }, own_history: { volatiles: known([{ id: "confusion", started_turn: 1, after_residual: false }]) }, history: { turn: 2 } });
+    expect(result).toMatchObject({ kind: "unsupported", reason: "random_effect", position: 0 });
+  });
+
   it("is unsupported when the engine draws anything but a chance before the hit step", () => {
     // Present picks its power with the engine's `random(10)` while the move is modified, before any hit step
     const { result } = run({ actions: [move(0, "present")] });

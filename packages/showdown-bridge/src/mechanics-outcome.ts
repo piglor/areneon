@@ -13,7 +13,7 @@
 // means a failure when true (full paralysis, confusion) belongs to the turn-start events, which `useMoveInner` does not run.
 
 import type { Engine, PokemonSet } from "./engine.ts";
-import { firstTarget, need, refusingSource, RandomDraw } from "./mechanics-guard.ts";
+import { need, refusingSource, RandomDraw } from "./mechanics-guard.ts";
 import { declareHistory, type HBattle, type HistoryDeclaration } from "./mechanics-history.ts";
 import type { MechanicsQuery } from "./mechanics-query.ts";
 import { type Draw, recordingRandom } from "./mechanics-random.ts";
@@ -41,7 +41,7 @@ interface OutcomeBattle extends ProbeBattle {
 }
 
 /** What the engine's move step had drawn when it reached its hit step. */
-interface Reached {
+export interface Reached {
   /** Every draw before the hit step. */
   pre: Draw[];
   /** Per target, the accuracy draws and whether the target was hit; null for a move of a side or the field (no accuracy step). */
@@ -49,7 +49,7 @@ interface Reached {
 }
 
 /** Thrown from the replaced hit step to end the move step where the probe has read what it needs. */
-class HitStepReached extends Error {
+export class HitStepReached extends Error {
   readonly reached: Reached;
   constructor(reached: Reached) {
     super("the move step reached its hit step");
@@ -58,7 +58,7 @@ class HitStepReached extends Error {
 }
 
 /** The chance of a list of draws, in parts per million, rounded down: the exact product of the engine's own `randomChance` pairs (the caller has refused any other draw). */
-function chancePpm(draws: readonly Draw[]): number {
+export function chancePpm(draws: readonly Draw[]): number {
   let numerator = 1n;
   let denominator = 1n;
   for (const entry of draws) {
@@ -69,8 +69,14 @@ function chancePpm(draws: readonly Draw[]): number {
   return Number((numerator * BigInt(MILLION)) / denominator);
 }
 
-/** A target the accuracy step never met: not hit. */
-const NOT_HIT = { draws: [] as Draw[], hit: false };
+/** The hit chance of the asked target's accuracy window: 0 for a target the accuracy step never met or refused, the product of its draws otherwise (1 million with none). */
+export const hitChance = (window: { draws: Draw[]; hit: boolean } | undefined): number => (window === undefined || !window.hit ? 0 : chancePpm(window.draws));
+
+/** The state the engine's move step had reached, or the error when it ended some other way. */
+export function reachedOf(error: unknown): Reached {
+  if (error instanceof HitStepReached) return error.reached;
+  throw error;
+}
 
 const fails = (): Outcome => ({ kind: "computed", answer: { kind: "move_outcome", precondition: "fails", precondition_ppm: 0, hit_ppm: 0 } });
 
@@ -86,16 +92,6 @@ export function probeMoveOutcome(engine: Engine, scenarioId: string, query: Move
   retireCopies(battle, query);
   const refusing = refusingSource(battle.prng);
   battle.prng = refusing;
-  const resolveTarget = battle.getRandomTarget.bind(battle);
-  battle.getRandomTarget = (...args) => {
-    const current = battle.prng;
-    battle.prng = firstTarget;
-    try {
-      return resolveTarget(...args);
-    } finally {
-      battle.prng = current;
-    }
-  };
   let at = 0;
   const recorder = recordingRandom({ roll: 0, chance: true });
   try {
@@ -148,16 +144,14 @@ export function probeMoveOutcome(engine: Engine, scenarioId: string, query: Move
     try {
       battle.actions.useMoveInner((asked as { own: Queued & { moveid?: string } }).own.moveid as string, user, { target: target as OutcomeMon });
     } catch (error) {
-      if (!(error instanceof HitStepReached)) throw error;
-      reached = error.reached;
+      reached = reachedOf(error);
     }
     if (recorder.draws.some((entry) => entry.kind !== "randomChance")) return { kind: "unsupported", reason: "random_effect", position: query.asked };
     if (reached === null) return fails();
     let hitPpm = MILLION;
     if (reached.targets !== null) {
       // The engine aims a move of its own side at the user whatever target the query names.
-      const own = reached.targets.get(target) ?? reached.targets.get(user) ?? NOT_HIT;
-      hitPpm = own.hit ? chancePpm(own.draws) : 0;
+      hitPpm = hitChance(reached.targets.get(target) ?? reached.targets.get(user));
     }
     const preconditionPpm = chancePpm(reached.pre);
     const precondition = preconditionPpm === MILLION ? "passes" : "chance";
