@@ -687,6 +687,59 @@ describe("extra play modes (--modes, #1044)", () => {
   });
 });
 
+describe("open-sheet matches (--team-sheets open, ADR-027 section 5a, ADR-017 erratum E4)", () => {
+  const OPEN = "gen9championsvgc2026regmcbo3";
+
+  it("plays an open twin of every baseline match on the same pairs, seeds and seats, under the open manifest, and keeps the closed matches' bytes", async () => {
+    const closedOnly = await playProgress(options());
+    const result = await playProgress(options({ open_format: OPEN }));
+    const { record } = result;
+    expect(record.matches.map((m) => m.match_id)).toEqual(["actor-rule-argmax", "actor-rule-sample", "open-actor-rule-argmax", "open-actor-rule-sample", "open-random-legal-argmax", "open-random-legal-sample", "random-legal-argmax", "random-legal-sample"]);
+    expect(record.matches.filter((m) => m.team_sheets === "open").map((m) => m.match_id)).toEqual(record.matches.filter((m) => m.match_id.startsWith("open-")).map((m) => m.match_id));
+    expect(record.game_manifests?.map((m) => m.format_id).sort()).toEqual([OPEN, record.version_manifest.format_id].sort());
+    expect(record.version_manifest).toEqual(closedOnly.record.version_manifest);
+    // the open twin plays the closed match's pairs, seats and seeds
+    const closed = result.game_records.get("actor-rule-argmax-0.json") as ProgressGameRecord;
+    const open = result.game_records.get("open-actor-rule-argmax-0.json") as ProgressGameRecord;
+    expect(open.seed).toBe(closed.seed);
+    expect(open.teams).toEqual(closed.teams);
+    expect(closed.version_manifest.format_id).toBe(record.version_manifest.format_id);
+    expect(open.version_manifest.format_id).toBe(OPEN);
+    expect(open.version_manifest.showdown_commit).toBe(closed.version_manifest.showdown_commit);
+    // the open games carry the engine's team sheets in the omniscient log
+    expect(open.omniscient_log.some((line) => line.startsWith("|showteam|"))).toBe(true);
+    expect(closed.omniscient_log.some((line) => line.startsWith("|showteam|"))).toBe(false);
+    // the closed matches are exactly what an evaluation without the option records
+    for (const match of closedOnly.record.matches) expect(record.matches.find((m) => m.match_id === match.match_id)).toEqual(match);
+    expect(() => readProgressEvaluationRecordV2(JSON.parse(jcs(record as unknown as Json)))).not.toThrow();
+  }, 600_000);
+
+  it("is byte-identical when run twice", async () => {
+    const [a, b] = [await playProgress(options({ open_format: OPEN })), await playProgress(options({ open_format: OPEN }))];
+    expect(jcs(a.record as unknown as Json)).toBe(jcs(b.record as unknown as Json));
+    for (const [name, stored] of a.game_records) expect(jcs(stored as unknown as Json)).toBe(jcs(b.game_records.get(name) as unknown as Json));
+  }, 600_000);
+
+  it("plays the damage-aware baseline in the open format too, under the one identity of its closed-format records", async () => {
+    const setup = damageAwareSetup(engine, FORMAT);
+    const result = await playProgress(options({ open_format: OPEN, damage_aware: { setup, match_budget_ms: 600_000 } }));
+    const byId = new Map(result.record.matches.map((m) => [m.match_id, m]));
+    const closed = byId.get("damage-aware-argmax");
+    const open = byId.get("open-damage-aware-argmax");
+    expect(open?.team_sheets).toBe("open");
+    expect(open?.baseline?.identity_hash).toBe(closed?.baseline?.identity_hash);
+    expect(open?.baseline?.counts.decisions).toBeGreaterThan(0);
+  }, 600_000);
+
+  it("refuses a format that is not the open-sheet variant of the run's, and the options it does not play with", async () => {
+    await expect(playProgress(options({ open_format: FORMAT }))).rejects.toThrow(ProgressError);
+    await expect(playProgress(options({ open_format: "gen9championsvgc2026regmcbo5" }))).rejects.toThrow(/open format is not/);
+    const anchor = { generation: 0, checkpoints: { preview: "3".repeat(64), battle: "4".repeat(64) }, policy_ids: { sample: `policy:${"e".repeat(64)}`, argmax: `policy:${"f".repeat(64)}` }, client: actorClient() };
+    await expect(playProgress(options({ open_format: OPEN, anchors: [anchor], anchor_games: 2 }))).rejects.toThrow(/no anchors and no previous-generation/);
+    await expect(playProgress(options({ open_format: OPEN, ablation: { generation: { generation: 0, checkpoint: "5".repeat(64), policy_id: `policy:${"6".repeat(64)}`, client: actorClient() }, random_policy_id: `policy:${"7".repeat(64)}` } }))).rejects.toThrow(/not played with the Preview ablation/);
+  }, 120_000);
+});
+
 describe("buildProgressGameRecord", () => {
   const played = async (): Promise<PlayedGame> => {
     const team = pool.teams[0]?.sets as never;
