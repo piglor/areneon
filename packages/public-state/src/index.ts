@@ -237,3 +237,13 @@ export const WORLD_FACTS_PATH = join(dirname(fileURLToPath(import.meta.url)), "w
 export function worldFactsSha256(): string {
   return createHash("sha256").update(readFileSync(WORLD_FACTS_PATH)).digest("hex");
 }
+
+export * from "./history-facts.ts";
+
+/** The history-facts module's file path: its own file, so neither the reader's hash nor the world facts' hash moves with it. */
+export const HISTORY_FACTS_PATH = join(dirname(fileURLToPath(import.meta.url)), "history-facts.ts");
+
+/** SHA-256 of the history-facts file's bytes (a part of the `probe-outcome/1` identity beside `HISTORY_FACTS_FORMAT`, ADR-022 E-22.5.3). */
+export function historyFactsSha256(): string {
+  return createHash("sha256").update(readFileSync(HISTORY_FACTS_PATH)).digest("hex");
+}

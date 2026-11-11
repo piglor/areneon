@@ -11,6 +11,94 @@
     "field_conditions": [],
     "format_name": "[Gen 9 Champions] VGC 2026 Reg M-C",
     "gametype": "doubles",
+    "history": {
+      "field_last_move": "heatwave",
+      "history_facts_format": "history-facts/1",
+      "opponent": {
+        "active": {
+          "a": {
+            "attackers_this_turn": [],
+            "hurt_this_turn": false,
+            "last_move_failed": false,
+            "move_actions": 7,
+            "moves_used": null,
+            "name": "Gliscor",
+            "stall_counter": 9,
+            "stats_lowered_this_turn": false,
+            "stats_raised_this_turn": false,
+            "times_attacked": 0,
+            "unknown": false,
+            "volatile_started": {
+              "substitute": {
+                "after_residual": false,
+                "started_turn": 14
+              }
+            }
+          },
+          "b": {
+            "attackers_this_turn": [],
+            "hurt_this_turn": false,
+            "last_move_failed": null,
+            "move_actions": 7,
+            "moves_used": null,
+            "name": "Charizard",
+            "stall_counter": null,
+            "stats_lowered_this_turn": false,
+            "stats_raised_this_turn": false,
+            "times_attacked": 0,
+            "unknown": false,
+            "volatile_started": {}
+          }
+        },
+        "pending_slot": {},
+        "roster": {
+          "Charizard": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Gliscor": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Leafeon": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Venusaur": {
+            "ate_berry": false,
+            "last_item": null
+          }
+        },
+        "total_fainted": 2
+      },
+      "own": {
+        "active": {
+          "a": null,
+          "b": null
+        },
+        "pending_slot": {},
+        "roster": {
+          "Blastoise": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Charizard": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Leafeon": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Venusaur": {
+            "ate_berry": false,
+            "last_item": null
+          }
+        },
+        "total_fainted": 4
+      },
+      "turn": 18
+    },
     "opponent": {
       "condition_turns": {},
       "conditions": {},
@@ -767,7 +855,7 @@
     },
     "player": "p1",
     "request_kind": "move",
-    "schema_version": 2,
+    "schema_version": 3,
     "started": true,
     "terrain": null,
     "turn": 18,

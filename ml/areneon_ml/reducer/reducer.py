@@ -43,6 +43,7 @@ from .errors import (
     UnknownLineError,
     VocabularyError,
 )
+from .history import HistoryTracker
 from .sheet import SheetMon, parse_sheet
 from .state import STAT_KEYS, BattleState, PokemonState, Recent, SideState, zero_boosts
 from .vocab import Vocabulary, to_id
@@ -286,6 +287,8 @@ class _Reducer:
         # The (player, move id) of the side-condition stalling moves (Quick Guard, Wide Guard) whose
         # `-singleturn` was printed this turn: the condition is up for the rest of the turn (#1281).
         self._guards: set[tuple[str, str]] = set()
+        if vocab.history_data is not None:
+            self.state.history = HistoryTracker(player, dict(vocab.history_data))
         for pokemon_set in team:
             self.state.own.roster.append(self._own_mon(pokemon_set))
         names = [mon.name for mon in self.state.own.roster]
@@ -380,6 +383,8 @@ class _Reducer:
                     "an unresolved |split| holds the opponent's secret half", raw
                 )
             line = _parse_line(raw)
+            if self.state.history is not None:
+                self.state.history.feed(raw)
             if line.kind in _NO_STATE:
                 _arity(line, *_NO_STATE[line.kind])
                 if line.kind in _OBSERVED:

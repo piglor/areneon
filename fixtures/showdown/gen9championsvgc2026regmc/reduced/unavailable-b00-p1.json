@@ -11,6 +11,82 @@
     "field_conditions": [],
     "format_name": "[Gen 9 Champions] VGC 2026 Reg M-C",
     "gametype": "doubles",
+    "history": {
+      "field_last_move": "thunderbolt",
+      "history_facts_format": "history-facts/1",
+      "opponent": {
+        "active": {
+          "a": null,
+          "b": null
+        },
+        "pending_slot": {},
+        "roster": {
+          "Abomasnow": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Gengar": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Toucannon": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Vivillon": {
+            "ate_berry": false,
+            "last_item": null
+          }
+        },
+        "total_fainted": 4
+      },
+      "own": {
+        "active": {
+          "a": null,
+          "b": {
+            "attackers_this_turn": [
+              "opponent:b"
+            ],
+            "hurt_this_turn": true,
+            "last_move_failed": false,
+            "move_actions": 7,
+            "moves_used": [
+              "dazzlinggleam",
+              "facade",
+              "thunderbolt"
+            ],
+            "name": "Raichu",
+            "stall_counter": null,
+            "stats_lowered_this_turn": false,
+            "stats_raised_this_turn": false,
+            "times_attacked": 4,
+            "unknown": false,
+            "volatile_started": {}
+          }
+        },
+        "pending_slot": {},
+        "roster": {
+          "Aurorus": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Castform": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Lopunny": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Raichu": {
+            "ate_berry": false,
+            "last_item": null
+          }
+        },
+        "total_fainted": 3
+      },
+      "turn": 12
+    },
     "opponent": {
       "condition_turns": {},
       "conditions": {},
@@ -770,7 +846,7 @@
     },
     "player": "p1",
     "request_kind": "move",
-    "schema_version": 2,
+    "schema_version": 3,
     "started": true,
     "terrain": null,
     "turn": 12,
