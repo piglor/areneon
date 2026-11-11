@@ -4,7 +4,8 @@
 // game rule.
 //
 // A part is read under one opposing-action branch: the branch of the targeted foe's first revealed damaging move, else the `switch`
-// branch (every foe switches). A part with no row (a target location with no living foe, an unknown move) has no reading and counts
+// branch (every foe switches). A revealed move whose branch was cut by the record's `max_branches` (the builder keeps the revealed
+// moves in id order) also falls back to the `switch` branch. A part with no row (a target location with no living foe, an unknown move) has no reading and counts
 // as certain (1,000,000 ppm) and unknown; an `unsupported` row in the chosen branch counts as certain and unknown too, nothing is guessed.
 // A part is `dead` when every one of its branches is computed and gives 0: it cannot work whatever the foes do.
 

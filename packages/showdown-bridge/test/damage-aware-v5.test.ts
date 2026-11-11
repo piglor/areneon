@@ -13,11 +13,14 @@ import { resolveFormat } from "../src/formats.ts";
 import { firstLegal, GOLDEN_FORMAT } from "../src/golden.ts";
 import { withMoveOutcome } from "../src/mechanics-config.ts";
 import { OUTCOME_FORMAT } from "../src/mechanics-outcome.ts";
-import { type MechanicsContext, MechanicsProbeError, type ProbeOutcome } from "../src/mechanics-probe.ts";
+import { type MechanicsContext, MechanicsProbeError, type ProbeOutcome, probeMechanics } from "../src/mechanics-probe.ts";
 import { type ParsedMechanicsQuery } from "../src/mechanics-query.ts";
 import { loadOutcomeConfig } from "../src/outcome-config.ts";
 import { runBattle } from "../src/runner.ts";
 import { goldenWorldFactsData } from "../src/world-facts-data.ts";
+import { playerChannel } from "../src/player-channel.ts";
+import { sheetRegimeOf } from "../src/team-sheet-binding.ts";
+import { candidateFeaturesOutcome } from "../src/candidate-features-outcome.ts";
 import { type AssumedSet } from "../src/damage-aware-assumed-set.ts";
 import type { PublicMon } from "@areneon/public-state";
 import type { PokemonSet } from "../src/engine.ts";
@@ -299,6 +302,154 @@ describe("choosing with the engine's success chance (a stand-in probe with known
     expect(actor.report().situational).toEqual({ protect_no_facts: 0 });
     expect(run(c, sceneFor(c, foeMoves), v4).actor.report()).not.toHaveProperty("success");
   });
+});
+
+describe("an outcome that cannot be read never raises a stalling part's value", () => {
+  /** A scene where a Threatened slot has a stalling move and a damaging move worth less than the Protect weight at a certain chance. */
+  const guardScenes = () =>
+    scenes().flatMap(({ c, foeMoves }) => {
+      const body = bodyOf(c);
+      const own = body.active.flatMap((a, slot) => a.moves.map((m) => ({ slot, id: m.id })));
+      const guard = own.find((m) => stall.has(m.id));
+      const hit = own.find((m) => !stall.has(m.id) && m.slot === guard?.slot && !foeMoves.includes(m.id) && (engine.sim.Dex.mod("champions").moves.get(m.id) as unknown as { category: string }).category !== "Status");
+      return guard === undefined || hit === undefined ? [] : [{ c, foeMoves, guard, hit }];
+    });
+  const at = (c: Captured, choice: string, slot: number): string | undefined => {
+    const part = parseJointChoice(choice)[slot];
+    return part?.kind === "move" ? bodyOf(c).active[slot]?.moves[part.index - 1]?.id : undefined;
+  };
+  /** The probe of `sceneProbe`, except that a stalling move's outcome is the given one. */
+  const withStallOutcome = (scene: Scene, unread: boolean) => (context: MechanicsContext, query: ParsedMechanicsQuery): ProbeOutcome => {
+    const q = query.query;
+    if (unread && q.kind === "move_outcome" && stall.has((q.actions[0] as { move: string }).move)) {
+      return stubProbe({ override: { move_outcome: { kind: "unsupported", reason: "history_unknown", position: null } as never } })(context, query);
+    }
+    return sceneProbe(scene)(context, query);
+  };
+
+  it("an unsupported (history_unknown) outcome for the stalling move gives the Protect situational value 0, counted; a computed one gives the weight", () => {
+    let checked = 0;
+    for (const { c, foeMoves, guard, hit } of guardScenes()) {
+      const scene = sceneFor(c, foeMoves, { rolls: { ...Object.fromEntries(foeMoves.map((id) => [id, 100])), [hit.id]: 60 } });
+      const known = damageAwareActor(options(v5, { probe: withStallOutcome(scene, false) }));
+      const chosen = known(c.request, c.context) as string;
+      if (at(c, chosen, guard.slot) !== guard.id) continue;
+      const unread = damageAwareActor(options(v5, { probe: withStallOutcome(scene, true) }));
+      const other = unread(c.request, c.context) as string;
+      expect(at(c, other, guard.slot), `request ${c.request.request_seq}`).not.toBe(guard.id);
+      expect(unread.report().success?.stall_unread).toBeGreaterThan(0);
+      expect(known.report().success?.stall_unread).toBe(0);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it("the same when the history module refuses a line of the channel: no stalling move is chosen on the situational value", () => {
+    let checked = 0;
+    for (const { c, foeMoves, guard, hit } of guardScenes()) {
+      const scene = sceneFor(c, foeMoves, { rolls: { ...Object.fromEntries(foeMoves.map((id) => [id, 100])), [hit.id]: 60 } });
+      const known = damageAwareActor(options(v5, { probe: sceneProbe(scene) }));
+      if (at(c, known(c.request, c.context) as string, guard.slot) !== guard.id) continue;
+      // a turn number that goes back: the public reader takes it, the history facts refuse it (every fact is then unknown for every Pokemon)
+      const lines = [...c.context.channel];
+      lines.splice(lines.length - 1, 0, "|turn|0");
+      // the stand-in answers `history_unknown` for a stalling move whose declared counter is unknown, as the probe's two ends rule does
+      const realOutcome = (context: MechanicsContext, query: ParsedMechanicsQuery): ProbeOutcome => {
+        const q = query.query;
+        if (q.kind === "move_outcome" && stall.has((q.actions[0] as { move: string }).move)) {
+          const actor = (q.sides[0] as { history?: { stall_counter?: { kind: string } } }[])[(q.actions[0] as { position: number }).position];
+          if (actor?.history?.stall_counter?.kind === "unknown") return stubProbe({ override: { move_outcome: { kind: "unsupported", reason: "history_unknown", position: null } as never } })(context, query);
+        }
+        return sceneProbe(scene)(context, query);
+      };
+      const refused = damageAwareActor(options(v5, { probe: realOutcome }));
+      const choice = refused(c.request, { ...c.context, channel: lines }) as string;
+      if (refused.report().counts.scored_decisions === 0) continue; // the public reader flagged it first: not this case
+      expect(at(c, choice, guard.slot)).not.toBe(guard.id);
+      expect(refused.report().success?.stall_unread).toBeGreaterThan(0);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+});
+
+describe("Protect, Protect, Protect on the real probe", () => {
+  /** A battle whose p1 lead holds a stalling move, played with that move in slot a every turn; the requests p1 was asked, with their contexts. */
+  async function* spam(): AsyncGenerator<{ captured: Captured[]; guard: string }> {
+    for (const battle of corpus) {
+      // the lead gets a stalling move of its species' pool in its last slot, kept only while the team stays legal
+      const team = withGenders(battle.teams.p1);
+      const lead = team[0] as PokemonSet;
+      const pool = vocabulary.roster.find((entry) => entry.id === toId(lead.species) || entry.id === toId(lead.species.split("-")[0] ?? ""))?.moves ?? [];
+      const guard = lead.moves.map(toId).find((id) => stall.has(id)) ?? pool.find((id) => stall.has(id));
+      if (guard === undefined) continue;
+      if (!lead.moves.map(toId).includes(guard)) {
+        lead.moves[lead.moves.length - 1] = (engine.sim.Dex.mod("champions").moves.get(guard) as { name: string }).name;
+        if ((engine.sim.TeamValidator.get(GOLDEN_FORMAT).validateTeam(structuredClone(team)) ?? []).length > 0) continue;
+      }
+      const out: Captured[] = [];
+      const play = (request: Parameters<typeof firstLegal>[0], context?: Parameters<typeof firstLegal>[1]): string => {
+        if (request.phase === "move") out.push({ request: structuredClone(request), context: { ...(context as NonNullable<typeof context>), channel: [...(context as NonNullable<typeof context>).channel] }, battle });
+        const legal = request.legal as NonNullable<typeof request.legal>;
+        const body = request.request as unknown as Body;
+        const pick = request.phase === "move" && body.active !== undefined ? legal.choices.find((choice) => at(body, choice) === guard) : undefined;
+        return pick ?? (firstLegal(request, context) as string);
+      };
+      const at = (body: Body, choice: string): string | undefined => {
+        const part = parseJointChoice(choice)[0];
+        return part?.kind === "move" ? body.active[0]?.moves[part.index - 1]?.id : undefined;
+      };
+      await runBattle({ engine, formatId: GOLDEN_FORMAT, seed: battle.seed, teams: { p1: team, p2: withGenders(battle.teams.p2) }, actors: { p1: play as never, p2: firstLegal }, maxTurns: 4 });
+      // the first three move requests in which the lead is still the same Pokemon (it holds the stalling move) and none came between them
+      const kept = out.filter((c) => (bodyOf(c).active[0]?.moves ?? []).some((m) => m.id === guard));
+      if (kept.length >= 3 && kept.slice(0, 3).every((c, i) => c.request.request_seq === (kept[0] as Captured).request.request_seq + i)) yield { captured: kept, guard };
+    }
+  }
+
+  it("the second and third use are computed from the declared stall counter (1/3, 1/9), and v5 plays another move when the damage makes that right", async () => {
+    const outcomeConfigs = (c: Captured) => {
+      const channel = playerChannel({ schema_version: 1, data_class: "synthetic", player: c.context.player, lines: c.context.channel }, sheetRegimeOf(engine.commit, GOLDEN_FORMAT));
+      return candidateFeaturesOutcome(engine, { vocabulary, config: v5, mechanics: mechanics5, snapshot, data_class: "synthetic", outcome }, channel, c.context.team as never, (c.request.legal as NonNullable<Captured["request"]["legal"]>).choices.map((choice) => ({ choice, pending: false })));
+    };
+    // a battle in which the lead's stalling move worked twice in a row (a failed use would reset the counter)
+    let found: { played: Captured[]; guard: string; chances: number[] } | null = null;
+    for await (const { captured: played, guard } of spam()) {
+      const chances = played.slice(0, 3).map((c) => {
+        const index = (bodyOf(c).active[0] as Body["active"][number]).moves.findIndex((m) => m.id === guard) + 1;
+        const rows = outcomeConfigs(c).outcomes.filter((r) => r.slot === 0 && r.move === index);
+        expect(rows.length).toBeGreaterThan(0);
+        expect(rows.every((r) => r.kind === "computed")).toBe(true);
+        return Math.max(...rows.map((r) => (r.kind === "computed" ? r.success_ppm : 0)));
+      });
+      if (chances[2] === 111_111) {
+        found = { played, guard, chances };
+        break;
+      }
+    }
+    expect(found).not.toBeNull();
+    const { played, guard, chances } = found as NonNullable<typeof found>;
+    // 1, then 1/3, then 1/9 (from the facts' stall counter, declared in the query)
+    expect(chances).toEqual([1_000_000, 333_333, 111_111]);
+
+    // damage and turn order are the scene's (the foe's revealed moves reach the slot and act first; an own damaging move is worth more than a third of Protect), the outcome is the real probe's
+    for (const c of played.slice(1, 3)) {
+      const state = stateOf(c);
+      const foeMoves = Object.values(state.opponent.slots).flatMap((i) => (i === null ? [] : ((state.opponent.roster[i] as { moves_revealed: string[] }).moves_revealed ?? [])));
+      const body = bodyOf(c);
+      const hit = body.active[0]?.moves.find((m) => !stall.has(m.id) && !foeMoves.includes(m.id) && (engine.sim.Dex.mod("champions").moves.get(m.id) as unknown as { category: string }).category !== "Status");
+      if (hit === undefined || foeMoves.length === 0) continue;
+      const scene = sceneFor(c, foeMoves, { rolls: { ...Object.fromEntries(foeMoves.map((id) => [id, 100])), [hit.id]: 60 } });
+      const probe = (context: MechanicsContext, query: ParsedMechanicsQuery): ProbeOutcome => (query.query.kind === "move_outcome" ? probeMechanics(context, query) : sceneProbe(scene)(context, query));
+      const actor = damageAwareActor(options(v5, { probe }));
+      const choice = actor(c.request, c.context) as string;
+      const part = parseJointChoice(choice)[0];
+      const used = part?.kind === "move" ? body.active[0]?.moves[part.index - 1]?.id : undefined;
+      expect(used, `request ${c.request.request_seq}`).not.toBe(guard);
+      expect(actor.report().success?.parts_scaled).toBeGreaterThan(0);
+      return;
+    }
+    throw new Error("no request with a revealed foe move and a damaging alternative");
+  }, 240_000);
 });
 
 describe("hidden-information invariance and determinism (the real probe)", () => {

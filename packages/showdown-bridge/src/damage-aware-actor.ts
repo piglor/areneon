@@ -115,6 +115,8 @@ export interface SuccessCounts {
   parts_scaled: number;
   /** Move parts with no reading (no outcome row, or an `unsupported` one): counted as certain. */
   parts_unread: number;
+  /** Stalling parts of Threatened slots whose chosen branch had no computed outcome (the history was unknown or the row unsupported): their situational value is 0, as v4's was with no facts. */
+  stall_unread: number;
   /** Candidates left out of the choice because a part of them cannot work in any branch (while another candidate existed). */
   dead_candidates: number;
   /** Requests where the best total was shared and the higher summed success chance decided. */
@@ -235,13 +237,16 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
   // The world facts before the request being answered (feed all but its own line, read, then feed it); null when the facts reader refused.
   let facts: WorldFacts | null = null;
   const situationalCounts: SituationalCounts = { protect_no_facts: 0 };
-  const successCounts: SuccessCounts = { parts_scaled: 0, parts_unread: 0, dead_candidates: 0, chance_ties: 0 };
+  const successCounts: SuccessCounts = { parts_scaled: 0, parts_unread: 0, dead_candidates: 0, chance_ties: 0, stall_unread: 0 };
   // v5 only: the history the player's own channel declares in every damage and speed-order query of the request being answered.
   let currentHistory: HistoryDeclarer | null = null;
   // The feature reading shares the actor's probe memo and counts (a memo keyed by query hash changes no answer), so a query is asked once.
   const probeMemo: ProbeMemo = new Map();
   const featureMemo: FeatureMemo = { results: probeMemo, counts };
-  const view = damageView({ engine, vocabulary, config, v1, mechanics, snapshot, data_class, probe, counts, memo: probeMemo, engine_targets: v1?.target_convention === "engine", ...(scaling ? { history: (sides: Parameters<HistoryDeclarer>[0]) => (currentHistory as HistoryDeclarer)(sides) } : {}), ...(options.assume === undefined ? {} : { assume: options.assume }) });
+  const view = damageView({ engine, vocabulary, config, v1, mechanics, snapshot, data_class, probe, counts, memo: probeMemo, engine_targets: v1?.target_convention === "engine", ...(scaling ? { history: (sides: Parameters<HistoryDeclarer>[0]) => {
+        if (currentHistory === null) throw new DamageAwareError("a success-scaled query was asked before the request's history was declared");
+        return currentHistory(sides);
+      } } : {}), ...(options.assume === undefined ? {} : { assume: options.assume }) });
   const { dex, query, damageOf, combatant, field, ownSlots, assumedFor, statusBlocked, foesOf } = view;
 
   /**
@@ -438,22 +443,34 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
       return typeof id === "string" ? id : null;
     };
     const known = new Map<string, PartSuccess>();
+    const unreadStall = new Set<string>();
+    const success = (slot: number, part: Extract<SlotPart, { kind: "move" }>): PartSuccess => {
+      const key = `${slot}/${part.index}/${part.target}/${part.mega}`;
+      let read = known.get(key);
+      if (read === undefined) {
+        const foes = foesNow();
+        const aimed = part.target !== null && part.target > 0 ? foes.find((foe) => foe.loc === part.target) : [...foes].sort((a, b) => a.loc - b.loc)[0];
+        const revealed = aimed?.assumed.revealed_moves.map((id) => view.dex.moves.get(id)).find((move) => move.exists && move.category !== "Status");
+        read = partSuccess(features.outcomes, { slot, move: part.index, target: part.target, mega: part.mega }, revealed === undefined ? null : revealed.id);
+        if (read.known) successCounts.parts_scaled += 1;
+        else successCounts.parts_unread += 1;
+        known.set(key, read);
+      }
+      return read;
+    };
     return {
-      extra: (slot, part) => situationalScore({ rows, streaks: null, stall, moveId, weights }, slot, part),
-      success: (slot, part) => {
-        const key = `${slot}/${part.index}/${part.target}/${part.mega}`;
-        let read = known.get(key);
-        if (read === undefined) {
-          const foes = foesNow();
-          const aimed = part.target !== null && part.target > 0 ? foes.find((foe) => foe.loc === part.target) : [...foes].sort((a, b) => a.loc - b.loc)[0];
-          const revealed = aimed?.assumed.revealed_moves.map((id) => view.dex.moves.get(id)).find((move) => move.exists && move.category !== "Status");
-          read = partSuccess(features.outcomes, { slot, move: part.index, target: part.target, mega: part.mega }, revealed === undefined ? null : revealed.id);
-          if (read.known) successCounts.parts_scaled += 1;
-          else successCounts.parts_unread += 1;
-          known.set(key, read);
+      // An unread outcome never raises a stalling part's value: with no computed row for the chosen branch (unknown history) the Protect value is 0, v4's fail-safe.
+      extra: (slot, part) => {
+        const value = situationalScore({ rows, streaks: null, stall, moveId, weights }, slot, part);
+        if (value === 0 || part.kind !== "move" || success(slot, part).known) return value;
+        const key = `${slot}/${part.index}`;
+        if (!unreadStall.has(key)) {
+          unreadStall.add(key);
+          successCounts.stall_unread += 1;
         }
-        return read;
+        return 0;
       },
+      success,
     };
   }
 
