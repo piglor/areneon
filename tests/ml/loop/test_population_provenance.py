@@ -133,6 +133,9 @@ def test_the_export_writes_one_record_per_checkpoint_and_the_registry(
             held = manifest_members(copying, g)[m]["training_set_hash"]
             assert sources[held] == sorted(pair(copying, g - 1, m))
     assert registry == jcs(sources_registry(copying))
+    binding = json.loads((out / "provenance.json").read_text())
+    assert binding["sources_hash"] == digest
+    assert set(binding["records"]) == written
 
 
 def test_the_command_prints_the_cumulative_steps(
