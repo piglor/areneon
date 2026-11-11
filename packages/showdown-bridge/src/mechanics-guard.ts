@@ -24,6 +24,6 @@ export const firstTarget = { sample: <T>(items: readonly T[]): T => items[0] as 
 export const refusingSource = (source: object): object => new Proxy(source, { get: (target, key) => (typeof Reflect.get(target, key) === "function" ? draw : Reflect.get(target, key)) });
 
 /** A declared state or action the engine refuses is a `MechanicsProbeError` (the caller's `ProbeRefusal` path), never a crash. */
-export const need = (ok: boolean, what: string): void => {
-  if (!ok) throw new MechanicsProbeError(what);
+export const need = (ok: boolean, what: string, code: string | null = null): void => {
+  if (!ok) throw new MechanicsProbeError(what, code);
 };

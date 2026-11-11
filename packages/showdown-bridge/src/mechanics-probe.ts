@@ -168,7 +168,9 @@ export function probeMechanics(context: MechanicsContext, query: ParsedMechanics
   // The query's history, one resolution per end of an unknown fact (the two ends rule): equal answers are kept, different ones are `unsupported`.
   const variants = historyVariants(query.query);
   const stall = variants.some((variant) => variant !== null) ? stallCondition(engine, query.format_id) : "";
-  const declaration = (resolved: ResolvedHistory | null): HistoryDeclaration | null => (resolved === null ? null : { resolved, stall });
+  // A declared volatile whose start handler draws is asked at both ends of its draws (`low`, then `high`): equal answers are kept.
+  let drew = false;
+  const declaration = (resolved: ResolvedHistory | null): HistoryDeclaration | null => (resolved === null ? null : { resolved, stall, on_draw: () => void (drew = true) });
   const answer = (resolved: ResolvedHistory | null): Outcome => {
     const history = declaration(resolved);
     const asked = query.query;
@@ -185,8 +187,13 @@ export function probeMechanics(context: MechanicsContext, query: ParsedMechanics
     return { kind: "computed", answer: { kind: "stats", stats: statsOf(engine, scenarioId, sets[0] as PokemonSet) } };
   };
   const first = answer(variants[0] as ResolvedHistory | null);
+  const differs = (variant: ResolvedHistory | null): boolean => JSON.stringify(answer(variant)) !== JSON.stringify(first);
   for (const variant of variants.slice(1)) {
-    if (JSON.stringify(answer(variant)) !== JSON.stringify(first)) return done({ kind: "unsupported", reason: "history_unknown", position: null });
+    if (differs(variant)) return done({ kind: "unsupported", reason: "history_unknown", position: null });
+  }
+  // The draws of a declared volatile's start (a confusion's length): the other end of every draw, for every history variant that drew.
+  if (drew) {
+    for (const variant of variants) if (variant !== null && differs({ ...variant, draws: "high" })) return done({ kind: "unsupported", reason: "history_unknown", position: null });
   }
   return done(first);
 }

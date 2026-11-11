@@ -12,11 +12,15 @@
 // corner are covered; other joint interactions of unknown facts are not modelled (ADR-022 E-22.5.3 leaves the combination open). `probeMechanics` keeps equal answers and makes different ones `unsupported` (`history_unknown`).
 
 import type { MechanicsQuery } from "./mechanics-query.ts";
-import { need } from "./mechanics-guard.ts";
+import { DECLARED_FACT } from "./mechanics-error.ts";
+import { need as guard } from "./mechanics-guard.ts";
 import type { EffectState, WBattle, WMon, WSide } from "./world-engine.ts";
-import { addVolatileAt, remainingTurns, writeStallCounter } from "./world-state.ts";
+import { addVolatileAt, remainingTurns, writeLastMove, writeStallCounter } from "./world-state.ts";
 
 type AnyQuery = MechanicsQuery["query"];
+
+/** A refusal of a declared fact: coded, so a caller answers `history_unknown` without reading words. */
+const need = (ok: boolean, what: string): void => guard(ok, what, DECLARED_FACT);
 
 export interface Attacker {
   side: number;
@@ -50,10 +54,13 @@ export interface CombatantFacts {
   ate_berry?: boolean;
   last_item?: string | null;
   moves_used?: string[];
+  last_move?: string | null;
   volatiles?: VolatileEntry[];
 }
 
 export interface ResolvedHistory {
+  /** The end a volatile's start-handler draws are answered at: `low` (the smallest value of each draw, the first end) or `high` (the largest). */
+  draws?: "low" | "high";
   turn?: number;
   field_last_move?: string | null;
   sides: { total_fainted?: number; pending_slots?: SlotEntry[] }[];
@@ -65,11 +72,13 @@ export interface ResolvedHistory {
 export interface HistoryDeclaration {
   resolved: ResolvedHistory;
   stall: string;
+  /** Called when a declared volatile's start handler drew: its answers at the other end of the draws must be asked too. */
+  on_draw?: (() => void) | undefined;
 }
 
 type Fact<T> = { kind: "known"; value: T } | { kind: "unknown"; ends: readonly T[] };
 
-const COMBATANT_FACTS = ["move_actions", "stall_counter", "times_attacked", "hurt_this_turn", "attacked_by", "last_move_failed", "stats_raised_this_turn", "stats_lowered_this_turn", "ate_berry", "last_item", "moves_used", "volatiles"] as const;
+const COMBATANT_FACTS = ["move_actions", "stall_counter", "times_attacked", "hurt_this_turn", "attacked_by", "last_move_failed", "stats_raised_this_turn", "stats_lowered_this_turn", "ate_berry", "last_item", "moves_used", "last_move", "volatiles"] as const;
 
 /** The declared Pokemon of a query in the order a result's positions count them, with the history each carries. */
 function combatantsOf(query: AnyQuery): { side: number; position: number; history: unknown }[] {
@@ -178,6 +187,42 @@ export function historyProblems(query: AnyQuery): string[] {
 
 // ---- the engine's objects, narrowed here so the shared engine types stay as they are ----
 
+/**
+ * Run `start` (a declared volatile's start handler) with a random source that answers its draws at one end: `low` gives the smallest
+ * value of each draw (`random(2, 6)` is 2, `random(n)` is 0, a list's first member), `high` the largest. `on_draw` is told a draw happened,
+ * so the caller asks the other end too: equal answers are kept, different ones are `history_unknown` (the two ends rule applied to the draw).
+ * A `randomChance` answers `true` at BOTH ends (a chance inside a start handler is read as its "yes" once; only the other draws have two ends, so a
+ * start whose outcome depends on a chance is asked at one end of it). Any other method still refuses.
+ */
+export function withStartDraws(battle: HBattle, end: "low" | "high", onDraw: () => void, start: () => void): void {
+  const holder = battle as unknown as { prng: object };
+  const before = holder.prng;
+  const low = end === "low";
+  const answers: Record<string, (...args: unknown[]) => unknown> = {
+    random: (from, to) => {
+      onDraw();
+      if (typeof to === "number" && typeof from === "number") return low ? from : to - 1;
+      // the engine's `random()` is a float in [0, 1), `random(n)` an integer below n
+      return typeof from === "number" ? (low ? 0 : from - 1) : low ? 0 : 1 - Number.EPSILON / 2;
+    },
+    randomChance: () => {
+      onDraw();
+      return true;
+    },
+    sample: (items) => {
+      onDraw();
+      const list = items as unknown[];
+      return low ? list[0] : list[list.length - 1];
+    },
+  };
+  holder.prng = new Proxy(before, { get: (target, key) => (typeof key === "string" && key in answers ? answers[key] : Reflect.get(target, key)) });
+  try {
+    start();
+  } finally {
+    holder.prng = before;
+  }
+}
+
 export interface HMon extends WMon {
   timesAttacked: number;
   hurtThisTurn: number | null;
@@ -208,6 +253,8 @@ export interface HBattle extends WBattle {
 export interface HistoryContext {
   stall: string;
   at(place: number): void;
+  /** Called when a declared volatile's start handler drew (`draws` of the resolved history picks the value). */
+  on_draw?: (() => void) | undefined;
 }
 
 /** Declare the history on the scenario battle. Every value is absolute; nothing declared is left to the scenario's fresh value. */
@@ -230,7 +277,7 @@ export function declareHistory(battle: HBattle, history: ResolvedHistory, contex
     context.at(place);
     const mon = battle.sides[side]?.pokemon[position];
     need(mon !== undefined, "the history names a Pokemon the scenario does not have");
-    declareFacts(battle, mon as HMon, facts, context.stall, history.turn);
+    declareFacts(battle, mon as HMon, facts, context.stall, history.turn, history.draws ?? "low", context.on_draw ?? (() => undefined));
   }
 }
 
@@ -250,7 +297,7 @@ function declareSlot(battle: HBattle, side: HSide, slot: SlotEntry): void {
   need(side.slotConditions[slot.position]?.[slot.id] !== undefined, "the engine refused the declared slot condition");
 }
 
-function declareFacts(battle: HBattle, mon: HMon, facts: CombatantFacts, stall: string, turn: number | undefined): void {
+function declareFacts(battle: HBattle, mon: HMon, facts: CombatantFacts, stall: string, turn: number | undefined, draws: "low" | "high", onDraw: () => void): void {
   if (facts.move_actions !== undefined) mon.activeMoveActions = facts.move_actions;
   if (facts.stall_counter !== undefined) {
     writeStallCounter(mon, stall, facts.stall_counter);
@@ -280,10 +327,20 @@ function declareFacts(battle: HBattle, mon: HMon, facts: CombatantFacts, stall: 
     for (const id of used) need(mon.moveSlots.some((slot) => slot.id === id), "a declared used move is not a move of the Pokemon");
     for (const slot of mon.moveSlots) slot.used = used.has(slot.id);
   }
+  // The last move before the volatiles: the start handlers of Encore and Disable read it.
+  if (facts.last_move !== undefined) {
+    if (facts.last_move === null) {
+      mon.lastMove = null;
+      mon.lastMoveUsed = null;
+    } else {
+      need(battle.dex.moves.get(facts.last_move).exists, "the declared last move of a Pokemon is not an engine move");
+      writeLastMove(battle, mon, facts.last_move);
+    }
+  }
   for (const volatile of facts.volatiles ?? []) {
     need(battle.dex.conditions.get(volatile.id).exists, "the declared volatile is not an engine condition");
     // A stacking volatile (Stockpile) restarts once per start; each start is the engine's own handler.
-    for (let start = 0; start < (volatile.starts ?? 1); start += 1) addVolatileAt(battle, mon, volatile.id, volatile.moved_before ?? true);
+    for (let start = 0; start < (volatile.starts ?? 1); start += 1) withStartDraws(battle, draws, onDraw, () => addVolatileAt(battle, mon, volatile.id, volatile.moved_before ?? true));
     need(mon.volatiles[volatile.id] !== undefined, "the engine refused the declared volatile");
     if (turn !== undefined) {
       const remaining = remainingTurns(mon.volatiles[volatile.id], volatile, turn);

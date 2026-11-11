@@ -306,7 +306,7 @@ export function probeSpeedOrder(engine: Engine, scenarioId: string, query: Speed
   try {
     declare(battle, query, (position) => (at = position));
     if (history !== null) {
-      declareHistory(battle as unknown as HBattle, history.resolved, { stall: history.stall, at: (position) => (at = position) });
+      declareHistory(battle as unknown as HBattle, history.resolved, { stall: history.stall, at: (position) => (at = position), on_draw: history.on_draw });
       restoreStagesAndItems(battle, query);
     }
     const resolved = resolveActions(battle, query, (index) => (at = index));

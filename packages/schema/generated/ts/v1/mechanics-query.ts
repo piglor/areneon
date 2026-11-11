@@ -59,13 +59,17 @@ export type IdFact = KnownId | UnknownId;
  */
 export type IdsFact = KnownIds | UnknownIds;
 /**
+ * lastMove and lastMoveUsed: the engine's id of the move it last used since it switched in, or null (Encore and Disable read it when their volatile starts).
+ */
+export type IdFact1 = KnownId | UnknownId;
+/**
  * Volatiles it holds, with their ages.
  */
 export type VolatilesFact = KnownVolatiles | UnknownVolatiles;
 /**
  * battle.lastMove: the engine's id of the battle's last move, or null.
  */
-export type IdFact1 = KnownId | UnknownId;
+export type IdFact2 = KnownId | UnknownId;
 /**
  * side.totalFainted.
  */
@@ -88,7 +92,7 @@ export type BoolFact5 = KnownBool | UnknownBool;
  * This interface was referenced by `MechanicsQuery`'s JSON-Schema
  * via the `definition` "IdFact".
  */
-export type IdFact2 = KnownId | UnknownId;
+export type IdFact3 = KnownId | UnknownId;
 /**
  * This interface was referenced by `MechanicsQuery`'s JSON-Schema
  * via the `definition` "AttackersFact".
@@ -217,6 +221,7 @@ export interface CombatantHistory {
   ate_berry?: BoolFact4;
   last_item?: IdFact;
   moves_used?: IdsFact;
+  last_move?: IdFact1;
   volatiles?: VolatilesFact;
 }
 /**
@@ -452,7 +457,7 @@ export interface BattleHistory {
    * A non-negative count.
    */
   turn?: number;
-  field_last_move?: IdFact1;
+  field_last_move?: IdFact2;
   /**
    * Side 0 then side 1.
    *
