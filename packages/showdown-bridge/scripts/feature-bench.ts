@@ -2,7 +2,7 @@
 // Episode and progress-game files for reading and writes only the JSON report to --out (or stdout).
 //
 //   node packages/showdown-bridge/scripts/feature-bench.ts --run-dir RUN --generation 50 [--episodes 40] [--progress-dir P --progress-games 20]
-//     [--pools 4,8] [--feature-set probe-damage/1|probe-damage/2] [--out FILE]
+//     [--pools 4,8] [--feature-set probe-damage/1|probe-damage/2|probe-outcome/1] [--out FILE]
 //
 // The report is aggregate counts and milliseconds only. The machine (model, load, cores) and the engine pin are
 // recorded with the figures; a loaded machine makes them pessimistic.
@@ -34,8 +34,8 @@ const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
 const skipped: Skipped = { not_move: 0, unreplayable_games: 0 };
 const skippedProgress: Skipped = { not_move: 0, unreplayable_games: 0 };
 const featureArg = arg("feature-set") ?? "probe-damage/1";
-if (featureArg !== "probe-damage/1" && featureArg !== "probe-damage/2") throw new Error("--feature-set is probe-damage/1 or probe-damage/2");
-const featureSet: "probe-damage/1" | "probe-damage/2" = featureArg;
+if (featureArg !== "probe-damage/1" && featureArg !== "probe-damage/2" && featureArg !== "probe-outcome/1") throw new Error("--feature-set is probe-damage/1, probe-damage/2 or probe-outcome/1");
+const featureSet: "probe-damage/1" | "probe-damage/2" | "probe-outcome/1" = featureArg;
 const spec = { format_id: GOLDEN_FORMAT, data_class: "synthetic" as const, feature_set: featureSet, ...(process.env.SHOWDOWN_DIR ? { showdown_dir: process.env.SHOWDOWN_DIR } : {}) };
 
 // Episodes: an evenly spaced sample of the generation's files, in name order.
@@ -83,6 +83,8 @@ report.generation_estimate = {
   threads_note: "by_threads divides the builder time ideally; measured_speedup gives the pool speed-ups measured on this machine",
   ...estimateWallTime({ play_ms: metrics.phase_ms.play, load_ms: metrics.phase_ms.load, decisions: metrics.counts.decisions }, meanAll, [1, 4, 8, 16]),
 };
+// With the play-time sidecar (#1271) the rows are built once, at play: the builder is counted once (the gate of ADR-022 erratum E-22.3.4 and E-22.5.10 counts it so).
+report.generation_estimate_sidecar = estimateWallTime({ play_ms: metrics.phase_ms.play, load_ms: metrics.phase_ms.load, decisions: metrics.counts.decisions }, meanAll, [1, 4, 8, 16], 1500, 1);
 const est = report.generation_estimate as { control_play_plus_load_ms: number; builder_cpu_ms: number };
 report.measured_speedup = (report.episodes as { pools: { size: number; speedup_x100: number }[] }).pools.map((p) => {
   const total = est.control_play_plus_load_ms + Math.round((est.builder_cpu_ms * 100) / p.speedup_x100);

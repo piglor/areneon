@@ -1,11 +1,13 @@
 // The candidate feature set a run reads, and the builder for it (ADR-022 erratum E-22.3). The play-time actor, the training
 // loader and the row recomputation of the game processes all build rows through this one dispatch, so a set's rows are the
 // same bytes wherever they are made. `probe-damage/1` is `candidateFeatures`, `probe-damage/2` is `candidateFeatures2`, `probe-damage/3` is `candidateFeatures3`,
-// `probe-damage-belief/1` is `candidateFeaturesBelief`.
-import { candidateFeatures, type CandidateFeatures, type FeatureConfigs, type FeatureMemo, featureSetHash, featureSetIdentity, type FeatureSetId, FEATURE_SET, FEATURE_SET_3, FEATURE_SET_BELIEF } from "./candidate-features.ts";
+// `probe-damage-belief/1` is `candidateFeaturesBelief`, `probe-outcome/1` is `candidateFeaturesOutcome`. `isFeatureSetId` does not accept `probe-outcome/1` yet: the wire contract, the run config
+// enums and the encoder (E-22.5 slices H4 and H5) must read it first.
+import { candidateFeatures, type CandidateFeatures, type FeatureConfigs, type FeatureMemo, featureSetHash, featureSetIdentity, type FeatureSetId, FEATURE_SET, FEATURE_SET_3, FEATURE_SET_BELIEF, FEATURE_SET_OUTCOME } from "./candidate-features.ts";
 import { candidateFeaturesBelief, type CandidateFeaturesBelief } from "./candidate-features-belief.ts";
 import { candidateFeatures2, type CandidateFeatures2 } from "./candidate-features-2.ts";
 import { candidateFeatures3, type CandidateFeatures3 } from "./candidate-features-3.ts";
+import { candidateFeaturesOutcome } from "./candidate-features-outcome.ts";
 import type { Candidate } from "./choices.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import type { PlayerChannel } from "./observation.ts";
@@ -34,6 +36,8 @@ export function buildFeatures(
 ): AnyCandidateFeatures {
   if (set === "probe-damage/2") return candidateFeatures2(engine, configs, channel, team, candidates, memo);
   if (set === FEATURE_SET_3) return candidateFeatures3(engine, configs, channel, team, candidates, memo);
+  // The wire and loader types (`TrainingExample`) do not know `outcomes` or `history_unknown` rows until slice H4 moves them: the union above stays the wire's.
+  if (set === FEATURE_SET_OUTCOME) return candidateFeaturesOutcome(engine, configs, channel, team, candidates, memo) as unknown as AnyCandidateFeatures;
   if (set === FEATURE_SET_BELIEF) return candidateFeaturesBelief(engine, configs, channel, team, candidates, memo);
   return candidateFeatures(engine, configs, channel, team, candidates, memo);
 }

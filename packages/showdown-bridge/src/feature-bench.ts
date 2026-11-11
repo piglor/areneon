@@ -177,8 +177,8 @@ export interface RunStats {
   rows_digest: string;
 }
 
-/** The arrays `probe-damage/2` adds to `rows`. */
-const ARRAYS_2 = ["threats", "speeds", "own_priorities", "foe_priorities"] as const;
+/** The arrays `probe-damage/2` adds to `rows` (and `probe-outcome/1`'s `outcomes`). */
+const ARRAYS_2 = ["threats", "speeds", "own_priorities", "foe_priorities", "outcomes"] as const;
 
 export function statsOf(results: readonly FeatureResult[]): RunStats {
   const errors: Record<string, number> = {};
@@ -274,7 +274,7 @@ export async function runBench(spec: FeatureServiceSpec, decisions: readonly Ben
   decisions.forEach((d, k) => {
     const outcome = (results[k] as FeatureResult).outcome;
     if (outcome.kind !== "features") return;
-    addDominated((dominated[d.seat] ??= emptyDominated()), outcome.features, d.chosen);
+    addDominated((dominated[d.seat] ??= emptyDominated()), outcome.features as unknown as Pick<CandidateFeatures, "rows">, d.chosen); // `probe-outcome/1`'s rows add the reason history_unknown: the rate only reads computed rows
   });
   const pools: PoolRun[] = [];
   for (const size of poolSizes) {
@@ -316,10 +316,11 @@ export interface WallTimeEstimate {
  * the control generation at the sample's mean cost per decision (a decision that is not a move request costs
  * nothing, so the mean is over all sample decisions the caller passes), divided over `threads`; the limit is
  * 1.5 times the control's play plus load. Estimate: builder time on otherwise idle threads, no overlap with play.
+ * `passes` is how often the rows are built: 2 without the play-time sidecar (#1271), 1 with it (the rows built at play are kept).
  */
-export function estimateWallTime(control: ControlPhases, meanMsPerDecision: number, threads: readonly number[], limitPermille = 1500): WallTimeEstimate {
+export function estimateWallTime(control: ControlPhases, meanMsPerDecision: number, threads: readonly number[], limitPermille = 1500, passes = 2): WallTimeEstimate {
   const base = control.play_ms + control.load_ms;
-  const cpu = 2 * meanMsPerDecision * control.decisions;
+  const cpu = passes * meanMsPerDecision * control.decisions;
   return {
     control_play_plus_load_ms: base,
     limit_ms: Math.floor((base * limitPermille) / 1000),

@@ -22,14 +22,15 @@
 // Excluded by construction, as in `candidate-features.ts`: the input is a `PlayerChannel`, the player's own team and the
 // candidate strings; no opponent team, hidden verdict, `BattleRecord` or seed is a parameter of anything here.
 import type { PublicFlag, PublicState } from "@areneon/public-state";
-import { type CandidateFeatures, createFeatureMemo, damageRows, damageValuesOf, type DamageValues, type FeatureConfigs, type FeatureMemo, type FeatureRow, featureSetHash, featureSetIdentity, lastRequest, openRequest, refusing } from "./candidate-features.ts";
+import type { HistoryDeclarer } from "./candidate-history.ts";
+import { type CandidateFeatures, createFeatureMemo, damageRows, damageValuesOf, type DamageValues, type FeatureConfigs, type FeatureMemo, type FeatureRow, FEATURE_SET_OUTCOME, featureSetHash, featureSetIdentity, lastRequest, openRequest, refusing } from "./candidate-features.ts";
 import type { Candidate } from "./choices.ts";
 import { parseJointChoice, type SlotPart } from "./damage-aware-choice.ts";
 import type { SpeedOrderAnswer } from "./damage-aware-score.ts";
 import { array, DamageAwareError, type DamageView, type Fighter, type Foe, foeTargetKind, object, type OwnSlot, ProbeRefusal, type SpeedLimit, text } from "./damage-aware-view.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import type { MechanicsQuery } from "./mechanics-query.ts";
-import { type PlainReason, plainReason } from "./mechanics-result.ts";
+import { type PlainReason } from "./mechanics-result.ts";
 import type { PlayerChannel } from "./observation.ts";
 import { loadRulesSnapshot } from "./rules-load.ts";
 
@@ -68,7 +69,10 @@ export interface PartCost {
  * maximum-HP and status-ability queries, asked once for the whole decision), then the four arrays, `priorities` being
  * `own_priorities` and `foe_priorities` together (they share their queries).
  */
-export type CostTrace = Record<"setup" | "rows" | "threats" | "speeds" | "priorities", PartCost>;
+export type CostTrace = Record<"setup" | "rows" | "threats" | "speeds" | "priorities", PartCost> & {
+  /** `probe-outcome/1` only: the `outcomes` array (absent for the other sets, so their traces keep their keys). */
+  outcomes?: PartCost;
+};
 export const emptyTrace = (): CostTrace => ({ setup: emptyCost(), rows: emptyCost(), threats: emptyCost(), speeds: emptyCost(), priorities: emptyCost() });
 const emptyCost = (): PartCost => ({ queries: 0, probe_runs: 0, ms: 0 });
 
@@ -105,6 +109,11 @@ export interface ArrayContext {
   threats: readonly ThreatRow[];
   /** Every flagged line of the game so far (the belief refuses while any is on record). */
   flags: readonly PublicFlag[];
+  /** The open request's body and its candidates' parsed parts (one list per candidate, one part per active slot). */
+  body: Record<string, unknown>;
+  parsed: readonly SlotPart[][];
+  /** Run `part` and add what it asked of the probe and its time to the cost trace under `name` (a no-op without a trace). */
+  measured: <T>(name: keyof CostTrace, part: () => T) => T;
 }
 export type ExtraArrays<X> = (context: ArrayContext) => X;
 
@@ -129,7 +138,7 @@ export function candidateFeatures2(
  * The shared builder of the sets that carry `/2`'s four arrays: `set` names the identity, `extra` the arrays a set adds (none
  * for `/2`). `extra` is not called for a request with nothing to score; the caller supplies its empty value through `empty`.
  */
-export function buildArrays<S extends typeof FEATURE_SET_2 | "probe-damage/3", X extends object>(
+export function buildArrays<S extends typeof FEATURE_SET_2 | "probe-damage/3" | typeof FEATURE_SET_OUTCOME, X extends object>(
   engine: Engine,
   configs: FeatureConfigs,
   channel: PlayerChannel,
@@ -140,6 +149,7 @@ export function buildArrays<S extends typeof FEATURE_SET_2 | "probe-damage/3", X
   set: S,
   extra: ExtraArrays<X>,
   empty: X = {} as X,
+  history?: HistoryDeclarer,
 ): Omit<CandidateFeatures2, "feature_set"> & { feature_set: S } & X {
   const snapshot = configs.snapshot ?? loadRulesSnapshot(engine.commit);
   const identity = featureSetIdentity(engine, { ...configs, snapshot }, set);
@@ -160,7 +170,7 @@ export function buildArrays<S extends typeof FEATURE_SET_2 | "probe-damage/3", X
   const moveRequest = body.teamPreview === undefined && body.active !== undefined;
   const forcedSwitch = body.teamPreview === undefined && body.active === undefined && body.forceSwitch !== undefined;
   if (!moveRequest && !forcedSwitch) return out();
-  const { view, state, allFlags } = openRequest(engine, configs, snapshot, channel, memo);
+  const { view, state, allFlags } = openRequest(engine, configs, snapshot, channel, memo, history);
 
   /** Run `part`, adding what it asked of the probe and how long it took to `trace` (when one is given). */
   const measured = <T>(name: keyof CostTrace, part: () => T): T => {
@@ -170,7 +180,7 @@ export function buildArrays<S extends typeof FEATURE_SET_2 | "probe-damage/3", X
     try {
       return part();
     } finally {
-      const cost = trace[name];
+      const cost = (trace[name] ??= emptyCost());
       cost.queries += memo.counts.queries - before.queries;
       cost.probe_runs += memo.counts.probe_runs - before.probe_runs;
       cost.ms += performance.now() - started;
@@ -216,7 +226,7 @@ export function buildArrays<S extends typeof FEATURE_SET_2 | "probe-damage/3", X
       threats,
       speeds: measured("speeds", () => speedRows(view, state, entries, variants, living)),
       ...measured("priorities", () => priorityRows(view, state, body, parsed, entries, living)),
-      ...extra({ view, state, entries, variants, asMega, foes: living, threats, flags: allFlags }),
+      ...extra({ view, state, entries, variants, asMega, foes: living, threats, flags: allFlags, body, parsed, measured }),
     });
   });
 }
@@ -244,17 +254,18 @@ function threatRows(view: DamageView, state: PublicState, entries: readonly Entr
 
 /** One `speed_order` query: `own` and `foes` declared, the given actions asked, the field declared with the own side first. */
 function ask(view: DamageView, state: PublicState, own: readonly Fighter[], foes: readonly Fighter[], actions: OrderAction[]): Asked {
-  const sides = [own.map((f) => view.combatant(f)), foes.map((f) => view.combatant(f))] as unknown as Sides;
+  const { sides: declared, history } = view.declared([own, foes]);
+  const sides = declared as unknown as Sides;
   let result: ReturnType<DamageView["queryLimited"]>;
   try {
-    result = view.queryLimited({ kind: "speed_order", sides, actions, state: view.field(state, true) } as SpeedOrderQuery);
+    result = view.queryLimited({ kind: "speed_order", sides, actions, state: view.field(state, true), ...(history === undefined ? {} : { history }) } as SpeedOrderQuery);
   } catch (error) {
     if (!(error instanceof ProbeRefusal)) throw error;
     view.noteRefused(); // #1246: a refused declared state makes these rows unsupported, not the request
     return { kind: "unsupported", reason: "query_kind" };
   }
   if ("limit" in result) return { kind: "unsupported", reason: result.limit };
-  if (result.kind === "unsupported") return { kind: "unsupported", reason: plainReason(result.reason) };
+  if (result.kind === "unsupported") return { kind: "unsupported", reason: view.reasonOf(result.reason) };
   if (result.kind !== "computed" || result.answer.kind !== "speed_order") throw new DamageAwareError("the probe gave no speed order to a speed-order query");
   return { kind: "answer", answer: result.answer as SpeedOrderAnswer };
 }

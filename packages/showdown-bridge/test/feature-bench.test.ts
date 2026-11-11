@@ -55,6 +55,17 @@ describe("statistics", () => {
     expect(stats.arrays).toEqual({ threats: { rows: 4, computed: 2, unsupported: { query_kind: 2 } }, speeds: { rows: 0, computed: 0, unsupported: {} } });
     expect(stats.parts?.threats).toEqual({ queries: 2, probe_runs: 0, ms: 21 });
   });
+  it("counts the outcomes array of probe-outcome/1 beside the others, history_unknown rows included", () => {
+    const outcome = {
+      feature_set: "probe-outcome/1",
+      feature_set_hash: "h",
+      rows: [],
+      outcomes: [{ kind: "computed" }, { kind: "unsupported", reason: "history_unknown" }, { kind: "unsupported", reason: "query_kind" }],
+    };
+    const stats = statsOf([{ ms: 1, counts: { queries: 1, probe_runs: 1, unsupported_queries: 0, probe_refusals: 0 }, parts: { setup: { queries: 0, probe_runs: 0, ms: 0 }, rows: { queries: 0, probe_runs: 0, ms: 0 }, threats: { queries: 0, probe_runs: 0, ms: 0 }, speeds: { queries: 0, probe_runs: 0, ms: 0 }, priorities: { queries: 0, probe_runs: 0, ms: 0 }, outcomes: { queries: 7, probe_runs: 3, ms: 2.4 } }, outcome: { kind: "features", features: outcome as never } }]);
+    expect(stats.arrays?.outcomes).toEqual({ rows: 3, computed: 1, unsupported: { history_unknown: 1, query_kind: 1 } });
+    expect(stats.parts?.outcomes).toEqual({ queries: 7, probe_runs: 3, ms: 2 });
+  });
   it("estimates the generation wall time against 1.5 times the control", () => {
     const e = estimateWallTime({ play_ms: 180_000, load_ms: 20_000, decisions: 10_000 }, 50, [1, 8]);
     expect(e.limit_ms).toBe(300_000);
@@ -64,6 +75,10 @@ describe("statistics", () => {
       { threads: 8, added_ms: 125_000, total_ms: 325_000, ratio_x100: 163, met: false },
     ]);
     expect(estimateWallTime({ play_ms: 180_000, load_ms: 20_000, decisions: 10_000 }, 10, [4]).by_threads[0]).toMatchObject({ met: true });
+    // with the play-time sidecar the builder is counted once
+    const once = estimateWallTime({ play_ms: 180_000, load_ms: 20_000, decisions: 10_000 }, 50, [1, 8], 1500, 1);
+    expect(once.builder_cpu_ms).toBe(500_000);
+    expect(once.by_threads.map((x) => x.ratio_x100)).toEqual([350, 131]);
   });
 });
 

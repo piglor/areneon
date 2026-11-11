@@ -1,0 +1,139 @@
+import { describe, expect, it } from "vitest";
+import { type HistoryFacts, type PokemonHistory, UNSETTLED } from "@areneon/public-state";
+import { historyDeclarer, type HistoryExists } from "../src/candidate-history.ts";
+import type { Fighter } from "../src/damage-aware-view.ts";
+import { type OutcomeConfig, readOutcomeConfig } from "../src/outcome-config.ts";
+
+// The declarations of the history facts, engine-free: hand-built facts and fighters, every branch of the two-ends rule.
+
+const record: OutcomeConfig = readOutcomeConfig({ schema_version: 1, format_id: "f", assumed_branch: "assumed-set-filler", max_branches: 5, unknown_count_end: 20, unknown_item: "sitrusberry", unknown_move: "tackle", volatiles: "declared" });
+const exists: HistoryExists = { condition: (id) => id !== "nothing", move: (id) => id !== "nomove", item: (id) => id !== "noitem" };
+
+const stint = (change: Partial<Extract<PokemonHistory, { unknown: false }>> = {}): PokemonHistory => ({
+  name: "A",
+  unknown: false,
+  move_actions: 2,
+  stall_counter: null,
+  times_attacked: 1,
+  hurt_this_turn: false,
+  attackers_this_turn: [],
+  last_move_failed: false,
+  stats_raised_this_turn: false,
+  stats_lowered_this_turn: true,
+  moves_used: ["tackle"],
+  volatile_started: {},
+  ...change,
+});
+const side = (change: Partial<HistoryFacts["own"]> = {}): HistoryFacts["own"] => ({ total_fainted: 0, active: {}, pending_slot: {}, roster: {}, ...change });
+const facts = (own: Partial<HistoryFacts["own"]>, opponent: Partial<HistoryFacts["own"]> = {}, rest: Partial<HistoryFacts> = {}): HistoryFacts => ({ history_facts_format: "x", turn: 4, field_last_move: null, own: side(own), opponent: side(opponent), ...rest });
+const fighter = (own: boolean, letter: string | null, name: string): Fighter => ({ paste: "p", hp: null, status: null, boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0 }, mega: false, at: { own, letter, name } });
+
+describe("historyDeclarer", () => {
+  it("declares a known stint's facts, own moves_used only, and the roster's berry and last item", () => {
+    const own = fighter(true, "a", "A");
+    const foe = fighter(false, "a", "F");
+    const declare = historyDeclarer(
+      facts(
+        { active: { a: stint() }, roster: { A: { ate_berry: false, last_item: null } } },
+        { active: { a: stint({ moves_used: null, stall_counter: 3, last_move_failed: null }) }, roster: { F: { ate_berry: true, last_item: "oranberry" } } },
+      ),
+      record,
+      exists,
+    );
+    const { combatants, battle } = declare([[own], [foe]]);
+    expect(combatants[0]?.[0]).toEqual({
+      move_actions: { kind: "known", value: 2 },
+      stall_counter: { kind: "known", value: 0 },
+      times_attacked: { kind: "known", value: 1 },
+      hurt_this_turn: { kind: "known", value: false },
+      last_move_failed: { kind: "known", value: false },
+      stats_raised_this_turn: { kind: "known", value: false },
+      stats_lowered_this_turn: { kind: "known", value: true },
+      moves_used: { kind: "known", value: ["tackle"] },
+      ate_berry: { kind: "known", value: false },
+      last_item: { kind: "known", value: null },
+    });
+    const foeFacts = combatants[1]?.[0] as Record<string, unknown>;
+    expect(foeFacts.moves_used).toBeUndefined(); // opponent PP is never declared
+    expect(foeFacts.stall_counter).toEqual({ kind: "known", value: 3 });
+    expect(foeFacts.last_move_failed).toEqual({ kind: "unknown", ends: [false, true] });
+    expect(foeFacts.ate_berry).toEqual({ kind: "known", value: true });
+    expect(foeFacts.last_item).toEqual({ kind: "known", value: "oranberry" });
+    expect(battle?.sides).toEqual([{ total_fainted: { kind: "known", value: 0 } }, { total_fainted: { kind: "known", value: 0 } }]);
+    expect(battle?.turn).toBeUndefined(); // nothing is dated
+    expect(battle?.field_last_move).toEqual({ kind: "known", value: null });
+  });
+
+  it("asks an unsettled Pokemon, a refused channel and an unsettled roster entry at both ends", () => {
+    const own = fighter(true, "a", "A");
+    const foe = fighter(false, "a", "F");
+    const settled = historyDeclarer(facts({ active: { a: { name: "A", unknown: true } }, roster: { A: { ate_berry: null, last_item: UNSETTLED } } }), record, exists)([[own], [foe]]).combatants[0]?.[0] as Record<string, unknown>;
+    expect(settled.move_actions).toEqual({ kind: "unknown", ends: [0, 20] });
+    expect(settled.hurt_this_turn).toEqual({ kind: "unknown", ends: [false, true] });
+    expect(settled.ate_berry).toEqual({ kind: "unknown", ends: [false, true] });
+    expect(settled.last_item).toEqual({ kind: "unknown", ends: [null, "sitrusberry"] });
+    const refused = historyDeclarer(null, record, exists)([[own], [foe]]);
+    expect(refused.combatants[1]?.[0]).toMatchObject({ move_actions: { kind: "unknown", ends: [0, 20] }, last_item: { kind: "unknown", ends: [null, "sitrusberry"] } });
+    expect(refused.battle?.field_last_move).toEqual({ kind: "unknown", ends: [null, "tackle"] });
+    expect(refused.battle?.sides?.[0]).toEqual({ total_fainted: { kind: "unknown", ends: [0, 20] } });
+  });
+
+  it("declares attackers among the query's Pokemon at both ends of the damage, and nothing for attackers it does not hold", () => {
+    const own = fighter(true, "a", "A");
+    const foe = fighter(false, "a", "F");
+    const other = fighter(false, "b", "G");
+    const hit = historyDeclarer(facts({ active: { a: stint({ attackers_this_turn: ["opponent:a", "opponent:c"] }) } }), record, exists)([[own], [foe, other]]).combatants[0]?.[0] as { attacked_by?: unknown };
+    expect(hit.attacked_by).toEqual({ kind: "unknown", ends: [[{ side: 1, position: 0, damage: 0 }], [{ side: 1, position: 0, damage: 20 }]] });
+    const unplaced = historyDeclarer(facts({ active: { a: stint({ attackers_this_turn: null }) } }), record, exists)([[own], [foe, other]]).combatants[0]?.[0] as { attacked_by?: { ends: unknown[][] } };
+    expect(unplaced.attacked_by?.ends[0]).toHaveLength(2); // a hit whose source is unknown: every declared other Pokemon, at both ends
+    const absent = historyDeclarer(facts({ active: { a: stint({ attackers_this_turn: ["opponent:c"] }) } }), record, exists)([[own], [foe]]).combatants[0]?.[0] as { attacked_by?: unknown };
+    expect(absent.attacked_by).toBeUndefined();
+    const fromOwn = historyDeclarer(facts({}, { active: { a: stint({ attackers_this_turn: ["own:a"] }) } }), record, exists)([[own], [foe]]).combatants[1]?.[0] as { attacked_by?: unknown };
+    expect(fromOwn.attacked_by).toEqual({ kind: "unknown", ends: [[{ side: 0, position: 0, damage: 0 }], [{ side: 0, position: 0, damage: 20 }]] });
+    const none = historyDeclarer(facts({ active: { a: stint() } }), record, exists)([[own], [foe]]).combatants[0]?.[0] as { attacked_by?: unknown };
+    expect(none.attacked_by).toBeUndefined();
+  });
+
+  it("dates volatiles and pending slot conditions with the turn, and drops ids the engine does not hold", () => {
+    const own = fighter(true, "a", "A");
+    const foe = fighter(false, "b", "F");
+    const declare = historyDeclarer(
+      facts(
+        { active: { a: stint({ volatile_started: { taunt: { started_turn: 3, after_residual: false }, bide: { started_turn: 2, after_residual: true }, nothing: { started_turn: 1, after_residual: true } } }) }, pending_slot: { a: { wish: { started_turn: 3, after_residual: false, remaining: 1 }, nothing: { started_turn: 1, after_residual: false, remaining: 1 } }, c: { wish: { started_turn: 3, after_residual: false, remaining: 1 } } } },
+        {},
+        { field_last_move: "nomove" },
+      ),
+      record,
+      exists,
+    );
+    const { combatants, battle } = declare([[own], [foe]]);
+    expect((combatants[0]?.[0] as { volatiles?: unknown }).volatiles).toEqual({ kind: "known", value: [{ id: "bide", started_turn: 2, after_residual: true }, { id: "taunt", started_turn: 3, after_residual: false }] });
+    expect(battle?.sides?.[0]?.pending_slots).toEqual({ kind: "known", value: [{ position: 0, id: "wish", started_turn: 3, after_residual: false }] });
+    expect(battle?.turn).toBe(4);
+    expect(battle?.field_last_move).toBeUndefined(); // a last move the engine lacks is not declared
+  });
+
+  it("leaves the volatiles out when the record says omitted, and still dates the pending slots", () => {
+    const own = fighter(true, "a", "A");
+    const foe = fighter(false, "a", "F");
+    const declare = historyDeclarer(facts({ active: { a: stint({ volatile_started: { taunt: { started_turn: 3, after_residual: false } } }) }, pending_slot: { a: { wish: { started_turn: 3, after_residual: false, remaining: 1 } } } }), { ...record, volatiles: "omitted" }, exists);
+    const { combatants, battle } = declare([[own], [foe]]);
+    expect((combatants[0]?.[0] as { volatiles?: unknown }).volatiles).toBeUndefined();
+    expect(battle?.sides?.[0]?.pending_slots).toBeDefined();
+    expect(battle?.turn).toBe(4);
+  });
+
+  it("leaves a placeholder combatant and a benched Pokemon without stint facts", () => {
+    const placeholder: Fighter = { ...fighter(true, "a", "A") };
+    delete placeholder.at;
+    const bench = fighter(true, null, "B");
+    const declare = historyDeclarer(facts({ active: { a: stint() }, roster: { B: { ate_berry: true, last_item: "noitem" } } }), record, exists);
+    const { combatants, battle } = declare([[bench, placeholder], [placeholder]]);
+    expect(combatants[0]?.[0]).toEqual({ ate_berry: { kind: "known", value: true } }); // a benched Pokemon: the roster's facts only (an item the engine lacks is not declared)
+    expect(combatants[0]?.[1]).toBeUndefined();
+    expect(battle?.sides?.[1]).toEqual({}); // a side of placeholders declares nothing
+    // a position that holds no Pokemon now, and a name the roster does not know
+    const vacant = historyDeclarer(facts({ active: { a: null } }), record, exists)([[fighter(true, "a", "Z")], [fighter(false, "a", "Y")]]);
+    expect(vacant.combatants[0]?.[0]).toBeUndefined();
+  });
+});

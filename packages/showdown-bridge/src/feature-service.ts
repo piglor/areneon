@@ -5,15 +5,17 @@
 // Nothing here reads an opponent team, a verdict or a seed: a task holds the same inputs `candidateFeatures` takes.
 // The worker-thread pool (`feature-pool.ts`) runs one service per thread.
 import { type CandidateFeatures3, candidateFeatures3 } from "./candidate-features-3.ts";
-import { type BeliefThreatsSetup, type BeliefFeatureCounts, type BeliefFeatureSetup, type CandidateFeatures, candidateFeatures, createFeatureMemo, emptyBeliefCounts, type FeatureBuildCode, FeatureBuildError, type FeatureConfigs, type FeatureMemo, FEATURE_SET_3, FEATURE_SET_BELIEF } from "./candidate-features.ts";
+import { type BeliefThreatsSetup, type BeliefFeatureCounts, type BeliefFeatureSetup, type CandidateFeatures, candidateFeatures, createFeatureMemo, emptyBeliefCounts, type FeatureBuildCode, FeatureBuildError, type FeatureConfigs, type FeatureMemo, FEATURE_SET_3, FEATURE_SET_BELIEF, FEATURE_SET_OUTCOME } from "./candidate-features.ts";
 import { candidateFeaturesBelief, type CandidateFeaturesBelief } from "./candidate-features-belief.ts";
+import { candidateFeaturesOutcome, type CandidateFeaturesOutcome } from "./candidate-features-outcome.ts";
 import { type CandidateFeatures2, candidateFeatures2, type CostTrace, emptyTrace } from "./candidate-features-2.ts";
 import type { Candidate } from "./choices.ts";
 import { loadDamageAwareConfig } from "./damage-aware-config.ts";
 import { type ProbeCounts } from "./damage-aware-view.ts";
 import { type Engine, loadEngine, type PokemonSet } from "./engine.ts";
 import { goldenTeamVocabulary, GOLDEN_FORMAT } from "./golden.ts";
-import { loadMechanicsConfig } from "./mechanics-config.ts";
+import { loadMechanicsConfig, withMoveOutcome } from "./mechanics-config.ts";
+import { loadOutcomeConfig } from "./outcome-config.ts";
 import { playerChannel } from "./player-channel.ts";
 import { loadRulesSnapshot } from "./rules-load.ts";
 import type { Player } from "./runner.ts";
@@ -24,7 +26,7 @@ export interface FeatureServiceSpec {
   format_id: string;
   data_class: "synthetic" | "private";
   /** The feature set the service builds; default `probe-damage/1`. */
-  feature_set?: "probe-damage/1" | "probe-damage/2" | typeof FEATURE_SET_3 | typeof FEATURE_SET_BELIEF;
+  feature_set?: "probe-damage/1" | "probe-damage/2" | typeof FEATURE_SET_3 | typeof FEATURE_SET_BELIEF | typeof FEATURE_SET_OUTCOME;
   /** Another built checkout than the default (the engine loader's argument). */
   showdown_dir?: string;
 }
@@ -40,7 +42,7 @@ export interface FeatureTask {
   final?: boolean;
 }
 
-export type FeatureOutcome = { kind: "features"; features: CandidateFeatures | CandidateFeatures2 | CandidateFeatures3 | CandidateFeaturesBelief } | { kind: "error"; code: FeatureBuildCode };
+export type FeatureOutcome = { kind: "features"; features: CandidateFeatures | CandidateFeatures2 | CandidateFeatures3 | CandidateFeaturesBelief | CandidateFeaturesOutcome } | { kind: "error"; code: FeatureBuildCode };
 
 export interface FeatureResult {
   outcome: FeatureOutcome;
@@ -74,7 +76,8 @@ export function createFeatureService(spec: FeatureServiceSpec, engineOverride?: 
   const configs: FeatureConfigs = {
     vocabulary,
     config: loadDamageAwareConfig("v1", vocabulary),
-    mechanics: loadMechanicsConfig(spec.format_id),
+    mechanics: spec.feature_set === FEATURE_SET_OUTCOME ? withMoveOutcome(loadMechanicsConfig(spec.format_id)) : loadMechanicsConfig(spec.format_id),
+    ...(spec.feature_set === FEATURE_SET_OUTCOME ? { outcome: { config: loadOutcomeConfig(spec.format_id) } } : {}),
     snapshot: loadRulesSnapshot(engine.commit),
     data_class: spec.data_class,
     ...(extras.belief === undefined ? {} : { belief: extras.belief }),
@@ -89,11 +92,12 @@ export function createFeatureService(spec: FeatureServiceSpec, engineOverride?: 
       const beforeBelief = structuredClone(memo.belief ?? emptyBeliefCounts());
       const started = performance.now();
       let outcome: FeatureOutcome;
-      const parts = spec.feature_set === "probe-damage/2" || spec.feature_set === FEATURE_SET_3 ? emptyTrace() : undefined;
+      const parts = spec.feature_set === "probe-damage/2" || spec.feature_set === FEATURE_SET_3 || spec.feature_set === FEATURE_SET_OUTCOME ? emptyTrace() : undefined;
       try {
         const channel = playerChannel({ schema_version: 1, data_class: spec.data_class, player: task.player, lines: task.lines }, sheetRegimeOf(engine.commit, spec.format_id));
         const features =
           spec.feature_set === FEATURE_SET_BELIEF ? candidateFeaturesBelief(engine, configs, channel, task.team, task.candidates, memo)
+          : spec.feature_set === FEATURE_SET_OUTCOME ? candidateFeaturesOutcome(engine, configs, channel, task.team, task.candidates, memo, parts)
           : spec.feature_set === FEATURE_SET_3 ? candidateFeatures3(engine, configs, channel, task.team, task.candidates, memo, parts)
           : parts === undefined ? candidateFeatures(engine, configs, channel, task.team, task.candidates, memo)
           : candidateFeatures2(engine, configs, channel, task.team, task.candidates, memo, parts);
