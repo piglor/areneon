@@ -11,6 +11,21 @@ match and policy and derives the rates and their descriptive intervals:
 * the switch rate in Bad-matchup decisions against when not threatened (Safe or Exposed slower),
   and their difference.
 
+History rows (#1345, ADR-022 erratum E-22.5 slice H7): when the raw file carries a ``history``
+count block per seat (``situational-move-use.ts --history``), each match and policy also gets a
+``history`` entry with the rates below, each with its pair-level interval (the same stream and
+ranks, one stream per match and policy under another label); a raw file without them gives the
+summary it always gave, byte for byte.
+
+* stalling moves chosen at ``stall_counter > 1`` (repeat) against fresh, and the mean engine
+  success chance of the chosen ones;
+* history-scaled power: chosen when the history-declared damage is above (up) against below (down)
+  the default-history damage, and their difference;
+* parts that fail in every opposing-action branch, chosen: per offered part, split by the actor's
+  facts (it has acted, it has not, an item-history fact), and per decision;
+* conditional parts (the outcome differs by branch): chosen per offered, and the share of the
+  chosen ones' branches that do not fail.
+
 LABEL: situational move-use diagnostic on assumed opponent sets: descriptive, not a strength
 measure.
 
@@ -67,33 +82,92 @@ def _switch(classes: Sequence[str], leaf: str) -> list[str]:
     return [f"switch.{c}.{leaf}" for c in classes]
 
 
-#: Each rate: (numerator keys, denominator keys).
-RATES: dict[str, tuple[list[str], list[str]]] = {
-    "protect_threatened": (_protect(["threatened"], "chosen"), _protect(["threatened"], "offered")),
-    "protect_safe": (_protect(["safe"], "chosen"), _protect(["safe"], "offered")),
-    "repeat_protect": (_repeat("chosen"), _repeat("offered")),
-    "switch_bad_matchup": (_switch(["bad_matchup"], "chosen"), _switch(["bad_matchup"], "offered")),
+#: Each rate: (numerator keys, denominator keys, scale): numerator / (denominator * scale).
+Rates = dict[str, tuple[list[str], list[str], int]]
+Differences = tuple[tuple[str, str, str], ...]
+
+RATES: Rates = {
+    "protect_threatened": (
+        _protect(["threatened"], "chosen"),
+        _protect(["threatened"], "offered"),
+        1,
+    ),
+    "protect_safe": (_protect(["safe"], "chosen"), _protect(["safe"], "offered"), 1),
+    "repeat_protect": (_repeat("chosen"), _repeat("offered"), 1),
+    "switch_bad_matchup": (
+        _switch(["bad_matchup"], "chosen"),
+        _switch(["bad_matchup"], "offered"),
+        1,
+    ),
     "switch_not_threatened": (
         _switch(["safe", "exposed_slower"], "chosen"),
         _switch(["safe", "exposed_slower"], "offered"),
+        1,
     ),
 }
 #: Differences of two rates: (name, minuend, subtrahend).
-DIFFERENCES = (
+DIFFERENCES: Differences = (
     ("protect_threatened_minus_safe", "protect_threatened", "protect_safe"),
     ("switch_bad_matchup_minus_not_threatened", "switch_bad_matchup", "switch_not_threatened"),
 )
 
+PPM_PER_SHARE = 1_000_000
 
-def _rate(counts: Counts, name: str) -> Fraction | None:
-    numerator, denominator = RATES[name]
+
+def _history(group: str) -> tuple[list[str], list[str]]:
+    return ([f"history.{group}.chosen"], [f"history.{group}.offered"])
+
+
+def _history_rate(group: str) -> tuple[list[str], list[str], int]:
+    chosen, offered = _history(group)
+    return (chosen, offered, 1)
+
+
+#: The history rows (#1345), over the ``history`` count block of each seat.
+HISTORY_RATES: Rates = {
+    "stall_repeat": _history_rate("stall.repeat"),
+    "stall_fresh": _history_rate("stall.fresh"),
+    "stall_repeat_success": (
+        ["history.stall.repeat.chosen_success_ppm"],
+        ["history.stall.repeat.chosen_success_n"],
+        PPM_PER_SHARE,
+    ),
+    "stall_fresh_success": (
+        ["history.stall.fresh.chosen_success_ppm"],
+        ["history.stall.fresh.chosen_success_n"],
+        PPM_PER_SHARE,
+    ),
+    "power_up": _history_rate("power.up"),
+    "power_down": _history_rate("power.down"),
+    "fails_all": _history_rate("fails.all"),
+    "fails_all_acted": _history_rate("fails.acted"),
+    "fails_all_fresh": _history_rate("fails.fresh"),
+    "fails_all_item": _history_rate("fails.item"),
+    "fails_all_per_decision": (["history.fails.all.chosen"], ["history.decisions"], 1),
+    "conditional": _history_rate("conditional"),
+    "conditional_chosen_pass_share": (
+        ["history.conditional.chosen_passing"],
+        ["history.conditional.chosen_branches"],
+        1,
+    ),
+}
+HISTORY_DIFFERENCES: Differences = (
+    ("stall_repeat_minus_fresh", "stall_repeat", "stall_fresh"),
+    ("power_up_minus_down", "power_up", "power_down"),
+)
+
+
+def _rate(counts: Counts, name: str, rates: Rates = RATES) -> Fraction | None:
+    numerator, denominator, scale = rates[name]
     offered = _sum(counts, denominator)
-    return None if offered == 0 else Fraction(_sum(counts, numerator), offered)
+    return None if offered == 0 else Fraction(_sum(counts, numerator), offered * scale)
 
 
-def _statistics(counts: Counts) -> dict[str, Fraction | None]:
-    out: dict[str, Fraction | None] = {name: _rate(counts, name) for name in RATES}
-    for name, a, b in DIFFERENCES:
+def _statistics(
+    counts: Counts, rates: Rates = RATES, differences: Differences = DIFFERENCES
+) -> dict[str, Fraction | None]:
+    out: dict[str, Fraction | None] = {name: _rate(counts, name, rates) for name in rates}
+    for name, a, b in differences:
         x, y = out[a], out[b]
         out[name] = None if x is None or y is None else x - y
     return out
@@ -108,19 +182,35 @@ def _ceil_ppm(x: Fraction) -> int:
 
 
 STATISTIC_NAMES = (*RATES, *(name for name, _, _ in DIFFERENCES))
-_KEYS = sorted({k for numerator, denominator in RATES.values() for k in (*numerator, *denominator)})
+HISTORY_STATISTIC_NAMES = (*HISTORY_RATES, *(name for name, _, _ in HISTORY_DIFFERENCES))
 
 
-def _intervals(pairs: list[Counts], key: bytes, b_boot: int) -> dict[str, dict[str, int] | None]:
+def _keys(rates: Rates) -> list[str]:
+    return sorted(
+        {k for numerator, denominator, _ in rates.values() for k in (*numerator, *denominator)}
+    )
+
+
+def _intervals(
+    pairs: list[Counts],
+    key: bytes,
+    b_boot: int,
+    rates: Rates = RATES,
+    differences: Differences = DIFFERENCES,
+) -> dict[str, dict[str, int] | None]:
     """Every statistic's interval from ONE set of draws and one merge per resample."""
     n = len(pairs)
-    vectors = [[p.get(k, 0) for k in _KEYS] for p in pairs]
+    keys = _keys(rates)
+    names = (*rates, *(name for name, _, _ in differences))
+    vectors = [[p.get(k, 0) for k in keys] for p in pairs]
     draws = _draws(key, n, n * b_boot)
-    values: dict[str, list[Fraction]] = {name: [] for name in STATISTIC_NAMES}
+    values: dict[str, list[Fraction]] = {name: [] for name in names}
     for b in range(b_boot):
         chosen = (vectors[j] for j in draws[b * n : (b + 1) * n])
         total = [sum(column) for column in zip(*chosen, strict=True)]
-        for name, value in _statistics(dict(zip(_KEYS, total, strict=True))).items():
+        for name, value in _statistics(
+            dict(zip(keys, total, strict=True)), rates, differences
+        ).items():
             if value is not None:
                 values[name].append(value)
     out: dict[str, dict[str, int] | None] = {}
@@ -138,6 +228,26 @@ def _intervals(pairs: list[Counts], key: bytes, b_boot: int) -> dict[str, dict[s
     return out
 
 
+def _history_entry(pairs: list[Counts], key: bytes, b_boot: int) -> dict[str, Any]:
+    """The history rows (#1345) of one match and policy: summed counts, rates in ppm, intervals."""
+    total: Counts = defaultdict(int)
+    for counts in pairs:
+        for k, v in counts.items():
+            total[k] += v
+    stats = _statistics(total, HISTORY_RATES, HISTORY_DIFFERENCES)
+    found = _intervals(pairs, key, b_boot, HISTORY_RATES, HISTORY_DIFFERENCES)
+    return {
+        "counts": {k: total[k] for k in sorted(total)},
+        "statistics": {
+            name: {
+                "mean_ppm": None if value is None else _floor_ppm(value),
+                "interval": None if value is None else found[name],
+            }
+            for name, value in stats.items()
+        },
+    }
+
+
 def summarise(raw: dict[str, Any], *, b_boot: int = B_BOOT) -> dict[str, Any]:
     """Per match and policy: summed counts, rates and differences in ppm, and intervals."""
     if raw.get("format") != FORMAT:
@@ -148,6 +258,10 @@ def summarise(raw: dict[str, Any], *, b_boot: int = B_BOOT) -> dict[str, Any]:
         lambda: defaultdict(dict)
     )
     games: dict[tuple[str, str], int] = defaultdict(int)
+    # The history rows (#1345): present only when the raw file carries a `history` block per seat.
+    history: dict[tuple[str, str], dict[tuple[str, int], Counts]] = defaultdict(
+        lambda: defaultdict(dict)
+    )
     for game in raw["games"]:
         for seat in ("p1", "p2"):
             who = game["seats"][seat]
@@ -157,6 +271,10 @@ def summarise(raw: dict[str, Any], *, b_boot: int = B_BOOT) -> dict[str, Any]:
             into = grouped[slot][unit]
             for k, v in who["counts"].items():
                 into[k] = into.get(k, 0) + v
+            if "history" in who:
+                at = history[slot][unit]
+                for k, v in who["history"].items():
+                    at[k] = at.get(k, 0) + v
             games[slot] += 1
     matches: dict[str, dict[str, Any]] = {}
     for (match_id, policy), by_pair in sorted(grouped.items()):
@@ -174,12 +292,19 @@ def summarise(raw: dict[str, Any], *, b_boot: int = B_BOOT) -> dict[str, Any]:
                 "mean_ppm": None if value is None else _floor_ppm(value),
                 "interval": None if value is None else found[name],
             }
-        matches.setdefault(match_id, {})[policy] = {
+        entry: dict[str, Any] = {
             "games": games[(match_id, policy)],
             "pairs": len(pairs),
             "counts": {k: total[k] for k in sorted(total)},
             "statistics": out,
         }
+        if (match_id, policy) in history:
+            entry["history"] = _history_entry(
+                [history[(match_id, policy)][p] for p in sorted(history[(match_id, policy)])],
+                bootstrap_stream_key(seed, generation, f"situational-history:{match_id}:{policy}"),
+                b_boot,
+            )
+        matches.setdefault(match_id, {})[policy] = entry
     return {
         "format": FORMAT,
         "label": LABEL,
@@ -205,7 +330,15 @@ def read_summary(value: object) -> dict[str, Any]:
             stats = body["statistics"]
             if set(stats) != set(STATISTIC_NAMES) or not isinstance(body["pairs"], int):
                 raise SituationalError("a summary entry lacks a statistic")
+            if "history" in body and set(body["history"]["statistics"]) != set(
+                HISTORY_STATISTIC_NAMES
+            ):
+                raise SituationalError("a summary entry lacks a history statistic")
     return value
+
+
+def _span(interval: dict[str, int] | None) -> str:
+    return "n/a" if interval is None else f"[{interval['low_ppm']}, {interval['high_ppm']}]"
 
 
 def render(summary: dict[str, Any]) -> str:
@@ -215,13 +348,9 @@ def render(summary: dict[str, Any]) -> str:
         for policy, body in policies.items():
             lines.append(f"{match_id} {policy} pairs={body['pairs']}")
             for name, stat in body["statistics"].items():
-                interval = stat["interval"]
-                span = (
-                    "n/a"
-                    if interval is None
-                    else f"[{interval['low_ppm']}, {interval['high_ppm']}]"
-                )
-                lines.append(f"  {name}: {stat['mean_ppm']} ppm {span}")
+                lines.append(f"  {name}: {stat['mean_ppm']} ppm {_span(stat['interval'])}")
+            for name, stat in body.get("history", {}).get("statistics", {}).items():
+                lines.append(f"  history.{name}: {stat['mean_ppm']} ppm {_span(stat['interval'])}")
     return "\n".join(lines)
 
 

@@ -145,3 +145,99 @@ def test_summary_reader_and_dashboard_section() -> None:
     del broken["matches"]["m"]["policy:aa"]["statistics"]["protect_safe"]
     with pytest.raises(s.SituationalError):
         s.read_summary(broken)
+
+
+def _history_raw() -> dict[str, object]:
+    raw = _raw()
+    for game in raw["games"]:  # type: ignore[attr-defined]
+        for seat in game["seats"].values():
+            if seat["policy"] == "policy:aa":
+                seat["history"] = {
+                    "history.decisions": 4,
+                    "history.stall.repeat.offered": 2,
+                    "history.stall.repeat.chosen": 1,
+                    "history.stall.repeat.chosen_success_ppm": 333_333,
+                    "history.stall.repeat.chosen_success_n": 1,
+                    "history.stall.fresh.offered": 2,
+                    "history.stall.fresh.chosen": 2,
+                    "history.power.up.offered": 1,
+                    "history.power.up.chosen": 1,
+                    "history.power.down.offered": 3,
+                    "history.fails.all.offered": 2,
+                    "history.fails.all.chosen": 1,
+                    "history.fails.acted.offered": 2,
+                    "history.fails.acted.chosen": 1,
+                    "history.conditional.offered": 2,
+                    "history.conditional.chosen": 1,
+                    "history.conditional.chosen_branches": 3,
+                    "history.conditional.chosen_passing": 2,
+                }
+    return raw
+
+
+def test_history_rows_rates_and_intervals() -> None:
+    out = s.summarise(_history_raw(), b_boot=100)
+    entry = out["matches"]["m"]["policy:aa"]
+    stats = entry["history"]["statistics"]
+    assert set(stats) == set(s.HISTORY_STATISTIC_NAMES)
+    assert entry["history"]["counts"]["history.decisions"] == 64
+    assert stats["stall_repeat"]["mean_ppm"] == 500_000
+    assert stats["stall_fresh"]["mean_ppm"] == 1_000_000
+    assert stats["stall_repeat_minus_fresh"]["mean_ppm"] == -500_000
+    assert stats["stall_repeat_success"]["mean_ppm"] == 333_333  # a share of one: 333333 / 10^6
+    assert stats["stall_fresh_success"] == {"mean_ppm": None, "interval": None}
+    assert stats["power_up"]["mean_ppm"] == 1_000_000
+    assert stats["power_down"]["mean_ppm"] == 0
+    assert stats["power_up_minus_down"]["mean_ppm"] == 1_000_000
+    assert stats["fails_all"]["mean_ppm"] == 500_000
+    assert stats["fails_all_per_decision"]["mean_ppm"] == 250_000  # one per four decisions
+    assert stats["fails_all_fresh"]["mean_ppm"] is None
+    assert stats["conditional"]["mean_ppm"] == 500_000
+    assert stats["conditional_chosen_pass_share"]["mean_ppm"] == 666_666
+    # every pair is equal, so the interval is a point
+    iv = stats["stall_repeat"]["interval"]
+    assert iv["low_ppm"] == 500_000
+    assert iv["resamples"] == 100
+    # the baseline seat carries no history
+    assert "history" not in out["matches"]["m"]["actor-rule@v1"]
+    again = s.summarise(_history_raw(), b_boot=100)
+    assert json.dumps(out, sort_keys=True) == json.dumps(again, sort_keys=True)
+
+
+def test_history_leaves_the_existing_summary_unchanged() -> None:
+    plain = s.summarise(_raw(), b_boot=50)
+    with_history = s.summarise(_history_raw(), b_boot=50)
+    for policy, body in with_history["matches"]["m"].items():
+        stripped = {k: v for k, v in body.items() if k != "history"}
+        assert stripped == plain["matches"]["m"][policy]
+    assert all("history" not in b for b in plain["matches"]["m"].values())
+
+
+def test_history_reader_render_and_dashboard(tmp_path: Path) -> None:
+    summary = s.summarise(_history_raw(), b_boot=50)
+    assert s.read_summary(json.loads(json.dumps(summary)))["generation"] == 20
+    broken = json.loads(json.dumps(summary))
+    del broken["matches"]["m"]["policy:aa"]["history"]["statistics"]["power_up"]
+    with pytest.raises(s.SituationalError):
+        s.read_summary(broken)
+    text = s.render(summary)
+    assert "history.stall_repeat: 500000 ppm" in text
+    section = _situational_section(SimpleNamespace(situational=summary))  # type: ignore[arg-type]
+    assert "History groups" in section
+    assert "Fails every branch" in section
+    assert "500000 ppm" in section
+    plain = _situational_section(SimpleNamespace(situational=s.summarise(_raw(), b_boot=50)))  # type: ignore[arg-type]
+    assert "History groups" not in plain
+    # the plain-text table has no history lines without them
+    assert "history." not in s.render(s.summarise(_raw(), b_boot=50))
+
+
+def test_history_hostile_policy_string_is_escaped() -> None:
+    raw = _history_raw()
+    for game in raw["games"]:  # type: ignore[attr-defined]
+        for seat in game["seats"].values():
+            if seat["policy"] == "policy:aa":
+                seat["policy"] = "<script>alert(1)</script>"
+    section = _situational_section(SimpleNamespace(situational=s.summarise(raw, b_boot=20)))  # type: ignore[arg-type]
+    assert "<script>alert" not in section
+    assert "&lt;script&gt;" in section

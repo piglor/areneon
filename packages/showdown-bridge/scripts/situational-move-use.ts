@@ -3,7 +3,10 @@
 // intervals.
 //
 //   node packages/showdown-bridge/scripts/situational-move-use.ts --progress-dir P --generation G [--max-turns T | --run-dir R]
-//     [--matches a,b] [--max-games N] [--out FILE]
+//     [--matches a,b] [--max-games N] [--history] [--out FILE]
+//
+// `--history` adds the history rows (#1345): a second feature build (`probe-outcome/1`) per decision and a `history` count block per
+// seat; without it the output is byte-identical to before.
 //
 // The input is VERIFIED first, as the Python move-use diagnostic does: the generation's manifest must list the SHA-256 of every
 // file, `progress.json` goes through the progress record reader, and each game through the game record reader (schema, choices
@@ -37,7 +40,7 @@ const stated = [arg("max-turns") === undefined ? undefined : integer("max-turns"
 if (stated.some((value) => value !== undefined && value !== maxTurns)) throw new Error(`the stated turn cap differs from the record's (${maxTurns})`);
 
 const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
-const setup = situationalSetup(engine, GOLDEN_FORMAT, maxTurns, goldenWorldFactsData(), process.env.SHOWDOWN_DIR ? { showdown_dir: process.env.SHOWDOWN_DIR } : {});
+const setup = situationalSetup(engine, GOLDEN_FORMAT, maxTurns, goldenWorldFactsData(), process.env.SHOWDOWN_DIR ? { showdown_dir: process.env.SHOWDOWN_DIR } : {}, process.argv.includes("--history"));
 const games = [];
 let unreplayable = 0;
 const taken = new Map<string, number>();
