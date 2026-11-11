@@ -32,6 +32,7 @@ import torch
 from areneon_contracts.contracts import jcs, sha256_hex
 
 from areneon_ml import stopwatch
+from areneon_ml.checkpoint.binding import BINDING_NAME, binding_bytes
 from areneon_ml.checkpoint.files import checkpoint_bytes, checkpoint_id, write_checkpoint
 from areneon_ml.checkpoint.provenance import ProvenanceGraph
 from areneon_ml.checkpoint.record import CheckpointRecord, read_record
@@ -776,6 +777,7 @@ def export_provenance(run_dir: Path, out_dir: Path) -> str:
             (out_dir / "records" / f"{record.checkpoint_id}.json").write_bytes(source.read_bytes())
         registry = jcs(sources)
         (out_dir / "sources.json").write_bytes(registry)
+        _write_binding(out_dir, registry)
         return str(sha256_hex(registry))
     provenance_graph(run_dir)  # refuse a run whose records do not form a graph
     shutil.rmtree(out_dir, ignore_errors=True)
@@ -787,7 +789,15 @@ def export_provenance(run_dir: Path, out_dir: Path) -> str:
             (out_dir / "records" / f"{record.checkpoint_id}.json").write_bytes(source.read_bytes())
     registry = jcs(sources_registry(run_dir))
     (out_dir / "sources.json").write_bytes(registry)
-    return sha256_hex(registry)
+    _write_binding(out_dir, registry)
+    digest: str = sha256_hex(registry)
+    return digest
+
+
+def _write_binding(out_dir: Path, registry: bytes) -> None:
+    """``provenance.json``: the registry's hash and each exported record's (#853)."""
+    files = {path.stem: path.read_bytes() for path in sorted((out_dir / "records").glob("*.json"))}
+    (out_dir / BINDING_NAME).write_bytes(binding_bytes(files, registry))
 
 
 def population_learner_steps(run_dir: Path) -> dict[str, int]:

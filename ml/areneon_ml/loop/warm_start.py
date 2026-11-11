@@ -30,6 +30,12 @@ from typing import Any
 
 from areneon_contracts.contracts import CanonicalError, jcs
 
+from areneon_ml.checkpoint.binding import (
+    BINDING_NAME,
+    BindingError,
+    record_files,
+    verify_binding,
+)
 from areneon_ml.checkpoint.files import (
     CheckpointFileError,
     checkpoint_bytes,
@@ -185,3 +191,11 @@ def _check_sources(clone_dir: Path, records: list[CheckpointRecord]) -> None:
     needed = {h for record in records for h in record.training_set_hashes}
     if sources != {h: [] for h in needed} or (clone_dir / "sources.json").read_bytes() != canonical:
         raise WarmStartError("sources.json must map each teacher set of the records to []")
+    try:  # the exported binding: every record file of the output and the registry (#853)
+        verify_binding(
+            clone_dir / BINDING_NAME,
+            canonical,
+            record_files(clone_dir / "records"),
+        )
+    except (BindingError, OSError, ValueError) as exc:
+        raise WarmStartError(f"{BINDING_NAME}: {exc}") from exc

@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 from areneon_contracts.contracts import jcs, sha256_hex
+from areneon_ml.checkpoint.binding import BINDING_NAME, binding_bytes, record_files
 from areneon_ml.checkpoint.files import checkpoint_bytes, checkpoint_id, write_checkpoint
 from areneon_ml.checkpoint.provenance import ProvenanceGraph
 from areneon_ml.checkpoint.record import CheckpointRecord, read_record
@@ -77,6 +78,9 @@ def clone_output(
             record_edit(role, raw)
         layout.write_json(root / "records" / f"{found}.json", read_record(raw).to_json())
     (root / "sources.json").write_bytes(jcs({teacher: []}))
+    (root / BINDING_NAME).write_bytes(
+        binding_bytes(record_files(root / "records"), jcs({teacher: []}))
+    )
     return root
 
 
@@ -414,6 +418,25 @@ def test_import_refuses_a_sources_registry_that_does_not_map_the_teacher_set_to_
     (broken / "sources.json").write_bytes(registry)
     with pytest.raises(WarmStartError, match=r"sources\.json"):
         import_clone(broken, tmp_path / "run")
+
+
+def test_import_refuses_a_clone_output_whose_binding_does_not_verify(
+    tmp_path: Path, clone_dir: Path
+) -> None:
+    missing = tmp_path / "missing"
+    shutil.copytree(clone_dir, missing)
+    (missing / BINDING_NAME).unlink()
+    with pytest.raises(WarmStartError, match=r"provenance\.json.*not bound"):
+        import_clone(missing, tmp_path / "run")
+    edited = tmp_path / "edited"
+    shutil.copytree(clone_dir, edited)
+    bound = record_files(edited / "records")
+    key = sorted(bound)[0]
+    (edited / BINDING_NAME).write_bytes(
+        binding_bytes({**bound, key: b"other"}, (edited / "sources.json").read_bytes())
+    )
+    with pytest.raises(WarmStartError, match=r"provenance\.json.*differs"):
+        import_clone(edited, tmp_path / "run2")
 
 
 def test_the_command_imports_and_prints_the_ids_or_exits_with_a_refusal(
