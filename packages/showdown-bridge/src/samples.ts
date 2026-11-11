@@ -761,6 +761,36 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const leagueRunWith = (change: (r: Record<string, unknown>) => void) => mutated(leagueRun, change);
   const runConfigWith = (change: (c: Record<string, unknown>) => void) => mutated(runConfig, change);
   const runSection = (c: Record<string, unknown>, name: string) => c[name] as Record<string, unknown>;
+  // ADR-027 section 5 (#1153): a mixed-format run's config, and the records it writes. The open format differs from the
+  // closed manifest in its format id and its rules hash; the manifests are listed in the order of their JCS bytes.
+  const sheetRegimes = { open_format: "gen9championsvgc2026regmcbo3", closed_share_ppm: 500000, open_only_generations: 10, closed_sheet_source: "revealed-only/1" };
+  const sheetRegimesWith = (change: (c: Record<string, unknown>) => void) =>
+    runConfigWith((c) => {
+      c.sheet_regimes = { ...sheetRegimes };
+      change(c);
+    });
+  const openManifest = { ...record.manifest, format_id: sheetRegimes.open_format, format_rules_hash: hexOf("d") };
+  const gameManifests = [record.manifest, openManifest].sort((a, b) => (jcs(a as unknown as Json) < jcs(b as unknown as Json) ? -1 : 1));
+  const sheetRunConfigHash = await runConfigHash(sheetRegimesWith(() => undefined) as unknown as TrainingRunConfig);
+  const sheetLeagueRun = {
+    schema_version: 1,
+    run_id: "tiny-run",
+    run_config_hash: sheetRunConfigHash,
+    generation: 11,
+    seed_derivation: LEAGUE_SEED_DERIVATION,
+    plan_hash: "b".repeat(64),
+    pair_policy_id: pairId,
+    games: 6,
+    played: 6,
+    forfeits: 0,
+    episodes: 12,
+    opponents: [
+      { opponent_policy_id: pairId, games: 4 },
+      { opponent_policy_id: "random-legal@tiny", games: 2 },
+    ],
+    regimes: { open: 2, closed: 4 },
+    game_manifests: gameManifests,
+  };
   // ADR-026 erratum E2 (#1291): a search-distilling run's two blocks, on a warm start with a value warm-up.
   const distilling = (edit?: (c: Record<string, unknown>) => void) =>
     runConfigWith((c) => {
@@ -1011,6 +1041,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       r.opponents = [{ opponent_policy_id: pairId, games: 4 }];
     }),
     "league-run-record/damage-aware": damageRun,
+    "league-run-record/sheet-regimes": sheetLeagueRun,
+    "training-run-config/sheet-regimes": sheetRegimesWith(() => undefined),
+    "checkpoint-record/game-manifests": recordWith((r) => (r.game_manifests = gameManifests)),
     "league-run-record/damage-aware-refusals": damageEntryWith((e) => (e.counts = { ...baselineCounts, probe_refusals: 4 })),
     "league-run-record/mixed-causes": leagueRunWith((r) => {
       r.games = 8;
@@ -1144,6 +1177,15 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       const games = runSection(c, "generation");
       games.baseline_games = [...(games.baseline_games as unknown[]), ...(games.baseline_games as unknown[])];
     }),
+    "training-run-config/sheet-regimes-same-format": sheetRegimesWith((c) => ((c.sheet_regimes as Record<string, unknown>).open_format = GOLDEN_FORMAT)),
+    "training-run-config/sheet-regimes-belief-source": sheetRegimesWith((c) => ((c.sheet_regimes as Record<string, unknown>).closed_sheet_source = "belief")),
+    "training-run-config/sheet-regimes-opponent-sheet": sheetRegimesWith((c) => (runSection(runSection(c, "model"), "encoder").options = { opponent_sheet: { feature_set: "opponent-sheet/1", feature_set_hash: hexOf("c") } })),
+    "training-run-config/sheet-regimes-population": populated((_p, c) => (c.sheet_regimes = { ...sheetRegimes })),
+    "league-run-record/regimes-do-not-sum": mutated(sheetLeagueRun, (r) => (r.regimes = { open: 2, closed: 3 })),
+    "league-run-record/regimes-without-manifests": mutated(sheetLeagueRun, (r) => delete r.game_manifests),
+    "league-run-record/manifests-unsorted": mutated(sheetLeagueRun, (r) => (r.game_manifests = [...gameManifests].reverse())),
+    "checkpoint-record/game-manifests-unsorted": recordWith((r) => (r.game_manifests = [...gameManifests].reverse())),
+    "checkpoint-record/game-manifests-lack-manifest": recordWith((r) => (r.game_manifests = [openManifest])),
     "training-run-config/warm-start-same-id": runConfigWith((c) => (c.warm_start = { preview: hexOf("a"), battle: hexOf("a") })),
     // Schema-valid, refused by the CloneRunConfig reader: the model rules the profile cannot say.
     "training-run-config/shared-trunk-warm-start": runConfigWith((c) => {
@@ -1390,6 +1432,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-query/opponent-sheet-null": { ...battleQuery, opponent_sheet: null },
     "training-example/opponent-sheet-oracle-kind": { ...exampleOf("battle"), opponent_sheet: sheetOf("oracle-diagnostic", exactSlot) },
     "checkpoint-record/no-manifest": recordWith((r) => delete r.manifest),
+    "training-run-config/sheet-regimes-share-over": sheetRegimesWith((c) => ((c.sheet_regimes as Record<string, unknown>).closed_share_ppm = 1000001)),
+    "training-run-config/sheet-regimes-unknown-source": sheetRegimesWith((c) => ((c.sheet_regimes as Record<string, unknown>).closed_sheet_source = "oracle")),
+    "league-run-record/regimes-extra-field": mutated(sheetLeagueRun, (r) => (r.regimes = { open: 2, closed: 4, other: 0 })),
+    "checkpoint-record/game-manifests-empty": recordWith((r) => (r.game_manifests = [])),
     "checkpoint-record/short-checkpoint-id": recordWith((r) => (r.checkpoint_id = "abc")),
     "checkpoint-record/uppercase-parent": recordWith((r) => (r.parent = hexOf("A"))),
     "checkpoint-record/unknown-role": recordWith((r) => (r.role = "value")),

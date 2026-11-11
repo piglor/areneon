@@ -746,6 +746,30 @@ def _pool_section(facts: PopulationFacts) -> str:
 # -- the page -------------------------------------------------------------------------------------
 
 
+def _progress_members_section(model: ReportModel) -> str:
+    """Which member's frozen pair each evaluated generation of the progress root holds (#1335)."""
+    from areneon_ml.report import render  # noqa: PLC0415
+
+    if not model.progress_root:
+        return ""
+    rows = [[str(g), esc(m)] for g, m in sorted(model.progress_members.items())]
+    if not rows:
+        return "<h2>Progress evaluation: members</h2><p>The progress directory holds no committed generation.</p>"
+    return (
+        "<h2>Progress evaluation: members</h2>"
+        + (
+            '<p class="note">Each progress record names one member\'s frozen pair of its generation '
+            "(checked against the generation's manifest: checkpoint ids, and the policy id from them "
+            "and the run config); the matches below are that member's, not the population's.</p>"
+        )
+        + render._table(
+            [("Generation", True), ("Member", False)],
+            rows,
+            "The member evaluated in each progress generation.",
+        )
+    )
+
+
 def build_population_report(model: ReportModel) -> str:
     from areneon_ml.report import render  # noqa: PLC0415  (render builds this page for a population)
 
@@ -780,6 +804,9 @@ def build_population_report(model: ReportModel) -> str:
             _health_section(facts),
             _pool_section(facts),
             _counts_section(facts),
+            _progress_members_section(model),
+            render._progress_section(model, tips) if model.progress_root else "",
+            render._progress_sheet_section(model) if model.progress_root else "",
             render._metrics_section(model),
             render._inputs(model),
         ]
