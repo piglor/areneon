@@ -1,7 +1,8 @@
 // A tiny training run whose self-play forward pass is batched (ADR-028 section 2 F2, #1195), end to end on CPU: the Python driver,
 // Node, two game processes and the real policy workers started with --inference-max-batch. Skipped without the project's Python
 // environment unless ARENEON_REQUIRE_PYTHON_WORKER=1 (the typescript CI job sets it).
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,10 +23,18 @@ interface RunSummary {
   checkpoints: { battle: string; preview: string };
   policy_id: string;
 }
-const run = (config: string, runDir: string, ...extra: string[]): RunSummary =>
-  JSON.parse(
-    execFileSync(PYTHON, ["-I", "-m", "areneon_ml.loop", "run", "--config", config, "--run-dir", runDir, "--engine-data", DATA, "--generations", "2", "--node", process.execPath, "--worker-python", PYTHON, ...extra], { encoding: "utf8", env }),
-  ) as RunSummary;
+// Asynchronous, with a time limit of its own and a generation limit for the driver: a run that never ends (a batched worker that waits for a
+// query that does not come) must fail this test in minutes, not hold the job for its six hours (a synchronous call cannot be timed out by vitest).
+const execAsync = promisify(execFile);
+const RUN_LIMIT_MS = 480_000;
+const run = async (config: string, runDir: string, ...extra: string[]): Promise<RunSummary> => {
+  const { stdout } = await execAsync(
+    PYTHON,
+    ["-I", "-m", "areneon_ml.loop", "run", "--config", config, "--run-dir", runDir, "--engine-data", DATA, "--generations", "2", "--node", process.execPath, "--worker-python", PYTHON, "--generation-timeout-minutes", "5", ...extra],
+    { encoding: "utf8", env, timeout: RUN_LIMIT_MS, killSignal: "SIGKILL", maxBuffer: 64 * 1024 * 1024 },
+  );
+  return JSON.parse(stdout) as RunSummary;
+};
 const gen = (n: number): string => `g${String(n).padStart(6, "0")}`;
 const json = <T>(runDir: string, ...path: string[]): T => JSON.parse(readFileSync(join(runDir, ...path), "utf8")) as T;
 
@@ -35,17 +44,17 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
   let plain: string;
   let summary: RunSummary;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), "areneon-batched-"));
     const config = JSON.parse(readFileSync(TINY, "utf8")) as { generation: Record<string, unknown> };
     config.generation.inference = BATCH;
     const file = join(dir, "batched.json");
     writeFileSync(file, JSON.stringify(config));
     batched = join(dir, "batched");
-    summary = run(file, batched, "--game-processes", "2");
+    summary = await run(file, batched, "--game-processes", "2");
     plain = join(dir, "plain");
-    run(TINY, plain);
-  });
+    await run(TINY, plain);
+  }, 2 * RUN_LIMIT_MS + 60_000);
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
   it("plays under the batched policy id, in the league record and the final summary", () => {

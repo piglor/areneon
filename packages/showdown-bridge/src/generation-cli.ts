@@ -317,11 +317,7 @@ export async function runGenerationCli(
     ]);
     const [client, ...peers] = clients as [PolicyWorkerClient, ...PolicyWorkerClient[]];
     if (values.shard !== undefined) {
-      // A further game process: it ends if the process that started it dies (its stdin closes).
-      process.stdin.once("end", () => process.exit(1));
-      process.stdin.resume();
-      (process.stdin as unknown as { unref?: () => void }).unref?.(); // an open pipe must not keep the finished process alive
-      // It plays the slice and leaves it for the process that started this one.
+      // A further game process (it ends with the process that started it, see above). It plays the slice and leaves it for the process that started this one.
       const entries = await playEntries({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, episodes_dir: episodesDir, belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, ...labelArgs, ...divergence.observer, features_dir: featuresDir }, own);
       mkdirSync(need("out"), { recursive: true });
       writeShardFile(join(need("out"), SHARD_FILE), entries);
