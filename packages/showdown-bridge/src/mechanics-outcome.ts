@@ -111,7 +111,7 @@ export function probeMoveOutcome(engine: Engine, scenarioId: string, query: Move
   try {
     declare(battle, query, setAt);
     if (history !== null) {
-      declareHistory(battle as unknown as HBattle, history.resolved, { stall: history.stall, at: setAt });
+      declareHistory(battle as unknown as HBattle, history.resolved, { stall: history.stall, at: setAt, on_draw: history.on_draw });
       restoreStagesAndItems(battle, query);
     }
     const resolved = resolveActions(battle, query, setAt);
@@ -189,7 +189,7 @@ export function declaredOutcomeScenario(engine: Engine, scenarioId: string, quer
   battle.prng = refusingSource(battle.prng);
   declare(battle, query, ignore);
   if (history !== null) {
-    declareHistory(battle as unknown as HBattle, history.resolved, { stall: history.stall, at: ignore });
+    declareHistory(battle as unknown as HBattle, history.resolved, { stall: history.stall, at: ignore, on_draw: history.on_draw });
     restoreStagesAndItems(battle, query);
   }
   return battle as unknown as HBattle;

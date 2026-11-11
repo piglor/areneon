@@ -1,10 +1,11 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { readerSha256 } from "@areneon/public-state";
-import { HISTORY_FACTS_FORMAT, historyFactsSha256 } from "@areneon/public-state";
+import { HISTORY_FACTS_FORMAT, historyFactsSha256, WORLD_FACTS_FORMAT, worldFactsSha256 } from "@areneon/public-state";
 import { type AssumedSet, buildAssumedSet } from "../src/damage-aware-assumed-set.ts";
 import { candidateFeatures2 } from "../src/candidate-features-2.ts";
+import { goldenWorldFactsData } from "../src/world-facts-data.ts";
 import { goldenHistoryFactsData } from "../src/history-facts-data.ts";
-import { assumedMoveOf, branchesOf, candidateFeaturesOutcome, factsOf, FEATURE_SET_OUTCOME, historyDataOf, otherFoeMove, type OutcomeRow } from "../src/candidate-features-outcome.ts";
+import { assumedMoveOf, branchesOf, candidateFeaturesOutcome, factsOf, FEATURE_SET_OUTCOME, historyDataOf, worldDataFor, worldFactsOf, otherFoeMove, type OutcomeRow } from "../src/candidate-features-outcome.ts";
 import { damageView } from "../src/damage-aware-view.ts";
 import { createFeatureMemo, type FeatureConfigs, featureSetHash, featureSetIdentity } from "../src/candidate-features.ts";
 import { buildFeatures } from "../src/feature-build.ts";
@@ -90,10 +91,12 @@ describe("identity and the earlier sets' bytes", () => {
       outcome_format: OUTCOME_FORMAT,
       history_facts_format: HISTORY_FACTS_FORMAT,
       history_facts_sha256: historyFactsSha256(),
+      world_facts_format: WORLD_FACTS_FORMAT,
+      world_facts_sha256: worldFactsSha256(),
       outcome_config_hash: outcomeConfigHash(record),
     });
     const hash = featureSetHash(identity);
-    for (const change of [{ outcome_format: OUTCOME_FORMAT + 1 }, { history_facts_format: "history-facts/2" }, { history_facts_sha256: "0".repeat(64) }, { outcome_config_hash: "1".repeat(64) }, { mechanics_config_hash: "2".repeat(64) }]) {
+    for (const change of [{ outcome_format: OUTCOME_FORMAT + 1 }, { history_facts_format: "history-facts/2" }, { history_facts_sha256: "0".repeat(64) }, { world_facts_format: "world-facts/9" }, { world_facts_sha256: "3".repeat(64) }, { outcome_config_hash: "1".repeat(64) }, { mechanics_config_hash: "2".repeat(64) }]) {
       expect(featureSetHash({ ...identity, ...change })).not.toBe(hash);
     }
     expect(featureSetHash(featureSetIdentity(engine, configs({ outcome: { config: { ...record, max_branches: 4 } } }), FEATURE_SET_OUTCOME))).not.toBe(hash);
@@ -406,6 +409,10 @@ describe("failure paths", () => {
     expect(() => factsOf(channelOf(c), { ...goldenHistoryFactsData(), eat_tags: null, action_sources: null, stall_moves: null, slot_conditions: null } as never)).toThrow(TypeError);
     expect(() => historyDataOf(engine, { config: { format_id: "other" }, outcome: { config: record } } as never)).toThrow(/history facts data/);
     expect(historyDataOf(engine, configs()).stall_moves.length).toBeGreaterThan(0);
+    expect(() => worldDataFor(engine, { config: { format_id: "other" }, outcome: { config: record } } as never)).toThrow(/world facts data/);
+    expect(worldDataFor(engine, configs()).stall_moves.length).toBeGreaterThan(0);
+    expect(worldDataFor(engine, configs({ outcome: { config: record, world_data: goldenWorldFactsData() } }))).toBeDefined();
+    expect(() => worldFactsOf(channelOf(c), { ...goldenWorldFactsData(), stall_moves: null, action_sources: null, terrains: null } as never)).toThrow(TypeError);
   });
   it("gives no rows for a part of a fainted own Pokemon and an unsupported row for a move the engine lacks", () => {
     const c = twoFoes();
