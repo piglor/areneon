@@ -639,7 +639,8 @@ def test_probe_outcome_value_rules() -> None:
     def changed(index: int, **change: Any) -> dict[str, Any]:
         copied: dict[str, Any] = copy.deepcopy(features)
         copied["outcomes"][index].update(change)
-        return copied
+        result: dict[str, Any] = copied
+        return result
 
     # row 1 is part 0's `protect` branch, row 2 its `thunderbolt` branch (passes, 800000)
     wrong = (
@@ -775,12 +776,13 @@ def test_the_stream_reader_validates_probe_outcome_arrays() -> None:
         broken["candidate_features"]["outcomes"][2].update(change)
         with pytest.raises(TrainingStreamError, match=message):
             checker_for(broken).line(1, stream_line(broken))
-    for index, edit, message in (
+    changes: tuple[tuple[int, dict[str, Any], str], ...] = (
         (1, {"foe_move": None}, "a move branch names its foe move"),
         (2, {"assumed": True}, "an assumed branch is the only move branch"),
-    ):
+    )
+    for index, change, message in changes:
         broken = copy.deepcopy(example)
-        broken["candidate_features"]["outcomes"][index].update(edit)
+        broken["candidate_features"]["outcomes"][index].update(change)
         with pytest.raises(TrainingStreamError, match=message):
             checker_for(broken).line(1, stream_line(broken))
     rows = example["candidate_features"]["outcomes"]
