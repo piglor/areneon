@@ -295,7 +295,7 @@ def test_history_unknown_is_not_a_reason_of_the_other_sets() -> None:
     keep = {k: row[k] for k in ("own", "mega", "foe", "move")}
     row.clear()
     row.update(keep, kind="unsupported", reason="history_unknown")
-    with pytest.raises(EncodingError, match="history_unknown"):
+    with pytest.raises(rows_of.RowError, match="history_unknown"):  # a ValueError, as before
         ENCODE2.encode(q)
 
 

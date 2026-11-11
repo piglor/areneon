@@ -848,20 +848,17 @@ class Encoder:
             return self._assemble(
                 observation["kind"], state, field_features, [], None, None, hist=hist
             )
-        try:
-            rows = self._rows(query)
-            sheet = self._sheet_columns(query, state)
-            probe = self._probe(query, request, state) if _reads_arrays(self.config) else None
-            candidates = [
-                self._candidate(c, request, wanted, state, rows, probe) for c in query["candidates"]
-            ]
-            if probe is not None and set(probe.blocks) != probe.used:
-                raise EncodingError("the outcomes name a move part no candidate has")
-            return self._assemble(
-                observation["kind"], state, field_features, candidates, probe, sheet, hist=hist
-            )
-        except (rows_of.RowError, history_of.HistoryError) as exc:
-            raise EncodingError(str(exc)) from exc
+        rows = self._rows(query)
+        sheet = self._sheet_columns(query, state)
+        probe = self._probe(query, request, state) if _reads_arrays(self.config) else None
+        candidates = [
+            self._candidate(c, request, wanted, state, rows, probe) for c in query["candidates"]
+        ]
+        if probe is not None and set(probe.blocks) != probe.used:
+            raise EncodingError("the outcomes name a move part no candidate has")
+        return self._assemble(
+            observation["kind"], state, field_features, candidates, probe, sheet, hist=hist
+        )
 
     def _history_view(self, state: BattleState) -> history_of.HistoryView:
         """The reduced state's history facts, or an ``EncodingError`` when the state has none."""
@@ -1249,7 +1246,10 @@ class Encoder:
         belief = _reads_belief_threats(self.config)
         outcome = self.layout.outcome
         if outcome:
-            probe.blocks = rows_of.outcome_blocks(arrays.outcomes)
+            try:
+                probe.blocks = rows_of.outcome_blocks(arrays.outcomes)
+            except rows_of.RowError as exc:
+                raise EncodingError(str(exc)) from exc
         for (own, mega, foe), row in arrays.speeds.items():
             token = self._own_token(request, own)
             if not 1 <= foe <= SLOTS:
@@ -1528,7 +1528,17 @@ class Encoder:
     ) -> None:
         """A move part's ``outcomes`` columns (probe-outcome/1): its block's pooled summary in the
         group of its foe and each branch. A part with a living actor and a foe to ask about must
-        have its block (the worker's coverage rule); a part with none has none."""
+        have its block (the worker's coverage rule); a part with none has none.
+
+        ``at`` is the first outcome category column of the part: after the base columns, the
+        feature kinds (one per foe location), the own priority kind and the Mega variant's speed
+        relations (``_priority_columns``). The numbers are appended in the layout's order:
+        ``_candidate`` has put the feature numbers and the own priority (``_feature_numbers``, then
+        ``OWN_NUMBERS``) in ``num`` before this call, and the outcome numbers follow
+        (``_outcome_numbers``).
+        """
+        assert at == self.layout.cand_cat.index(("outcome_kind_1", "outcome_kind"))
+        assert len(num) == len(_feature_numbers(self.config)) + len(rows_of.OWN_NUMBERS)
         target = action.target or 0
         key: rows_of.OutcomeKey = (slot, action.index, target, action.event == "mega")
         group = probe.blocks.get(key)
@@ -1546,7 +1556,10 @@ class Encoder:
         location = target if target > 0 else self._lowest_foe(state)
         if location is None:
             raise EncodingError("the outcomes of a move part name a foe the state lacks")
-        cats, nums = rows_of.outcome_columns(group, location, self.game.moves.lookup_or_unknown)
+        try:
+            cats, nums = rows_of.outcome_columns(group, location, self.game.moves.lookup_or_unknown)
+        except rows_of.RowError as exc:
+            raise EncodingError(str(exc)) from exc
         cat[at : at + len(cats)] = cats
         num += nums
         probe.used.add(key)
@@ -1583,12 +1596,15 @@ class Encoder:
         field_cat, field_num = field_features
         rows = [*own, *opponent]
         none = [NONE] * SLOTS  # a token with no speed row (a foe, or no foe at that location)
-        facts = [
-            hist.mon("own" if s is state.own else "opponent", s.slots, s.roster, m)
-            if hist is not None
-            else ([], [])
-            for s, m in rows
-        ]
+        try:
+            facts = [
+                hist.mon("own" if s is state.own else "opponent", s.slots, s.roster, m)
+                if hist is not None
+                else ([], [])
+                for s, m in rows
+            ]
+        except history_of.HistoryError as exc:
+            raise EncodingError(str(exc)) from exc
         n = len(candidates)
         return EncodedQuery(
             kind=kind,
