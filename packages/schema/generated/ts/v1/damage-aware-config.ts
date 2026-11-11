@@ -43,6 +43,10 @@ export interface DamageAwareConfig {
     protect_value_ppm: number;
   };
   /**
+   * How damage-aware@v5 weighs a part's chance to work (ADR-022 erratum E-22.5, #1344). Absent: the record does not scale (v1 to v4). "engine": every damaging part's value and every situational part's value is multiplied by the engine's success chance of the part (the move_outcome probe, the success_ppm of the probe-outcome/1 feature builder, under the branch of the targeted foe's first revealed damaging move, else the switch branch), damage values are computed with the player's own channel history declared, ties are broken by the higher summed success chance, and a candidate with a part that cannot work in any branch is never played while another candidate exists. A record that has it must carry situational and select target_convention engine (reader rule) and is damage-aware@v5. A minor change within v1: an older reader refuses such a record.
+   */
+  success_scaling?: "engine";
+  /**
    * The rule for every opponent field that is not revealed. A revealed species, forme, level, gender, move, item, ability or Mega is used as revealed; an unrevealed move is never invented.
    */
   assumed_set: {

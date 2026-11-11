@@ -11,6 +11,8 @@ import {
   damageAwareSetupV2,
   DAMAGE_AWARE_V3_POLICY_ID,
   DAMAGE_AWARE_V4_POLICY_ID,
+  DAMAGE_AWARE_V5_POLICY_ID,
+  baselineRecords,
   forfeitCauses,
   GenerationError,
   type GenerationOptions,
@@ -682,6 +684,29 @@ describe("damage-aware@v4 as a training opponent (#1329)", () => {
 
   it("never hands a v3 record to a config that names v4", async () => {
     await expect(play(v4Config(), { damage_aware_v4: damageAwareSetup(engine, "gen9championsvgc2026regmc", "v3") })).rejects.toThrow(/names another record version/);
+  }, 120_000);
+});
+
+describe("damage-aware@v5 as a training opponent (#1344)", () => {
+  const v5Config = () =>
+    readTrainingRunConfig({
+      ...(sample("tiny") as object),
+      generation: { ...config.generation, games: 2, baseline_games: [{ actor: "damage-aware", policy_id: DAMAGE_AWARE_V5_POLICY_ID, games: 2 }] },
+    });
+
+  it("builds the v5 setup (the record, a mechanics config that lists move_outcome and the outcome record) when a plan names it", () => {
+    const records = baselineRecords({ engine }, v5Config());
+    const setup = records.damage_aware_v5 as ReturnType<typeof damageAwareSetup>;
+    expect((setup.config as { success_scaling?: string }).success_scaling).toBe("engine");
+    expect(setup.outcome?.config.format_id).toBe("gen9championsvgc2026regmc");
+    expect(setup.mechanics.scope.query_kinds.some((entry) => entry.kind === "move_outcome")).toBe(true);
+    expect(records.damage_aware).toBeUndefined();
+    expect(damageAwareSetup(engine, "gen9championsvgc2026regmc", "v4").outcome).toBeUndefined();
+  });
+
+  it("never hands a v4 record to a config that names v5", async () => {
+    const play = playGeneration({ engine, config: v5Config(), generation: 1, policy_id: POLICY, client: actorClient(), pool, damage_aware_v5: damageAwareSetup(engine, "gen9championsvgc2026regmc", "v4") });
+    await expect(play).rejects.toThrow(/names another record version|probe-outcome|only a record with success scaling/);
   }, 120_000);
 });
 

@@ -89,7 +89,7 @@ export {
   PrivateTrainingLoaderError,
 } from "./private-training-loader.ts";
 export { interimPoolSource, type PoolSource, runGenerationCli, UsageError } from "./generation-cli.ts";
-export { DAMAGE_AWARE_V2_POLICY_ID, DAMAGE_AWARE_V3_POLICY_ID, DAMAGE_AWARE_V4_POLICY_ID, type DamageAwareSetup, damageAwareSetup, damageAwareSetupV2, type FeatureSetup, featureSetup, GenerationError, LABEL_CONFIG_NAME, labelSetup, type RunSheetSetup, type SearchSetupFactory, sheetSetup, type PoolRequest, type PoolShape, type PrivateComponent, poolShape, planGeneration, type TrainingPool as GenerationTeamPool, playGeneration } from "./league-generation.ts";
+export { DAMAGE_AWARE_V2_POLICY_ID, DAMAGE_AWARE_V3_POLICY_ID, DAMAGE_AWARE_V4_POLICY_ID, DAMAGE_AWARE_V5_POLICY_ID, type DamageAwareSetup, damageAwareSetup, damageAwareSetupV2, type FeatureSetup, featureSetup, GenerationError, LABEL_CONFIG_NAME, labelSetup, type RunSheetSetup, type SearchSetupFactory, sheetSetup, type PoolRequest, type PoolShape, type PrivateComponent, poolShape, planGeneration, type TrainingPool as GenerationTeamPool, playGeneration } from "./league-generation.ts";
 export { readTrainingRunConfig, runConfigHash, type TrainingRunConfig, TrainingRunConfigError } from "./training-run-config.ts";
 export { type CloneRunConfig, CloneRunConfigError, cloneRunConfigHash, readCloneRunConfig } from "./clone-run-config.ts";
 export { EpisodeError, episodeFromRecord, type EpisodeOptions, readEpisode } from "./episode-io.ts";

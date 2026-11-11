@@ -35,6 +35,14 @@ for (const file of files) {
       const { situational, ...rest } = v4;
       if (situational === undefined) throw new Error("v4 must carry the situational weights");
       if (!isDeepStrictEqual(rest, v3)) throw new Error("v4 must equal v3 in every value but the situational weights");
+    } else if (version === "v5") {
+      // v5 is v4's values plus success scaling (#1344); nothing else may differ, and v4 must not carry the field.
+      const v4 = loadDamageAwareConfig("v4", vocabulary);
+      const v5 = loadDamageAwareConfig(version, vocabulary);
+      if (v4.success_scaling !== undefined) throw new Error("v4 must not carry success scaling");
+      const { success_scaling, ...rest } = v5;
+      if (success_scaling !== "engine") throw new Error("v5 must select engine success scaling");
+      if (!isDeepStrictEqual(rest, v4)) throw new Error("v5 must equal v4 in every value but success scaling");
     } else if (version === "v2") {
       // The belief record names the prior and the belief config by hash: the committed files must be those.
       const record = loadDamageAwareConfigV2(vocabulary);
