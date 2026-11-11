@@ -306,7 +306,9 @@ def test_two_runs_give_byte_identical_checkpoints_and_outputs(
     assert names == sorted(
         p.relative_to(tmp_path / "b") for p in (tmp_path / "b").rglob("*") if p.is_file()
     )
-    assert len(names) == 9  # 2 checkpoints, 2 records, sources, state (2), report, config
+    assert (
+        len(names) == 10
+    )  # 2 checkpoints, 2 records, sources, state (2), report, config, provenance
     for relative in names:
         assert (tmp_path / "a" / relative).read_bytes() == (tmp_path / "b" / relative).read_bytes()
 
