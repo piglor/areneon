@@ -30,6 +30,8 @@ export class OutcomeConfigError extends Error {
   override name = "OutcomeConfigError";
 }
 
+/** The most branches per own move part a record may allow; the wire readers (`MAX_OUTCOME_BRANCHES` here and in Python) hold the same ceiling. */
+export const MAX_BRANCHES_LIMIT = 5;
 export const ASSUMED_BRANCH_RULES = ["assumed-set-filler"] as const;
 export const VOLATILES_MODES = ["declared", "omitted"] as const;
 
@@ -79,7 +81,7 @@ export function readOutcomeConfig(value: unknown): OutcomeConfig {
     schema_version: 1,
     format_id: record.format_id,
     assumed_branch: closed(record.assumed_branch, ASSUMED_BRANCH_RULES, "assumed_branch"),
-    max_branches: integer(record.max_branches, 2, 5, "max_branches"),
+    max_branches: integer(record.max_branches, 2, MAX_BRANCHES_LIMIT, "max_branches"),
     volatiles: closed(record.volatiles, VOLATILES_MODES, "volatiles"),
     unknown_count_end: integer(record.unknown_count_end, 1, 9999, "unknown_count_end"),
     unknown_item: id(record.unknown_item, "unknown_item"),

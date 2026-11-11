@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ from areneon_ml.model.scorer import ScorerError
 from areneon_ml.worker.__main__ import build
 from areneon_ml.worker.features import (
     FOE_SPREAD_TARGET_TYPES,
+    MAX_OUTCOME_BRANCHES,
     coverage_problem,
     damaging_moves,
     rows_problem,
@@ -39,6 +41,7 @@ from tests.ml.helpers import (
 )
 from tests.ml.model.support import TINY_ENCODER, TINY_MODEL
 
+REPO = Path(__file__).resolve().parents[2]
 DAMAGING = damaging_moves(game())
 
 
@@ -634,7 +637,7 @@ def test_probe_outcome_value_rules() -> None:
     features = featured_outcome()["candidate_features"]
 
     def changed(index: int, **change: Any) -> dict[str, Any]:
-        copied = copy.deepcopy(features)
+        copied: dict[str, Any] = copy.deepcopy(features)
         copied["outcomes"][index].update(change)
         return copied
 
@@ -772,12 +775,12 @@ def test_the_stream_reader_validates_probe_outcome_arrays() -> None:
         broken["candidate_features"]["outcomes"][2].update(change)
         with pytest.raises(TrainingStreamError, match=message):
             checker_for(broken).line(1, stream_line(broken))
-    for index, change, message in (
+    for index, edit, message in (
         (1, {"foe_move": None}, "a move branch names its foe move"),
         (2, {"assumed": True}, "an assumed branch is the only move branch"),
     ):
         broken = copy.deepcopy(example)
-        broken["candidate_features"]["outcomes"][index].update(change)
+        broken["candidate_features"]["outcomes"][index].update(edit)
         with pytest.raises(TrainingStreamError, match=message):
             checker_for(broken).line(1, stream_line(broken))
     rows = example["candidate_features"]["outcomes"]
@@ -829,3 +832,39 @@ def test_the_worker_states_the_outcome_set_and_answers_a_query_with_its_outcomes
     ]
     _, frames = session(worker, line(hello()), line(thin))
     assert frames[1]["reply"]["error"] == "invalid_query"
+
+
+def test_the_branch_ceiling_is_the_one_outcome_config_allows() -> None:
+    source = (REPO / "packages/showdown-bridge/src/outcome-config.ts").read_text()
+    found = re.search(r"MAX_BRANCHES_LIMIT = (\d+);", source)
+    assert found is not None
+    assert int(found.group(1)) == MAX_OUTCOME_BRANCHES
+
+
+def test_a_malformed_request_is_a_coverage_problem_not_a_crash() -> None:
+    protect = {"id": "protect"}
+    # two active slots but one Pokemon listed: the readers refuse, they do not raise
+    request = request_for([protect], ["100/100"])
+    for choices in (["move 1 1, move 1 1"], ["move 1 1, pass"], ["switch 5, pass"]):
+        query = {
+            "observation": {"log": ["|request|" + json.dumps(request)]},
+            "candidates": [{"choice": c} for c in choices],
+        }
+        for name in ("probe-damage/2", "probe-outcome/1"):
+            empty: dict[str, list[Any]] = {n: [] for n in OUTCOME_ARRAYS}
+            features = {"feature_set": name, "rows": [], **empty}
+            assert coverage_problem(query, features, DAMAGING) is not None
+
+
+def test_a_candidate_beyond_the_requests_actives_or_moves_is_a_problem_not_a_crash() -> None:
+    request = request_for([{"id": "protect"}], ["100/100"] * 2)
+    request["active"] = request["active"][:1]  # one active entry
+    for choice in ("move 1 1, move 1 1", "move 2 1, pass"):
+        query = {
+            "observation": {"log": ["|request|" + json.dumps(request)]},
+            "candidates": [{"choice": choice}],
+        }
+        features = {"feature_set": "probe-damage/1", "rows": []}
+        problem = coverage_problem(query, features, DAMAGING)
+        assert problem is not None
+        assert "does not list" in problem

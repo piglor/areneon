@@ -213,7 +213,10 @@ def coverage_problem(
             for slot, action in enumerate(parse_choice(candidate["choice"]).slots):
                 if action.kind != "move":
                     continue
-                move = active[slot]["moves"][(action.index or 1) - 1]
+                moves = active[slot]["moves"] if slot < len(active) else []
+                if (action.index or 1) > len(moves):
+                    return "a candidate names a move slot or move the request does not list"
+                move = moves[(action.index or 1) - 1]
                 if not damaging(move["id"]):
                     continue
                 if action.target is not None:
@@ -231,6 +234,14 @@ def _fixed(text: str) -> str:
     return f"the candidate_features {text}"
 
 
+def _alive(pokemon: list[dict[str, Any]], position: int) -> bool:
+    """Whether the request's Pokemon at ``position`` lives; one the request lacks does not."""
+    if not 0 <= position < len(pokemon):
+        return False
+    condition = pokemon[position].get("condition")
+    return isinstance(condition, str) and not condition.endswith(" fnt")
+
+
 def _implied(
     request: dict[str, Any], candidates: list[dict[str, Any]]
 ) -> tuple[set[tuple[int, int]], set[tuple[int, int, int]]] | None:
@@ -244,9 +255,8 @@ def _implied(
     slots = active if active is not None else request.get("forceSwitch")
     pokemon = request.get("side", {}).get("pokemon", [])
 
-    def alive(position: int) -> bool:
-        condition = pokemon[position].get("condition")
-        return isinstance(condition, str) and not condition.endswith(" fnt")
+    if len(active or []) > len(pokemon):
+        return None  # an active slot with no Pokemon in the request: a malformed query
 
     variants: set[tuple[int, int]] = set()
     mega_slots: set[int] = set()
@@ -263,10 +273,10 @@ def _implied(
                 position = (action.index or 1) - 1
                 if position >= len(pokemon):
                     return None
-                if alive(position):
+                if _alive(pokemon, position):
                     variants.add((position, 0))
     for slot in range(len(active or [])):
-        if alive(slot):
+        if _alive(pokemon, slot):
             variants.add((slot, 0))
             if slot in mega_slots:
                 variants.add((slot, 1))
@@ -340,8 +350,7 @@ def _outcome_coverage(
         for candidate in candidates:
             for slot, action in enumerate(parse_choice(candidate["choice"]).slots):
                 target = action.target or 0
-                condition = pokemon[slot].get("condition")
-                lives = isinstance(condition, str) and not condition.endswith(" fnt")
+                lives = _alive(pokemon, slot)
                 if action.kind == "move" and lives and (target <= 0 or target in locations):
                     expected.add((slot, action.index or 1, target, int(action.event == "mega")))
     shown: list[tuple[int, int, int, int]] = []
