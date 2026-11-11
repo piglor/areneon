@@ -66,7 +66,7 @@ def test_the_gradient_reaches_the_outcome_and_history_modules() -> None:
     assert net.cand_features.weight.grad is not None
     assert net.cand_features.weight.grad.abs().sum() > 0
     for kind in ("outcome_kind", "outcome_pre", "outcome_branch_kind", "history_state"):
-        grad = net.embeddings[kind].weight.grad
+        grad: Any = net.embeddings[kind].weight.grad
         assert grad is not None
         assert grad.abs().sum() > 0, kind
 

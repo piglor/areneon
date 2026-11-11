@@ -81,7 +81,8 @@ def facts_of(query: dict[str, Any]) -> dict[str, Any]:
     o = query["observation"]
     state = reduce_channel(o["player"], o["log"], o["team"]["team"], game().vocabulary)
     assert state.history is not None
-    return state.history.facts()
+    facts: dict[str, Any] = state.history.facts()
+    return facts
 
 
 # -- absent: today's bytes ---------------------------------------------------------------------
