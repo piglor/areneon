@@ -13,6 +13,7 @@ import type { AnyDamageAwareConfig, DamageAwareConfig } from "./damage-aware-con
 import type { DamageAnswer } from "./damage-aware-score.ts";
 import type { HistoryDeclarer } from "./candidate-history.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
+import { DECLARED_FACT } from "./mechanics-error.ts";
 import { type MechanicsContext, MechanicsProbeError, type ProbeOutcome } from "./mechanics-probe.ts";
 import { type MechanicsQuery, mechanicsQueryHash, type ParsedMechanicsQuery, readMechanicsQuery } from "./mechanics-query.ts";
 import type { MechanicsConfig } from "./mechanics-config.ts";
@@ -59,8 +60,6 @@ const NO_FOE = new Set(["self", "adjacentAlly", "adjacentAllyOrSelf", "allySide"
 const UNQUEUEABLE = "the action needs more than a move and a Mega Evolution";
 /** The probe's other speed-order limit: a fractional priority (Quick Claw, Custap Berry and the like), which its integer contract cannot state. */
 const FRACTIONAL = "the action's priority is not a whole number";
-/** The probe's words for a declared history fact the engine does not take (`mechanics-history.ts`): an id that is no condition, move or item, a start handler that refused, a volatile that had run out, a used move the Pokemon lacks. */
-const VOLATILE_REFUSED = /^(the engine refused the declared|the declared|a declared)/;
 const CONDITION = /^(\d+)(?:\/(\d+))?(?: ([a-z]+))?$/;
 
 /** One Pokemon as a probe combatant, with the pieces a query needs. */
@@ -76,6 +75,8 @@ export interface Fighter {
    * position letter of its active slot (null for a benched Pokemon) and the name the channel shows it under. Never part of a query.
    */
   at?: { own: boolean; letter: string | null; name: string };
+  /** A foe's revealed moves the assumed set holds (the moves it was seen to use), for the unknown `moves_used` of an opponent. */
+  revealed?: string[];
 }
 export interface OwnSlot {
   fighter: Fighter;
@@ -113,8 +114,9 @@ type BattleHistory = NonNullable<Extract<MechanicsQuery["query"], { kind: "damag
 /** The query with the declared facts that name engine ids removed (volatiles, used moves, last items, slot conditions, the last move): the rest of the history, for the identity of the answer. */
 export function withoutVolatiles(value: MechanicsQuery): MechanicsQuery {
   const copy = structuredClone(value) as MechanicsQuery;
-  const strip = (combatant: { history?: Record<string, unknown> }): void => {
-    for (const key of ["volatiles", "moves_used", "last_item"]) delete combatant.history?.[key];
+  const strip = (combatant: object): void => {
+    const history = (combatant as { history?: Record<string, unknown> }).history;
+    for (const key of ["volatiles", "moves_used", "last_item"]) delete history?.[key];
   };
   const query = copy.query;
   if (query.kind === "damage") [query.attacker, query.defender].forEach(strip);
@@ -233,7 +235,7 @@ export function damageView(options: DamageViewOptions) {
         if (!(error instanceof MechanicsProbeError) || error.message.startsWith(CONFIG_DEFECT)) throw error; // a wrong config is a defect of the run, not of a state
         if (query.query.kind === "speed_order" && error.message.startsWith(UNQUEUEABLE)) result = { limit: "unqueueable" };
         else if (query.query.kind === "speed_order" && error.message.startsWith(FRACTIONAL)) result = { limit: "fractional_priority" };
-        else if (options.history !== undefined && VOLATILE_REFUSED.test(error.message)) {
+        else if (options.history !== undefined && error.code === DECLARED_FACT) {
           // A declared volatile the engine will not take in this scenario (a start handler that needs a battle's worth of state): its fact is
           // unknown, not dropped, so the answer is `history_unknown` (ADR-022 E-22.5.3); the rest of the request is unaffected.
           try {
@@ -282,7 +284,7 @@ export function damageView(options: DamageViewOptions) {
 
   /** The probe's whole answer to one damage query (a `computed` or `unsupported` result); a memoised refusal throws `ProbeRefusal`. */
   const damageResult = (attacker: Fighter, defender: Fighter, move: string, state: PublicState, attackerIsOwn: boolean): MechanicsResult | null => {
-    const { sides, history } = declared([[attacker], [defender]]);
+    const { sides, history } = declared([[attacker], [defender]], [attacker]);
     return query({ kind: "damage", attacker: sides[0]?.[0] as Combatant, defender: sides[1]?.[0] as Combatant, move, state: field(state, attackerIsOwn), ...(history === undefined ? {} : { history }) });
   };
 
@@ -306,10 +308,10 @@ export function damageView(options: DamageViewOptions) {
    * The query's Pokemon (`sides`, each side's declared fighters) as combatants and, when the view declares history, with their
    * history blocks and the battle's. Without `options.history` this is `combatant` on each fighter and no history (the old queries, byte for byte).
    */
-  function declared(sides: readonly (readonly Fighter[])[]): { sides: Combatant[][]; history: BattleHistory | undefined } {
+  function declared(sides: readonly (readonly Fighter[])[], acting: readonly Fighter[] = []): { sides: Combatant[][]; history: BattleHistory | undefined } {
     const out = sides.map((list) => list.map(combatant));
     if (options.history === undefined) return { sides: out, history: undefined };
-    const { combatants, battle } = options.history(sides);
+    const { combatants, battle } = options.history(sides, acting);
     combatants.forEach((list, s) => list.forEach((block, p) => block !== undefined && Object.assign((out[s] as Combatant[])[p] as Combatant, { history: block })));
     return { sides: out, history: battle };
   }
@@ -433,7 +435,7 @@ export function damageView(options: DamageViewOptions) {
       if (percent === null || percent === 0) return;
       const max = maxHpOf(assumed.paste);
       const hp = assumedHp(percent, max, config.hp_rounding);
-      const fighter: Fighter = { paste: assumed.paste, hp: hp === max ? null : hp, status: mon.status, boosts: boostsOf(mon), mega: assumed.mega, at: { own: false, letter, name: mon.name ?? "" } };
+      const fighter: Fighter = { paste: assumed.paste, hp: hp === max ? null : hp, status: mon.status, boosts: boostsOf(mon), mega: assumed.mega, at: { own: false, letter, name: mon.name ?? "" }, revealed: [...new Set(assumed.revealed_moves)].sort() };
       out.push({ mon, assumed, fighter, loc: options.engine_targets === true ? position + 1 : letters.length - position });
     });
     return out;

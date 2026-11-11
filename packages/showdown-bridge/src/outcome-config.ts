@@ -7,6 +7,8 @@
 // - `volatiles`: whether the volatiles of the facts are declared through the engine's own `addVolatile` (`declared`, committed) or left out
 //   (`omitted`, a test seam: a known fact left out would be a confident default). A volatile the engine refuses in the scenario (Encore needs a
 //   last move) makes the answers that hold it `history_unknown`.
+// - `unknown_volatiles`: condition ids offered as the second end of a Pokemon's volatiles when the channel cannot settle them (an Illusion stint, a
+//   refused line): none against these started, so an answer that reads a stall counter or a stacking volatile's layers differs between the ends.
 // - `max_branches`: at most this many opposing-action branches per own move part (the `switch` branch and the revealed moves of
 //   the targeted foe, cut in move-id order).
 // - `unknown_count_end`: the upper end a history count the channel cannot settle is asked at (the two-ends rule asks the lower end 0 and this one).
@@ -35,15 +37,22 @@ export interface OutcomeConfig {
   max_branches: number;
   volatiles: (typeof VOLATILES_MODES)[number];
   unknown_count_end: number;
+  unknown_volatiles: string[];
   unknown_item: string;
   unknown_move: string;
 }
 
-const KEYS = ["assumed_branch", "format_id", "max_branches", "schema_version", "unknown_count_end", "unknown_item", "unknown_move", "volatiles"];
+const KEYS = ["assumed_branch", "format_id", "max_branches", "schema_version", "unknown_count_end", "unknown_item", "unknown_move", "unknown_volatiles", "volatiles"];
 const ID = /^[a-z0-9]+$/;
 const integer = (value: unknown, min: number, max: number, what: string): number => {
   if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) throw new OutcomeConfigError(`${what} must be an integer from ${min} to ${max}`);
   return value;
+};
+const ids = (value: unknown, what: string): string[] => {
+  if (!Array.isArray(value) || value.length === 0) throw new OutcomeConfigError(`${what} must be a list of engine ids`);
+  const list = value.map((entry) => id(entry, what));
+  if (list.some((entry, index) => index > 0 && (list[index - 1] as string) >= entry)) throw new OutcomeConfigError(`${what} must be sorted and unique`);
+  return list;
 };
 const closed = <T extends string>(value: unknown, words: readonly T[], what: string): T => {
   if (!(words as readonly unknown[]).includes(value)) throw new OutcomeConfigError(`${what} is not a known word`);
@@ -71,14 +80,16 @@ export function readOutcomeConfig(value: unknown): OutcomeConfig {
     unknown_count_end: integer(record.unknown_count_end, 1, 9999, "unknown_count_end"),
     unknown_item: id(record.unknown_item, "unknown_item"),
     unknown_move: id(record.unknown_move, "unknown_move"),
+    unknown_volatiles: ids(record.unknown_volatiles, "unknown_volatiles"),
   };
 }
 
 /** The ids the record names that the pinned engine's data must hold (a problem per missing one; none means ok). */
-export function checkOutcomeConfig(config: OutcomeConfig, dex: { items: { get(id: string): { exists: boolean } }; moves: { get(id: string): { exists: boolean } } }): string[] {
+export function checkOutcomeConfig(config: OutcomeConfig, dex: { items: { get(id: string): { exists: boolean } }; moves: { get(id: string): { exists: boolean } }; conditions?: { get(id: string): { exists: boolean } } }): string[] {
   const problems: string[] = [];
   if (!dex.items.get(config.unknown_item).exists) problems.push("unknown_item is not an engine item");
   if (!dex.moves.get(config.unknown_move).exists) problems.push("unknown_move is not an engine move");
+  for (const condition of config.unknown_volatiles) if (dex.conditions?.get(condition).exists !== true) problems.push(`unknown_volatiles names ${condition}, which is not an engine condition`);
   return problems;
 }
 

@@ -11,6 +11,7 @@ import { createFeatureMemo, type FeatureConfigs, featureSetHash, featureSetIdent
 import { buildFeatures } from "../src/feature-build.ts";
 import { parseJointChoice } from "../src/damage-aware-choice.ts";
 import { mechanicsConfigHash, withMoveOutcome } from "../src/mechanics-config.ts";
+import { DECLARED_FACT } from "../src/mechanics-error.ts";
 import { MechanicsProbeError, type MechanicsContext } from "../src/mechanics-probe.ts";
 import { mechanicsQueryHash, type ParsedMechanicsQuery } from "../src/mechanics-query.ts";
 import { OUTCOME_FORMAT } from "../src/mechanics-outcome.ts";
@@ -18,7 +19,7 @@ import { buildResult, MECHANICS_ADAPTER_FORMAT, type Outcome } from "../src/mech
 import { loadOutcomeConfig, outcomeConfigHash } from "../src/outcome-config.ts";
 import { resolveFormat } from "../src/formats.ts";
 import { GOLDEN_FORMAT } from "../src/golden.ts";
-import { type PlayerChannel } from "../src/index.ts";
+import { type BattleRecord, type OmniscientLog, type PlayerChannel } from "../src/index.ts";
 import { playerChannel } from "../src/player-channel.ts";
 import type { PokemonSet } from "../src/engine.ts";
 import { capture, type Captured, config, corpus, engine, mechanics, snapshot, stateOf, stubProbe, vocabulary } from "./damage-aware-support.ts";
@@ -228,7 +229,7 @@ describe("outcomes", () => {
     const order = new Map<string, number>();
     const answers: (Outcome | "refuse")[] = [{ kind: "unsupported", reason: "history_unknown", position: null }, { kind: "unsupported", reason: "random_effect", position: 0 }, "refuse"];
     const memo = createFeatureMemo();
-    const features = build(c, { probe: probe([], (asked) => answers[(order.get(asked) ?? order.set(asked, order.size).get(asked)) % 3] as Outcome | "refuse") }, memo);
+    const features = build(c, { probe: probe([], (asked) => answers[((order.get(asked) ?? order.set(asked, order.size).get(asked)) as number) % 3] as Outcome | "refuse") }, memo);
     const kinds = new Set(features.outcomes.map((r) => (r.kind === "unsupported" ? r.reason : "computed")));
     expect(kinds).toEqual(new Set(["history_unknown", "random_effect", "query_kind"]));
     expect(memo.counts.probe_refusals).toBeGreaterThan(0);
@@ -303,11 +304,11 @@ describe("history declared as the channel shows it", () => {
     const name = state.opponent.roster[state.opponent.slots[letter] as number]?.name as string;
     // a foe faints and another takes its place in the open request's channel: the facts count one faint on the foe side
     const queries = queriesWith(c, [`|faint|${foeSide(c)}${letter}: ${name}`]);
-    const totals = queries.flatMap((q) => (q.history?.sides ?? []).map((s) => (s.total_fainted as { value?: number } | undefined)?.value));
+    const totals = queries.flatMap((q) => (q.kind === "stats" ? [] : (q.history?.sides ?? [])).map((s) => (s.total_fainted as { value?: number } | undefined)?.value));
     expect(totals).toContain(1);
   });
 
-  it("never declares an opponent's used moves (its PP): only an own Pokemon's moves_used appears", () => {
+  it("never declares an opponent's used moves as known (its PP): they are unknown, none against its revealed moves used once", () => {
     const c = moveRequests()[moveRequests().length - 1] as Captured;
     const log: ParsedMechanicsQuery[] = [];
     build(c, { probe: probe(log) });
@@ -316,7 +317,8 @@ describe("history declared as the channel shows it", () => {
       if (query.kind !== "move_outcome" && query.kind !== "speed_order") continue;
       for (const combatant of query.sides[1]) {
         foeSides += 1;
-        expect((combatant as { history?: { moves_used?: unknown } }).history?.moves_used).toBeUndefined();
+        const used = (combatant as { history?: { moves_used?: { kind: string; ends?: unknown[][] } } }).history?.moves_used;
+        if (used !== undefined) expect([used.kind, used.ends?.[0]]).toEqual(["unknown", []]);
       }
     }
     expect(foeSides).toBeGreaterThan(0);
@@ -443,7 +445,7 @@ describe("a volatile the engine cannot be given", () => {
     const refusing = (context: MechanicsContext, query: ParsedMechanicsQuery) => {
       const q = query.query;
       const holders = q.kind === "damage" ? [q.attacker, q.defender] : q.kind === "stats" ? [] : q.sides.flat();
-      if (holders.some((h) => h.history?.volatiles !== undefined)) throw new MechanicsProbeError("the engine refused the declared volatile");
+      if (holders.some((h) => h.history?.volatiles !== undefined)) throw new MechanicsProbeError("the engine refused the declared volatile", DECLARED_FACT);
       return base(context, query);
     };
     const memo = createFeatureMemo();
@@ -477,7 +479,7 @@ describe("a volatile the engine cannot be given", () => {
     expect(new Set(drawn.outcomes.map((r) => (r.kind === "unsupported" ? r.reason : "computed")))).toEqual(new Set(["history_unknown"]));
     // the volatile is refused AND the history without it is refused: that query is a refused declared state (query_kind), counted
     const refusing = (context: MechanicsContext, query: ParsedMechanicsQuery) => {
-      if (query.query.kind === "move_outcome") throw new MechanicsProbeError(holders(query).some((h) => h.history?.volatiles !== undefined) ? "the engine refused the declared volatile" : "the engine does not take that action");
+      if (query.query.kind === "move_outcome") throw new MechanicsProbeError(holders(query).some((h) => h.history?.volatiles !== undefined) ? "the engine refused the declared volatile" : "the engine does not take that action", holders(query).some((h) => h.history?.volatiles !== undefined) ? DECLARED_FACT : null);
       return base(context, query);
     };
     const memo = createFeatureMemo();
@@ -503,7 +505,7 @@ describe("a volatile the engine cannot be given", () => {
           if (query.query.kind !== "stats" && query.query.kind !== "move_outcome" && first === "refused") return base(context, query);
           throw new Error("a defect");
         }
-        if (first === "refused") throw new MechanicsProbeError("the engine refused the declared volatile");
+        if (first === "refused") throw new MechanicsProbeError("the engine refused the declared volatile", DECLARED_FACT);
         return { result: buildResult({ data_class: query.data_class, query_hash: mechanicsQueryHash(query), manifest, mechanics_config_hash: mechanicsConfigHash(withOutcome), gap_ids: [] }, { kind: "unsupported", reason: "random_effect", position: 0 }), diagnostics: [] };
       };
       expect(() => build(c, { probe: failing }, undefined, candidatesOf(c), channel), first).toThrow("a defect");
@@ -565,7 +567,7 @@ describe("what fails means (hand-checked against the engine)", () => {
 
 describe("the type rule", () => {
   it("takes no opponent team, omniscient log, hidden verdicts, battle record or seed", () => {
-    const neverRun = (log: never, record: never, seed: string, raw: { player: "p1"; lines: string[] }, channel: PlayerChannel): void => {
+    const neverRun = (log: OmniscientLog, record: BattleRecord, seed: string, raw: { player: "p1"; lines: string[] }, channel: PlayerChannel): void => {
       const team = [] as never;
       // @ts-expect-error: the omniscient log is not a PlayerChannel
       void candidateFeaturesOutcome(engine, configs(), log, team, []);

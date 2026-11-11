@@ -6,5 +6,6 @@
   "unknown_count_end": 20,
   "unknown_item": "sitrusberry",
   "unknown_move": "tackle",
+  "unknown_volatiles": ["stall", "stockpile"],
   "volatiles": "declared"
 }

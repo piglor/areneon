@@ -12,7 +12,7 @@ beforeAll(async () => {
 
 describe("the feature service for probe-outcome/1", () => {
   it("builds the set, reports the outcomes' cost apart and keeps the same bytes through a second service", () => {
-    const spec = { format_id: GOLDEN_FORMAT, data_class: "synthetic" as const, feature_set: FEATURE_SET_OUTCOME };
+    const spec = { format_id: GOLDEN_FORMAT, data_class: "synthetic" as const, feature_set: FEATURE_SET_OUTCOME as typeof FEATURE_SET_OUTCOME };
     const c = moves[0] as Captured;
     const legal = c.request.legal as NonNullable<typeof c.request.legal>;
     const task = { game: "g", player: c.context.player, lines: [...c.context.channel], team: c.context.team as never, candidates: [...legal.choices, ...legal.pending].map((choice) => ({ choice, pending: legal.pending.includes(choice) })) };
