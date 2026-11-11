@@ -55,6 +55,8 @@ def test_an_invalid_record_is_refused_by_the_contract(name: str) -> None:
         ("parent-is-self", "its own parent"),
         ("opponent-is-self", "train against itself"),
         ("exploiter-of-self", "its own exploiter target"),
+        ("game-manifests-unsorted", "game_manifests must be sorted by JCS bytes"),
+        ("game-manifests-lack-manifest", "manifest must be one of game_manifests"),
     ],
 )
 def test_a_record_the_profile_cannot_judge_is_refused_by_the_reader(
@@ -67,4 +69,4 @@ def test_a_record_the_profile_cannot_judge_is_refused_by_the_reader(
 
 
 def test_the_reader_invalid_samples_are_exactly_the_ones_tested() -> None:
-    assert len(names("reader-invalid")) == 5
+    assert len(names("reader-invalid")) == 7
