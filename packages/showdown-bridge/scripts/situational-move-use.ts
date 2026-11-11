@@ -23,6 +23,7 @@ import { SITUATIONAL_FORMAT, SITUATIONAL_LABEL, situationalSetup, tallyGame } fr
 import { goldenWorldFactsData } from "../src/world-facts-data.ts";
 
 const arg = (name: string): string | undefined => (process.argv.includes(`--${name}`) ? process.argv[process.argv.indexOf(`--${name}`) + 1] : undefined);
+const flag = (name: string): boolean => process.argv.includes(`--${name}`);
 const integer = (name: string): number => {
   const value = arg(name);
   if (value === undefined || !/^[0-9]+$/.test(value)) throw new Error(`--${name} needs a non-negative integer`);
@@ -40,7 +41,7 @@ const stated = [arg("max-turns") === undefined ? undefined : integer("max-turns"
 if (stated.some((value) => value !== undefined && value !== maxTurns)) throw new Error(`the stated turn cap differs from the record's (${maxTurns})`);
 
 const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
-const setup = situationalSetup(engine, GOLDEN_FORMAT, maxTurns, goldenWorldFactsData(), process.env.SHOWDOWN_DIR ? { showdown_dir: process.env.SHOWDOWN_DIR } : {}, process.argv.includes("--history"));
+const setup = situationalSetup(engine, GOLDEN_FORMAT, maxTurns, goldenWorldFactsData(), process.env.SHOWDOWN_DIR ? { showdown_dir: process.env.SHOWDOWN_DIR } : {}, flag("history"));
 const games = [];
 let unreplayable = 0;
 const taken = new Map<string, number>();

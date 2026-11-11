@@ -154,6 +154,8 @@ def _history_raw() -> dict[str, object]:
             if seat["policy"] == "policy:aa":
                 seat["history"] = {
                     "history.decisions": 4,
+                    "history.feature_errors": 1,
+                    "history.feature_error.reader_gap": 1,
                     "history.stall.repeat.offered": 2,
                     "history.stall.repeat.chosen": 1,
                     "history.stall.repeat.chosen_success_ppm": 333_333,
@@ -190,7 +192,8 @@ def test_history_rows_rates_and_intervals() -> None:
     assert stats["power_down"]["mean_ppm"] == 0
     assert stats["power_up_minus_down"]["mean_ppm"] == 1_000_000
     assert stats["fails_all"]["mean_ppm"] == 500_000
-    assert stats["fails_all_per_decision"]["mean_ppm"] == 250_000  # one per four decisions
+    assert stats["fails_all_ppm_of_decisions"]["mean_ppm"] == 250_000  # one per four decisions
+    assert stats["history_build_failed"]["mean_ppm"] == 200_000  # 1 failed of 5 attempted
     assert stats["fails_all_fresh"]["mean_ppm"] is None
     assert stats["conditional"]["mean_ppm"] == 500_000
     assert stats["conditional_chosen_pass_share"]["mean_ppm"] == 666_666
@@ -241,3 +244,18 @@ def test_history_hostile_policy_string_is_escaped() -> None:
     section = _situational_section(SimpleNamespace(situational=s.summarise(raw, b_boot=20)))  # type: ignore[arg-type]
     assert "<script>alert" not in section
     assert "&lt;script&gt;" in section
+
+
+def test_a_root_without_games_has_no_history_table_and_the_summary_bytes_are_stable(
+    tmp_path: Path,
+) -> None:
+    empty = {**_raw(), "games": []}
+    summary = s.summarise(empty, b_boot=20)
+    assert summary["matches"] == {}
+    assert "History groups" not in _situational_section(SimpleNamespace(situational=summary))  # type: ignore[arg-type]
+    path = tmp_path / "raw.json"
+    path.write_text(json.dumps(_history_raw()), encoding="utf8")
+    a, b = tmp_path / "a.json", tmp_path / "b.json"
+    assert s.main([str(path), "--out", str(a)]) == 0
+    assert s.main([str(path), "--out", str(b)]) == 0
+    assert a.read_bytes() == b.read_bytes()

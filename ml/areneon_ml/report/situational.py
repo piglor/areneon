@@ -143,7 +143,14 @@ HISTORY_RATES: Rates = {
     "fails_all_acted": _history_rate("fails.acted"),
     "fails_all_fresh": _history_rate("fails.fresh"),
     "fails_all_item": _history_rate("fails.item"),
-    "fails_all_per_decision": (["history.fails.all.chosen"], ["history.decisions"], 1),
+    # ppm OF DECISIONS: failing chosen parts per decision in millionths (/1,000: per 1,000)
+    "fails_all_ppm_of_decisions": (["history.fails.all.chosen"], ["history.decisions"], 1),
+    # decisions whose history build failed, over those attempted (answered plus failed)
+    "history_build_failed": (
+        ["history.feature_errors"],
+        ["history.feature_errors", "history.decisions"],
+        1,
+    ),
     "conditional": _history_rate("conditional"),
     "conditional_chosen_pass_share": (
         ["history.conditional.chosen_passing"],

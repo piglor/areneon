@@ -205,7 +205,10 @@ export async function tallyGame(setup: SituationalSetup, record: StoredGame): Pr
       tallyDecision(counts, { body, candidates: d.candidates, chosen: d.chosen, features: result.outcome.features as CandidateFeatures2, streaks, stall });
       if (setup.history !== undefined) {
         const declared = setup.history.service.run({ game: `${record.match_id}:${record.game}:${player}`, player, lines: channel.slice(0, end + 1), team: record.teams[player].team, candidates: d.candidates, ...(order === mine.length - 1 ? { final: true } : {}) });
-        if (declared.outcome.kind === "error") bump(historyCounts, `history.feature_error.${declared.outcome.code}`);
+        if (declared.outcome.kind === "error") {
+          bump(historyCounts, `history.feature_error.${declared.outcome.code}`);
+          bump(historyCounts, "history.feature_errors");
+        }
         else {
           const own = historyFacts.find((x) => x.line === end)?.facts?.own;
           const slotFacts = letters.map((letter): SlotFact | null => {

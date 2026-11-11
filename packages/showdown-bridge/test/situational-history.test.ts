@@ -78,6 +78,15 @@ describe("history groups from hand-built decisions", () => {
     expect(() => run("move 1", {})).toThrow("different number of parts");
   });
 
+  it("counts a failing part of a slot with no facts as no_facts, apart from the acted and fresh splits", () => {
+    const o = outcomes([{ slot: 0, move: 3, target: 1, pre: "fails" }]);
+    const counts = run("move 3 1, move 2 1", { outcome: { rows: [], outcomes: o }, facts: [null, null] });
+    expect(counts).toMatchObject({ "history.fails.all.offered": 1, "history.fails.all.chosen": 1, "history.fails.no_facts.offered": 1, "history.fails.no_facts.chosen": 1 });
+    expect(counts["history.fails.acted.offered"]).toBeUndefined();
+    expect(counts["history.fails.fresh.offered"]).toBeUndefined();
+    expect(counts["history.stall.no_facts.offered"]).toBe(2);
+  });
+
   it("reads no Protect, switch or no-move part as a history group", () => {
     const counts = run("move 2 1, move 2 1", { candidates: [{ choice: "switch 3, move 2 1", pending: false }, { choice: "move 2 1, move 2 1", pending: false }] as never });
     expect(Object.keys(counts)).toEqual(["history.decisions"]);
@@ -113,5 +122,6 @@ describe("a re-simulated stored game with the history rows", () => {
     const failing = { ...setup, history: { ...(setup.history as NonNullable<typeof setup.history>), service: { run: () => ({ outcome: { kind: "error" as const, code: "reader_gap" as const }, ms: 0, counts: { queries: 0, probe_runs: 0, unsupported_queries: 0, probe_refusals: 0 } }) } } };
     const refused = await tallyGame(failing, game);
     expect(refused?.seats.p1.history?.["history.feature_error.reader_gap"]).toBeGreaterThan(0);
+    expect(refused?.seats.p1.history?.["history.feature_errors"]).toBe(refused?.seats.p1.history?.["history.feature_error.reader_gap"]);
   }, 240_000);
 });

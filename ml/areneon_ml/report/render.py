@@ -1625,7 +1625,8 @@ _HISTORY_NAMES = [
     ("fails_all_acted", "Fails, actor acted"),
     ("fails_all_fresh", "Fails, actor fresh"),
     ("fails_all_item", "Fails, item history"),
-    ("fails_all_per_decision", "Failing chosen per decision"),
+    ("fails_all_ppm_of_decisions", "Failing chosen, ppm of decisions"),
+    ("history_build_failed", "History build failed, share of decisions"),
     ("conditional", "Conditional"),
     ("conditional_chosen_pass_share", "Chosen conditional branches passing"),
 ]

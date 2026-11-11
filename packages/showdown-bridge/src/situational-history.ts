@@ -10,7 +10,8 @@
 //
 // Per own living active, over the distinct move parts (slot, move position, target, Mega flag) of the candidates ("offered", pending
 // included) and the part the seat chose ("chosen"); keys are flat dotted integer counts under `history.`:
-//   decisions                      move-request decisions both builders answered
+//   decisions                      move-request decisions both builders answered; `feature_errors` (and `feature_error.<code>`, set by
+//                                  the caller) the decisions whose history build failed
 //   stall.<fresh|repeat>.<offered|chosen>   a stalling move (engine list) at `stall_counter` null or <= 1 (fresh) / > 1 (repeat);
 //                                  `.chosen_success_ppm` and `.chosen_success_n`: the sum, over the chosen parts, of the mean engine
 //                                  success chance (`success_ppm` over the part's branches, floored) and their number
@@ -18,8 +19,8 @@
 //   power.<up|down>.<offered|chosen>   a damaging part whose history-declared rows sum to MORE (up) or LESS (down) mean damage than
 //                                  the default-history rows of `probe-damage/2`; equal rows belong to no group; `power.unmatched`
 //                                  counts parts whose two row sets cannot be compared (unsupported or different row counts)
-//   fails.all.<offered|chosen>     a part whose outcome `fails` in every opposing-action branch; `fails.acted`, `fails.fresh` and
-//                                  `fails.item` split it by the actor's facts (it has acted since switching in, it has not, it has an
+//   fails.all.<offered|chosen>     a part whose outcome `fails` in every opposing-action branch; `fails.acted`, `fails.fresh`, `fails.no_facts`
+//                                  (the slot has no facts, excluded from the splits) and `fails.item` split it by the actor's facts (it has acted since switching in, it has not, it has an
 //                                  item-history fact: a berry eaten or a last item), so a first-turn-only or an item-history gate shows as
 //                                  failing chosen parts with the matching fact
 //   conditional.<offered|chosen>   a part whose outcome differs by branch; `conditional.chosen_branches` and `.chosen_passing` count the
@@ -136,7 +137,8 @@ export function tallyHistoryDecision(counts: HistoryCounts, input: HistoryInput)
       }
       if (computed.every((r) => r.precondition === "fails")) {
         count("fails.all");
-        if (fact !== null) count(fact.move_actions > 0 ? "fails.acted" : "fails.fresh");
+        if (fact === null) count("fails.no_facts");
+        else count(fact.move_actions > 0 ? "fails.acted" : "fails.fresh");
         if (fact?.item_history === true) count("fails.item");
       } else if (computed.some((r) => r.precondition !== computed[0]?.precondition || r.precondition_ppm !== computed[0]?.precondition_ppm)) {
         count("conditional");
