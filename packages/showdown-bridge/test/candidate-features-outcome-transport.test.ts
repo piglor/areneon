@@ -11,13 +11,13 @@ import { featureSetHash, featureSetIdentity, type FeatureConfigs, FEATURE_SET_OU
 import { jcs, type Json } from "../src/canonical-json.ts";
 import { configuredSetHash, featureSetOf, isFeatureSetId, type AnyCandidateFeatures } from "../src/feature-build.ts";
 import { readFeatureRows, writeFeatureRows, writePlayRows } from "../src/feature-recompute.ts";
-import { featureCoverageProblem, featureRowsProblem, type WireFeatureRows } from "../src/feature-rows.ts";
+import { featureCoverageProblem, featureRowsProblem, MAX_OUTCOME_BRANCHES, type WireFeatureRows } from "../src/feature-rows.ts";
 import { GOLDEN_FORMAT, GOLDEN_SEED, syntheticFixtureHashes, syntheticTeam } from "../src/golden.ts";
 import { episodeFromRecord, loadEngine, loadTrainingSet, readTrainingExample, stampTeam } from "../src/index.ts";
 import { decisionObservations, readEpisode } from "../src/episode-io.ts";
 import { episodeHash } from "../src/episode.ts";
 import { withMoveOutcome } from "../src/mechanics-config.ts";
-import { loadOutcomeConfig } from "../src/outcome-config.ts";
+import { loadOutcomeConfig, MAX_BRANCHES_LIMIT } from "../src/outcome-config.ts";
 import { nodeSha256 } from "../src/player-channel.ts";
 import { policyGame } from "../src/policy-actor.ts";
 import { type PolicyQueryInput, readPolicyQuery } from "../src/policy-protocol.ts";
@@ -53,6 +53,10 @@ describe("the reader rules of probe-outcome/1", () => {
     expect(coverage(preview)).toBeNull();
     readPolicyQuery({ ...query, query_id: 1 });
     readTrainingExample(sample("training-example/valid/battle-features-outcome"));
+  });
+
+  it("the readers' branch ceiling is the ceiling a record may allow", () => {
+    expect(MAX_OUTCOME_BRANCHES).toBe(MAX_BRANCHES_LIMIT);
   });
 
   it("the history_unknown reason is this set's alone, on any array", () => {

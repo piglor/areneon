@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ from areneon_ml.model.scorer import ScorerError
 from areneon_ml.worker.__main__ import build
 from areneon_ml.worker.features import (
     FOE_SPREAD_TARGET_TYPES,
+    MAX_OUTCOME_BRANCHES,
     coverage_problem,
     damaging_moves,
     rows_problem,
@@ -39,6 +41,7 @@ from tests.ml.helpers import (
 )
 from tests.ml.model.support import TINY_ENCODER, TINY_MODEL
 
+REPO = Path(__file__).resolve().parents[2]
 DAMAGING = damaging_moves(game())
 
 
@@ -805,3 +808,25 @@ def test_the_stream_reader_validates_probe_outcome_arrays() -> None:
     }
     with pytest.raises(TrainingStreamError, match="history_unknown is a probe-outcome/1 value"):
         checker_for(two).line(1, stream_line(two))
+
+
+def test_the_branch_ceiling_is_the_one_outcome_config_allows() -> None:
+    source = (REPO / "packages/showdown-bridge/src/outcome-config.ts").read_text()
+    found = re.search(r"MAX_BRANCHES_LIMIT = (\d+);", source)
+    assert found is not None
+    assert int(found.group(1)) == MAX_OUTCOME_BRANCHES
+
+
+def test_a_malformed_request_is_a_coverage_problem_not_a_crash() -> None:
+    protect = {"id": "protect"}
+    # two active slots but one Pokemon listed: the readers refuse, they do not raise
+    request = request_for([protect], ["100/100"])
+    for choices in (["move 1 1, move 1 1"], ["move 1 1, pass"], ["switch 5, pass"]):
+        query = {
+            "observation": {"log": ["|request|" + json.dumps(request)]},
+            "candidates": [{"choice": c} for c in choices],
+        }
+        for name in ("probe-damage/2", "probe-outcome/1"):
+            empty: dict[str, list[Any]] = {n: [] for n in OUTCOME_ARRAYS}
+            features = {"feature_set": name, "rows": [], **empty}
+            assert coverage_problem(query, features, DAMAGING) is not None
