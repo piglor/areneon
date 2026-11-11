@@ -41,3 +41,4 @@ export { type Published, type PublishInput, publishSnapshot } from "./publish.ts
 export { type ExpectedVersion, INSPECT_ONLY } from "./snapshot-reader.ts";
 export { type FetchedSnapshot, type FetchSnapshotInput, fetchSnapshot, listSnapshotHashes, readCurrent } from "./snapshot-store.ts";
 export { checkLocalCopyTarget, ensurePrivateDirectory, writeLocalCopy } from "./local-copy.ts";
+export { loadPrivatePool, type LoadPrivatePoolInput, PRIVATE_POOL_REFUSALS, PrivatePoolRefusal, type PrivatePoolRefusalCode, type PrivatePool, withPrivatePool } from "./private-pool.ts";
