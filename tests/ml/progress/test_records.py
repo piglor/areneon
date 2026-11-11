@@ -13,6 +13,8 @@ from areneon_ml.loop.records import policy_id
 from areneon_ml.progress.records import (
     RANDOM_PREVIEW_POLICY,
     ProgressRecordError,
+    game_manifest,
+    is_open,
     log_hash,
     read_game_record,
     read_progress_record,
@@ -321,3 +323,35 @@ def test_an_ablation_match_is_argmax_and_never_mixed_with_ordinary_matches() -> 
     mixed["games"] = ordinary["games"] + mixed["games"]
     with pytest.raises(ProgressRecordError, match="ablation matches only"):
         read_progress_record(mixed)
+
+
+@pytest.mark.parametrize(
+    ("name", "message"),
+    [
+        ("open-stated-closed", "never stated"),
+        ("open-misnamed", "named open-<name> exactly when"),
+        ("open-name-without-field", "present exactly when the record has open-sheet matches"),
+        ("open-manifests-missing", "present exactly when the record has open-sheet matches"),
+        ("manifests-without-open-match", "present exactly when the record has open-sheet matches"),
+        ("open-manifests-unsorted", "sorted by their JCS bytes"),
+        ("open-manifests-lack-closed", "version_manifest must be one of game_manifests"),
+        ("open-manifests-one-format", "must hold two formats"),
+        ("open-manifests-other-commit", "share one engine commit and one regulation"),
+        ("open-vs-anchor", "scripted baseline or another run's pair"),
+        ("open-with-sheet-counts", "not a search, solver, ablation or sheet-block match"),
+    ],
+)
+def test_each_open_sheet_rule_has_its_own_message(name: str, message: str) -> None:
+    raw = json.loads((SAMPLES / EVALUATION2 / "reader-invalid" / f"{name}.json").read_text())
+    with pytest.raises(ProgressRecordError, match=re.escape(message)):
+        read_progress_record(raw)
+
+
+def test_an_open_match_uses_the_open_manifest_of_game_manifests() -> None:
+    raw = json.loads((SAMPLES / EVALUATION2 / "valid" / "open-match.json").read_text())
+    record = read_progress_record(raw)
+    closed, twin = record["matches"]
+    assert game_manifest(record, closed) == record["version_manifest"]
+    assert game_manifest(record, twin)["format_id"] == "gen9championsvgc2026regmcbo3"
+    assert is_open(twin)
+    assert not is_open(closed)

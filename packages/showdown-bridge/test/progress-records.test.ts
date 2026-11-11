@@ -286,6 +286,45 @@ describe("the opponent sheet counts of a sheet pair (ADR-025 erratum E4 point 5)
   });
 });
 
+describe("the open-sheet matches and game_manifests (ADR-027 section 5a, ADR-017 erratum E4)", () => {
+  const V2 = "progress-evaluation-record-2";
+  it("reads the valid sample: the closed match and its open twin, both manifests listed", () => {
+    const record = readProgressEvaluationRecordV2(sample(`${V2}/valid/open-match`));
+    expect(record.matches.map((m) => [m.match_id, m.team_sheets])).toEqual([["actor-rule-argmax", undefined], ["open-actor-rule-argmax", "open"]]);
+    expect(record.game_manifests?.map((m) => m.format_id).sort()).toEqual(["gen9championsvgc2026regmc", "gen9championsvgc2026regmcbo3"]);
+  });
+
+  it.each([
+    ["open-stated-closed", "never stated"],
+    ["open-misnamed", "named open-<name> exactly when"],
+    ["open-name-without-field", "present exactly when the record has open-sheet matches"],
+    ["open-manifests-missing", "present exactly when the record has open-sheet matches"],
+    ["manifests-without-open-match", "present exactly when the record has open-sheet matches"],
+    ["open-manifests-unsorted", "sorted by their JCS bytes"],
+    ["open-manifests-lack-closed", "version_manifest must be one of game_manifests"],
+    ["open-manifests-one-format", "must hold two formats"],
+    ["open-manifests-other-commit", "share one engine commit and one regulation"],
+    ["open-vs-anchor", "scripted baseline or another run's pair"],
+    ["open-with-sheet-counts", "not a search, solver, ablation or sheet-block match"]
+  ])("refuses the reader-invalid sample %s", (name, message) => {
+    expect(() => readProgressEvaluationRecordV2(sample(`${V2}/reader-invalid/${name}`))).toThrow(message);
+  });
+
+  it.each(["open-team-sheets-unknown", "open-one-manifest", "open-manifest-extra-field"])("refuses the schema-invalid sample %s", (name) => {
+    expect(() => readProgressEvaluationRecordV2(sample(`${V2}/invalid/${name}`))).toThrow(/invalid ProgressEvaluationRecordV2/);
+  });
+
+  it("names the match of an open extra play mode by its closed twin's name", () => {
+    const record = sample(`${V2}/valid/open-match`);
+    const twin = record.matches[1];
+    twin.match_id = "open-actor-rule-sample-t500000";
+    twin.mode = "sample";
+    twin.temperature_ppm = 500000;
+    record.games.forEach((g: { match_id: string }, i: number) => i >= 4 && (g.match_id = twin.match_id));
+    expect(readProgressEvaluationRecordV2(record).matches[1]?.temperature_ppm).toBe(500000);
+  });
+});
+
 describe("the search candidate's counts and the self-no-search control (ADR-026 section 5)", () => {
   const V2 = "progress-evaluation-record-2";
   it("reads the valid samples, the control's with its own counts", () => {
