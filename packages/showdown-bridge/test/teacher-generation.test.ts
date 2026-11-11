@@ -258,7 +258,7 @@ describe("the damage-aware@v5 teacher (#1344)", () => {
     expect(context.config.success_scaling).toBe("engine");
     const report = context.makeActor("p1", 1).report();
     expect(report.policy_id).toBe("damage-aware@v5");
-    expect(report.success).toEqual({ parts_scaled: 0, parts_unread: 0, dead_candidates: 0, chance_ties: 0 });
+    expect(report.success).toEqual({ parts_scaled: 0, parts_unread: 0, stall_unread: 0, dead_candidates: 0, chance_ties: 0 });
     expect(report.identity.outcome_format).toBe(1);
     expect(report.identity_hash).not.toBe(teacherContext(engine, settings({ teacher_version: "v4" })).makeActor("p1", 1).report().identity_hash);
   });
