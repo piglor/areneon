@@ -87,6 +87,7 @@ def test_the_member_of_a_pair_is_exactly_one() -> None:
         _member_of(both, 2, pair)
     with pytest.raises(ReportError, match="no member's frozen pair"):
         _member_of({"members": {"m0": {"checkpoints": {"x": "y"}}}}, 2, pair)
-    for odd in ({}, {"members": []}, {"members": {"m0": 3}}):
+    odds: list[dict[str, Any]] = [{}, {"members": []}, {"members": {"m0": 3}}]
+    for odd in odds:
         with pytest.raises(ReportError, match="no well-formed members"):
             _member_of(odd, 2, pair)
