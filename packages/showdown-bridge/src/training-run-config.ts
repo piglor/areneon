@@ -22,7 +22,7 @@ const validConfig = ajvFor("contract").compile(trainingRunConfigSchema);
  * Read a TrainingRunConfig: the schema, then the rules it cannot say: the
  * attention heads divide the token width, a Team Preview order does not name
  * more positions than a side holds, each scripted baseline appears once, and a warm start names different
- * checkpoints (a checkpoint holds the network of one role; the Battle role alone is allowed), a value warm-up needs a warm start, and so does a KL anchor, a shared trunk excludes a two-role warm start (a Battle-only one is allowed), an explicit play temperature of 1,000,000 is refused (the default is omitted), and a population obeys its own rules (opponent shares sum to 10^6, `min_roots` at most `members`, `max_past_per_member` at most `max_size`, `member_ppo` sorted and unique, every explore bound contains its starting value, and no two-role warm start: members need distinct pairs).
+ * checkpoints (a checkpoint holds the network of one role; the Battle role alone is allowed), a value warm-up needs a warm start, and so does a KL anchor, a shared trunk excludes a two-role warm start (a Battle-only one is allowed), an explicit play temperature of 1,000,000 is refused (the default is omitted), a mixed-format run's `sheet_regimes` obey their own rules (checkSheetRegimes), and a population obeys its own rules (opponent shares sum to 10^6, `min_roots` at most `members`, `max_past_per_member` at most `max_size`, `member_ppo` sorted and unique, every explore bound contains its starting value, and no two-role warm start: members need distinct pairs).
  */
 export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
   if (!validConfig(value)) throw new TrainingRunConfigError(`invalid TrainingRunConfig: ${JSON.stringify(validConfig.errors)}`);
@@ -52,11 +52,31 @@ export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
     throw new TrainingRunConfigError("generation.play.temperature_ppm 1000000 is the default: omit generation.play (one rule, one encoding)");
   }
   checkSearchDistillation(config);
+  checkSheetRegimes(config);
   if (config.population !== undefined && config.warm_start?.preview !== undefined) {
     throw new TrainingRunConfigError("population: a warm_start that names the preview role would give every member the same pair (use a Battle-only warm start; each member's Preview is seeded from its own member-init draw)");
   }
   if (config.population !== undefined) checkPopulation(config);
   return config;
+}
+
+/**
+ * The rules of `sheet_regimes` the profile cannot say (ADR-027 5a, #1153): the open format is another format than the closed one
+ * (that its rules record is open and the pair passes the sheet-variant check is asked of the engine where one is loaded, `resolveRegimes`);
+ * the belief closed-game source, the opponent sheet block in a mixed run (the open regime's engine-sheet source and the closed regime's
+ * revealed-only source are later slices), a population (its records are version 2) and search labels (they play the closed format) are refused.
+ */
+function checkSheetRegimes(config: TrainingRunConfig): void {
+  const sheet = config.sheet_regimes;
+  if (sheet === undefined) return;
+  const fail = (message: string): never => {
+    throw new TrainingRunConfigError(`sheet_regimes: ${message}`);
+  };
+  if (sheet.open_format === config.format_id) fail("open_format must be another format than format_id (the closed target format)");
+  if (sheet.closed_sheet_source === "belief") fail("closed_sheet_source belief is accepted once the belief source for the closed games exists (ADR-027 slice 6)");
+  if (config.population !== undefined) fail("cannot be combined with a population (its records are version 2)");
+  if (config.generation.search_labels !== undefined) fail("cannot be combined with generation.search_labels (the search plays the closed format)");
+  if (config.model.encoder.options?.opponent_sheet !== undefined) fail("cannot be combined with the opponent_sheet encoder option yet (the open regime's engine-sheet source is a later slice)");
 }
 
 /** Feature sets whose value head reads no candidate row (ADR-026 E2 decision 7): `/2` and `/3` pool the rows into the tokens. */

@@ -24,7 +24,7 @@ SEATS = ("p1", "p2")
 #: Closed key sets of the loop's files: (required, optional).
 PLAN_KEYS = (
     frozenset({"baseline_seed", "game", "opponent", "policy_seat", "seed", "teams"}),
-    frozenset[str](),
+    frozenset({"format_id"}),  # only a run with sheet_regimes (ADR-027 5a)
 )
 BASELINE_KEYS = (frozenset({"actor", "policy_id"}), frozenset[str]())
 GAME_KEYS = (
@@ -50,7 +50,7 @@ GENERATION_KEYS = (
             "team_hashes",
         }
     ),
-    frozenset({"forfeit_causes", "search_labels"}),
+    frozenset({"forfeit_causes", "search_labels", "game_manifests"}),
 )
 VERSION_MANIFEST_KEYS = (
     frozenset({"format_id", "format_rules_hash", "regulation", "ruleset_hash", "showdown_commit"}),
@@ -191,6 +191,8 @@ def read_plan(raw: object) -> tuple[PlanEntry, ...]:
         if integer(entry["game"], f"{what} game") != index:
             raise InspectError(f"{what} is numbered {entry['game']}")
         integer(entry["baseline_seed"], f"{what} baseline_seed")
+        if "format_id" in entry:
+            text(entry["format_id"], f"{what} format_id")
         if SEED.fullmatch(text(entry["seed"], f"{what} seed")) is None:
             raise InspectError(f"{what} seed is not a sodium seed")
         entries.append(
@@ -283,6 +285,8 @@ def read_generation(raw: object, generation: int) -> GenerationFile:
         for item in array(body[name], name):
             hash64(item, f"{name} entry")
     manifest = closed(body["manifest"], VERSION_MANIFEST_KEYS, "generation.json manifest")
+    for listed in array(body.get("game_manifests", []), "game_manifests"):
+        closed(listed, VERSION_MANIFEST_KEYS, "generation.json game_manifests entry")
     hash64(body["training_set_hash"], "training_set_hash")
     return GenerationFile(
         generation,

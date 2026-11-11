@@ -101,3 +101,9 @@ class CheckpointRecord(BaseModel):
     private when any training input was private; a private record is never committed (ADR-008 §5).
     """
     manifest: VersionManifest
+    game_manifests: Annotated[list[VersionManifest] | MISSING, Field(min_length=1)] = (
+        MISSING
+    )
+    """
+    The version manifests of the games this run's checkpoints trained on (ADR-027 section 5a): present only for a run with sheet_regimes, sorted by their JCS bytes, each once. The closed (target) format's manifest is `manifest`, which must be one of them; the others are the open-sheet formats of the same regulation. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+    """

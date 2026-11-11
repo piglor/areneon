@@ -66,6 +66,12 @@ export interface CheckpointRecord {
    */
   data_class: "synthetic" | "private";
   manifest: VersionManifest;
+  /**
+   * The version manifests of the games this run's checkpoints trained on (ADR-027 section 5a): present only for a run with sheet_regimes, sorted by their JCS bytes, each once. The closed (target) format's manifest is `manifest`, which must be one of them; the others are the open-sheet formats of the same regulation. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+   *
+   * @minItems 1
+   */
+  game_manifests?: [VersionManifest, ...VersionManifest[]];
 }
 /**
  * Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.

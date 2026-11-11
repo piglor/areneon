@@ -187,6 +187,32 @@ class WarmStart(BaseModel):
     """
 
 
+class SheetRegimes(BaseModel):
+    """
+    Optional (a minor change within v1; ADR-027 section 5, ADR-010 erratum A8, #1153): the run trains on games of two sheet regimes. `format_id` stays the closed (target) format; `open_format` is the engine's open-sheet format of the same regulation (its rules record says `team_sheets: open` and the sheet-variant check passes: the engine-side checks are made where an engine is loaded, the readers check the shape). Each generation's self-play games are assigned a regime by the purpose `sheet-regime/1` over the run key, generation and game: generations 1 to `open_only_generations` are open only, then exactly round(games * closed_share_ppm / 10^6) closed games, chosen by hash order. Baseline games are always played in the closed format. `closed_sheet_source` names the block source of the closed games (`belief` is accepted by the contract and refused by the readers until it is built). Absent keeps today's plan, records and bytes. An older reader refuses a config that has it.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    open_format: Annotated[StrictStr, Field(pattern="^[a-z0-9]+$")]
+    """
+    The open-sheet Showdown format; differs from format_id.
+    """
+    closed_share_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    The share of self-play games, after the open-only generations, that are played in the closed format, in parts per million (the count is round(games * share / 10^6), half up).
+    """
+    open_only_generations: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Generations 1 to this number play their self-play games in the open format only (0: none).
+    """
+    closed_sheet_source: Literal["revealed-only/1", "belief"]
+    """
+    The source of the opponent-sheet block in closed games.
+    """
+
+
 class Shares(BaseModel):
     """
     Opponent shares of a member's policy seats, in parts per million; they sum to 1,000,000.
@@ -1078,6 +1104,10 @@ class TrainingRunConfig(BaseModel):
     warm_start: WarmStart | MISSING = MISSING
     """
     Optional (a minor change within v1; ADR-010 erratum A2, ADR-019 section 4): generation 0 is this declared pair of cloned checkpoints instead of the seeded random pair. The ids name checkpoints already in the run's checkpoint store (copied in by an explicit import command, never fetched). At run start each must hash to its id, hold the network of its role, and match the run's encoder version, engine-data hash and model section, and its CheckpointRecord must be a clone record (non-empty training_set_hashes, no parent, synthetic); anything else refuses the run. Generation 0 freezes the pair with no learner step, and the learner state starts fresh from the cloned weights. Naming battle alone (#1165) warm-starts the Battle role only: ppo.value_warmup and ppo.anchor then act on the Battle role only, and Team Preview trains as PPO from the first update. Absent keeps the seeded initialisation and today's bytes and run_config_hash. An older reader refuses a config that has it.
+    """
+    sheet_regimes: SheetRegimes | MISSING = MISSING
+    """
+    Optional (a minor change within v1; ADR-027 section 5, ADR-010 erratum A8, #1153): the run trains on games of two sheet regimes. `format_id` stays the closed (target) format; `open_format` is the engine's open-sheet format of the same regulation (its rules record says `team_sheets: open` and the sheet-variant check passes: the engine-side checks are made where an engine is loaded, the readers check the shape). Each generation's self-play games are assigned a regime by the purpose `sheet-regime/1` over the run key, generation and game: generations 1 to `open_only_generations` are open only, then exactly round(games * closed_share_ppm / 10^6) closed games, chosen by hash order. Baseline games are always played in the closed format. `closed_sheet_source` names the block source of the closed games (`belief` is accepted by the contract and refused by the readers until it is built). Absent keeps today's plan, records and bytes. An older reader refuses a config that has it.
     """
     population: Population | MISSING = MISSING
     """

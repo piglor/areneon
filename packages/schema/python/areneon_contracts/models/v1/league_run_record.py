@@ -8,6 +8,18 @@ from typing import Annotated, Literal
 from pydantic import MISSING, BaseModel, ConfigDict, Field, StrictInt, StrictStr
 
 
+class Regimes(BaseModel):
+    """
+    Games per sheet regime (ADR-027 section 5a): present only for a run with sheet_regimes. open + closed = games; a baseline game counts as closed. The counts equal those of the plan's per-entry formats. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    open: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    closed: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+
+
 class BaselineCounts(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -79,6 +91,30 @@ class Opponent(BaseModel):
     The opponent's policy id as the Episodes' collection records name it: the frozen pair itself (self-play) or a scripted baseline, <name>@<commit>.
     """
     games: Annotated[StrictInt, Field(ge=1, le=9007199254740991)]
+
+
+class VersionManifest(BaseModel):
+    """
+    Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    showdown_commit: Annotated[StrictStr, Field(pattern="^[0-9a-f]{40}$")]
+    """
+    The pinned engine commit.
+    """
+    format_id: Annotated[StrictStr, Field(pattern="^[a-z0-9]+$")]
+    regulation: Annotated[StrictStr, Field(min_length=1)]
+    ruleset_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+    """
+    SHA-256 of the canonical engine ruleset.
+    """
+    format_rules_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+    """
+    SHA-256 of Areneon's format rules record (ADR-007).
+    """
 
 
 class BaselineRecord(BaseModel):
@@ -168,4 +204,14 @@ class LeagueRunRecord(BaseModel):
     baselines: Annotated[list[BaselineRecord] | MISSING, Field(min_length=1)] = MISSING
     """
     The damage-aware baseline's identity and counts for the generation (ADR-018 sections 4, 5, 7), one entry per policy id, sorted by policy_id, each once. Absent when no game was played against a damage-aware baseline, so other runs keep their record bytes. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+    """
+    game_manifests: Annotated[list[VersionManifest] | MISSING, Field(min_length=1)] = (
+        MISSING
+    )
+    """
+    The version manifests of the games the generation's games were played under (ADR-027 section 5a): present only for a run with sheet_regimes, sorted by their JCS bytes, each once. The closed (target) format's manifest is the one whose format_id is the config's format_id; the others are the open-sheet formats of the same regulation. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+    """
+    regimes: Regimes | MISSING = MISSING
+    """
+    Games per sheet regime (ADR-027 section 5a): present only for a run with sheet_regimes. open + closed = games; a baseline game counts as closed. The counts equal those of the plan's per-entry formats. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
     """
