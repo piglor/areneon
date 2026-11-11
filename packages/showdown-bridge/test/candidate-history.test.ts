@@ -6,7 +6,7 @@ import { type OutcomeConfig, readOutcomeConfig } from "../src/outcome-config.ts"
 
 // The declarations of the history facts, engine-free: hand-built facts and fighters, every branch of the two-ends rule.
 
-const record: OutcomeConfig = readOutcomeConfig({ schema_version: 1, format_id: "f", assumed_branch: "assumed-set-filler", max_branches: 5, unknown_count_end: 20, unknown_item: "sitrusberry", unknown_move: "tackle", volatiles: "declared" });
+const record: OutcomeConfig = readOutcomeConfig({ schema_version: 1, format_id: "f", assumed_branch: "assumed-set-filler", max_branches: 5, unknown_count_end: 20, unknown_item: "sitrusberry", unknown_move: "tackle", move_path_conditions: ["stall", "stockpile"], unknown_volatile_limit: 2, volatiles: "declared" });
 const exists: HistoryExists = { condition: (id) => ["taunt", "bide", "wish", "stockpile", "protosynthesis", "perishsong"].includes(id), stacking: (id) => id === "stockpile" };
 
 const stint = (change: Partial<Extract<PokemonHistory, { unknown: false }>> = {}): PokemonHistory => ({
@@ -72,7 +72,12 @@ describe("historyDeclarer", () => {
       last_item: { kind: "known", value: null },
     });
     const foeFacts = combatants[1]?.[0] as Record<string, unknown>;
-    expect(foeFacts.moves_used).toBeUndefined(); // opponent PP is never declared
+    expect(foeFacts.moves_used).toBeUndefined(); // opponent PP is never declared (and with no revealed move there is nothing to ask)
+    const attacker = { ...foe, revealed: ["tackle"] };
+    const revealed = historyDeclarer(facts({}, { active: { a: stint({ moves_used: null }) } }), record, exists)([[own], [attacker]], [attacker]).combatants[1]?.[0] as Record<string, unknown>;
+    expect(revealed.moves_used).toEqual({ kind: "unknown", ends: [[], ["tackle"]] }); // the declared revealed moves used once against unused, for the Pokemon whose move is asked
+    // a foe whose action is only queued (not the asked one) is not asked: its queued move's success is not read
+    expect((historyDeclarer(facts({}, { active: { a: stint({ moves_used: null }) } }), record, exists)([[own], [attacker]]).combatants[1]?.[0] as Record<string, unknown>).moves_used).toBeUndefined();
     expect(foeFacts.stall_counter).toEqual({ kind: "known", value: 3 });
     expect(foeFacts.last_move_failed).toEqual({ kind: "unknown", ends: [false, true] });
     expect(foeFacts.ate_berry).toEqual({ kind: "known", value: true });
@@ -90,7 +95,20 @@ describe("historyDeclarer", () => {
     expect(settled.hurt_this_turn).toEqual({ kind: "unknown", ends: [false, true] });
     expect(settled.ate_berry).toEqual({ kind: "unknown", ends: [false, true] });
     expect(settled.last_item).toEqual({ kind: "unknown", ends: [null, "sitrusberry"] });
-    const refused = historyDeclarer(null, record, exists)([[own], [foe]]);
+    // an unsettled stint and a refused channel: volatiles are unknown too (none against the record's ids started), and a foe's used moves are unknown
+    const revealedFoe: Fighter = { ...foe, revealed: ["tackle", "protect"] };
+    expect(settled.volatiles).toEqual({ kind: "unknown", ends: [[], [{ id: "stall", started_turn: 4, after_residual: false }, { id: "stockpile", started_turn: 4, after_residual: false }]] });
+    const unsettledFoe = historyDeclarer(facts({}, { active: { a: { name: "F", unknown: true } } }), record, exists)([[own], [revealedFoe]], [revealedFoe]).combatants[1]?.[0] as Record<string, unknown>;
+    expect(unsettledFoe.moves_used).toEqual({ kind: "unknown", ends: [[], ["tackle", "protect"]] });
+    // more conditions than the record explores: the whole query is unknown, and no volatile is offered
+    const many = historyDeclarer(facts({ active: { a: { name: "A", unknown: true } } }), { ...record, unknown_volatile_limit: 1 }, exists)([[own], [foe]]);
+    expect(many.unknown).toBe(true);
+    expect((many.combatants[0]?.[0] as Record<string, unknown>).volatiles).toBeUndefined();
+    expect(historyDeclarer(facts({ active: { a: stint() } }), { ...record, unknown_volatile_limit: 1 }, exists)([[own], [foe]]).unknown).toBe(false); // a settled stint is not
+    expect(historyDeclarer(null, { ...record, unknown_volatile_limit: 1 }, exists)([[own], [foe]]).unknown).toBe(true);
+    const refused = historyDeclarer(null, record, exists)([[own], [revealedFoe]], [revealedFoe]);
+    expect(refused.combatants[1]?.[0]).toMatchObject({ volatiles: { kind: "unknown" }, moves_used: { kind: "unknown", ends: [[], ["tackle", "protect"]] } });
+    expect(refused.battle?.turn).toBe(1); // dated: the turn is 1 without facts
     expect(refused.combatants[1]?.[0]).toMatchObject({ move_actions: { kind: "unknown", ends: [0, 20] }, last_item: { kind: "unknown", ends: [null, "sitrusberry"] } });
     expect(refused.battle?.field_last_move).toEqual({ kind: "unknown", ends: [null, "tackle"] });
     expect(refused.battle?.sides?.[0]).toEqual({ total_fainted: { kind: "unknown", ends: [0, 20] } });

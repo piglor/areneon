@@ -12,11 +12,15 @@
 // corner are covered; other joint interactions of unknown facts are not modelled (ADR-022 E-22.5.3 leaves the combination open). `probeMechanics` keeps equal answers and makes different ones `unsupported` (`history_unknown`).
 
 import type { MechanicsQuery } from "./mechanics-query.ts";
-import { need } from "./mechanics-guard.ts";
+import { DECLARED_FACT } from "./mechanics-error.ts";
+import { need as guard } from "./mechanics-guard.ts";
 import type { EffectState, WBattle, WMon, WSide } from "./world-engine.ts";
 import { addVolatileAt, remainingTurns, writeLastMove, writeStallCounter } from "./world-state.ts";
 
 type AnyQuery = MechanicsQuery["query"];
+
+/** A refusal of a declared fact: coded, so a caller answers `history_unknown` without reading words. */
+const need = (ok: boolean, what: string): void => guard(ok, what, DECLARED_FACT);
 
 export interface Attacker {
   side: number;
@@ -69,7 +73,7 @@ export interface HistoryDeclaration {
   resolved: ResolvedHistory;
   stall: string;
   /** Called when a declared volatile's start handler drew: its answers at the other end of the draws must be asked too. */
-  on_draw: () => void;
+  on_draw?: (() => void) | undefined;
 }
 
 type Fact<T> = { kind: "known"; value: T } | { kind: "unknown"; ends: readonly T[] };
@@ -187,7 +191,8 @@ export function historyProblems(query: AnyQuery): string[] {
  * Run `start` (a declared volatile's start handler) with a random source that answers its draws at one end: `low` gives the smallest
  * value of each draw (`random(2, 6)` is 2, `random(n)` is 0, a list's first member), `high` the largest. `on_draw` is told a draw happened,
  * so the caller asks the other end too: equal answers are kept, different ones are `history_unknown` (the two ends rule applied to the draw).
- * A `randomChance` answers `true`; any other method still refuses.
+ * A `randomChance` answers `true` at BOTH ends (a chance inside a start handler is read as its "yes" once; only the other draws have two ends, so a
+ * start whose outcome depends on a chance is asked at one end of it). Any other method still refuses.
  */
 export function withStartDraws(battle: HBattle, end: "low" | "high", onDraw: () => void, start: () => void): void {
   const holder = battle as unknown as { prng: object };
@@ -197,7 +202,8 @@ export function withStartDraws(battle: HBattle, end: "low" | "high", onDraw: () 
     random: (from, to) => {
       onDraw();
       if (typeof to === "number" && typeof from === "number") return low ? from : to - 1;
-      return typeof from === "number" ? (low ? 0 : from - 1) : 0;
+      // the engine's `random()` is a float in [0, 1), `random(n)` an integer below n
+      return typeof from === "number" ? (low ? 0 : from - 1) : low ? 0 : 1 - Number.EPSILON / 2;
     },
     randomChance: () => {
       onDraw();
@@ -248,7 +254,7 @@ export interface HistoryContext {
   stall: string;
   at(place: number): void;
   /** Called when a declared volatile's start handler drew (`draws` of the resolved history picks the value). */
-  on_draw?: () => void;
+  on_draw?: (() => void) | undefined;
 }
 
 /** Declare the history on the scenario battle. Every value is absolute; nothing declared is left to the scenario's fresh value. */
