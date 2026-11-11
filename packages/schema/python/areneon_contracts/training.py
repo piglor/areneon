@@ -58,14 +58,87 @@ def _check_candidates(number: int, raw: dict[str, Any], ready: bool) -> None:
 _FEATURE_SET_WITH_ARRAYS = "probe-damage/2"
 #: ``probe-damage/3`` also carries ``belief_threats`` (a move the belief says a foe may hold).
 _FEATURE_SET_WITH_BELIEF = "probe-damage/3"
+#: ``probe-outcome/1`` carries the four arrays and ``outcomes`` (ADR-022 erratum E-22.5.3); the
+#: reason ``history_unknown`` of an unsupported row is that set's alone.
+_FEATURE_SET_WITH_OUTCOMES = "probe-outcome/1"
+_HISTORY_UNKNOWN = "history_unknown"
+_MAX_BRANCHES = 5
+_MILLION = 1_000_000
 _ARRAY_KEYS: dict[str, Callable[[dict[str, Any]], tuple[Any, ...]]] = {
     "threats": lambda r: (r["own"], int(r["mega"]), r["foe"], r["move"]),
     "speeds": lambda r: (r["own"], int(r["mega"]), r["foe"]),
     "own_priorities": lambda r: (r["slot"], r["move"], int(r["mega"])),
     "foe_priorities": lambda r: (r["foe"], r["move"]),
     "belief_threats": lambda r: (r["own"], int(r["mega"]), r["foe"], r["move"]),
+    "outcomes": lambda r: (
+        r["slot"],
+        r["move"],
+        r["target"],
+        int(r["mega"]),
+        int(r["action"] != "switch"),
+        r["foe_move"] or "",
+    ),
 }
-_BASE_ARRAYS = 4  # the arrays of ``/2``: the first four keys above
+_BASE = ("threats", "speeds", "own_priorities", "foe_priorities")  # the arrays of ``/2``
+
+
+def _wanted_arrays(feature_set: Any) -> list[str]:
+    """The arrays a feature set carries (none for any set but the three that do)."""
+    extra = {
+        _FEATURE_SET_WITH_ARRAYS: (),
+        _FEATURE_SET_WITH_BELIEF: ("belief_threats",),
+        _FEATURE_SET_WITH_OUTCOMES: ("outcomes",),
+    }.get(feature_set)
+    return [] if extra is None else [*_BASE, *extra]
+
+
+def _row_problem(r: dict[str, Any]) -> str | None:
+    """The rule of one outcome row alone: branch shape, precondition against its ppm, success."""
+    if r["action"] == "switch":
+        if r["foe_move"] is not None or r["assumed"]:
+            return "a switch branch has no foe move and is not assumed"
+    elif r["foe_move"] is None:
+        return "a move branch names its foe move"
+    if r["kind"] != "computed":
+        return None
+    pre = r["precondition_ppm"]
+    if r["precondition"] == "passes":
+        fits = pre == _MILLION
+    elif r["precondition"] == "fails":
+        fits = pre == 0
+    else:
+        fits = 0 < pre < _MILLION
+    if not fits:
+        return "the precondition does not fit its ppm"
+    if r["success_ppm"] != pre * r["hit_ppm"] // _MILLION:
+        return "success_ppm must be floor(precondition_ppm x hit_ppm / 10^6)"
+    return None
+
+
+def _branches_problem(group: list[dict[str, Any]]) -> str | None:
+    """The branches of one own move part: its switch branch, then one to four move branches."""
+    moves = group[1:]
+    if group[0]["action"] != "switch":
+        return "each own move part starts with its switch branch"
+    if not 1 <= len(moves) <= _MAX_BRANCHES - 1 or any(r["action"] != "move" for r in moves):
+        return "each own move part has a switch branch and one to four move branches"
+    if any(r["assumed"] for r in moves) and (len(moves) != 1 or not moves[0]["assumed"]):
+        return "an assumed branch is the only move branch of its part"
+    return None
+
+
+def _outcomes_problem(rows: list[dict[str, Any]]) -> str | None:
+    """The ``outcomes`` rules that need no request (``outcomesProblem`` in feature-rows.ts)."""
+    for r in rows:
+        problem = _row_problem(r)
+        if problem is not None:
+            return problem
+    parts = itertools.groupby(rows, key=lambda r: (r["slot"], r["move"], r["target"], r["mega"]))
+    for _, group in parts:
+        problem = _branches_problem(list(group))
+        if problem is not None:
+            return problem
+    return None
 
 
 def _check_features(number: int, raw: dict[str, Any]) -> None:
@@ -85,15 +158,12 @@ def _check_features(number: int, raw: dict[str, Any]) -> None:
             " by (slot, move, target, mega)"
         )
     present = [name for name in _ARRAY_KEYS if name in features]
-    wanted = {
-        _FEATURE_SET_WITH_ARRAYS: _BASE_ARRAYS,
-        _FEATURE_SET_WITH_BELIEF: len(_ARRAY_KEYS),
-    }.get(features["feature_set"], 0)
-    if len(present) != wanted:
+    if sorted(present) != sorted(_wanted_arrays(features["feature_set"])):
         raise TrainingStreamError(
             f"line {number}: the candidate_features arrays are present exactly under"
             f" {_FEATURE_SET_WITH_ARRAYS} (and with belief_threats under"
-            f" {_FEATURE_SET_WITH_BELIEF})"
+            f" {_FEATURE_SET_WITH_BELIEF}, and with outcomes under"
+            f" {_FEATURE_SET_WITH_OUTCOMES})"
         )
     for name in present:
         if not _strictly_ascending([_ARRAY_KEYS[name](r) for r in features[name]]):
@@ -114,6 +184,18 @@ def _check_features(number: int, raw: dict[str, Any]) -> None:
             f"line {number}: a candidate_features belief_threats row repeats a move already in"
             " threats for that foe"
         )
+    if features["feature_set"] != _FEATURE_SET_WITH_OUTCOMES and any(
+        r.get("reason") == _HISTORY_UNKNOWN
+        for rows in (features["rows"], *(features.get(name, []) for name in _BASE))
+        for r in rows
+    ):
+        raise TrainingStreamError(
+            f"line {number}: a candidate_features reason {_HISTORY_UNKNOWN} is a"
+            f" {_FEATURE_SET_WITH_OUTCOMES} value"
+        )
+    problem = _outcomes_problem(features.get("outcomes", []))
+    if problem is not None:
+        raise TrainingStreamError(f"line {number}: the candidate_features outcomes: {problem}")
 
 
 # The feature set of an example (or none) is recorded in `StreamChecker.classes` under this

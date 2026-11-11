@@ -10,6 +10,10 @@ Under ``probe-damage/2`` (ADR-022 erratum E-22.3.2) the object also carries ``th
 ``own_priorities`` and ``foe_priorities``: present exactly then, each sorted and unique by its key
 (``rows_problem``); and, for a query, the own positions, Mega flags, own-priority rows and speed
 rows the request and the candidates imply (``coverage_problem``).
+
+Under ``probe-outcome/1`` (ADR-022 erratum E-22.5.3) the object carries those four arrays and
+``outcomes`` (one row per own move part of the candidates and opposing-action branch); the reason
+``history_unknown`` of an unsupported row is that set's alone.
 """
 
 from __future__ import annotations
@@ -48,8 +52,17 @@ def _key(row: dict[str, Any]) -> tuple[int, int, int, int]:
 FEATURE_SET_WITH_ARRAYS = "probe-damage/2"
 #: ``probe-damage/3`` carries these and ``belief_threats``.
 FEATURE_SET_WITH_BELIEF_THREATS = "probe-damage/3"
+#: ``probe-outcome/1`` carries the four arrays and ``outcomes``; its reason alone is
+#: ``history_unknown``.
+FEATURE_SET_WITH_OUTCOMES = "probe-outcome/1"
+HISTORY_UNKNOWN = "history_unknown"
+#: The most branches one own move part has in the ``outcomes`` (the reviewed record's ceiling).
+MAX_OUTCOME_BRANCHES = 5
+_MILLION = 1_000_000
 _ARRAYS = ("threats", "speeds", "own_priorities", "foe_priorities")
 _BELIEF_ARRAYS = (*_ARRAYS, "belief_threats")
+_OUTCOME_ARRAYS = (*_ARRAYS, "outcomes")
+_EVERY_ARRAY = (*_ARRAYS, "belief_threats", "outcomes")
 
 # The sort key of each array's rows (a Mega flag sorts false first).
 _ARRAY_KEYS: dict[str, Callable[[dict[str, Any]], tuple[Any, ...]]] = {
@@ -58,16 +71,77 @@ _ARRAY_KEYS: dict[str, Callable[[dict[str, Any]], tuple[Any, ...]]] = {
     "own_priorities": lambda r: (r["slot"], r["move"], int(r["mega"])),
     "foe_priorities": lambda r: (r["foe"], r["move"]),
     "belief_threats": lambda r: (r["own"], int(r["mega"]), r["foe"], r["move"]),
+    "outcomes": lambda r: (
+        r["slot"],
+        r["move"],
+        r["target"],
+        int(r["mega"]),
+        int(r["action"] != "switch"),
+        r["foe_move"] or "",
+    ),
 }
 
 
 def _wanted_arrays(feature_set: Any) -> tuple[str, ...]:
     if feature_set == FEATURE_SET_WITH_BELIEF_THREATS:
         return _BELIEF_ARRAYS
+    if feature_set == FEATURE_SET_WITH_OUTCOMES:
+        return _OUTCOME_ARRAYS
     return _ARRAYS if feature_set == FEATURE_SET_WITH_ARRAYS else ()
 
 
-def rows_problem(features: dict[str, Any]) -> str | None:
+def _row_problem(r: dict[str, Any]) -> str | None:
+    """The rule of one outcome row alone: branch shape, precondition against its ppm, success."""
+    if r["action"] == "switch":
+        if r["foe_move"] is not None or r["assumed"]:
+            return _fixed("outcomes: a switch branch has no foe move and is not assumed")
+    elif r["foe_move"] is None:
+        return _fixed("outcomes: a move branch names its foe move")
+    if r["kind"] != "computed":
+        return None
+    pre = r["precondition_ppm"]
+    if r["precondition"] == "passes":
+        fits = pre == _MILLION
+    elif r["precondition"] == "fails":
+        fits = pre == 0
+    else:
+        fits = 0 < pre < _MILLION
+    if not fits:
+        return _fixed("outcomes: the precondition does not fit its ppm")
+    if r["success_ppm"] != pre * r["hit_ppm"] // _MILLION:
+        return _fixed("outcomes: success_ppm must be floor(precondition_ppm x hit_ppm / 10^6)")
+    return None
+
+
+def _branches_problem(group: list[dict[str, Any]]) -> str | None:
+    """The branches of one own move part: its switch branch, then one to four move branches."""
+    moves = group[1:]
+    if group[0]["action"] != "switch":
+        return _fixed("outcomes: each own move part starts with its switch branch")
+    if not 1 <= len(moves) <= MAX_OUTCOME_BRANCHES - 1 or any(r["action"] != "move" for r in moves):
+        return _fixed(
+            "outcomes: each own move part has a switch branch and one to four move branches"
+        )
+    if any(r["assumed"] for r in moves) and (len(moves) != 1 or not moves[0]["assumed"]):
+        return _fixed("outcomes: an assumed branch is the only move branch of its part")
+    return None
+
+
+def _outcomes_problem(rows: list[dict[str, Any]]) -> str | None:
+    """The ``outcomes`` rules that need no request (``outcomesProblem`` in feature-rows.ts)."""
+    for r in rows:
+        problem = _row_problem(r)
+        if problem is not None:
+            return problem
+    parts = itertools.groupby(rows, key=lambda r: (r["slot"], r["move"], r["target"], r["mega"]))
+    for _, group in parts:
+        problem = _branches_problem(list(group))
+        if problem is not None:
+            return problem
+    return None
+
+
+def rows_problem(features: dict[str, Any]) -> str | None:  # noqa: PLR0911
     """None when the rows are strictly ascending by (slot, move, target, mega false first).
 
     Under ``probe-damage/2`` the four arrays must be present and strictly ascending by their keys
@@ -81,12 +155,13 @@ def rows_problem(features: dict[str, Any]) -> str | None:
                 "the candidate_features rows must be sorted and unique by "
                 "(slot, move, target, mega)"
             )
-    present = [name for name in _BELIEF_ARRAYS if name in features]
+    present = [name for name in _EVERY_ARRAY if name in features]
     if present != list(_wanted_arrays(features.get("feature_set"))):
         return (
             f"the candidate_features arrays {', '.join(_ARRAYS)} "
             f"are present exactly under {FEATURE_SET_WITH_ARRAYS}, and with belief_threats "
-            f"under {FEATURE_SET_WITH_BELIEF_THREATS}"
+            f"under {FEATURE_SET_WITH_BELIEF_THREATS}, and with outcomes "
+            f"under {FEATURE_SET_WITH_OUTCOMES}"
         )
     for name in present:
         for before, now in itertools.pairwise(features[name]):
@@ -105,7 +180,15 @@ def rows_problem(features: dict[str, Any]) -> str | None:
         return (
             "a candidate_features belief_threats row repeats a move already in threats for that foe"
         )
-    return None
+    if features.get("feature_set") != FEATURE_SET_WITH_OUTCOMES and any(
+        r.get("reason") == HISTORY_UNKNOWN
+        for rows in (features["rows"], *(features.get(name, []) for name in _ARRAYS))
+        for r in rows
+    ):
+        return (
+            f"a candidate_features reason {HISTORY_UNKNOWN} is a {FEATURE_SET_WITH_OUTCOMES} value"
+        )
+    return _outcomes_problem(features.get("outcomes", []))
 
 
 def coverage_problem(
@@ -234,4 +317,41 @@ def _array_problem(  # noqa: PLR0911
             return _fixed(
                 "foe_priorities must hold a row for the foe move of every threat in a move request"
             )
+    if "outcomes" in _wanted_arrays(features.get("feature_set")):
+        return _outcome_coverage(request, candidates, features, locations)
+    return None
+
+
+def _outcome_coverage(
+    request: dict[str, Any],
+    candidates: list[dict[str, Any]],
+    features: dict[str, Any],
+    locations: set[int],
+) -> str | None:
+    """One block of ``outcomes`` per own move part of the candidates that has a foe to ask about.
+
+    The part's Pokemon must live and its foe location hold a living foe (an untargeted or
+    ally-targeted part is about the lowest foe, always present); a request with no move to score has
+    none.
+    """
+    expected: set[tuple[int, int, int, int]] = set()
+    pokemon = request.get("side", {}).get("pokemon", [])
+    if request.get("active") is not None and locations:
+        for candidate in candidates:
+            for slot, action in enumerate(parse_choice(candidate["choice"]).slots):
+                target = action.target or 0
+                condition = pokemon[slot].get("condition")
+                lives = isinstance(condition, str) and not condition.endswith(" fnt")
+                if action.kind == "move" and lives and (target <= 0 or target in locations):
+                    expected.add((slot, action.index or 1, target, int(action.event == "mega")))
+    shown: list[tuple[int, int, int, int]] = []
+    for row in features["outcomes"]:
+        part = (row["slot"], row["move"], row["target"], int(row["mega"]))
+        if not shown or shown[-1] != part:
+            shown.append(part)
+    if shown != sorted(expected):
+        return _fixed(
+            "outcomes must hold the rows of exactly the own move parts of the candidates that "
+            "have a foe to ask about"
+        )
     return None

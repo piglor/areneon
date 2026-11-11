@@ -571,3 +571,237 @@ def test_a_refused_belief_is_a_stated_field_with_no_rows() -> None:
     )["candidate_features"]["belief_threats"]
     with pytest.raises(TrainingStreamError, match="belief_threats_refused"):
         checker_for(broken).line(1, stream_line(broken))
+
+
+# ---- probe-outcome/1 (ADR-022 erratum E-22.5.3)
+
+OUTCOME_ARRAYS = (*ARRAYS, "outcomes")
+
+
+def featured_outcome() -> dict[str, Any]:
+    return sample("policy-query/valid/battle-features-outcome.json")
+
+
+def test_the_valid_probe_outcome_samples_are_accepted_under_their_set() -> None:
+    query = featured_outcome()
+    assert all(query["candidate_features"][name] for name in OUTCOME_ARRAYS)
+    assert read_query(query, support(query)) == query
+    preview = sample("policy-query/valid/preview-features-outcome.json")
+    assert read_query(preview, support(preview))["candidate_features"]["outcomes"] == []
+    check("policy-handshake", sample("policy-handshake/valid/ready-features-outcome.json"))
+    check("training-example", sample("training-example/valid/battle-features-outcome.json"))
+    outcomes = query["candidate_features"]["outcomes"]
+    assert {r.get("precondition") for r in outcomes} == {None, "passes", "chance", "fails"}
+    assert any(r["assumed"] for r in outcomes)
+    assert any(r.get("reason") == "history_unknown" for r in outcomes)
+
+
+@pytest.mark.parametrize(
+    ("name", "message"),
+    [
+        ("under-2", "present exactly under probe-damage/2"),
+        ("missing-array", "with outcomes under probe-outcome/1"),
+        ("missing-speeds", "present exactly under probe-damage/2"),
+        ("unsorted", "outcomes must be sorted and unique"),
+        ("duplicate", "outcomes must be sorted and unique"),
+        ("missing-switch-branch", "starts with its switch branch"),
+        ("missing-move-branch", "a switch branch and one to four move branches"),
+        ("assumed-with-revealed", "an assumed branch is the only move branch"),
+        ("switch-with-foe-move", "a switch branch has no foe move"),
+        ("success-mismatch", "success_ppm must be floor"),
+        ("precondition-mismatch", "the precondition does not fit its ppm"),
+        ("history-unknown-under-2", "history_unknown is a probe-outcome/1 value"),
+    ],
+)
+def test_probe_outcome_structure_is_a_reader_rule(name: str, message: str) -> None:
+    query = sample(f"policy-query/reader-invalid/features-outcome-{name}.json")
+    check("policy-query", query)  # schema-valid
+    assert rows_problem(query["candidate_features"]) is not None
+    with pytest.raises(QueryError, match=message):
+        read_query(query, support(query))
+
+
+@pytest.mark.parametrize("name", ["missing-part", "foreign-part"])
+def test_probe_outcome_blocks_are_judged_against_the_request(name: str) -> None:
+    query = sample(f"policy-query/reader-invalid/features-outcome-{name}.json")
+    check("policy-query", query)
+    assert rows_problem(query["candidate_features"]) is None
+    with pytest.raises(QueryError, match="outcomes must hold the rows of exactly the own move"):
+        read_query(query, support(query))
+
+
+def test_probe_outcome_value_rules() -> None:
+    features = featured_outcome()["candidate_features"]
+
+    def changed(index: int, **change: Any) -> dict[str, Any]:
+        copied = copy.deepcopy(features)
+        copied["outcomes"][index].update(change)
+        return copied
+
+    # row 1 is part 0's `protect` branch, row 2 its `thunderbolt` branch (passes, 800000)
+    wrong = (
+        changed(2, precondition_ppm=500000, success_ppm=400000),
+        changed(2, precondition="fails"),
+        changed(2, precondition="chance", precondition_ppm=0, success_ppm=0),
+    )
+    for broken in wrong:
+        assert "the precondition does not fit its ppm" in (rows_problem(broken) or "")
+    assert "a move branch names its foe move" in (rows_problem(changed(1, foe_move=None)) or "")
+    assert "an assumed branch is the only move branch" in (
+        rows_problem(changed(2, assumed=True)) or ""
+    )
+    extra = copy.deepcopy(features)
+    rows = extra["outcomes"]
+    more = [{**rows[2], "foe_move": move} for move in ("uturn", "xscissor", "zenheadbutt")]
+    five = [*rows[:3], *more, *rows[3:]]
+    assert "one to four move branches" in (rows_problem({**extra, "outcomes": five}) or "")
+    four = [*rows[:3], *more[:2], *rows[3:]]
+    assert rows_problem({**extra, "outcomes": four}) is None
+    assert "starts with its switch branch" in (rows_problem({**extra, "outcomes": rows[1:]}) or "")
+
+
+def test_history_unknown_is_this_sets_reason_on_any_array() -> None:
+    base = sample("policy-query/valid/battle-features-2.json")["candidate_features"]
+    unknown = {"kind": "unsupported", "reason": "history_unknown"}
+    threat = {**unknown, "own": 0, "mega": False, "foe": 1, "move": "protect"}
+    row = {**unknown, "slot": 0, "move": 1, "target": 1, "mega": False}
+    for broken in ({**base, "threats": [threat]}, {**base, "rows": [row]}):
+        assert "history_unknown is a probe-outcome/1 value" in (rows_problem(broken) or "")
+    mine = featured_outcome()["candidate_features"]
+    assert rows_problem({**mine, "threats": [threat]}) is None
+
+
+def request_for(moves: list[dict[str, str]], conditions: list[str]) -> dict[str, Any]:
+    return {
+        "active": [{"moves": moves}, {"moves": moves}],
+        "side": {"pokemon": [{"condition": c} for c in conditions]},
+    }
+
+
+def test_probe_outcome_blocks_follow_the_candidates_foes_and_living_actives() -> None:
+    protect = {"id": "protect"}
+
+    def outcome_part(slot: int, move: int, target: int, mega: bool = False) -> list[dict[str, Any]]:
+        key = {"slot": slot, "move": move, "target": target, "mega": mega}
+        done = {"precondition": "passes", "precondition_ppm": 10**6, "hit_ppm": 10**6}
+        return [
+            {"kind": "computed", **key, "action": "switch", "foe_move": None, "assumed": False}
+            | done
+            | {"success_ppm": 10**6},
+            {**key, "kind": "unsupported", "action": "move", "foe_move": "protect"}
+            | {"assumed": True, "reason": "history_unknown"},
+        ]
+
+    def speed(own: int, foe: int, mega: bool = False) -> dict[str, Any]:
+        return {"kind": "computed", "own": own, "mega": mega, "foe": foe, "relation": "tie"}
+
+    def prio(slot: int, move: int, mega: bool = False) -> dict[str, Any]:
+        return {"kind": "computed", "slot": slot, "move": move, "mega": mega, "priority": 0}
+
+    def problem(request: dict[str, Any], choices: list[str], **given: Any) -> str | None:
+        empty: dict[str, list[Any]] = {name: [] for name in OUTCOME_ARRAYS}
+        features = {"feature_set": "probe-outcome/1", "rows": [], **empty, **given}
+        query = {
+            "observation": {"log": ["|request|" + json.dumps(request)]},
+            "candidates": [{"choice": c} for c in choices],
+        }
+        return coverage_problem(query, features, DAMAGING)
+
+    live = ["100/100", "100/100", "100/100"]
+    request = request_for([protect], live)
+    base = {"speeds": [speed(0, 1), speed(1, 1)], "own_priorities": [prio(0, 1), prio(1, 1)]}
+    untargeted = ["move 1, move 1 -1"]
+    both = [*outcome_part(0, 1, 0), *outcome_part(1, 1, -1)]
+    assert problem(request, untargeted, **base, outcomes=both) is None
+    assert "outcomes must hold" in (problem(request, untargeted, **base) or "")
+    # the second foe is down (the arrays show a foe at 1 only): no block for location 2
+    aimed = ["move 1 1, move 1 2"]
+    assert problem(request, aimed, **base, outcomes=outcome_part(0, 1, 1)) is None
+    two_blocks = [*outcome_part(0, 1, 1), *outcome_part(1, 1, 2)]
+    assert "outcomes must hold" in (problem(request, aimed, **base, outcomes=two_blocks) or "")
+    foes = {"speeds": [speed(0, 1), speed(0, 2), speed(1, 1), speed(1, 2)]}
+    assert (
+        problem(request, aimed, **foes, own_priorities=base["own_priorities"], outcomes=two_blocks)
+        is None
+    )
+    # a fainted active has no block, a forced switch and Team Preview have none
+    fainted = request_for([protect], ["100/100", "0 fnt", "100/100"])
+    one = {"speeds": [speed(0, 1)], "own_priorities": [prio(0, 1)]}
+    assert problem(fainted, ["move 1 1, pass"], **one, outcomes=outcome_part(0, 1, 1)) is None
+    extra = [*outcome_part(0, 1, 1), *outcome_part(1, 1, 1)]
+    assert "outcomes must hold" in (
+        problem(fainted, ["move 1 1, pass"], **one, outcomes=extra) or ""
+    )
+    forced = {"forceSwitch": [True, False], "side": request["side"]}
+    assert problem(forced, ["switch 3, pass"], speeds=[speed(2, 1)]) is None
+    stray = problem(
+        forced, ["switch 3, pass"], speeds=[speed(2, 1)], outcomes=outcome_part(0, 1, 1)
+    )
+    assert "outcomes must hold" in (stray or "")
+    # the Mega variant is a part of its own
+    mega = {
+        "speeds": [speed(0, 1), speed(0, 1, True), speed(1, 1)],
+        "own_priorities": [prio(0, 1, True), prio(1, 1)],
+    }
+    blocks = [*outcome_part(0, 1, 1, True), *outcome_part(1, 1, 1)]
+    assert problem(request, ["move 1 1 mega, move 1 1"], **mega, outcomes=blocks) is None
+
+
+def test_the_stream_reader_validates_probe_outcome_arrays() -> None:
+    example = sample("training-example/valid/battle-features-outcome.json")
+    raw, _ = checker_for(example).line(1, stream_line(example))
+    assert raw["candidate_features"]["outcomes"]
+    for name, message in (
+        ("under-2", "present exactly under probe-damage/2"),
+        ("missing-array", "present exactly under probe-damage/2"),
+        ("unsorted", "outcomes must be sorted and unique"),
+        ("missing-switch-branch", "starts with its switch branch"),
+        ("success-mismatch", "success_ppm must be floor"),
+        ("history-unknown-under-2", "history_unknown is a probe-outcome/1 value"),
+    ):
+        bad = sample(f"training-example/reader-invalid/features-outcome-{name}.json")
+        with pytest.raises(TrainingStreamError, match=message):
+            checker_for(bad).line(1, stream_line(bad))
+    # the value rules of the stream reader
+    for change, message in (
+        ({"precondition_ppm": 500000, "success_ppm": 400000}, "precondition does not fit"),
+        ({"precondition": "fails"}, "precondition does not fit"),
+        ({"precondition": "chance", "precondition_ppm": 0, "success_ppm": 0}, "does not fit"),
+    ):
+        broken = copy.deepcopy(example)
+        broken["candidate_features"]["outcomes"][2].update(change)
+        with pytest.raises(TrainingStreamError, match=message):
+            checker_for(broken).line(1, stream_line(broken))
+    for index, change, message in (
+        (1, {"foe_move": None}, "a move branch names its foe move"),
+        (2, {"assumed": True}, "an assumed branch is the only move branch"),
+    ):
+        broken = copy.deepcopy(example)
+        broken["candidate_features"]["outcomes"][index].update(change)
+        with pytest.raises(TrainingStreamError, match=message):
+            checker_for(broken).line(1, stream_line(broken))
+    rows = example["candidate_features"]["outcomes"]
+    more = [{**rows[2], "foe_move": move} for move in ("uturn", "xscissor", "zenheadbutt")]
+    broken = copy.deepcopy(example)
+    broken["candidate_features"]["outcomes"] = [*rows[:3], *more, *rows[3:]]
+    with pytest.raises(TrainingStreamError, match="one to four move branches"):
+        checker_for(broken).line(1, stream_line(broken))
+    broken["candidate_features"]["outcomes"] = rows[1:]
+    with pytest.raises(TrainingStreamError, match="starts with its switch branch"):
+        checker_for(broken).line(1, stream_line(broken))
+    switch = copy.deepcopy(example)
+    switch["candidate_features"]["outcomes"][0]["foe_move"] = "protect"
+    with pytest.raises(TrainingStreamError, match="a switch branch has no foe move"):
+        checker_for(switch).line(1, stream_line(switch))
+    # history_unknown under /2, on every array kind
+    two = sample("training-example/valid/battle-features-2.json")
+    two["candidate_features"]["threats"][0] = {
+        "kind": "unsupported",
+        "own": two["candidate_features"]["threats"][0]["own"],
+        "mega": False,
+        "foe": 1,
+        "move": two["candidate_features"]["threats"][0]["move"],
+        "reason": "history_unknown",
+    }
+    with pytest.raises(TrainingStreamError, match="history_unknown is a probe-outcome/1 value"):
+        checker_for(two).line(1, stream_line(two))

@@ -406,6 +406,12 @@ export interface CandidateFeatures {
     | "legality_redraws_exhausted"
     | "empty_distribution"
     | "disguise_unsettled";
+  /**
+   * probe-outcome/1 only: one row per (own move part of the candidates, opposing-action branch), sorted by (slot, move, target, mega false first, action with switch first, foe move id): whether the move works now and with what chance, as the engine answers it on the assumed opponent set, not facts about the real opponent. Per part: one switch branch, then one branch per revealed move of the targeted foe (or exactly one assumed branch when it has revealed none), at most 5 in all (a reader rule). A part with no living foe at its target location has no rows.
+   *
+   * @maxItems 1024
+   */
+  outcomes?: (ComputedOutcomeRow | UnsupportedOutcomeRow)[];
 }
 /**
  * The probe's exact rolls for one row, as integers: mean_ppm is the mean over the 16 no-crit rolls of min(roll, hp) / hp, floored; max_ppm and min_ppm the largest and smallest roll clamped at hp, as a share of hp; ohko_rolls the probe's own count of the 16 no-crit rolls that reach hp, or null when the probe gives none.
@@ -437,7 +443,7 @@ export interface ComputedFeatureRow {
   ohko_rolls: number | null;
 }
 /**
- * A row the probe could not answer exactly: its closed reason (the MechanicsResult unsupported reasons), never a guess.
+ * A row the probe could not answer exactly: its closed reason (the MechanicsResult unsupported reasons), never a guess. history_unknown (probe-outcome/1 only, a reader rule) means a history fact of the query could not be settled and the two ends of its range gave different answers.
  *
  * This interface was referenced by `TrainingExample`'s JSON-Schema
  * via the `definition` "UnsupportedFeatureRow".
@@ -448,7 +454,7 @@ export interface UnsupportedFeatureRow {
   move: number;
   target: number;
   mega: boolean;
-  reason: "query_kind" | "random_effect" | "scenario_rule_table";
+  reason: "query_kind" | "random_effect" | "scenario_rule_table" | "history_unknown";
 }
 /**
  * What the foe's revealed damaging move does to the own Pokemon (the foe's assumed set as attacker, the own Pokemon at its exact current HP): the values of a ComputedFeatureRow, as integers.
@@ -477,7 +483,7 @@ export interface ComputedThreatRow {
   ohko_rolls: number | null;
 }
 /**
- * A threat the probe could not answer exactly: its closed reason, never a guess.
+ * A threat the probe could not answer exactly: its closed reason, never a guess. history_unknown (probe-outcome/1 only, a reader rule) means a history fact of the query could not be settled and the two ends of its range gave different answers.
  *
  * This interface was referenced by `TrainingExample`'s JSON-Schema
  * via the `definition` "UnsupportedThreatRow".
@@ -497,7 +503,7 @@ export interface UnsupportedThreatRow {
    */
   foe: number;
   move: string;
-  reason: "query_kind" | "random_effect" | "scenario_rule_table";
+  reason: "query_kind" | "random_effect" | "scenario_rule_table" | "history_unknown";
 }
 /**
  * Who acts first between the own Pokemon (and variant) and the opposing active, as the engine orders their action speed.
@@ -522,7 +528,7 @@ export interface ComputedSpeedRow {
   relation: "own_first" | "tie" | "foe_first";
 }
 /**
- * A speed relation the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority.
+ * A speed relation the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority. history_unknown (probe-outcome/1 only, a reader rule) means a history fact of the query could not be settled and the two ends of its range gave different answers.
  *
  * This interface was referenced by `TrainingExample`'s JSON-Schema
  * via the `definition` "UnsupportedSpeedRow".
@@ -541,7 +547,8 @@ export interface UnsupportedSpeedRow {
    * The opposing active's location number in a choice (move 1 1).
    */
   foe: number;
-  reason: "query_kind" | "random_effect" | "scenario_rule_table" | "unqueueable" | "fractional_priority";
+  reason:
+    "query_kind" | "random_effect" | "scenario_rule_table" | "unqueueable" | "fractional_priority" | "history_unknown";
 }
 /**
  * The engine's priority key of one own move part of the candidates.
@@ -569,7 +576,7 @@ export interface ComputedOwnPriorityRow {
   priority: number;
 }
 /**
- * An own priority the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority (a pseudo-move such as recharge is query_kind).
+ * An own priority the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority (a pseudo-move such as recharge is query_kind). history_unknown (probe-outcome/1 only, a reader rule) means a history fact of the query could not be settled and the two ends of its range gave different answers.
  *
  * This interface was referenced by `TrainingExample`'s JSON-Schema
  * via the `definition` "UnsupportedOwnPriorityRow".
@@ -579,7 +586,8 @@ export interface UnsupportedOwnPriorityRow {
   slot: number;
   move: number;
   mega: boolean;
-  reason: "query_kind" | "random_effect" | "scenario_rule_table" | "unqueueable" | "fractional_priority";
+  reason:
+    "query_kind" | "random_effect" | "scenario_rule_table" | "unqueueable" | "fractional_priority" | "history_unknown";
 }
 /**
  * The engine's priority key of one revealed move of an opposing active.
@@ -600,7 +608,7 @@ export interface ComputedFoePriorityRow {
   priority: number;
 }
 /**
- * A foe priority the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority.
+ * A foe priority the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority. history_unknown (probe-outcome/1 only, a reader rule) means a history fact of the query could not be settled and the two ends of its range gave different answers.
  *
  * This interface was referenced by `TrainingExample`'s JSON-Schema
  * via the `definition` "UnsupportedFoePriorityRow".
@@ -612,7 +620,8 @@ export interface UnsupportedFoePriorityRow {
    */
   foe: number;
   move: string;
-  reason: "query_kind" | "random_effect" | "scenario_rule_table" | "unqueueable" | "fractional_priority";
+  reason:
+    "query_kind" | "random_effect" | "scenario_rule_table" | "unqueueable" | "fractional_priority" | "history_unknown";
 }
 /**
  * What a move the BELIEF says the foe may hold (not yet revealed) would do to the own Pokemon (the foe's assumed set plus that move as attacker, the own Pokemon at its exact current HP): the values of a ComputedThreatRow and the belief's inclusion probability of the move.
@@ -670,6 +679,97 @@ export interface UnsupportedBeliefThreatRow {
    */
   inclusion_ppm: number;
   reason: "query_kind" | "random_effect" | "scenario_rule_table";
+}
+/**
+ * What one own move part does against one opposing-action branch, as integers.
+ *
+ * This interface was referenced by `TrainingExample`'s JSON-Schema
+ * via the `definition` "ComputedOutcomeRow".
+ */
+export interface ComputedOutcomeRow {
+  kind: "computed";
+  /**
+   * The acting active Pokemon's slot, 0-based.
+   */
+  slot: number;
+  /**
+   * The move's position in the request, 1-based.
+   */
+  move: number;
+  /**
+   * The part's own target location in a choice (move 1 1): 0 for none, negative for an ally.
+   */
+  target: number;
+  /**
+   * True when the move part also Mega Evolves.
+   */
+  mega: boolean;
+  /**
+   * The opposing action of the branch: every foe switches, or the targeted foe uses foe_move.
+   */
+  action: "switch" | "move";
+  /**
+   * The move the targeted foe uses in a move branch (null for a switch branch).
+   */
+  foe_move: string | null;
+  /**
+   * True for the one branch of a foe that has revealed no move: its move is the reviewed assumption, not a fact of the channel.
+   */
+  assumed: boolean;
+  /**
+   * Whether the move's precondition passes, fails or holds with a chance, as the engine answers it with every random draw of the path answered with success.
+   */
+  precondition: "passes" | "fails" | "chance";
+  /**
+   * The engine's precondition success chance in ppm: 1000000 when it passes, 0 when it fails.
+   */
+  precondition_ppm: number;
+  /**
+   * The engine's accuracy chance in ppm: 1000000 when the move cannot miss.
+   */
+  hit_ppm: number;
+  /**
+   * floor(precondition_ppm x hit_ppm / 10^6).
+   */
+  success_ppm: number;
+}
+/**
+ * An outcome the probe could not answer exactly: its closed reason (the probe's, or history_unknown), never a guess.
+ *
+ * This interface was referenced by `TrainingExample`'s JSON-Schema
+ * via the `definition` "UnsupportedOutcomeRow".
+ */
+export interface UnsupportedOutcomeRow {
+  kind: "unsupported";
+  /**
+   * The acting active Pokemon's slot, 0-based.
+   */
+  slot: number;
+  /**
+   * The move's position in the request, 1-based.
+   */
+  move: number;
+  /**
+   * The part's own target location in a choice (move 1 1): 0 for none, negative for an ally.
+   */
+  target: number;
+  /**
+   * True when the move part also Mega Evolves.
+   */
+  mega: boolean;
+  /**
+   * The opposing action of the branch: every foe switches, or the targeted foe uses foe_move.
+   */
+  action: "switch" | "move";
+  /**
+   * The move the targeted foe uses in a move branch (null for a switch branch).
+   */
+  foe_move: string | null;
+  /**
+   * True for the one branch of a foe that has revealed no move: its move is the reviewed assumption, not a fact of the channel.
+   */
+  assumed: boolean;
+  reason: "query_kind" | "random_effect" | "scenario_rule_table" | "history_unknown";
 }
 /**
  * Optional derived opponent sheet block (ADR-027 section 2, ADR-025 erratum E4): what the player's own view makes probable about each opponent preview slot. Absent unless the session or the run declared a sheet source: a writer omits it (never null or empty), so every existing value keeps its bytes and hash (a minor change within v1, ADR-008 section 3). Reader rules are those of the OpponentSheet contract.
@@ -906,7 +1006,7 @@ export interface DecisionContext2 {
   policy_budget_ms: number;
 }
 /**
- * The rows of one decision under one feature set. feature_set names the set (probe-damage/1, probe-damage/2 or probe-damage/3); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true. Under probe-damage/2 the four arrays threats, speeds, own_priorities and foe_priorities are all present, and probe-damage/3 adds belief_threats; under any other set none is (a reader rule: the profile has no if/then).
+ * The rows of one decision under one feature set. feature_set names the set (probe-damage/1, probe-damage/2, probe-damage/3 or probe-outcome/1); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true. Under probe-damage/2 the four arrays threats, speeds, own_priorities and foe_priorities are all present, and probe-damage/3 adds belief_threats; probe-outcome/1 holds the same five arrays (recomputed with the history facts declared) and outcomes; under any other set none is (a reader rule: the profile has no if/then).
  *
  * This interface was referenced by `TrainingExample`'s JSON-Schema
  * via the `definition` "CandidateFeatures".
@@ -964,6 +1064,12 @@ export interface CandidateFeatures1 {
     | "legality_redraws_exhausted"
     | "empty_distribution"
     | "disguise_unsettled";
+  /**
+   * probe-outcome/1 only: one row per (own move part of the candidates, opposing-action branch), sorted by (slot, move, target, mega false first, action with switch first, foe move id): whether the move works now and with what chance, as the engine answers it on the assumed opponent set, not facts about the real opponent. Per part: one switch branch, then one branch per revealed move of the targeted foe (or exactly one assumed branch when it has revealed none), at most 5 in all (a reader rule). A part with no living foe at its target location has no rows.
+   *
+   * @maxItems 1024
+   */
+  outcomes?: (ComputedOutcomeRow | UnsupportedOutcomeRow)[];
 }
 /**
  * The opponent sheet block (ADR-027 section 2; ADR-025 erratum E4): per opponent preview slot, in preview order, what the player's own view makes probable about the slot's brought status, item, ability, nature and moves, as integers in parts per million. A derived input beside the observation, built only from the player's own view (closed regime: from the opponent belief's marginals). Reader rules (the profile has no if/then): the source kind fits the regime; entries are sorted by ppm descending then id ascending (a null item id last) with unique ids; other_ppm is max(0, 1000000 - sum of the entries) and the sum is at most 1000000 plus one per entry (each entry is rounded alone); a field of source unknown has no entries and other_ppm 0; a field of source revealed holds its one value at 1000000 ppm (moves: slots_known is 4 and the first four entries are at 1000000); a refused block (source.refusal present) has every slot unknown with brought_ppm 0.

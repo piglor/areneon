@@ -276,6 +276,38 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const dropArray = (value: unknown, name: keyof typeof arrays2): unknown => mutated(value as Record<string, unknown>, (v) => (v.candidate_features = Object.fromEntries(Object.entries(v.candidate_features as Record<string, unknown>).filter(([key]) => key !== name))));
   const example2 = (parts: Record<string, unknown> = {}): unknown => ({ ...exampleOf("battle"), candidate_features: { ...feature2Ref, rows: featureRows, ...arrays2, ...parts } });
   const reversed = (list: unknown[]): unknown[] => [...list].reverse();
+  // ADR-022 erratum E-22.5.3: `probe-outcome/1` holds the four arrays of `/2` and `outcomes`, one block of rows per own move part of the
+  // candidates (the golden turn's own parts and targets) and opposing-action branch: `switch`, then the targeted foe's revealed moves in id
+  // order, or one assumed branch. A shape sample: the moves and numbers are invented.
+  const featureOutcomeRef = { feature_set: "probe-outcome/1", feature_set_hash: createHash("sha256").update("probe-outcome/1 sample").digest("hex") };
+  const outcomeRows = (() => {
+    const parts = new Map<string, { slot: number; move: number; target: number; mega: boolean }>();
+    for (const { choice } of battleQuery.candidates) {
+      parseJointChoice(choice).forEach((part, slot) => {
+        if (part.kind !== "move") return;
+        const target = part.target ?? 0;
+        parts.set(`${slot}/${part.index}/${target}/${part.mega}`, { slot, move: part.index, target, mega: part.mega });
+      });
+    }
+    const sorted = [...parts.values()].sort((a, b) => a.slot - b.slot || a.move - b.move || a.target - b.target || Number(a.mega) - Number(b.mega));
+    return sorted.flatMap((key, i) => {
+      const switchRow = { kind: "computed", ...key, action: "switch", foe_move: null, assumed: false, precondition: "passes", precondition_ppm: 1000000, hit_ppm: 950000, success_ppm: 950000 };
+      if (i % 3 === 2) return [switchRow, { kind: "computed", ...key, action: "move", foe_move: "protect", assumed: true, precondition: "passes", precondition_ppm: 1000000, hit_ppm: 1000000, success_ppm: 1000000 }];
+      const protect = i % 4 === 1 ? { precondition: "fails", precondition_ppm: 0, hit_ppm: 0, success_ppm: 0 } : { precondition: "chance", precondition_ppm: 500000, hit_ppm: 1000000, success_ppm: 500000 };
+      const thunderbolt = i % 5 === 3 ? { kind: "unsupported", reason: "history_unknown" } : { kind: "computed", precondition: "passes", precondition_ppm: 1000000, hit_ppm: 800000, success_ppm: 800000 };
+      const branch = (foe_move: string, values: Record<string, unknown>) => ({ kind: "computed", ...key, action: "move", foe_move, assumed: false, ...values });
+      return [switchRow, branch("protect", protect), branch("thunderbolt", thunderbolt)];
+    });
+  })();
+  const withOutcome = (query: Record<string, unknown>, parts: Record<string, unknown> = {}): unknown => ({ ...query, candidate_features: { ...featureOutcomeRef, rows: featureRows, ...arrays2, outcomes: outcomeRows, ...parts } });
+  const exampleOutcome = (parts: Record<string, unknown> = {}): unknown => ({ ...exampleOf("battle"), candidate_features: { ...featureOutcomeRef, rows: featureRows, ...arrays2, outcomes: outcomeRows, ...parts } });
+  const outcomeRow = (index: number, change: Record<string, unknown>): Record<string, unknown> => ({ ...(outcomeRows[index] as Record<string, unknown>), ...change });
+  const unsupportedOutcome = (index: number, reason: string): Record<string, unknown> => {
+    const { slot, move, target, mega, action, foe_move, assumed } = outcomeRows[index] as Record<string, unknown>;
+    return { kind: "unsupported", slot, move, target, mega, action, foe_move, assumed, reason };
+  };
+  const swapped = (rows: unknown[]): unknown[] => [rows[1], rows[0], ...rows.slice(2)];
+  const firstPart = (rows: Record<string, unknown>[]): Record<string, unknown>[] => rows.filter((r) => r.slot === rows[0]?.slot && r.move === rows[0]?.move && r.target === rows[0]?.target && r.mega === rows[0]?.mega);
   const withFeatures = (query: Record<string, unknown>, rows: unknown): unknown => ({ ...query, candidate_features: { ...featureSetRef, rows } });
   const featuresOnExample = (rows: unknown): unknown => ({ ...exampleOf("battle"), candidate_features: { ...featureSetRef, rows } });
   const rowAt = (index: number): Record<string, unknown> => featureRows[index] as Record<string, unknown>;
@@ -1025,6 +1057,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-example/battle-features-3": example3(),
     "policy-query/battle-features-3-refused": with3(battleQuery, { belief_threats: [], belief_threats_refused: "evidence_has_no_support" }),
     "training-example/battle-features-3-refused": example3({ belief_threats: [], belief_threats_refused: "reader_flagged" }),
+    // ADR-022 erratum E-22.5.3: probe-outcome/1 adds outcomes to the four arrays; the reason history_unknown is its alone.
+    "policy-query/battle-features-outcome": withOutcome(battleQuery),
+    "policy-query/preview-features-outcome": { ...previewQuery, candidate_features: { ...featureOutcomeRef, rows: [], threats: [], speeds: [], own_priorities: [], foe_priorities: [], outcomes: [] } },
+    "training-example/battle-features-outcome": exampleOutcome(),
     "training-example/battle-features": featuresOnExample(featureRows),
     "policy-query/battle-evaluate": evalQuery,
     "policy-query/preview-evaluate": queryOf("preview", { kind: "evaluate" }),
@@ -1053,6 +1089,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-handshake/ready-features": readyWith((m) => (m.feature_set = featureSetRef)),
     "policy-handshake/ready-features-2": readyWith((m) => (m.feature_set = feature2Ref)),
     "policy-handshake/ready-features-3": readyWith((m) => (m.feature_set = feature3Ref)),
+    "policy-handshake/ready-features-outcome": readyWith((m) => (m.feature_set = featureOutcomeRef)),
     "policy-handshake/ready-sheet": readyWith((m) => (m.opponent_sheet = sheetSetRef)),
     "policy-handshake/ready-value-query": readyWith((m) => (m.value_query = true)),
     "training-run-config/opponent-sheet": runConfigWith((c) => {
@@ -1222,6 +1259,27 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-query/features-3-belief-foreign-own": with3(battleQuery, { belief_threats: [...beliefThreats, beliefRow({ own: 5 })] }),
     "training-example/features-3-belief-under-2": example2({ belief_threats: beliefThreats }),
     "training-example/features-3-belief-unsorted": example3({ belief_threats: reversed(beliefThreats) }),
+    // probe-outcome/1 (erratum E-22.5.3): the arrays present exactly then, outcomes sorted, with its branches and values consistent, covering the request.
+    "policy-query/features-outcome-under-2": with2(battleQuery, { outcomes: outcomeRows }),
+    "policy-query/features-outcome-missing-array": dropArray(withOutcome(battleQuery) as never, "outcomes" as never),
+    "policy-query/features-outcome-missing-speeds": dropArray(withOutcome(battleQuery) as never, "speeds"),
+    "policy-query/features-outcome-unsorted": withOutcome(battleQuery, { outcomes: swapped(outcomeRows) }),
+    "policy-query/features-outcome-duplicate": withOutcome(battleQuery, { outcomes: [outcomeRows[0], ...outcomeRows] }),
+    "policy-query/features-outcome-missing-switch-branch": withOutcome(battleQuery, { outcomes: outcomeRows.slice(1) }),
+    "policy-query/features-outcome-missing-move-branch": withOutcome(battleQuery, { outcomes: [outcomeRows[0], ...outcomeRows.slice(3)] }),
+    "policy-query/features-outcome-assumed-with-revealed": withOutcome(battleQuery, { outcomes: [outcomeRows[0], outcomeRow(1, { assumed: true }), ...outcomeRows.slice(2)] }),
+    "policy-query/features-outcome-switch-with-foe-move": withOutcome(battleQuery, { outcomes: [outcomeRow(0, { foe_move: "protect" }), ...outcomeRows.slice(1)] }),
+    "policy-query/features-outcome-success-mismatch": withOutcome(battleQuery, { outcomes: [outcomeRow(0, { success_ppm: 950001 }), ...outcomeRows.slice(1)] }),
+    "policy-query/features-outcome-precondition-mismatch": withOutcome(battleQuery, { outcomes: [outcomeRow(0, { precondition: "chance" }), ...outcomeRows.slice(1)] }),
+    "policy-query/features-outcome-missing-part": withOutcome(battleQuery, { outcomes: outcomeRows.filter((r) => !firstPart(outcomeRows as Record<string, unknown>[]).includes(r)) }),
+    "policy-query/features-outcome-foreign-part": withOutcome(battleQuery, { outcomes: [...outcomeRows, ...(firstPart(outcomeRows as Record<string, unknown>[]).map((r) => ({ ...r, slot: 3 })) as unknown[])] }),
+    "policy-query/features-outcome-history-unknown-under-2": with2(battleQuery, { threats: [{ kind: "unsupported", own: 0, mega: false, foe: 1, move: "protect", reason: "history_unknown" }, ...arrays2.threats.slice(1)] }),
+    "training-example/features-outcome-under-2": example2({ outcomes: outcomeRows }),
+    "training-example/features-outcome-missing-array": mutated(exampleOutcome() as Record<string, unknown>, (v) => delete (v.candidate_features as Record<string, unknown>).outcomes),
+    "training-example/features-outcome-unsorted": exampleOutcome({ outcomes: swapped(outcomeRows) }),
+    "training-example/features-outcome-missing-switch-branch": exampleOutcome({ outcomes: outcomeRows.slice(1) }),
+    "training-example/features-outcome-success-mismatch": exampleOutcome({ outcomes: [outcomeRow(0, { success_ppm: 950001 }), ...outcomeRows.slice(1)] }),
+    "training-example/features-outcome-history-unknown-under-2": example2({ rows: [{ kind: "unsupported", slot: (featureRows[0] as { slot: number }).slot, move: (featureRows[0] as { move: number }).move, target: (featureRows[0] as { target: number }).target, mega: false, reason: "history_unknown" }, ...featureRows.slice(1)] }),
     "training-example/features-2-array-under-1": { ...exampleOf("battle"), candidate_features: { ...featureSetRef, rows: featureRows, threats: arrays2.threats } },
     "training-example/features-2-missing-array": dropArray(example2(), "speeds"),
     "training-example/features-2-speeds-unsorted": example2({ speeds: reversed(arrays2.speeds) }),
@@ -1635,6 +1693,16 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-query/features-3-belief-no-inclusion": with3(battleQuery, { belief_threats: [Object.fromEntries(Object.entries(beliefRow({})).filter(([key]) => key !== "inclusion_ppm")), ...beliefThreats.slice(1)] }),
     "policy-query/features-3-belief-zero-inclusion": with3(battleQuery, { belief_threats: [beliefRow({ inclusion_ppm: 0 }), ...beliefThreats.slice(1)] }),
     "policy-query/features-3-belief-limit-reason": with3(battleQuery, { belief_threats: [beliefRow({ kind: "unsupported", reason: "unqueueable" }), ...beliefThreats.slice(1)] }),
+    // probe-outcome/1: the outcomes are closed and integer-only, their enums closed.
+    "policy-query/features-outcome-unknown-precondition": withOutcome(battleQuery, { outcomes: [outcomeRow(0, { precondition: "maybe" }), ...outcomeRows.slice(1)] }),
+    "policy-query/features-outcome-unknown-reason": withOutcome(battleQuery, { outcomes: [unsupportedOutcome(0, "guess"), ...outcomeRows.slice(1)] }),
+    "policy-query/features-outcome-unknown-action": withOutcome(battleQuery, { outcomes: [outcomeRow(0, { action: "pass" }), ...outcomeRows.slice(1)] }),
+    "policy-query/features-outcome-float": withOutcome(battleQuery, { outcomes: [outcomeRow(0, { hit_ppm: 950000.5 }), ...outcomeRows.slice(1)] }),
+    "policy-query/features-outcome-ppm-out-of-range": withOutcome(battleQuery, { outcomes: [outcomeRow(0, { success_ppm: 1000001 }), ...outcomeRows.slice(1)] }),
+    "policy-query/features-outcome-extra-field": withOutcome(battleQuery, { outcomes: [outcomeRow(0, { crit_ppm: 1 }), ...outcomeRows.slice(1)] }),
+    "policy-query/features-outcome-bad-foe-move": withOutcome(battleQuery, { outcomes: [outcomeRow(1, { foe_move: "Thunder Bolt" }), ...outcomeRows.slice(2)] }),
+    "policy-query/features-outcome-computed-with-reason": withOutcome(battleQuery, { outcomes: [outcomeRow(0, { reason: "query_kind" }), ...outcomeRows.slice(1)] }),
+    "training-example/features-outcome-float": exampleOutcome({ outcomes: [outcomeRow(0, { precondition_ppm: 1000000.5 }), ...outcomeRows.slice(1)] }),
     "policy-query/features-2-unknown-relation": with2(battleQuery, { speeds: [{ ...(arrays2.speeds[0] as Record<string, unknown>), kind: "computed", relation: "faster" }, ...arrays2.speeds.slice(1)] }),
     "policy-query/features-2-float": with2(battleQuery, { threats: [{ ...(arrays2.threats[0] as Record<string, unknown>), kind: "computed", mean_ppm: 90000.5, max_ppm: 1, min_ppm: 1, ohko_rolls: 0 }, ...arrays2.threats.slice(1)] }),
     "policy-query/features-2-unknown-reason": with2(battleQuery, { own_priorities: [{ kind: "unsupported", slot: 0, move: 1, mega: false, reason: "guess" }, ...arrays2.own_priorities.slice(1)] }),

@@ -150,7 +150,7 @@ class ComputedFeatureRow(BaseModel):
 
 class UnsupportedFeatureRow(BaseModel):
     """
-    A row the probe could not answer exactly: its closed reason (the MechanicsResult unsupported reasons), never a guess.
+    A row the probe could not answer exactly: its closed reason (the MechanicsResult unsupported reasons), never a guess. history_unknown (probe-outcome/1 only, a reader rule) means a history fact of the query could not be settled and the two ends of its range gave different answers.
     """
 
     model_config = ConfigDict(
@@ -161,7 +161,7 @@ class UnsupportedFeatureRow(BaseModel):
     move: Annotated[StrictInt, Field(ge=1, le=9)]
     target: Annotated[StrictInt, Field(ge=1, le=9)]
     mega: StrictBool
-    reason: Literal["query_kind", "random_effect", "scenario_rule_table"]
+    reason: Literal["query_kind", "random_effect", "scenario_rule_table", "history_unknown"]
 
 
 class Candidate(BaseModel):
@@ -259,7 +259,7 @@ class ComputedThreatRow(BaseModel):
 
 class UnsupportedThreatRow(BaseModel):
     """
-    A threat the probe could not answer exactly: its closed reason, never a guess.
+    A threat the probe could not answer exactly: its closed reason, never a guess. history_unknown (probe-outcome/1 only, a reader rule) means a history fact of the query could not be settled and the two ends of its range gave different answers.
     """
 
     model_config = ConfigDict(
@@ -281,7 +281,7 @@ class UnsupportedThreatRow(BaseModel):
     move: Annotated[
         StrictStr, Field(max_length=64, min_length=1, pattern="^[a-z0-9]+$")
     ]
-    reason: Literal["query_kind", "random_effect", "scenario_rule_table"]
+    reason: Literal["query_kind", "random_effect", "scenario_rule_table", "history_unknown"]
 
 
 class ComputedSpeedRow(BaseModel):
@@ -310,7 +310,7 @@ class ComputedSpeedRow(BaseModel):
 
 class UnsupportedSpeedRow(BaseModel):
     """
-    A speed relation the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority.
+    A speed relation the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority. history_unknown (probe-outcome/1 only, a reader rule) means a history fact of the query could not be settled and the two ends of its range gave different answers.
     """
 
     model_config = ConfigDict(
@@ -329,7 +329,7 @@ class UnsupportedSpeedRow(BaseModel):
     """
     The opposing active's location number in a choice (move 1 1).
     """
-    reason: Literal["query_kind", "random_effect", "scenario_rule_table", "unqueueable", "fractional_priority"]
+    reason: Literal["query_kind", "random_effect", "scenario_rule_table", "unqueueable", "fractional_priority", "history_unknown"]
 
 
 class ComputedOwnPriorityRow(BaseModel):
@@ -361,7 +361,7 @@ class ComputedOwnPriorityRow(BaseModel):
 
 class UnsupportedOwnPriorityRow(BaseModel):
     """
-    An own priority the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority (a pseudo-move such as recharge is query_kind).
+    An own priority the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority (a pseudo-move such as recharge is query_kind). history_unknown (probe-outcome/1 only, a reader rule) means a history fact of the query could not be settled and the two ends of its range gave different answers.
     """
 
     model_config = ConfigDict(
@@ -371,7 +371,7 @@ class UnsupportedOwnPriorityRow(BaseModel):
     slot: Annotated[StrictInt, Field(ge=0, le=3)]
     move: Annotated[StrictInt, Field(ge=1, le=9)]
     mega: StrictBool
-    reason: Literal["query_kind", "random_effect", "scenario_rule_table", "unqueueable", "fractional_priority"]
+    reason: Literal["query_kind", "random_effect", "scenario_rule_table", "unqueueable", "fractional_priority", "history_unknown"]
 
 
 class ComputedFoePriorityRow(BaseModel):
@@ -398,7 +398,7 @@ class ComputedFoePriorityRow(BaseModel):
 
 class UnsupportedFoePriorityRow(BaseModel):
     """
-    A foe priority the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority.
+    A foe priority the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority. history_unknown (probe-outcome/1 only, a reader rule) means a history fact of the query could not be settled and the two ends of its range gave different answers.
     """
 
     model_config = ConfigDict(
@@ -412,7 +412,7 @@ class UnsupportedFoePriorityRow(BaseModel):
     move: Annotated[
         StrictStr, Field(max_length=64, min_length=1, pattern="^[a-z0-9]+$")
     ]
-    reason: Literal["query_kind", "random_effect", "scenario_rule_table", "unqueueable", "fractional_priority"]
+    reason: Literal["query_kind", "random_effect", "scenario_rule_table", "unqueueable", "fractional_priority", "history_unknown"]
 
 
 class SheetSource(BaseModel):
@@ -528,6 +528,105 @@ class UnsupportedBeliefThreatRow(BaseModel):
     reason: Literal["query_kind", "random_effect", "scenario_rule_table"]
 
 
+class ComputedOutcomeRow(BaseModel):
+    """
+    What one own move part does against one opposing-action branch, as integers.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["computed"]
+    slot: Annotated[StrictInt, Field(ge=0, le=3)]
+    """
+    The acting active Pokemon's slot, 0-based.
+    """
+    move: Annotated[StrictInt, Field(ge=1, le=9)]
+    """
+    The move's position in the request, 1-based.
+    """
+    target: Annotated[StrictInt, Field(ge=-9, le=9)]
+    """
+    The part's own target location in a choice (move 1 1): 0 for none, negative for an ally.
+    """
+    mega: StrictBool
+    """
+    True when the move part also Mega Evolves.
+    """
+    action: Literal["switch", "move"]
+    """
+    The opposing action of the branch: every foe switches, or the targeted foe uses foe_move.
+    """
+    foe_move: Annotated[
+        StrictStr | None, Field(max_length=64, min_length=1, pattern="^[a-z0-9]+$")
+    ]
+    """
+    The move the targeted foe uses in a move branch (null for a switch branch).
+    """
+    assumed: StrictBool
+    """
+    True for the one branch of a foe that has revealed no move: its move is the reviewed assumption, not a fact of the channel.
+    """
+    precondition: Literal["passes", "fails", "chance"]
+    """
+    Whether the move's precondition passes, fails or holds with a chance, as the engine answers it with every random draw of the path answered with success.
+    """
+    precondition_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    The engine's precondition success chance in ppm: 1000000 when it passes, 0 when it fails.
+    """
+    hit_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    The engine's accuracy chance in ppm: 1000000 when the move cannot miss.
+    """
+    success_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    floor(precondition_ppm x hit_ppm / 10^6).
+    """
+
+
+class UnsupportedOutcomeRow(BaseModel):
+    """
+    An outcome the probe could not answer exactly: its closed reason (the probe's, or history_unknown), never a guess.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["unsupported"]
+    slot: Annotated[StrictInt, Field(ge=0, le=3)]
+    """
+    The acting active Pokemon's slot, 0-based.
+    """
+    move: Annotated[StrictInt, Field(ge=1, le=9)]
+    """
+    The move's position in the request, 1-based.
+    """
+    target: Annotated[StrictInt, Field(ge=-9, le=9)]
+    """
+    The part's own target location in a choice (move 1 1): 0 for none, negative for an ally.
+    """
+    mega: StrictBool
+    """
+    True when the move part also Mega Evolves.
+    """
+    action: Literal["switch", "move"]
+    """
+    The opposing action of the branch: every foe switches, or the targeted foe uses foe_move.
+    """
+    foe_move: Annotated[
+        StrictStr | None, Field(max_length=64, min_length=1, pattern="^[a-z0-9]+$")
+    ]
+    """
+    The move the targeted foe uses in a move branch (null for a switch branch).
+    """
+    assumed: StrictBool
+    """
+    True for the one branch of a foe that has revealed no move: its move is the reviewed assumption, not a fact of the channel.
+    """
+    reason: Literal["query_kind", "random_effect", "scenario_rule_table", "history_unknown"]
+
+
 class PokemonSet(BaseModel):
     """
     One set, as the pinned engine's PokemonSet (sim/teams.ts) holds it. Legality is the engine validator's, not this schema's.
@@ -634,9 +733,15 @@ class BeliefThreats(RootModel[ComputedBeliefThreatRow | UnsupportedBeliefThreatR
     ]
 
 
+class Outcomes(RootModel[ComputedOutcomeRow | UnsupportedOutcomeRow]):
+    root: Annotated[
+        ComputedOutcomeRow | UnsupportedOutcomeRow, Field(discriminator="kind")
+    ]
+
+
 class CandidateFeatures(BaseModel):
     """
-    The rows of one decision under one feature set. feature_set names the set (probe-damage/1, probe-damage/2 or probe-damage/3); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true. Under probe-damage/2 the four arrays threats, speeds, own_priorities and foe_priorities are all present, and probe-damage/3 adds belief_threats; under any other set none is (a reader rule: the profile has no if/then).
+    The rows of one decision under one feature set. feature_set names the set (probe-damage/1, probe-damage/2, probe-damage/3 or probe-outcome/1); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true. Under probe-damage/2 the four arrays threats, speeds, own_priorities and foe_priorities are all present, and probe-damage/3 adds belief_threats; probe-outcome/1 holds the same five arrays (recomputed with the history facts declared) and outcomes; under any other set none is (a reader rule: the profile has no if/then).
     """
 
     model_config = ConfigDict(
@@ -679,6 +784,10 @@ class CandidateFeatures(BaseModel):
     )
     """
     probe-damage/3 only, present exactly when the opponent belief was refused for this decision: the model's fixed refusal code. belief_threats is then empty (a reader rule), so a refusal is never read as a foe with no likely threats. Absent otherwise.
+    """
+    outcomes: Annotated[list[Outcomes] | MISSING, Field(max_length=1024)] = MISSING
+    """
+    probe-outcome/1 only: one row per (own move part of the candidates, opposing-action branch), sorted by (slot, move, target, mega false first, action with switch first, foe move id): whether the move works now and with what chance, as the engine answers it on the assumed opponent set, not facts about the real opponent. Per part: one switch branch, then one branch per revealed move of the targeted foe (or exactly one assumed branch when it has revealed none), at most 5 in all (a reader rule). A part with no living foe at its target location has no rows.
     """
 
 
