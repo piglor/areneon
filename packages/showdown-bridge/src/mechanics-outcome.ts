@@ -93,15 +93,18 @@ export function probeMoveOutcome(engine: Engine, scenarioId: string, query: Move
   const refusing = refusingSource(battle.prng);
   battle.prng = refusing;
   let at = 0;
+  const setAt = (place: number): void => {
+    at = place;
+  };
   const recorder = recordingRandom({ roll: 0, chance: true });
   try {
-    declare(battle, query, (position) => (at = position));
+    declare(battle, query, setAt);
     if (history !== null) {
-      declareHistory(battle as unknown as HBattle, history.resolved, { stall: history.stall, at: (position) => (at = position) });
+      declareHistory(battle as unknown as HBattle, history.resolved, { stall: history.stall, at: setAt });
       restoreStagesAndItems(battle, query);
     }
-    const resolved = resolveActions(battle, query, (index) => (at = index));
-    evolve(battle, resolved, (index) => (at = index));
+    const resolved = resolveActions(battle, query, setAt);
+    evolve(battle, resolved, setAt);
     for (const item of resolved) {
       at = item.index;
       battle.getActionSpeed(item.own);
@@ -161,6 +164,8 @@ export function probeMoveOutcome(engine: Engine, scenarioId: string, query: Move
   }
 }
 
+const ignore = (): void => undefined;
+
 /**
  * The scenario battle with the declared state and history and the branch queued, for a test that compares the declared fields with a
  * live battle's. Nothing is played.
@@ -169,9 +174,9 @@ export function declaredOutcomeScenario(engine: Engine, scenarioId: string, quer
   const battle = startScenario(engine, scenarioId, teams(query, sets)) as unknown as OutcomeBattle;
   retireCopies(battle, query);
   battle.prng = refusingSource(battle.prng);
-  declare(battle, query, () => undefined);
+  declare(battle, query, ignore);
   if (history !== null) {
-    declareHistory(battle as unknown as HBattle, history.resolved, { stall: history.stall, at: () => undefined });
+    declareHistory(battle as unknown as HBattle, history.resolved, { stall: history.stall, at: ignore });
     restoreStagesAndItems(battle, query);
   }
   return battle as unknown as HBattle;
