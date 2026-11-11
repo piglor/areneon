@@ -13,7 +13,7 @@
 // `attacked_by` is asked at damage 0 and at the largest count (a move that reads the amount is then `history_unknown`);
 // a volatile whose id is not an engine condition (a derived name such as `stockpile2`) is not declared, and none is when the
 // reviewed record says `volatiles: omitted` (the committed value: the engine refuses many volatiles' start handlers in a scenario).
-import type { HistoryFacts, PokemonHistory } from "@areneon/public-state";
+import type { HistoryFacts, PokemonHistory, WorldFacts } from "@areneon/public-state";
 import { UNSETTLED } from "@areneon/public-state";
 import type { BattleHistory, CombatantHistory } from "@areneon/schema/types/v1/mechanics-query.ts";
 import type { Fighter } from "./damage-aware-view.ts";
@@ -53,10 +53,11 @@ const byId = (a: { id: string }, b: { id: string }): number => (a.id < b.id ? -1
  * The declarer of one decision. `facts` null means the module refused a line of the channel: every fact it would have
  * settled is then unknown, for every Pokemon.
  */
-export function historyDeclarer(facts: HistoryFacts | null, config: OutcomeConfig, exists: HistoryExists): HistoryDeclarer {
+export function historyDeclarer(facts: HistoryFacts | null, config: OutcomeConfig, exists: HistoryExists, world: WorldFacts | null = null): HistoryDeclarer {
   const end = config.unknown_count_end;
   const unknownCount = (): CountFact => ({ kind: "unknown", ends: [0, end] });
   const unknownBool = (): BoolFact => ({ kind: "unknown", ends: [false, true] });
+  const unknownMove = (): NonNullable<CombatantHistory["last_move"]> => ({ kind: "unknown", ends: [null, config.unknown_move] });
 
   /** The facts of an unsettled Pokemon: every one the channel cannot give. */
   const unsettled = (): CombatantHistory => ({
@@ -67,6 +68,7 @@ export function historyDeclarer(facts: HistoryFacts | null, config: OutcomeConfi
     last_move_failed: unknownBool(),
     stats_raised_this_turn: unknownBool(),
     stats_lowered_this_turn: unknownBool(),
+    last_move: unknownMove(),
   });
 
   /**
@@ -130,7 +132,15 @@ export function historyDeclarer(facts: HistoryFacts | null, config: OutcomeConfi
         out.stats_lowered_this_turn = known(stint.stats_lowered_this_turn);
         // Opponent PP is never declared: `moves_used` is an own fact (`moves_used` is null for an opponent).
         if (at.own && stint.moves_used !== null) out.moves_used = known([...stint.moves_used]);
-        const volatiles = config.volatiles === "omitted" ? [] : Object.entries(stint.volatile_started).map(([printed, v]) => ({ ...resolved(printed), started_turn: v.started_turn, after_residual: v.after_residual })).sort(byId);
+        // The Pokemon's own last move (Encore and Disable read it when they start), from the world facts: unknown when those refused a line.
+        const mover = world === null ? undefined : (at.own ? world.own : world.opponent).active[at.letter as string];
+        out.last_move = world === null ? unknownMove() : known(mover?.last_move ?? null);
+        const volatiles =
+          config.volatiles === "omitted"
+            ? []
+            : Object.entries(stint.volatile_started)
+                .map(([printed, v]) => ({ ...resolved(printed), started_turn: v.started_turn, after_residual: v.after_residual, ...(mover?.volatiles[printed] === undefined ? {} : { moved_before: mover.volatiles[printed]?.moved_before }) }))
+                .sort(byId);
         if (volatiles.length > 0) out.volatiles = known(volatiles);
         const attackers = stint.attackers_this_turn === null || stint.attackers_this_turn.length > 0 ? attackersOf(fighter, stint.attackers_this_turn, sides) : undefined;
         if (attackers !== undefined) out.attacked_by = attackers;

@@ -20,7 +20,7 @@
 // Not here: incoming threats and turn order (`probe-damage/2`, `candidate-features-2.ts`, which reuses the
 // pieces exported below), the belief-based sets (ADR-025 slice 5), the transport field, the encoder and the worker pool.
 
-import { createInterpreter, HISTORY_FACTS_FORMAT, historyFactsSha256, type PublicFlag, type PublicMon, type PublicState, readerSha256 } from "@areneon/public-state";
+import { createInterpreter, HISTORY_FACTS_FORMAT, historyFactsSha256, type PublicFlag, type PublicMon, type PublicState, readerSha256, WORLD_FACTS_FORMAT, worldFactsSha256 } from "@areneon/public-state";
 import { type Json, jcs } from "./canonical-json.ts";
 import { type AssumedSet, AssumedSetError } from "./damage-aware-assumed-set.ts";
 import { parseJointChoice } from "./damage-aware-choice.ts";
@@ -29,7 +29,7 @@ import { PPM, rollsValue } from "./damage-aware-score.ts";
 import type { BeliefThreatsPort } from "./belief-features.ts";
 import type { BeliefWorldsPort } from "./damage-aware-worlds.ts";
 import type { HistoryDeclarer } from "./candidate-history.ts";
-import type { HistoryFactsData } from "@areneon/public-state";
+import type { HistoryFactsData, WorldFactsData } from "@areneon/public-state";
 import { type OutcomeConfig, outcomeConfigHash } from "./outcome-config.ts";
 import { OUTCOME_FORMAT } from "./mechanics-outcome.ts";
 import { array, DamageAwareError, type DamageView, damageView, type Foe, foesHit, object, type OwnSlot, ProbeRefusal, type ProbeMemo, type ProbeCounts, ReaderGap, text } from "./damage-aware-view.ts";
@@ -85,6 +85,8 @@ export interface BeliefThreatsSetup {
 export interface OutcomeSetup {
   config: OutcomeConfig;
   history_data?: HistoryFactsData;
+  /** The world facts' engine data (the last move of each Pokemon); default: read from the pinned engine. */
+  world_data?: WorldFactsData;
 }
 
 /** What the belief set counts about its worlds, per game (a service reports the delta of a task). All integers. */
@@ -186,6 +188,8 @@ export interface FeatureSetIdentity {
   outcome_format?: number;
   history_facts_format?: string;
   history_facts_sha256?: string;
+  world_facts_format?: string;
+  world_facts_sha256?: string;
   outcome_config_hash?: string;
 }
 
@@ -211,7 +215,7 @@ export function featureSetIdentity(engine: Engine, configs: Pick<FeatureConfigs,
       ? { belief_threats_identity_hash: configs.belief_threats.port.identity_hash, belief_threats_per_foe: configs.belief_threats.per_foe, belief_threats_format: BELIEF_THREATS_FORMAT }
       : {}),
     ...(featureSet === FEATURE_SET_OUTCOME && configs.outcome !== undefined
-      ? { outcome_format: OUTCOME_FORMAT, history_facts_format: HISTORY_FACTS_FORMAT, history_facts_sha256: historyFactsSha256(), outcome_config_hash: outcomeConfigHash(configs.outcome.config) }
+      ? { outcome_format: OUTCOME_FORMAT, history_facts_format: HISTORY_FACTS_FORMAT, history_facts_sha256: historyFactsSha256(), world_facts_format: WORLD_FACTS_FORMAT, world_facts_sha256: worldFactsSha256(), outcome_config_hash: outcomeConfigHash(configs.outcome.config) }
       : {}),
   };
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type HistoryFacts, type PokemonHistory, UNSETTLED } from "@areneon/public-state";
+import { type HistoryFacts, type PokemonHistory, UNSETTLED, type WorldFacts } from "@areneon/public-state";
 import { historyDeclarer, type HistoryExists } from "../src/candidate-history.ts";
 import type { Fighter } from "../src/damage-aware-view.ts";
 import { type OutcomeConfig, readOutcomeConfig } from "../src/outcome-config.ts";
@@ -28,7 +28,24 @@ const side = (change: Partial<HistoryFacts["own"]> = {}): HistoryFacts["own"] =>
 const facts = (own: Partial<HistoryFacts["own"]>, opponent: Partial<HistoryFacts["own"]> = {}, rest: Partial<HistoryFacts> = {}): HistoryFacts => ({ history_facts_format: "x", turn: 4, field_last_move: null, own: side(own), opponent: side(opponent), ...rest });
 const fighter = (own: boolean, letter: string | null, name: string): Fighter => ({ paste: "p", hp: null, status: null, boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0 }, mega: false, at: { own, letter, name } });
 
+const worldFacts = (own: Record<string, { last_move: string | null; volatiles?: Record<string, { moved_before: boolean }> } | null>, opponent: typeof own = {}): WorldFacts => ({ own: { active: own }, opponent: { active: opponent } }) as unknown as WorldFacts;
+
 describe("historyDeclarer", () => {
+  it("declares each Pokemon's last move and when a volatile began from the world facts, and asks the last move at both ends without them", () => {
+    const own = fighter(true, "a", "A");
+    const foe = fighter(false, "a", "F");
+    const base = facts({ active: { a: stint({ volatile_started: { taunt: { started_turn: 3, after_residual: false }, bide: { started_turn: 2, after_residual: true } } }) } }, { active: { a: stint() } });
+    const world = worldFacts({ a: { last_move: "tackle", volatiles: { taunt: { moved_before: false } } } }, { a: null });
+    const { combatants } = historyDeclarer(base, record, exists, world)([[own], [foe]]);
+    const mine = combatants[0]?.[0] as { last_move?: unknown; volatiles?: { value: { id: string; moved_before?: boolean }[] } };
+    expect(mine.last_move).toEqual({ kind: "known", value: "tackle" });
+    expect(mine.volatiles?.value.map((v) => [v.id, v.moved_before])).toEqual([["bide", undefined], ["taunt", false]]);
+    expect((combatants[1]?.[0] as { last_move?: unknown }).last_move).toEqual({ kind: "known", value: null }); // no move yet
+    const refused = historyDeclarer(base, record, exists, null)([[own], [foe]]).combatants[0]?.[0] as { last_move?: unknown };
+    expect(refused.last_move).toEqual({ kind: "unknown", ends: [null, "tackle"] });
+    expect((historyDeclarer(facts({ active: { a: { name: "A", unknown: true } } }), record, exists, world)([[own], [foe]]).combatants[0]?.[0] as { last_move?: unknown }).last_move).toEqual({ kind: "unknown", ends: [null, "tackle"] });
+  });
+
   it("declares a known stint's facts, own moves_used only, and the roster's berry and last item", () => {
     const own = fighter(true, "a", "A");
     const foe = fighter(false, "a", "F");
@@ -50,6 +67,7 @@ describe("historyDeclarer", () => {
       stats_raised_this_turn: { kind: "known", value: false },
       stats_lowered_this_turn: { kind: "known", value: true },
       moves_used: { kind: "known", value: ["tackle"] },
+      last_move: { kind: "unknown", ends: [null, "tackle"] }, // no world facts were given
       ate_berry: { kind: "known", value: false },
       last_item: { kind: "known", value: null },
     });

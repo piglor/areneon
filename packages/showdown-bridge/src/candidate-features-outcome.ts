@@ -21,7 +21,7 @@
 //
 // Pure and deterministic: the same bytes with or without the memo and in any candidate order. The input is a `PlayerChannel`, the player's
 // own team and the candidate strings; no opponent team, hidden verdict, `BattleRecord` or seed is a parameter of anything here.
-import { type HistoryFacts, HistoryFactsError, historyFacts, type HistoryFactsData, ownHistoryChannel } from "@areneon/public-state";
+import { type HistoryFacts, HistoryFactsError, historyFacts, type HistoryFactsData, ownChannel, ownHistoryChannel, type WorldFacts, WorldFactsError, worldFacts, type WorldFactsData } from "@areneon/public-state";
 import { buildArrays, type ArrayContext, type CostTrace, type FoePriorityRow, type OwnPriorityRow, type SpeedRow, type ThreatRow } from "./candidate-features-2.ts";
 import { type FeatureConfigs, type FeatureMemo, type FeatureRow, FEATURE_SET_OUTCOME, createFeatureMemo } from "./candidate-features.ts";
 import { type HistoryDeclarer, historyDeclarer } from "./candidate-history.ts";
@@ -30,6 +30,7 @@ import { array, DamageAwareError, type DamageView, type Foe, object, ProbeRefusa
 import type { Engine, PokemonSet } from "./engine.ts";
 import { GOLDEN_FORMAT } from "./golden.ts";
 import { goldenHistoryFactsData } from "./history-facts-data.ts";
+import { goldenWorldFactsData } from "./world-facts-data.ts";
 import type { MechanicsQuery } from "./mechanics-query.ts";
 import type { PlainReason } from "./mechanics-result.ts";
 import type { PlayerChannel } from "./observation.ts";
@@ -88,6 +89,27 @@ export function factsOf(channel: PlayerChannel, data: HistoryFactsData): History
   }
 }
 
+const worldDataOf = new WeakMap<Engine, WorldFactsData>();
+/** The world facts' engine data of the pinned checkout (read once per engine), or the caller's. */
+export function worldDataFor(engine: Engine, configs: FeatureConfigs): WorldFactsData {
+  const given = configs.outcome?.world_data;
+  if (given !== undefined) return given;
+  if (configs.config.format_id !== GOLDEN_FORMAT) throw new DamageAwareError(`probe-outcome/1 has world facts data for ${GOLDEN_FORMAT} only`);
+  let data = worldDataOf.get(engine);
+  if (data === undefined) worldDataOf.set(engine, (data = goldenWorldFactsData()));
+  return data;
+}
+
+/** Each Pokemon's last move, and when a volatile began relative to its action (the world facts), or null when that module refuses a line. */
+export function worldFactsOf(channel: PlayerChannel, data: WorldFactsData): WorldFacts | null {
+  try {
+    return worldFacts({ channel: ownChannel(channel.player, channel.lines), data });
+  } catch (error) {
+    if (!(error instanceof WorldFactsError)) throw error;
+    return null;
+  }
+}
+
 function declarerOf(engine: Engine, configs: FeatureConfigs, setup: NonNullable<FeatureConfigs["outcome"]>, channel: PlayerChannel): HistoryDeclarer {
   const dex = engine.sim.Dex.mod(engine.sim.Dex.formats.get(configs.config.format_id).mod) as unknown as {
     conditions: { get(id: string): { exists: boolean; onRestart?: unknown } };
@@ -95,7 +117,7 @@ function declarerOf(engine: Engine, configs: FeatureConfigs, setup: NonNullable<
   return historyDeclarer(factsOf(channel, historyDataOf(engine, configs)), setup.config, {
     condition: (id) => dex.conditions.get(id).exists,
     stacking: (id) => dex.conditions.get(id).onRestart !== undefined,
-  });
+  }, worldFactsOf(channel, worldDataFor(engine, configs)));
 }
 
 // ---------------------------------------------------------------- branches
