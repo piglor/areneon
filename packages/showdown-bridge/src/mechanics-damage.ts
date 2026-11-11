@@ -218,7 +218,7 @@ function declaredBattle(engine: Engine, scenarioId: string, query: DamageQuery, 
     const real = battle.prng;
     battle.prng = refusingSource(real as object);
     try {
-      declareHistory(battle as unknown as HBattle, history.resolved, { stall: history.stall, at: () => undefined });
+      declareHistory(battle as unknown as HBattle, history.resolved, { stall: history.stall, at: () => undefined, on_draw: history.on_draw });
     } finally {
       battle.prng = real;
     }

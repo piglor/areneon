@@ -254,7 +254,7 @@ function threatRows(view: DamageView, state: PublicState, entries: readonly Entr
 
 /** One `speed_order` query: `own` and `foes` declared, the given actions asked, the field declared with the own side first. */
 function ask(view: DamageView, state: PublicState, own: readonly Fighter[], foes: readonly Fighter[], actions: OrderAction[]): Asked {
-  const { sides: declared, history } = view.declared([own, foes]);
+  const { sides: declared, history } = view.declared([own, foes], []); // no foe's own move is asked: a queued action's success is not read
   const sides = declared as unknown as Sides;
   let result: ReturnType<DamageView["queryLimited"]>;
   try {

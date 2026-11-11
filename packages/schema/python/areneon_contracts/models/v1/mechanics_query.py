@@ -408,6 +408,10 @@ class CombatantHistory(BaseModel):
     """
     moveSlots[].used: the ids of its moves it has used since it switched in.
     """
+    last_move: IdFact | MISSING = MISSING
+    """
+    lastMove and lastMoveUsed: the engine's id of the move it last used since it switched in, or null (Encore and Disable read it when their volatile starts).
+    """
     volatiles: VolatilesFact | MISSING = MISSING
     """
     Volatiles it holds, with their ages.

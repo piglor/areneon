@@ -13,6 +13,7 @@ import type { AnyDamageAwareConfig, DamageAwareConfig } from "./damage-aware-con
 import type { DamageAnswer } from "./damage-aware-score.ts";
 import type { HistoryDeclarer } from "./candidate-history.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
+import { DECLARED_FACT } from "./mechanics-error.ts";
 import { type MechanicsContext, MechanicsProbeError, type ProbeOutcome } from "./mechanics-probe.ts";
 import { type MechanicsQuery, mechanicsQueryHash, type ParsedMechanicsQuery, readMechanicsQuery } from "./mechanics-query.ts";
 import type { MechanicsConfig } from "./mechanics-config.ts";
@@ -74,6 +75,8 @@ export interface Fighter {
    * position letter of its active slot (null for a benched Pokemon) and the name the channel shows it under. Never part of a query.
    */
   at?: { own: boolean; letter: string | null; name: string };
+  /** A foe's revealed moves the assumed set holds (the moves it was seen to use), for the unknown `moves_used` of an opponent. */
+  revealed?: string[];
 }
 export interface OwnSlot {
   fighter: Fighter;
@@ -107,6 +110,42 @@ const CONFIG_DEFECT = "the mechanics config is for another format";
 type DamageState = Extract<MechanicsQuery["query"], { kind: "damage" }>["state"];
 type Combatant = Extract<MechanicsQuery["query"], { kind: "damage" }>["attacker"];
 type BattleHistory = NonNullable<Extract<MechanicsQuery["query"], { kind: "damage" }>["history"]>;
+
+/** Histories a declarer marked unknown (a Pokemon that is unsettled and could be under any condition the move path reads): every answer of a query that holds one is `history_unknown`. */
+const UNKNOWN_HISTORIES = new WeakSet<object>();
+
+/** The query with the declared facts that name engine ids removed (volatiles, used moves, last items, slot conditions, the last move): the rest of the history, for the identity of the answer. */
+export function withoutVolatiles(value: MechanicsQuery): MechanicsQuery {
+  const copy = structuredClone(value) as MechanicsQuery;
+  const strip = (combatant: object): void => {
+    const history = (combatant as { history?: Record<string, unknown> }).history;
+    for (const key of ["volatiles", "moves_used", "last_item"]) delete history?.[key];
+  };
+  const query = copy.query;
+  if (query.kind === "damage") [query.attacker, query.defender].forEach(strip);
+  else if (query.kind === "speed_order" || query.kind === "move_outcome") query.sides.flat().forEach(strip);
+  if (query.kind !== "stats" && query.history !== undefined) {
+    delete query.history.field_last_move;
+    for (const side of query.history.sides ?? []) delete side.pending_slots;
+    delete query.history.turn;
+  }
+  return copy;
+}
+
+/** Whether a query declares volatiles, used moves, last items, slot conditions or a last move (the facts that name engine ids). */
+export function declaresIds(value: MechanicsQuery): boolean {
+  const query = value.query;
+  const holders = query.kind === "damage" ? [query.attacker, query.defender] : query.kind === "stats" ? [] : query.sides.flat();
+  if (holders.some((h) => ["volatiles", "moves_used", "last_item"].some((key) => (h.history as Record<string, unknown> | undefined)?.[key] !== undefined))) return true;
+  return query.kind !== "stats" && query.history !== undefined && (query.history.field_last_move !== undefined || (query.history.sides ?? []).some((side) => side.pending_slots !== undefined));
+}
+
+/** `result` as the answer of a query that declares an unknown fact: `unsupported`, `history_unknown` (a result that is not `computed` is kept as it is). */
+export function unknownVolatiles(result: MechanicsResult): MechanicsResult {
+  if (result.kind !== "computed") return result;
+  const { answer: _answer, ...identity } = result;
+  return { ...identity, kind: "unsupported", reason: "history_unknown", position: null } as MechanicsResult;
+}
 
 /** The probe's two speed-order limits (ADR-022 erratum E-22.3): an action it cannot queue, and one whose priority is not a whole number. */
 export type SpeedLimit = "unqueueable" | "fractional_priority";
@@ -188,21 +227,44 @@ export function damageView(options: DamageViewOptions) {
    */
   function askLimited(value: MechanicsQuery): MechanicsResult | { limit: SpeedLimit } {
     const query = readMechanicsQuery(value);
-    const key = mechanicsQueryHash(query);
+    // A marked query is another question than the same bytes unmarked: its memo key says so.
+    const marked = options.history !== undefined && value.query.kind !== "stats" && value.query.history !== undefined && UNKNOWN_HISTORIES.has(value.query.history);
+    const key = mechanicsQueryHash(query) + (marked ? ":unknown" : "");
     counts.queries += 1;
     let result = memo.get(key);
     if (result === undefined) {
       counts.probe_runs += 1;
       try {
-        result = probe({ engine, config: mechanics, snapshot }, query).result;
+        // A marked query is asked without the facts that name engine ids and answered `history_unknown`: the question cannot be settled.
+        result = marked ? unknownVolatiles(probe({ engine, config: mechanics, snapshot }, readMechanicsQuery(withoutVolatiles(value))).result) : probe({ engine, config: mechanics, snapshot }, query).result;
       } catch (error) {
         if (!(error instanceof MechanicsProbeError) || error.message.startsWith(CONFIG_DEFECT)) throw error; // a wrong config is a defect of the run, not of a state
         if (query.query.kind === "speed_order" && error.message.startsWith(UNQUEUEABLE)) result = { limit: "unqueueable" };
         else if (query.query.kind === "speed_order" && error.message.startsWith(FRACTIONAL)) result = { limit: "fractional_priority" };
-        else {
+        else if (options.history !== undefined && error.code === DECLARED_FACT) {
+          // A declared volatile the engine will not take in this scenario (a start handler that needs a battle's worth of state): its fact is
+          // unknown, not dropped, so the answer is `history_unknown` (ADR-022 E-22.5.3); the rest of the request is unaffected.
+          try {
+            result = unknownVolatiles(probe({ engine, config: mechanics, snapshot }, readMechanicsQuery(withoutVolatiles(value))).result);
+          } catch (again) {
+            if (!(again instanceof MechanicsProbeError)) throw again;
+            memo.set(key, { refused: again.message });
+            throw new ProbeRefusal(again.message);
+          }
+        } else {
           // Any other refusal of a state the caller declared: this request falls back.
           memo.set(key, { refused: error.message });
           throw new ProbeRefusal(error.message);
+        }
+      }
+      // A declared volatile whose start handler draws (a confusion or sleep duration) answers `random_effect`: if the query without the
+      // engine-id facts is computed, the volatile is what could not be declared, so the answer is `history_unknown` (ADR-022 E-22.5.3).
+      if (options.history !== undefined && "kind" in result && result.kind === "unsupported" && result.reason === "random_effect" && declaresIds(value)) {
+        try {
+          const stripped = probe({ engine, config: mechanics, snapshot }, readMechanicsQuery(withoutVolatiles(value))).result;
+          if (stripped.kind === "computed") result = unknownVolatiles(stripped);
+        } catch (again) {
+          if (!(again instanceof MechanicsProbeError)) throw again;
         }
       }
       memo.set(key, result);
@@ -228,7 +290,7 @@ export function damageView(options: DamageViewOptions) {
 
   /** The probe's whole answer to one damage query (a `computed` or `unsupported` result); a memoised refusal throws `ProbeRefusal`. */
   const damageResult = (attacker: Fighter, defender: Fighter, move: string, state: PublicState, attackerIsOwn: boolean): MechanicsResult | null => {
-    const { sides, history } = declared([[attacker], [defender]]);
+    const { sides, history } = declared([[attacker], [defender]], [attacker]);
     return query({ kind: "damage", attacker: sides[0]?.[0] as Combatant, defender: sides[1]?.[0] as Combatant, move, state: field(state, attackerIsOwn), ...(history === undefined ? {} : { history }) });
   };
 
@@ -252,10 +314,11 @@ export function damageView(options: DamageViewOptions) {
    * The query's Pokemon (`sides`, each side's declared fighters) as combatants and, when the view declares history, with their
    * history blocks and the battle's. Without `options.history` this is `combatant` on each fighter and no history (the old queries, byte for byte).
    */
-  function declared(sides: readonly (readonly Fighter[])[]): { sides: Combatant[][]; history: BattleHistory | undefined } {
+  function declared(sides: readonly (readonly Fighter[])[], acting: readonly Fighter[] = []): { sides: Combatant[][]; history: BattleHistory | undefined } {
     const out = sides.map((list) => list.map(combatant));
     if (options.history === undefined) return { sides: out, history: undefined };
-    const { combatants, battle } = options.history(sides);
+    const { combatants, battle, unknown } = options.history(sides, acting);
+    if (unknown && battle !== undefined) UNKNOWN_HISTORIES.add(battle);
     combatants.forEach((list, s) => list.forEach((block, p) => block !== undefined && Object.assign((out[s] as Combatant[])[p] as Combatant, { history: block })));
     return { sides: out, history: battle };
   }
@@ -379,7 +442,7 @@ export function damageView(options: DamageViewOptions) {
       if (percent === null || percent === 0) return;
       const max = maxHpOf(assumed.paste);
       const hp = assumedHp(percent, max, config.hp_rounding);
-      const fighter: Fighter = { paste: assumed.paste, hp: hp === max ? null : hp, status: mon.status, boosts: boostsOf(mon), mega: assumed.mega, at: { own: false, letter, name: mon.name ?? "" } };
+      const fighter: Fighter = { paste: assumed.paste, hp: hp === max ? null : hp, status: mon.status, boosts: boostsOf(mon), mega: assumed.mega, at: { own: false, letter, name: mon.name ?? "" }, revealed: [...new Set(assumed.revealed_moves)].sort() };
       out.push({ mon, assumed, fighter, loc: options.engine_targets === true ? position + 1 : letters.length - position });
     });
     return out;

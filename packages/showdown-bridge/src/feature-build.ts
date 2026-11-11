@@ -7,7 +7,7 @@ import { candidateFeatures, type CandidateFeatures, type FeatureConfigs, type Fe
 import { candidateFeaturesBelief, type CandidateFeaturesBelief } from "./candidate-features-belief.ts";
 import { candidateFeatures2, type CandidateFeatures2 } from "./candidate-features-2.ts";
 import { candidateFeatures3, type CandidateFeatures3 } from "./candidate-features-3.ts";
-import { candidateFeaturesOutcome } from "./candidate-features-outcome.ts";
+import { DamageAwareError } from "./damage-aware-view.ts";
 import type { Candidate } from "./choices.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import type { PlayerChannel } from "./observation.ts";
@@ -36,8 +36,10 @@ export function buildFeatures(
 ): AnyCandidateFeatures {
   if (set === "probe-damage/2") return candidateFeatures2(engine, configs, channel, team, candidates, memo);
   if (set === FEATURE_SET_3) return candidateFeatures3(engine, configs, channel, team, candidates, memo);
-  // The wire and loader types (`TrainingExample`) do not know `outcomes` or `history_unknown` rows until slice H4 moves them: the union above stays the wire's.
-  if (set === FEATURE_SET_OUTCOME) return candidateFeaturesOutcome(engine, configs, channel, team, candidates, memo) as unknown as AnyCandidateFeatures;
+  // The wire, the loader and the sidecar carry `TrainingExample` rows, which have no `outcomes` and no `history_unknown` reason until slice H4 moves the
+  // contract: this dispatch refuses the id so no caller writes a value the readers cannot take. The bench and the feature service call
+  // `candidateFeaturesOutcome` directly. H4 replaces this throw with the call.
+  if (set === FEATURE_SET_OUTCOME) throw new DamageAwareError("probe-outcome/1 cannot be carried on the wire until the contract has its outcomes (slice H4)");
   if (set === FEATURE_SET_BELIEF) return candidateFeaturesBelief(engine, configs, channel, team, candidates, memo);
   return candidateFeatures(engine, configs, channel, team, candidates, memo);
 }

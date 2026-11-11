@@ -4,10 +4,13 @@
 //
 // - `assumed_branch`: how a foe that has revealed no move gets its one assumed opposing-action branch. The only rule is
 //   `assumed-set-filler`: the move the assumed set (ADR-018) holds in place of an unrevealed one (its filler), else its first move.
-// - `volatiles`: whether the volatiles of the facts are declared through the engine's own `addVolatile` (`declared`) or left out (`omitted`).
-//   Many start handlers refuse in a scenario that has none of the battle that led to them (Encore needs a last move, a counter needs its
-//   source), and the engine's refusal makes the whole query unsupported; the committed record omits them (a measured finding of slice H3,
-//   see CLAUDE.md), so a volatile's effect is the engine's default there. A way to write a volatile without its start handler is a later id.
+// - `volatiles`: whether the volatiles of the facts are declared through the engine's own `addVolatile` (`declared`, committed) or left out
+//   (`omitted`, a test seam: a known fact left out would be a confident default). A volatile the engine refuses in the scenario (Encore needs a
+//   last move) makes the answers that hold it `history_unknown`.
+// - `move_path_conditions`: the conditions the engine's move path reads (an `onBeforeMove`, `onModifyMove`, `onTryMove`, `onOverrideAction` or
+//   `onLockMove` handler on a volatile; `check-outcome-config.ts` holds the list equal to the pinned engine's), sorted. When the channel cannot
+//   settle a Pokemon's volatiles (an Illusion stint, a refused line) any of them may apply: if there are at most `unknown_volatile_limit` they are
+//   the second end (none against all started), else every answer of a query that holds such a Pokemon is `history_unknown`.
 // - `max_branches`: at most this many opposing-action branches per own move part (the `switch` branch and the revealed moves of
 //   the targeted foe, cut in move-id order).
 // - `unknown_count_end`: the upper end a history count the channel cannot settle is asked at (the two-ends rule asks the lower end 0 and this one).
@@ -19,6 +22,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Json, jcs } from "./canonical-json.ts";
 import { sha256Hex } from "./rules.ts";
+import { conditionIds } from "./volatile-copy.ts";
 
 export const OUTCOME_CONFIG_DIR = fileURLToPath(new URL("../../../config/features", import.meta.url));
 
@@ -36,15 +40,23 @@ export interface OutcomeConfig {
   max_branches: number;
   volatiles: (typeof VOLATILES_MODES)[number];
   unknown_count_end: number;
+  move_path_conditions: string[];
+  unknown_volatile_limit: number;
   unknown_item: string;
   unknown_move: string;
 }
 
-const KEYS = ["assumed_branch", "format_id", "max_branches", "schema_version", "unknown_count_end", "unknown_item", "unknown_move", "volatiles"];
+const KEYS = ["assumed_branch", "format_id", "max_branches", "schema_version", "unknown_count_end", "unknown_item", "unknown_move", "unknown_volatile_limit", "volatiles"].concat(["move_path_conditions"]).sort();
 const ID = /^[a-z0-9]+$/;
 const integer = (value: unknown, min: number, max: number, what: string): number => {
   if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) throw new OutcomeConfigError(`${what} must be an integer from ${min} to ${max}`);
   return value;
+};
+const ids = (value: unknown, what: string): string[] => {
+  if (!Array.isArray(value) || value.length === 0) throw new OutcomeConfigError(`${what} must be a list of engine ids`);
+  const list = value.map((entry) => id(entry, what));
+  if (list.some((entry, index) => index > 0 && (list[index - 1] as string) >= entry)) throw new OutcomeConfigError(`${what} must be sorted and unique`);
+  return list;
 };
 const closed = <T extends string>(value: unknown, words: readonly T[], what: string): T => {
   if (!(words as readonly unknown[]).includes(value)) throw new OutcomeConfigError(`${what} is not a known word`);
@@ -72,14 +84,42 @@ export function readOutcomeConfig(value: unknown): OutcomeConfig {
     unknown_count_end: integer(record.unknown_count_end, 1, 9999, "unknown_count_end"),
     unknown_item: id(record.unknown_item, "unknown_item"),
     unknown_move: id(record.unknown_move, "unknown_move"),
+    move_path_conditions: ids(record.move_path_conditions, "move_path_conditions"),
+    unknown_volatile_limit: integer(record.unknown_volatile_limit, 0, 99, "unknown_volatile_limit"),
   };
 }
 
+interface ConditionLike {
+  exists: boolean;
+  effectType?: string;
+  condition?: Record<string, unknown>;
+  [handler: string]: unknown;
+}
+
+/** The handlers of a volatile that the engine's move path runs (`runMove`: OverrideAction, BeforeMove, the lock; the move step: ModifyMove, TryMove). */
+const MOVE_PATH_HANDLERS = ["onBeforeMove", "onLockMove", "onModifyMove", "onOverrideAction", "onTryMove"];
+const NOT_VOLATILES = new Set(["Status", "Weather", "Terrain", "Rule", "Format", "Ruleset"]);
+
+/** The condition ids of the mod with a move-path handler (a condition of a move, ability or item is its `condition` object), sorted: derived from the engine's data, no id named. */
+export function movePathConditions(dex: { data: Parameters<typeof conditionIds>[0]["data"]; conditions: { get(id: string): ConditionLike } }): string[] {
+  return conditionIds(dex).filter((id) => {
+    const found = dex.conditions.get(id);
+    if (found.effectType !== undefined && NOT_VOLATILES.has(found.effectType)) return false;
+    const body = (found.condition ?? found) as Record<string, unknown>;
+    return MOVE_PATH_HANDLERS.some((handler) => typeof body[handler] === "function" || typeof found[handler] === "function");
+  });
+}
+
 /** The ids the record names that the pinned engine's data must hold (a problem per missing one; none means ok). */
-export function checkOutcomeConfig(config: OutcomeConfig, dex: { items: { get(id: string): { exists: boolean } }; moves: { get(id: string): { exists: boolean } } }): string[] {
+export function checkOutcomeConfig(config: OutcomeConfig, dex: { items: { get(id: string): { exists: boolean } }; moves: { get(id: string): { exists: boolean } }; conditions?: { get(id: string): ConditionLike }; data?: Parameters<typeof conditionIds>[0]["data"] }): string[] {
   const problems: string[] = [];
   if (!dex.items.get(config.unknown_item).exists) problems.push("unknown_item is not an engine item");
   if (!dex.moves.get(config.unknown_move).exists) problems.push("unknown_move is not an engine move");
+  if (dex.data !== undefined && dex.conditions !== undefined) {
+    const derived = movePathConditions(dex as Required<Pick<typeof dex, "data" | "conditions">>);
+    for (const id of derived) if (!config.move_path_conditions.includes(id)) problems.push(`the engine's ${id} reads the move path and is not in move_path_conditions`);
+    for (const id of config.move_path_conditions) if (!derived.includes(id)) problems.push(`move_path_conditions names ${id}, which the engine's move path does not read`);
+  } else problems.push("no engine data to check move_path_conditions against");
   return problems;
 }
 
