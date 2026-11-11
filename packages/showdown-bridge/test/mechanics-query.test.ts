@@ -124,6 +124,9 @@ describe("the mechanics corpus samples", () => {
   it.each(names("mechanics-query", "invalid"))("the query sample %s is refused", (name) => {
     expect(() => readMechanicsQuery(sample("mechanics-query", "invalid", name))).toThrow(MechanicsQueryError);
   });
+  it.each(names("mechanics-query", "reader-invalid"))("the reader-invalid query sample %s passes the schema and not the reader", (name) => {
+    expect(() => readMechanicsQuery(sample("mechanics-query", "reader-invalid", name))).toThrow(MechanicsQueryError);
+  });
   it.each(names("mechanics-result", "valid"))("the result sample %s is read", (name) => {
     expect(readMechanicsResult(sample("mechanics-result", "valid", name)).schema_version).toBe(1);
   });
