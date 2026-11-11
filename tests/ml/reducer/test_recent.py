@@ -25,7 +25,7 @@ from .support import HEADER, PERCENT, TEAM, VOCAB, leaks, opp, own, run
 
 def test_the_state_schema_version_names_the_recent_fields() -> None:
     state = run().to_dict()
-    assert state["schema_version"] == STATE_SCHEMA_VERSION == 2
+    assert state["schema_version"] == STATE_SCHEMA_VERSION == 3
     assert {"elapsed"} <= set(state)
     assert "condition_turns" in state["own"]
     assert state["own"]["roster"][0]["recent"]["active_turns"] == 1

@@ -11,6 +11,89 @@
     "field_conditions": [],
     "format_name": "[Gen 9 Champions] VGC 2026 Reg M-C",
     "gametype": "doubles",
+    "history": {
+      "field_last_move": "curse",
+      "history_facts_format": "history-facts/1",
+      "opponent": {
+        "active": {
+          "a": {
+            "attackers_this_turn": [],
+            "hurt_this_turn": false,
+            "last_move_failed": false,
+            "move_actions": 1,
+            "moves_used": null,
+            "name": "Venusaur",
+            "stall_counter": null,
+            "stats_lowered_this_turn": false,
+            "stats_raised_this_turn": false,
+            "times_attacked": 0,
+            "unknown": false,
+            "volatile_started": {}
+          },
+          "b": {
+            "attackers_this_turn": [],
+            "hurt_this_turn": false,
+            "last_move_failed": false,
+            "move_actions": 1,
+            "moves_used": null,
+            "name": "Arboliva",
+            "stall_counter": 3,
+            "stats_lowered_this_turn": false,
+            "stats_raised_this_turn": false,
+            "times_attacked": 1,
+            "unknown": false,
+            "volatile_started": {}
+          }
+        },
+        "pending_slot": {},
+        "roster": {
+          "Arboliva": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Charizard": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Pikachu": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Venusaur": {
+            "ate_berry": false,
+            "last_item": null
+          }
+        },
+        "total_fainted": 2
+      },
+      "own": {
+        "active": {
+          "a": null,
+          "b": null
+        },
+        "pending_slot": {},
+        "roster": {
+          "Dedenne": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Pikachu": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Snorlax": {
+            "ate_berry": true,
+            "last_item": "sitrusberry"
+          },
+          "Venusaur": {
+            "ate_berry": false,
+            "last_item": null
+          }
+        },
+        "total_fainted": 4
+      },
+      "turn": 12
+    },
     "opponent": {
       "condition_turns": {},
       "conditions": {},
@@ -763,7 +846,7 @@
     },
     "player": "p1",
     "request_kind": "move",
-    "schema_version": 2,
+    "schema_version": 3,
     "started": true,
     "terrain": "grassyterrain",
     "turn": 12,
