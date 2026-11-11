@@ -37,6 +37,7 @@ const CLONE = `
 import json, sys
 from pathlib import Path
 from areneon_contracts.contracts import jcs
+from areneon_ml.checkpoint.binding import BINDING_NAME, binding_bytes, record_files
 from areneon_ml.checkpoint.files import checkpoint_bytes, write_checkpoint
 from areneon_ml.checkpoint.record import read_record
 from areneon_ml.learner.config import read_run_config
@@ -58,7 +59,9 @@ for offset, role in enumerate(ROLES):
         "learner_state_hash": "d" * 64, "encoder_version": encoder_version(game, config.model.encoder), "data_class": "synthetic", "manifest": manifest,
     })
     (root / "records" / (found + ".json")).write_bytes(jcs(record.to_json()) + b"\\n")
-(root / "sources.json").write_bytes(jcs({teacher: []}))
+registry = jcs({teacher: []})
+(root / "sources.json").write_bytes(registry)
+(root / BINDING_NAME).write_bytes(binding_bytes(record_files(root / "records"), registry))
 print(json.dumps(ids))
 `;
 
