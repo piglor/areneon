@@ -26,7 +26,7 @@ import { buildArrays, type ArrayContext, type CostTrace, type FoePriorityRow, ty
 import { type FeatureConfigs, type FeatureMemo, type FeatureRow, FEATURE_SET_OUTCOME, createFeatureMemo } from "./candidate-features.ts";
 import { type HistoryDeclarer, historyDeclarer } from "./candidate-history.ts";
 import type { Candidate } from "./choices.ts";
-import { array, DamageAwareError, type DamageView, type Foe, object, ProbeRefusal } from "./damage-aware-view.ts";
+import { array, DamageAwareError, type DamageView, type Fighter, type Foe, object, ProbeRefusal } from "./damage-aware-view.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { GOLDEN_FORMAT } from "./golden.ts";
 import { goldenHistoryFactsData } from "./history-facts-data.ts";
@@ -246,7 +246,7 @@ function outcomeRows(record: OutcomeConfig, { view, state, entries, foes, parsed
           const move = branch.action === "switch" ? null : foe === aimed ? (branch.foe_move as string) : otherFoeMove(foe, view.dex);
           actions.push({ side: 1, position, move, mega: false });
         });
-        const { sides, history } = view.declared([ownFighters, foeFighters]);
+        const { sides, history } = view.declared([ownFighters, foeFighters], [ownFighters[actor] as Fighter]);
         return ask({ kind: "move_outcome", sides: sides as unknown as OutcomeQuery["sides"], actions, asked: 0, target: { side: 1, position: targetIndex }, state: view.field(state, true), history: history as NonNullable<typeof history> });
       });
       out.push({ ...key, action: branch.action, foe_move: branch.foe_move, assumed: branch.assumed, ...row });

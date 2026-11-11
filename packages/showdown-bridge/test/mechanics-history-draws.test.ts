@@ -29,6 +29,8 @@ describe("withStartDraws", () => {
   };
   it("answers each draw at its smallest value (low) or largest (high), and says it drew", () => {
     const body = (prng: any) => [prng.random(2, 6), prng.random(5), prng.random(), prng.randomChance(1, 2), prng.sample(["a", "b", "c"]), prng.extra];
+    // a `randomChance` inside a start handler is answered true at BOTH ends (the documented limit: only one end of a chance is asked)
+    expect([run("low", (prng) => [prng.randomChance(33, 100)]).seen, run("high", (prng) => [prng.randomChance(33, 100)]).seen]).toEqual([[true], [true]]);
     expect(run("low", body)).toEqual({ draws: 5, seen: [2, 0, 0, true, "a", 1] }); // random() is a float: 0 at the low end
     expect(run("high", body)).toEqual({ draws: 5, seen: [5, 4, 1 - Number.EPSILON / 2, true, "c", 1] }); // and just below 1 at the high end
   });
@@ -103,6 +105,13 @@ describe("the explored paths of the before-move event", () => {
     // a chance below one part per million stays 1 ppm
     expect(combine([leaf([], true, reached([[1, 5_000_000]], 1_000_000))], 0)).toMatchObject({ answer: { precondition: "chance", precondition_ppm: 1 } });
   });
+  it("leaves a path of probability 0 out of the sum and of the equal-tails check", () => {
+    // the true answer of a chance of 0 in 100 can never happen: its tail (a different hit chance) must not make the answer unsupported
+    const never = leaf([[0, 100, true]], true, reached([], 500_000));
+    const always = leaf([[0, 100, false]], true, reached([], 1_000_000));
+    expect(combine([never, always], 0)).toMatchObject({ kind: "computed", answer: { precondition: "passes", precondition_ppm: 1_000_000, hit_ppm: 1_000_000 } });
+    expect(combine([never], 0)).toMatchObject({ answer: { precondition: "fails" } });
+  });
   it("fails when no path passes or the move step never reaches its hit step, and is unsupported when the passing paths read different tails", () => {
     expect(combine([leaf([[1, 2, true]], false, null)], 0)).toMatchObject({ answer: { precondition: "fails", precondition_ppm: 0, hit_ppm: 0 } });
     expect(combine([leaf([], true, { fails: true })], 0)).toMatchObject({ answer: { precondition: "fails" } });
@@ -124,6 +133,14 @@ describe("the explored paths of the before-move event", () => {
     // sleep draws its length when declared: the engine's draw cannot be answered
     ((query.query.sides[0] as { status: string | null }[])[0] as { status: string | null }).status = "slp";
     expect(probeMechanics({ engine, config }, readMechanicsQuery(query as never)).result).toMatchObject({ kind: "unsupported", reason: "random_effect" });
+  });
+});
+
+describe("the steps of runMove the probe follows", () => {
+  it("runs the move's own beforeMoveCallback: Bide is blocked while the bide volatile is up (data/moves.ts), and counts the action first", () => {
+    expect(ask({ last_move: known(null) }, "bide")).toMatchObject({ kind: "computed", answer: { precondition: "passes" } });
+    const bide = { volatiles: known([{ id: "bide", started_turn: 3, after_residual: false }]), last_move: known(null) };
+    expect(ask(bide, "bide")).toMatchObject({ kind: "computed", answer: { precondition: "fails", precondition_ppm: 0, hit_ppm: 0 } });
   });
 });
 

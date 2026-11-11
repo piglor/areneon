@@ -23,6 +23,11 @@ import type { OutcomeConfig } from "./outcome-config.ts";
 export interface DeclaredHistory {
   combatants: (CombatantHistory | undefined)[][];
   battle: BattleHistory | undefined;
+  /**
+   * A Pokemon of the query is unsettled and more conditions could apply to its move path than the record explores (`unknown_volatile_limit`):
+   * every answer of the query is `history_unknown` (an Illusion or a refused channel may hide a confusion, a Taunt, a flinch...).
+   */
+  unknown: boolean;
 }
 
 /**
@@ -69,7 +74,7 @@ export function historyDeclarer(facts: HistoryFacts | null, config: OutcomeConfi
    */
   const unknownVolatiles = (): NonNullable<CombatantHistory["volatiles"]> => ({
     kind: "unknown",
-    ends: [[], config.unknown_volatiles.map((id) => ({ id, started_turn: facts?.turn ?? 1, after_residual: false }))] as [never[], never[]],
+    ends: [[], config.move_path_conditions.map((id) => ({ id, started_turn: facts?.turn ?? 1, after_residual: false }))] as [never[], never[]],
   });
   const unknownUsed = (fighter: Fighter, acting: readonly Fighter[]): NonNullable<CombatantHistory["moves_used"]> | undefined => {
     if (!acting.includes(fighter)) return undefined;
@@ -78,7 +83,7 @@ export function historyDeclarer(facts: HistoryFacts | null, config: OutcomeConfi
   };
 
   /** The facts of an unsettled Pokemon: every one the channel cannot give. */
-  const unsettled = (fighter: Fighter, acting: readonly Fighter[]): CombatantHistory => {
+  const unsettled = (fighter: Fighter, acting: readonly Fighter[], flag: { unknown: boolean }): CombatantHistory => {
     const out: CombatantHistory = {
       move_actions: unknownCount(),
       stall_counter: unknownCount(),
@@ -89,7 +94,9 @@ export function historyDeclarer(facts: HistoryFacts | null, config: OutcomeConfi
       stats_lowered_this_turn: unknownBool(),
       last_move: unknownMove(),
     };
-    if (config.volatiles === "declared") out.volatiles = unknownVolatiles();
+    // The conditions the engine's move path reads (the record's list, checked against the engine): few enough to ask at the second end, else the whole query is unknown.
+    if (config.move_path_conditions.length > config.unknown_volatile_limit) flag.unknown = true;
+    else if (config.volatiles === "declared") out.volatiles = unknownVolatiles();
     if (fighter.at?.own === false) {
       const used = unknownUsed(fighter, acting);
       if (used !== undefined) out.moves_used = used;
@@ -134,12 +141,12 @@ export function historyDeclarer(facts: HistoryFacts | null, config: OutcomeConfi
     return stat !== printed && exists.condition(stat) ? { id: stat } : { id: printed };
   };
 
-  const one = (fighter: Fighter, sides: readonly (readonly Fighter[])[], acting: readonly Fighter[]): CombatantHistory | undefined => {
+  const one = (fighter: Fighter, sides: readonly (readonly Fighter[])[], acting: readonly Fighter[], flag: { unknown: boolean }): CombatantHistory | undefined => {
     const at = fighter.at;
     if (at === undefined) return undefined; // a placeholder combatant: nothing is declared for it
     const out: CombatantHistory = {};
     if (facts === null) {
-      Object.assign(out, unsettled(fighter, acting));
+      Object.assign(out, unsettled(fighter, acting, flag));
       out.ate_berry = unknownBool();
       out.last_item = { kind: "unknown", ends: [null, config.unknown_item] };
       return out;
@@ -147,7 +154,7 @@ export function historyDeclarer(facts: HistoryFacts | null, config: OutcomeConfi
     const side = at.own ? facts.own : facts.opponent;
     const stint: PokemonHistory | null | undefined = at.letter === null ? undefined : side.active[at.letter];
     if (stint !== undefined && stint !== null) {
-      if (stint.unknown) Object.assign(out, unsettled(fighter, acting));
+      if (stint.unknown) Object.assign(out, unsettled(fighter, acting, flag));
       else {
         out.move_actions = known(stint.move_actions);
         out.stall_counter = known(stint.stall_counter ?? 0);
@@ -189,7 +196,8 @@ export function historyDeclarer(facts: HistoryFacts | null, config: OutcomeConfi
   };
 
   return (sides, acting = []) => {
-    const combatants = sides.map((list) => list.map((fighter) => one(fighter, sides, acting)));
+    const flag = { unknown: false };
+    const combatants = sides.map((list) => list.map((fighter) => one(fighter, sides, acting, flag)));
     let dated = false;
     const battleSides = sides.map((list) => {
       const own = (list[0] as Fighter).at?.own;
@@ -214,6 +222,6 @@ export function historyDeclarer(facts: HistoryFacts | null, config: OutcomeConfi
     else battle.field_last_move = known(facts.field_last_move);
     if (combatants.some((list) => list.some((h) => h?.volatiles !== undefined))) dated = true;
     if (dated) battle.turn = facts?.turn ?? 1;
-    return { combatants, battle };
+    return { combatants, battle, unknown: flag.unknown };
   };
 }

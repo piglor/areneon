@@ -335,13 +335,17 @@ describe("history declared as the channel shows it", () => {
     const channel = playerChannel({ schema_version: 1, data_class: "synthetic", player: c.context.player, lines: [...own.slice(0, -1), `|move|${foeSide(c)}${letter}: ${name}|Tackle|${c.context.player}a: x`, own[own.length - 1] as string] });
     expect(factsOf(channel, data)).toBeNull();
     const log: ParsedMechanicsQuery[] = [];
-    build(c, { probe: probe(log), outcome: { config: record, history_data: data } }, undefined, candidatesOf(c), channel);
+    const refused = build(c, { probe: probe(log), outcome: { config: record, history_data: data } }, undefined, candidatesOf(c), channel);
+    // an unsettled Pokemon may be under any condition the move path reads (a confusion, a Taunt): no outcome is a confident `passes`
+    expect(refused.outcomes.length).toBeGreaterThan(0);
+    expect(new Set(refused.outcomes.map((r) => (r.kind === "unsupported" ? r.reason : r.kind)))).toEqual(new Set(["history_unknown"]));
+    // the same with the real probe: the answer is history_unknown, not the passes an unburdened attacker would get
+    const real = build(c, { probe: undefined as never, outcome: { config: record, history_data: data } }, undefined, candidatesOf(c), channel);
+    expect(new Set(real.outcomes.map((r) => (r.kind === "unsupported" ? r.reason : r.kind)))).toEqual(new Set(["history_unknown"]));
     const queries = log.map((q) => q.query);
     const counts = queries.flatMap((q) => (q.kind === "move_outcome" ? q.sides.flat() : [])).map((x) => (x as { history?: { move_actions?: unknown } }).history?.move_actions);
     expect(counts.length).toBeGreaterThan(0);
     for (const fact of counts) expect(fact).toEqual({ kind: "unknown", ends: [0, record.unknown_count_end] });
-    const lastMoves = queries.flatMap((q) => (q.kind === "move_outcome" ? [q.history?.field_last_move] : []));
-    expect(lastMoves[0]).toEqual({ kind: "unknown", ends: [null, record.unknown_move] });
   });
 });
 
@@ -514,7 +518,7 @@ describe("a volatile the engine cannot be given", () => {
   it("lets history_unknown through reasonOf only for a view that declares history", () => {
     const options = { engine, vocabulary, config, v1: config, mechanics: withOutcome, snapshot, data_class: "synthetic" as const, probe: probe(), counts: createFeatureMemo().counts, memo: new Map() };
     expect(() => damageView(options).reasonOf("history_unknown")).toThrow(/history_unknown/);
-    expect(damageView({ ...options, history: () => ({ combatants: [], battle: undefined }) }).reasonOf("history_unknown")).toBe("history_unknown");
+    expect(damageView({ ...options, history: () => ({ combatants: [], battle: undefined, unknown: false }) }).reasonOf("history_unknown")).toBe("history_unknown");
     expect(damageView(options).reasonOf("query_kind")).toBe("query_kind");
   });
 });

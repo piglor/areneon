@@ -111,6 +111,9 @@ type DamageState = Extract<MechanicsQuery["query"], { kind: "damage" }>["state"]
 type Combatant = Extract<MechanicsQuery["query"], { kind: "damage" }>["attacker"];
 type BattleHistory = NonNullable<Extract<MechanicsQuery["query"], { kind: "damage" }>["history"]>;
 
+/** Histories a declarer marked unknown (a Pokemon that is unsettled and could be under any condition the move path reads): every answer of a query that holds one is `history_unknown`. */
+const UNKNOWN_HISTORIES = new WeakSet<object>();
+
 /** The query with the declared facts that name engine ids removed (volatiles, used moves, last items, slot conditions, the last move): the rest of the history, for the identity of the answer. */
 export function withoutVolatiles(value: MechanicsQuery): MechanicsQuery {
   const copy = structuredClone(value) as MechanicsQuery;
@@ -224,13 +227,16 @@ export function damageView(options: DamageViewOptions) {
    */
   function askLimited(value: MechanicsQuery): MechanicsResult | { limit: SpeedLimit } {
     const query = readMechanicsQuery(value);
-    const key = mechanicsQueryHash(query);
+    // A marked query is another question than the same bytes unmarked: its memo key says so.
+    const marked = options.history !== undefined && value.query.kind !== "stats" && value.query.history !== undefined && UNKNOWN_HISTORIES.has(value.query.history);
+    const key = mechanicsQueryHash(query) + (marked ? ":unknown" : "");
     counts.queries += 1;
     let result = memo.get(key);
     if (result === undefined) {
       counts.probe_runs += 1;
       try {
-        result = probe({ engine, config: mechanics, snapshot }, query).result;
+        // A marked query is asked without the facts that name engine ids and answered `history_unknown`: the question cannot be settled.
+        result = marked ? unknownVolatiles(probe({ engine, config: mechanics, snapshot }, readMechanicsQuery(withoutVolatiles(value))).result) : probe({ engine, config: mechanics, snapshot }, query).result;
       } catch (error) {
         if (!(error instanceof MechanicsProbeError) || error.message.startsWith(CONFIG_DEFECT)) throw error; // a wrong config is a defect of the run, not of a state
         if (query.query.kind === "speed_order" && error.message.startsWith(UNQUEUEABLE)) result = { limit: "unqueueable" };
@@ -311,7 +317,8 @@ export function damageView(options: DamageViewOptions) {
   function declared(sides: readonly (readonly Fighter[])[], acting: readonly Fighter[] = []): { sides: Combatant[][]; history: BattleHistory | undefined } {
     const out = sides.map((list) => list.map(combatant));
     if (options.history === undefined) return { sides: out, history: undefined };
-    const { combatants, battle } = options.history(sides, acting);
+    const { combatants, battle, unknown } = options.history(sides, acting);
+    if (unknown && battle !== undefined) UNKNOWN_HISTORIES.add(battle);
     combatants.forEach((list, s) => list.forEach((block, p) => block !== undefined && Object.assign((out[s] as Combatant[])[p] as Combatant, { history: block })));
     return { sides: out, history: battle };
   }

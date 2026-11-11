@@ -133,14 +133,8 @@ export function probeMoveOutcome(engine: Engine, scenarioId: string, query: Move
 
 /** The answer of the explored paths: the chance the event passes (exact), times the chances the move step drew before its hit step, and the accuracy chance. */
 export function combine(leaves: readonly Leaf[], asked: number): Outcome {
-  const passing = leaves.filter((leaf) => leaf.kind === "leaf" && leaf.pass) as (Leaf & { kind: "leaf" })[];
-  if (passing.length === 0) return fails();
-  const tail = passing[0]?.tail as Tail;
-  if (passing.some((leaf) => JSON.stringify(leaf.tail) !== JSON.stringify(tail))) return { kind: "unsupported", reason: "random_effect", position: asked };
-  if (tail.fails) return fails();
-  let numerator = 0n;
-  let denominator = 1n;
-  for (const leaf of passing) {
+  // a path with probability 0 (a draw answered against a chance of 0 or 1) is no path: it takes no part in the sum or in the equal-tails check
+  const chanceOf = (leaf: Leaf & { kind: "leaf" }): { n: bigint; d: bigint } => {
     let n = 1n;
     let d = 1n;
     for (const chance of leaf.chances) {
@@ -148,6 +142,17 @@ export function combine(leaves: readonly Leaf[], asked: number): Outcome {
       n *= chance.answer ? yes : BigInt(chance.denominator) - yes;
       d *= BigInt(chance.denominator);
     }
+    return { n, d };
+  };
+  const passing = (leaves.filter((leaf) => leaf.kind === "leaf" && leaf.pass) as (Leaf & { kind: "leaf" })[]).filter((leaf) => chanceOf(leaf).n > 0n);
+  if (passing.length === 0) return fails();
+  const tail = passing[0]?.tail as Tail;
+  if (passing.some((leaf) => JSON.stringify(leaf.tail) !== JSON.stringify(tail))) return { kind: "unsupported", reason: "random_effect", position: asked };
+  if (tail.fails) return fails();
+  let numerator = 0n;
+  let denominator = 1n;
+  for (const leaf of passing) {
+    const { n, d } = chanceOf(leaf);
     numerator = numerator * d + n * denominator;
     denominator *= d;
   }
@@ -234,8 +239,20 @@ function attempt(engine: Engine, scenarioId: string, query: MoveOutcomeQuery, se
     };
     const events = battle as unknown as EventBattle;
     const move = events.dex.getActiveMove(moveId);
+    // `runMove` counts the action first (Fake Out and First Impression read it, and so do before-move handlers); the probe counts it here.
+    user.activeMoveActions += 1;
+    // `OverrideAction` (an Encore-forced move; the Champions mod removes it from Encore, so no condition of this pin has one): the move used would be
+    // another, which the probe does not follow, so the answer is `unsupported`.
+    if (moveId !== "struggle") {
+      const changed = events.runEvent("OverrideAction", user, target, move);
+      if (changed && changed !== true) return { kind: "unsupported", outcome: { kind: "unsupported", reason: "query_kind", position: query.asked } };
+    }
     events.setActiveMove(move, user, target as OutcomeMon);
-    const pass = Boolean(events.runEvent("BeforeMove", user, target, move));
+    let pass = Boolean(events.runEvent("BeforeMove", user, target, move));
+    // then, as `runMove` does: the move's own `beforeMoveCallback` (it blocks when it returns true). The PP check of `runMove` (no PP left blocks the move)
+    // is not run: the scenario's PP is full and PP is never declared (an opponent's is unknown, an own move with no PP is not offered), so it cannot block here.
+    const callback = (move as { beforeMoveCallback?: (this: unknown, ...args: unknown[]) => unknown }).beforeMoveCallback;
+    if (pass && callback !== undefined && callback.call(battle, user, target, move)) pass = false;
     if (!pass) return { kind: "leaf", chances, pass: false, tail: null };
     if (other) return { kind: "unsupported", outcome: { kind: "unsupported", reason: "random_effect", position: query.asked } };
 
@@ -255,8 +272,6 @@ function attempt(engine: Engine, scenarioId: string, query: MoveOutcomeQuery, se
     battle.actions.moveHit = () => {
       throw new HitStepReached({ pre: [...recorder.draws], targets: null });
     };
-    // `runMove` counts the action before the move step starts; the probe enters at the move step, so it counts it here.
-    user.activeMoveActions += 1;
     let reached: Reached | null = null;
     try {
       battle.actions.useMoveInner(moveId, user, { target: target as OutcomeMon });
