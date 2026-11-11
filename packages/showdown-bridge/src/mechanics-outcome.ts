@@ -13,7 +13,7 @@
 // means a failure when true (full paralysis, confusion) belongs to the turn-start events, which `useMoveInner` does not run.
 
 import type { Engine, PokemonSet } from "./engine.ts";
-import { need, refusingSource, RandomDraw } from "./mechanics-guard.ts";
+import { firstTarget, need, refusingSource, RandomDraw } from "./mechanics-guard.ts";
 import { declareHistory, type HBattle, type HistoryDeclaration } from "./mechanics-history.ts";
 import type { MechanicsQuery } from "./mechanics-query.ts";
 import { type Draw, recordingRandom } from "./mechanics-random.ts";
@@ -92,6 +92,17 @@ export function probeMoveOutcome(engine: Engine, scenarioId: string, query: Move
   retireCopies(battle, query);
   const refusing = refusingSource(battle.prng);
   battle.prng = refusing;
+  // A spread move queued with a target location is still resolved by the engine's `getRandomTarget`, which draws: answered with the first candidate (as in the speed probe), whatever source is installed.
+  const resolveTarget = battle.getRandomTarget.bind(battle);
+  battle.getRandomTarget = (...args) => {
+    const current = battle.prng;
+    battle.prng = firstTarget;
+    try {
+      return resolveTarget(...args);
+    } finally {
+      battle.prng = current;
+    }
+  };
   let at = 0;
   const setAt = (place: number): void => {
     at = place;

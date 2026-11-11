@@ -285,5 +285,6 @@ describe("generation and drift", () => {
     expect(await runContracts({ write: false, contractsDir: CONTRACTS_DIR, generatedDir: GENERATED_TS_DIR })).toEqual(
       [],
     );
-  });
+    // it generates every checked-in contract: about 3 s on an idle runner, over the 5 s default on a loaded one
+  }, 60_000);
 });
