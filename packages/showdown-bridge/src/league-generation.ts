@@ -26,7 +26,7 @@ import { damageAwarePolicyId } from "./damage-aware-identity.ts";
 import { type BaselineGameReport, buildLeagueRunRecord, type LeagueRunRecord } from "./league-run-record.ts";
 import { loadMechanicsConfig } from "./mechanics-config.ts";
 import { loadRulesSnapshot } from "./rules-load.ts";
-import { leagueGameStreams } from "./league-seed.ts";
+import { leagueGameStreams, privateTeamSource } from "./league-seed.ts";
 import { checkPlanRegimes, planFormats, regimeCounts, resolveRegimes } from "./sheet-regimes.ts";
 import { episodeFromRecord } from "./episode-io.ts";
 import { episodeHash } from "./episode.ts";
@@ -63,7 +63,29 @@ export interface TrainingPool {
   hashes: readonly string[];
   /** Every team of the pool, proven synthetic by where it was read from. */
   known_synthetic: SyntheticTeamHashes;
+  /**
+   * A private component (ADR-015 erratum E1 item 3): the LAST `count` entries of `teams` and `hashes` are the owner's, none of
+   * them in `known_synthetic`, so `stampTeam` makes each of them `private`. Absent: every team is synthetic and the plan is the old one.
+   */
+  private?: PrivateComponent;
 }
+
+/** The private part of a pool: its size, the share of seats that draw from it and the hold-out flag of each of its teams. */
+export interface PrivateComponent {
+  count: number;
+  /** A seat draws from this component when its `league-team-source/1` draw is below this many permille. */
+  share_permille: number;
+  /** One flag per private team, in the pool's order. */
+  holdout: readonly boolean[];
+}
+
+/** What a plan needs of a pool: its size and its private component, if any. */
+export interface PoolShape {
+  size: number;
+  private?: { count: number; share_permille: number };
+}
+
+export const poolShape = (pool: TrainingPool): PoolShape => ({ size: pool.teams.length, ...(pool.private === undefined ? {} : { private: { count: pool.private.count, share_permille: pool.private.share_permille } }) });
 
 /**
  * The interim team pool (the team generator is ADR-013, not built): the golden
@@ -87,6 +109,22 @@ export function trainingTeamPool(engine: Engine, excludedAbilities: readonly str
   const hashes = [...byHash.keys()].filter((hash) => !(byHash.get(hash) as PokemonSet[]).some((set) => excluded.has(set.ability))).sort();
   if (hashes.length === 0) throw new GenerationError("the team pool is empty after the excluded abilities");
   return { teams: hashes.map((hash) => byHash.get(hash) as PokemonSet[]), hashes, known_synthetic: new Set(hashes) };
+}
+
+/**
+ * A generation does not play a pool with a private component yet: its Episodes would be written into the public run directory
+ * before the loader refuses them. The guard goes with the ticket that writes private outputs to the private root (#1063).
+ */
+export function refusePrivatePool(pool: TrainingPool): void {
+  if (pool.private !== undefined) throw new GenerationError("a pool with a private component cannot be played by this generation yet");
+}
+
+/** The sorted hashes of the synthetic teams a plan draws (the cumulative team set): a private team's hash is never in it. */
+export function syntheticDrawnHashes(plan: readonly GamePlan[], pool: TrainingPool): string[] {
+  const syntheticCount = pool.teams.length - (pool.private?.count ?? 0);
+  const drawn = new Set<string>();
+  for (const entry of plan) for (const player of ["p1", "p2"] as const) if (entry.teams[player] < syntheticCount) drawn.add(pool.hashes[entry.teams[player]] as string);
+  return [...drawn].sort();
 }
 
 /** What a team pool is built from: the part of a run config (or a teacher run) that names the format, the dataset and the abilities left out. */
@@ -320,7 +358,7 @@ export interface GamePlan {
  * is reproducible from the config alone. A baseline game alternates the policy's seat.
  * With `sheet_regimes` each entry also names its game's format (`sheet-regime/1`, see `sheet-regimes.ts`).
  */
-export function planGeneration(config: TrainingRunConfig, generation: number, poolSize: number): GamePlan[] {
+export function planGeneration(config: TrainingRunConfig, generation: number, poolSize: number | PoolShape): GamePlan[] {
   const { games, baseline_games } = config.generation;
   const opponents: GamePlan["opponent"][] = [];
   for (let i = 0; i < games; i++) opponents.push("self");
@@ -339,15 +377,22 @@ export function planGeneration(config: TrainingRunConfig, generation: number, po
  * game, in game order (`league-seed/1`; a game's streams depend on those three alone). The pair
  * takes seat p1 of an even game and p2 of an odd one when a baseline is the other seat.
  */
-export function planGames(run_key: string, generation: number, poolSize: number, opponents: readonly GamePlan["opponent"][]): GamePlan[] {
+export function planGames(run_key: string, generation: number, pool: number | PoolShape, opponents: readonly GamePlan["opponent"][]): GamePlan[] {
   if (!Number.isInteger(generation) || generation < 1) throw new RangeError("a generation is numbered from 1");
-  if (!Number.isInteger(poolSize) || poolSize < 1) throw new RangeError("the team pool is empty");
+  const shape: PoolShape = typeof pool === "number" ? { size: pool } : pool;
+  if (!Number.isInteger(shape.size) || shape.size < 1) throw new RangeError("the team pool is empty");
+  const component = shape.private;
+  if (component !== undefined && (!Number.isInteger(component.count) || component.count < 1 || component.count >= shape.size)) throw new RangeError("the private component is empty or the synthetic one is");
+  const synthetic = component === undefined ? shape.size : shape.size - component.count;
+  // The index of a seat's team: within its component, by the existing league-seed/1 draw. Without a private component no further draw is made.
+  const pick = (draw: number, game: number, seat: Player): number =>
+    component !== undefined && privateTeamSource(run_key, generation, game, seat, component.share_permille) ? synthetic + (draw % component.count) : draw % synthetic;
   return opponents.map((opponent, game) => {
     const streams = leagueGameStreams(run_key, generation, game);
     return {
       game,
       seed: streams.seed,
-      teams: { p1: streams.team_draws.p1 % poolSize, p2: streams.team_draws.p2 % poolSize },
+      teams: { p1: pick(streams.team_draws.p1, game, "p1"), p2: pick(streams.team_draws.p2, game, "p2") },
       opponent,
       policy_seat: opponent === "self" ? "both" : game % 2 === 0 ? "p1" : "p2",
       baseline_seed: streams.baseline_seed,
@@ -733,8 +778,9 @@ function checkRegimes(options: GenerationOptions, plan: readonly GamePlan[]): Re
  */
 export async function playEntries(options: GenerationOptions, shard: Shard = { index: 0, of: 1 }): Promise<PlayedEntry[]> {
   checkShard(shard);
+  refusePrivatePool(options.pool);
   const { config, generation, policy_id, client } = options;
-  const plan = planGeneration(config, generation, options.pool.teams.length);
+  const plan = planGeneration(config, generation, poolShape(options.pool));
   checkRegimes(options, plan);
   // The damage-aware records are read once, and only when a game of this process needs them.
   const withRecords: GenerationOptions = { ...options, ...baselineRecords(options, config) };
@@ -901,7 +947,8 @@ function watchIdle(live: (() => number) | undefined, activity: { busy: number },
  */
 export async function playGeneration(options: GenerationOptions): Promise<GenerationResult> {
   const { engine, config, generation, policy_id, pool } = options;
-  const plan = planGeneration(config, generation, pool.teams.length);
+  refusePrivatePool(pool);
+  const plan = planGeneration(config, generation, poolShape(pool));
   const regimes = checkRegimes(options, plan);
   const stop = new AbortController();
   const activity = options.activity ?? { busy: 0 };
@@ -975,8 +1022,7 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
     }
     episodeHashes = await Promise.all(episodes.map((episode) => episodeHash(episode, nodeSha256)));
   }
-  const drawn = new Set<string>();
-  for (const entry of plan) for (const player of ["p1", "p2"] as const) drawn.add(pool.hashes[entry.teams[player]] as string);
+  const drawn = syntheticDrawnHashes(plan, pool);
   const result: GenerationResult = {
     generation,
     plan,
@@ -990,7 +1036,7 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
     run_record: await buildLeagueRunRecord({ config, generation, pair_policy_id: policy_id, plan, games: rows, ...(regimes === undefined ? {} : { regimes: regimeCounts(plan, config), game_manifests: regimes.sorted }), baseline_reports: entries.flatMap((entry) => (entry.baseline === undefined ? [] : [entry.baseline])) }),
     training_set_hash: await nodeSha256(new TextEncoder().encode(jcs(set as unknown as Json))),
     manifest: resolveFormat(engine, config.format_id).manifest,
-    team_hashes: [...drawn].sort(),
+    team_hashes: drawn,
     ...(regimes === undefined ? {} : { game_manifests: regimes.sorted }),
     ...(labelled === undefined ? {} : { labels: labelled }),
   };

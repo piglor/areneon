@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+  "format_id": "gen9championsvgc2026regmc",
+  "stall_counter": {
+    "start": 3,
+    "factor": 3,
+    "max": 729
+  },
+  "action_sources": [
+    "ability: Dancer",
+    "move: Round"
+  ],
+  "external_action_sources": [
+    "ability: Dancer"
+  ],
+  "item_use_sources": [
+    "move: Fling"
+  ],
+  "eat_tags": [
+    "eat",
+    "weaken"
+  ],
+  "steal_eat_tags": [
+    "stealeat"
+  ],
+  "gem_tags": [
+    "gem"
+  ],
+  "last_item_restorers": [
+    "ability: Harvest",
+    "move: Recycle"
+  ],
+  "last_item_takers": [
+    "ability: Pickup"
+  ],
+  "eaten_berries": [
+    "aspearberry",
+    "babiriberry",
+    "chartiberry",
+    "cheriberry",
+    "chestoberry",
+    "chilanberry",
+    "chopleberry",
+    "cobaberry",
+    "colburberry",
+    "habanberry",
+    "kasibberry",
+    "kebiaberry",
+    "leppaberry",
+    "lumberry",
+    "occaberry",
+    "oranberry",
+    "passhoberry",
+    "payapaberry",
+    "pechaberry",
+    "persimberry",
+    "rawstberry",
+    "rindoberry",
+    "roseliberry",
+    "shucaberry",
+    "sitrusberry",
+    "tangaberry",
+    "wacanberry",
+    "yacheberry"
+  ],
+  "direct_end_items": [
+    "airballoon"
+  ],
+  "slot_conditions": [
+    {
+      "id": "futuremove",
+      "moves": [
+        "futuresight"
+      ],
+      "residual_turns": 3
+    },
+    {
+      "id": "wish",
+      "moves": [
+        "wish"
+      ],
+      "residual_turns": 2
+    }
+  ],
+  "null_cant_reasons": [
+    "recharge"
+  ],
+  "protect_breaker_moves": [
+    "feint",
+    "phantomforce"
+  ],
+  "history_facts_data_hash": "0e6b932810229b81605a8ad75e27689e5aa513b080744bb510f0aade03bd0bbb"
+}

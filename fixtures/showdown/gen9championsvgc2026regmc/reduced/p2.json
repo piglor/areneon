@@ -11,6 +11,78 @@
     "field_conditions": [],
     "format_name": "[Gen 9 Champions] VGC 2026 Reg M-C",
     "gametype": "doubles",
+    "history": {
+      "field_last_move": "thunderbolt",
+      "history_facts_format": "history-facts/1",
+      "opponent": {
+        "active": {
+          "a": null,
+          "b": null
+        },
+        "pending_slot": {},
+        "roster": {
+          "Blastoise": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Charizard": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Pikachu": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Venusaur": {
+            "ate_berry": false,
+            "last_item": null
+          }
+        },
+        "total_fainted": 4
+      },
+      "own": {
+        "active": {
+          "a": null,
+          "b": {
+            "attackers_this_turn": [],
+            "hurt_this_turn": false,
+            "last_move_failed": false,
+            "move_actions": 4,
+            "moves_used": [
+              "thunderbolt"
+            ],
+            "name": "Pikachu",
+            "stall_counter": null,
+            "stats_lowered_this_turn": false,
+            "stats_raised_this_turn": false,
+            "times_attacked": 2,
+            "unknown": false,
+            "volatile_started": {}
+          }
+        },
+        "pending_slot": {},
+        "roster": {
+          "Blastoise": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Charizard": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Pikachu": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Venusaur": {
+            "ate_berry": false,
+            "last_item": null
+          }
+        },
+        "total_fainted": 3
+      },
+      "turn": 7
+    },
     "opponent": {
       "condition_turns": {},
       "conditions": {},
@@ -751,7 +823,7 @@
     },
     "player": "p2",
     "request_kind": "move",
-    "schema_version": 2,
+    "schema_version": 3,
     "started": true,
     "terrain": null,
     "turn": 7,
