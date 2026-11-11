@@ -14,12 +14,16 @@
 // one query and dropped; a live battle is never touched.
 
 import type { Engine, PokemonSet } from "./engine.ts";
-import { MechanicsProbeError } from "./mechanics-error.ts";
+import { RandomDraw, firstTarget, need, refusingSource } from "./mechanics-guard.ts";
+import { declareHistory, type HBattle, type HistoryDeclaration } from "./mechanics-history.ts";
 import type { MechanicsQuery } from "./mechanics-query.ts";
 import type { Outcome } from "./mechanics-result.ts";
 import { startScenario } from "./mechanics-scenario.ts";
 
 type SpeedOrderQuery = Extract<MechanicsQuery["query"], { kind: "speed_order" }>;
+
+/** What the shared declaration and action steps read: the sides, the actions and the field (a `speed_order` and a `move_outcome` query both have them). */
+export type DeclaredQuery = Pick<SpeedOrderQuery, "sides" | "actions" | "state">;
 
 /**
  * The gap ledger row a result lists when a Mega Evolution is involved (the
@@ -29,7 +33,7 @@ type SpeedOrderQuery = Extract<MechanicsQuery["query"], { kind: "speed_order" }>
 export const MEGA_GAP_ID = "mega-evolution";
 
 /** True when the query evolves a Pokemon this turn or declares one already evolved. */
-export const megaInvolved = (query: SpeedOrderQuery): boolean => query.actions.some((action) => action.mega) || query.sides.some((side) => side.some((combatant) => combatant.mega));
+export const megaInvolved = (query: Pick<DeclaredQuery, "sides" | "actions">): boolean => query.actions.some((action) => action.mega) || query.sides.some((side) => side.some((combatant) => combatant.mega));
 
 // The names the query gives a side's conditions, and the engine's ids for them.
 const SIDE_CONDITIONS = [
@@ -42,7 +46,7 @@ const STAGES = ["atk", "def", "spa", "spd", "spe"] as const;
 const TRICK_ROOM = "trickroom";
 
 /** The parts of the engine's objects this probe reads, narrowed here so the shared engine types stay as they are. */
-interface Mon {
+export interface Mon {
   boosts: Record<string, number>;
   status: string;
   hp: number;
@@ -55,7 +59,7 @@ interface Mon {
   set: { item: string };
   itemState: unknown;
 }
-interface Queued {
+export interface Queued {
   choice: string;
   order: number;
   priority?: number;
@@ -65,7 +69,7 @@ interface Condition {
   exists: boolean;
   effectType: string;
 }
-interface ProbeBattle {
+export interface ProbeBattle {
   prng: object;
   sides: { pokemon: Mon[]; addSideCondition(id: string, source: Mon): unknown; getSideCondition(id: string): unknown; removeSideCondition(id: string): unknown }[];
   field: {
@@ -89,36 +93,13 @@ interface ProbeBattle {
   comparePriority(a: Queued, b: Queued): number;
 }
 
-/** Thrown by the replacement random source; `probeSpeedOrder` turns it into `unsupported`. */
-class RandomDraw extends Error {}
-
-const draw = (): never => {
-  throw new RandomDraw("the engine drew a random number");
-};
-
-/**
- * The source target resolution answers from: the first of any list, zero for a
- * number, nothing else. A move without a declared target (a spread move, or a
- * target the query does not give) is resolved by the engine's own
- * `getRandomTarget`, which draws; the target never enters the order keys, so
- * it is answered with the first candidate instead of ending the probe.
- */
-const firstTarget = { sample: <T>(items: readonly T[]): T => items[0] as T, random: (): number => 0, randomChance: draw, shuffle: draw, getSeed: draw, setSeed: draw, clone: draw };
-
-/** The battle's random source with every method replaced by one that refuses. */
-const refusingSource = (source: object): object => new Proxy(source, { get: (target, key) => (typeof Reflect.get(target, key) === "function" ? draw : Reflect.get(target, key)) });
-
-const need = (ok: boolean, what: string): void => {
-  if (!ok) throw new MechanicsProbeError(what);
-};
-
 /**
  * The two teams of the scenario. A doubles battle needs two Pokemon a side to
  * start, so a side with one declared Pokemon also starts a copy of it; the
  * copy is fainted before anything is declared (`retireCopies`), so it is no
  * active Pokemon: it never acts and never ties a declared Pokemon's Speed.
  */
-function teams(query: SpeedOrderQuery, sets: PokemonSet[]): { p1: PokemonSet[]; p2: PokemonSet[] } {
+export function teams(query: DeclaredQuery, sets: PokemonSet[]): { p1: PokemonSet[]; p2: PokemonSet[] } {
   const side = (start: number, length: number): PokemonSet[] => {
     const own = sets.slice(start, start + length);
     return own.length === 1 ? [own[0] as PokemonSet, own[0] as PokemonSet] : own;
@@ -128,7 +109,7 @@ function teams(query: SpeedOrderQuery, sets: PokemonSet[]): { p1: PokemonSet[]; 
 }
 
 /** Faint the copy of every side with one declared Pokemon, as the engine does for any Pokemon that faints. */
-function retireCopies(battle: ProbeBattle, query: SpeedOrderQuery): void {
+export function retireCopies(battle: ProbeBattle, query: DeclaredQuery): void {
   for (const [index, combatants] of query.sides.entries()) {
     if (combatants.length === 1) (battle.sides[index]?.pokemon[1] as Mon).faint();
   }
@@ -139,7 +120,7 @@ function retireCopies(battle: ProbeBattle, query: SpeedOrderQuery): void {
  * The declared field, absolute: every weather, terrain, Trick Room and side condition is cleared first and then set as declared.
  * It runs once before the Evolutions and again after them, because a Mega's ability (Drought, Electric Surge) replaces the field.
  */
-function declareField(battle: ProbeBattle, query: SpeedOrderQuery, lead: Mon): void {
+function declareField(battle: ProbeBattle, query: DeclaredQuery, lead: Mon): void {
   const { state } = query;
   const kindOf = (id: string): string => (battle.dex.conditions.get(id).exists ? battle.dex.conditions.get(id).effectType : "none");
   battle.field.removePseudoWeather(TRICK_ROOM);
@@ -170,7 +151,7 @@ function declareField(battle: ProbeBattle, query: SpeedOrderQuery, lead: Mon): v
 }
 
 /** Put the declared state on the battle. Every value is absolute: what a switch-in effect set is replaced. */
-function declare(battle: ProbeBattle, query: SpeedOrderQuery, at: (position: number) => void): void {
+export function declare(battle: ProbeBattle, query: DeclaredQuery, at: (position: number) => void): void {
   const kindOf = (id: string): string => (battle.dex.conditions.get(id).exists ? battle.dex.conditions.get(id).effectType : "none");
   const lead = battle.sides[0]?.pokemon[0] as Mon;
   const declareStatus = (pokemon: Mon, status: string): void => {
@@ -225,7 +206,14 @@ function declare(battle: ProbeBattle, query: SpeedOrderQuery, at: (position: num
     at(0);
     declareField(battle, query, lead);
   }
-  // The stages are written after every Evolution: a Mega's ability can change the other combatants' stages (Intimidate), and the declared stages are absolute (#1243).
+  restoreStagesAndItems(battle, query);
+}
+
+/**
+ * The declared stages and items, absolute, written after every Evolution: a Mega's ability can change the other combatants' stages (Intimidate), and the declared stages are absolute (#1243).
+ * Declared history can start a volatile with a stage effect (Stockpile), so it runs again after the history is declared.
+ */
+export function restoreStagesAndItems(battle: ProbeBattle, query: DeclaredQuery): void {
   for (const [index, combatants] of query.sides.entries()) {
     for (const [slot, combatant] of combatants.entries()) {
       const pokemon = battle.sides[index]?.pokemon[slot] as Mon;
@@ -242,7 +230,7 @@ function declare(battle: ProbeBattle, query: SpeedOrderQuery, at: (position: num
 }
 
 /** Sort by the engine's comparison and cut at every pair it calls equal. */
-function groupsOf(battle: ProbeBattle, items: { index: number; action: Queued }[]): number[][] {
+export function groupsOf(battle: ProbeBattle, items: { index: number; action: Queued }[]): number[][] {
   const sorted = [...items].sort((a, b) => battle.comparePriority(a.action, b.action));
   const groups: { index: number; action: Queued }[][] = [];
   for (const item of sorted) {
@@ -253,6 +241,46 @@ function groupsOf(battle: ProbeBattle, items: { index: number; action: Queued }[
   return groups.map((group) => group.map((item) => item.index));
 }
 
+/** One declared action as the engine queued it: its Pokemon, its own queue entry and its Mega Evolution entry, if any. */
+export interface ResolvedAction {
+  index: number;
+  pokemon: Mon;
+  own: Queued;
+  mega: Queued | undefined;
+}
+
+/** The engine's own queue entries for the declared actions (`resolveAction`: speed, priority events, fractional priority). */
+export function resolveActions(battle: ProbeBattle, query: DeclaredQuery, at: (index: number) => void): ResolvedAction[] {
+  return query.actions.map((action, index) => {
+    at(index);
+    const pokemon = battle.sides[action.side]?.pokemon[action.position] as Mon;
+    need(action.move === null || battle.dex.moves.get(action.move).exists, "the action names a move the engine does not have");
+    need(!action.mega || (action.move !== null && Boolean(pokemon.canMegaEvo)), "the Pokemon cannot Mega Evolve");
+    // A target is given so the engine does not draw one; ordering never reads it beyond the move's own priority events.
+    const choice = action.move === null ? { choice: "switch", pokemon } : { choice: "move", pokemon, moveid: action.move, targetLoc: 1, mega: action.mega };
+    const queued = battle.queue.resolveAction(choice);
+    const own = queued[queued.length - 1] as Queued;
+    const megas = queued.filter((item) => item.choice === "megaEvo");
+    need(queued.length === megas.length + 1 && own.choice === (action.move === null ? "switch" : "move"), "the action needs more than a move and a Mega Evolution");
+    return { index, pokemon, own, mega: megas[0] };
+  });
+}
+
+/** Run the Mega Evolutions in the engine's order (speed groups of the Evolution entries) and return those groups. */
+export function evolve(battle: ProbeBattle, resolved: ResolvedAction[], at: (index: number) => void): number[][] {
+  const megaGroups = groupsOf(
+    battle,
+    resolved.flatMap((item) => (item.mega === undefined ? [] : [{ index: item.index, action: item.mega }])),
+  );
+  for (const group of megaGroups) {
+    for (const index of group) {
+      at(index);
+      need(battle.actions.runMegaEvo((resolved[index] as { pokemon: Mon }).pokemon), "the Pokemon cannot Mega Evolve");
+    }
+  }
+  return megaGroups;
+}
+
 /**
  * Answer a `speed_order` query on a fresh scenario battle. `sets` are the
  * query's declared sets in the contract's position order, each already judged
@@ -260,7 +288,7 @@ function groupsOf(battle: ProbeBattle, items: { index: number; action: Queued }[
  * (`random_effect`) when the engine draws a random number; throws a
  * `MechanicsProbeError` for a declared state or action the engine refuses.
  */
-export function probeSpeedOrder(engine: Engine, scenarioId: string, query: SpeedOrderQuery, sets: PokemonSet[]): Outcome {
+export function probeSpeedOrder(engine: Engine, scenarioId: string, query: SpeedOrderQuery, sets: PokemonSet[], history: HistoryDeclaration | null = null): Outcome {
   const battle = startScenario(engine, scenarioId, teams(query, sets)) as unknown as ProbeBattle;
   retireCopies(battle, query);
   const refusing = refusingSource(battle.prng);
@@ -277,29 +305,12 @@ export function probeSpeedOrder(engine: Engine, scenarioId: string, query: Speed
   let at = 0;
   try {
     declare(battle, query, (position) => (at = position));
-    const resolved = query.actions.map((action, index) => {
-      at = index;
-      const pokemon = battle.sides[action.side]?.pokemon[action.position] as Mon;
-      need(action.move === null || battle.dex.moves.get(action.move).exists, "the action names a move the engine does not have");
-      need(!action.mega || (action.move !== null && Boolean(pokemon.canMegaEvo)), "the Pokemon cannot Mega Evolve");
-      // A target is given so the engine does not draw one; ordering never reads it beyond the move's own priority events.
-      const choice = action.move === null ? { choice: "switch", pokemon } : { choice: "move", pokemon, moveid: action.move, targetLoc: 1, mega: action.mega };
-      const queued = battle.queue.resolveAction(choice);
-      const own = queued[queued.length - 1] as Queued;
-      const megas = queued.filter((item) => item.choice === "megaEvo");
-      need(queued.length === megas.length + 1 && own.choice === (action.move === null ? "switch" : "move"), "the action needs more than a move and a Mega Evolution");
-      return { index, pokemon, own, mega: megas[0] };
-    });
-    const megaGroups = groupsOf(
-      battle,
-      resolved.flatMap((item) => (item.mega === undefined ? [] : [{ index: item.index, action: item.mega }])),
-    );
-    for (const group of megaGroups) {
-      for (const index of group) {
-        at = index;
-        need(battle.actions.runMegaEvo((resolved[index] as { pokemon: Mon }).pokemon), "the Pokemon cannot Mega Evolve");
-      }
+    if (history !== null) {
+      declareHistory(battle as unknown as HBattle, history.resolved, { stall: history.stall, at: (position) => (at = position) });
+      restoreStagesAndItems(battle, query);
     }
+    const resolved = resolveActions(battle, query, (index) => (at = index));
+    const megaGroups = evolve(battle, resolved, (index) => (at = index));
     for (const item of resolved) {
       at = item.index;
       battle.getActionSpeed(item.own);

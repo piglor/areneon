@@ -959,3 +959,15 @@ but a game process's `cpu_ms` still includes Node and engine start-up, which sta
 (it is not play); the wall readings of the game processes include any time the
 operating system did not schedule them, which an idle machine keeps small; the load split is summed
 over the load workers, so it can exceed the load phase's wall time.
+
+## 10. The C1/C6 sources registry (provenance)
+
+`python -m areneon_ml.checkpoint classify|independent --run-dir R ...` derives the records and the
+training-set sources registry from the verified run and prints `"basis": "run-dir"` and the
+registry's `sources_hash`. This is the authoritative path: an evaluation plan must pin the
+`sources_hash` computed with `--run-dir`. The `--records DIR --sources FILE` path (basis
+`exported-binding`) reads a directory written by `loop provenance` or `learner clone`, which
+carries `provenance.json` (the registry's hash and each record's hash). That is a
+self-consistency check: it catches a single-file edit or a corrupted copy, but not someone who
+rewrites both files. `import-clone` verifies the same binding of a clone output before it trusts
+its `sources.json`.

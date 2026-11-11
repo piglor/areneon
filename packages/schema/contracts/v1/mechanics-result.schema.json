@@ -125,6 +125,9 @@
             },
             {
               "$ref": "#/$defs/DamageAnswer"
+            },
+            {
+              "$ref": "#/$defs/MoveOutcomeAnswer"
             }
           ],
           "discriminator": {
@@ -192,8 +195,9 @@
           }
         },
         "reason": {
-          "description": "query_kind: the kind is not in the mechanics config's scope. scenario_rule_table: the engine's rule tables differ from the config's scenario. random_effect: the engine drew a random number the probe does not expect.",
+          "description": "query_kind: the kind is not in the mechanics config's scope. scenario_rule_table: the engine's rule tables differ from the config's scenario. random_effect: the engine drew a random number the probe does not expect. history_unknown: a history fact the channel cannot settle was asked at both ends of its range and the answers differ.",
           "enum": [
+            "history_unknown",
             "query_kind",
             "random_effect",
             "scenario_rule_table"
@@ -613,6 +617,39 @@
         },
         "reason": {
           "const": "ko_state_change"
+        }
+      }
+    },
+    "MoveOutcomeAnswer": {
+      "description": "Whether the asked move works. precondition: passes (no chance before the hit step), chance (the engine drew a chance before it) or fails (the move never reaches its hit step). Both chances are integers in parts per million, the product of the engine's own draws rounded down.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "precondition",
+        "precondition_ppm",
+        "hit_ppm"
+      ],
+      "properties": {
+        "kind": {
+          "const": "move_outcome"
+        },
+        "precondition": {
+          "enum": [
+            "chance",
+            "fails",
+            "passes"
+          ]
+        },
+        "precondition_ppm": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "hit_ppm": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
         }
       }
     }

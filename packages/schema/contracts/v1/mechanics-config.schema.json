@@ -61,7 +61,7 @@
         "query_kinds": {
           "description": "Sorted by kind, each once.",
           "type": "array",
-          "maxItems": 3,
+          "maxItems": 4,
           "items": {
             "$ref": "#/$defs/SupportedKind"
           }
@@ -137,6 +137,7 @@
         "kind": {
           "enum": [
             "damage",
+            "move_outcome",
             "speed_order",
             "stats"
           ]

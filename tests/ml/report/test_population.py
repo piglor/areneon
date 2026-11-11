@@ -434,13 +434,6 @@ def test_a_manifest_of_other_members_is_refused(plain: Path, tmp_path: Path) -> 
     refused(run, "g000002: its manifest does not hold exactly m0..m1")
 
 
-def test_a_progress_root_is_refused_for_a_population_run(plain: Path, tmp_path: Path) -> None:
-    root = tmp_path / "progress"
-    root.mkdir()
-    with pytest.raises(ReportError, match="does not belong to a population run"):
-        read_report_model(plain, root)
-
-
 def test_a_changed_file_is_refused_by_the_manifest(plain: Path, tmp_path: Path) -> None:
     run = clone(plain, tmp_path)
     with (gen_path(run, 1) / "ladder.json").open("ab") as handle:

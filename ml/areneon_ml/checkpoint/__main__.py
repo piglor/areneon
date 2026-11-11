@@ -5,8 +5,8 @@
   generation 0 of a lineage and a plumbing input for tests, not a trained model.
 * ``classify``: C1, whether an opponent is ``seen`` or ``held_out`` relative to a
   candidate, from the CheckpointRecords of a directory and a sources registry.
-  The registry is a hand-supplied, not yet run-bound input (see ``SOURCES_HELP``);
-  both checks print its hash.
+  The registry is hash-bound to the run that exported it (``provenance.json``, see
+  ``binding.py``) or derived again from ``--run-dir``; both checks print its hash.
 * ``independent``: C6, whether two checkpoints (or pairs) are independent.
 
 Output is one JCS JSON line. Exit 0 on success, 2 for a usage error, 3 when the
@@ -23,6 +23,7 @@ from typing import Any
 
 from areneon_contracts.contracts import ContractError, jcs, sha256_hex
 
+from areneon_ml.checkpoint.binding import BINDING_NAME, BindingError, record_files, verify_binding
 from areneon_ml.checkpoint.files import (
     CheckpointFileError,
     checkpoint_bytes,
@@ -42,25 +43,45 @@ def _load_json(path: Path) -> Any:
 
 
 SOURCES_HELP = (
-    "the sources registry: a canonical (RFC 8785) JSON object, training-set hash to the sorted "
-    "checkpoint ids that generated it ([] for an outside source). It is supplied by hand and not "
-    "yet bound to any run record (follow-up #853); its hash is printed so a plan can bind it"
+    "the sources registry written by `loop provenance` or `learner clone`: a canonical (RFC 8785) "
+    "JSON object, training-set hash to the sorted checkpoint ids that generated it ([] for an "
+    "outside source). It is accepted only with the provenance.json beside it, a self-consistency "
+    "check that catches a single-file edit or a corrupted copy; it is not proof against "
+    "someone who rewrites both files. --run-dir is the authoritative path; a plan pins its hash"
 )
 
 
-def _graph(records: Path, sources: Path) -> tuple[ProvenanceGraph, str]:
-    files = sorted(records.glob("*.json"))
+def _graph(args: argparse.Namespace) -> tuple[ProvenanceGraph, str, str]:
+    if args.run_dir is not None:
+        if args.records is not None or args.sources is not None:
+            raise ProvenanceError("--run-dir replaces --records and --sources")
+        from areneon_ml.loop.driver import (  # noqa: PLC0415 (the loop imports this package)
+            LoopError,
+            provenance_graph,
+            sources_registry,
+        )
+
+        try:
+            graph = provenance_graph(args.run_dir)
+            return graph, sha256_hex(jcs(sources_registry(args.run_dir))), "run-dir"
+        except LoopError as exc:
+            raise ProvenanceError(str(exc)) from exc
+    if args.records is None or args.sources is None:
+        raise ProvenanceError("give --run-dir, or both --records and --sources")
+    files = sorted(args.records.glob("*.json"))
     if not files:
-        raise ProvenanceError(f"{records} holds no CheckpointRecord (*.json)")
-    raw = sources.read_bytes()
+        raise ProvenanceError(f"{args.records} holds no CheckpointRecord (*.json)")
+    raw = args.sources.read_bytes()
     registry = json.loads(raw)
     if not isinstance(registry, dict):
         raise ProvenanceError("the sources registry must be a JSON object")
     canonical = jcs(registry)
     if raw not in (canonical, canonical + b"\n"):
         raise ProvenanceError("the sources registry is not canonical JSON (RFC 8785)")
-    graph = ProvenanceGraph([read_record(_load_json(f)) for f in files], registry)
-    return graph, sha256_hex(canonical)
+    records = [read_record(_load_json(f)) for f in files]
+    verify_binding(args.sources.parent / BINDING_NAME, canonical, record_files(args.records))
+    graph = ProvenanceGraph(records, registry)
+    return graph, sha256_hex(canonical), "exported-binding"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -80,14 +101,12 @@ def _parser() -> argparse.ArgumentParser:
     classify = commands.add_parser("classify", help="C1: seen or held out")
     independent = commands.add_parser("independent", help="C6: independence of two checkpoints")
     for sub in (classify, independent):
+        sub.add_argument("--records", type=Path, help="a directory of CheckpointRecord *.json")
+        sub.add_argument("--sources", type=Path, help=SOURCES_HELP)
         sub.add_argument(
-            "--records", type=Path, required=True, help="a directory of CheckpointRecord *.json"
-        )
-        sub.add_argument(
-            "--sources",
+            "--run-dir",
             type=Path,
-            required=True,
-            help=SOURCES_HELP,
+            help="derive the records and the registry from this run directory instead",
         )
     classify.add_argument("--candidate", nargs="+", required=True)
     classify.add_argument("--opponent", nargs="+", required=True)
@@ -117,21 +136,28 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "init":
             result = _init(args)
         elif args.command == "classify":
-            graph, sources_hash = _graph(args.records, args.sources)
+            graph, sources_hash, basis = _graph(args)
             opponent = args.opponent[0] if len(args.opponent) == 1 else args.opponent
             found = graph.classify(args.candidate, opponent)
-            result = {"label": found.label, "reason": found.reason, "sources_hash": sources_hash}
+            result = {
+                "label": found.label,
+                "reason": found.reason,
+                "sources_hash": sources_hash,
+                "basis": basis,
+            }
         else:
-            graph, sources_hash = _graph(args.records, args.sources)
+            graph, sources_hash, basis = _graph(args)
             found_independence = graph.independent(args.a, args.b)
             result = {
                 "sources_hash": sources_hash,
+                "basis": basis,
                 "independent": found_independence.independent,
                 "shared_checkpoints": list(found_independence.shared_checkpoints),
                 "shared_sources": list(found_independence.shared_sources),
             }
     except (
         ProvenanceError,
+        BindingError,
         RecordError,
         ContractError,
         CheckpointFileError,

@@ -306,7 +306,9 @@ def test_two_runs_give_byte_identical_checkpoints_and_outputs(
     assert names == sorted(
         p.relative_to(tmp_path / "b") for p in (tmp_path / "b").rglob("*") if p.is_file()
     )
-    assert len(names) == 9  # 2 checkpoints, 2 records, sources, state (2), report, config
+    assert (
+        len(names) == 10
+    )  # 2 checkpoints, 2 records, sources, state (2), report, config, provenance
     for relative in names:
         assert (tmp_path / "a" / relative).read_bytes() == (tmp_path / "b" / relative).read_bytes()
 
@@ -492,6 +494,15 @@ def test_the_checkpoint_cli_accepts_the_written_directory(
     result = json.loads(printed)
     assert result["independent"] is False  # the two roles of one run share its source
     assert result["shared_sources"]
+    # a warm-start clone's teacher set maps to [] and a doctored registry is refused
+    sources = tmp_path / "one/sources.json"
+    assert json.loads(sources.read_text()) == {key: [] for key in json.loads(sources.read_text())}
+    sources.write_bytes(jcs({"0" * 64: []}))
+    args = ["independent", "--records", str(tmp_path / "one/records")]
+    args += ["--sources", str(sources), "--a", ids[0], "--b", ids[1]]
+    status, _, error = run_main(checkpoint_main, args)
+    assert status == 3
+    assert "differs from the one the run exported" in error
 
 
 def test_an_existing_output_is_never_overwritten_and_a_bad_record_commits_nothing(

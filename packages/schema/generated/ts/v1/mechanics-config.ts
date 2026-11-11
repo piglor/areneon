@@ -33,7 +33,7 @@ export interface MechanicsConfig {
     /**
      * Sorted by kind, each once.
      *
-     * @maxItems 3
+     * @maxItems 4
      */
     query_kinds: SupportedKind[];
   };
@@ -77,7 +77,7 @@ export interface MechanicsConfig {
  * via the `definition` "SupportedKind".
  */
 export interface SupportedKind {
-  kind: "damage" | "speed_order" | "stats";
+  kind: "damage" | "move_outcome" | "speed_order" | "stats";
   /**
    * The gap ledger rows (rules/gaps/) a result of this kind depends on, sorted and unique; every result lists them, so an unverified row stays visible. Each must exist in the rules snapshot.
    *
