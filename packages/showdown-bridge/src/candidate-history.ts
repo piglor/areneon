@@ -28,12 +28,17 @@ export interface DeclaredHistory {
 /** The history a query declares for `sides` (the query's own order: each side's declared Pokemon). */
 export type HistoryDeclarer = (sides: readonly (readonly Fighter[])[]) => DeclaredHistory;
 
-/** The engine-data predicates the declarations check ids with (an id the engine lacks is not declared). */
+/** The engine-data predicates the volatile ids are resolved with (a printed name such as `stockpile2` is its condition and a layer count). */
 export interface HistoryExists {
   condition(id: string): boolean;
-  move(id: string): boolean;
-  item(id: string): boolean;
+  /** The condition restarts (a stacking volatile such as Stockpile: its start handler runs once per layer). */
+  stacking(id: string): boolean;
 }
+
+/** The numbers and stat ids the engine appends to a volatile's printed name (the reader's matching rule). */
+const NUMBER = /\d+$/;
+const STAT = /(atk|def|spa|spd|spe)$/;
+
 
 type CountFact = NonNullable<CombatantHistory["move_actions"]>;
 type BoolFact = NonNullable<CombatantHistory["hurt_this_turn"]>;
@@ -64,7 +69,11 @@ export function historyDeclarer(facts: HistoryFacts | null, config: OutcomeConfi
     stats_lowered_this_turn: unknownBool(),
   });
 
-  /** Attackers of `fighter` among the query's Pokemon, by position strings of the facts (`own:a`, `opponent:b`). */
+  /**
+   * Attackers of `fighter` among the query's Pokemon, by position strings of the facts (`own:a`, `opponent:b`). A hit by a Pokemon the query
+   * does not declare (or by one the channel cannot place) makes the fact unknown: its first end names nobody, its second every declared other
+   * Pokemon at the largest damage, so an answer that reads the attackers or the damage differs between the ends (`history_unknown`).
+   */
   const attackersOf = (fighter: Fighter, positions: readonly string[] | null, sides: readonly (readonly Fighter[])[]): AttackersFact | undefined => {
     const others: Attacker[] = [];
     sides.forEach((list, side) =>
@@ -74,13 +83,27 @@ export function historyDeclarer(facts: HistoryFacts | null, config: OutcomeConfi
     );
     const named =
       positions === null
-        ? others
+        ? []
         : others.filter((slot) => {
             const there = ((sides[slot.side] as readonly Fighter[])[slot.position] as Fighter).at;
             return there !== undefined && positions.includes(`${there.own ? "own" : "opponent"}:${there.letter}`);
           });
-    if (named.length === 0) return undefined;
-    return { kind: "unknown", ends: [named.map((slot) => ({ ...slot, damage: 0 })), named.map((slot) => ({ ...slot, damage: end }))] as [Attacker[], Attacker[]] };
+    if (positions !== null && named.length === positions.length) return { kind: "unknown", ends: [named.map((slot) => ({ ...slot, damage: 0 })), named.map((slot) => ({ ...slot, damage: end }))] as [Attacker[], Attacker[]] };
+    return { kind: "unknown", ends: [[], others.map((slot) => ({ ...slot, damage: end }))] as [Attacker[], Attacker[]] };
+  };
+
+  /**
+   * The condition a printed volatile id names, declared through the engine's own start handler: the id itself, a stacking condition with
+   * its layer count (`stockpile2` is Stockpile started twice), or the condition without a stat suffix (`protosynthesisatk`). An id that
+   * resolves to none is declared as it is: the engine refuses it and the answer is `history_unknown`, never a dropped fact.
+   */
+  const resolved = (printed: string): { id: string; starts?: number } => {
+    if (exists.condition(printed)) return { id: printed };
+    const layers = NUMBER.exec(printed);
+    const base = printed.replace(NUMBER, "");
+    if (layers !== null && exists.condition(base) && exists.stacking(base)) return { id: base, starts: Number(layers[0]) };
+    const stat = printed.replace(STAT, "");
+    return stat !== printed && exists.condition(stat) ? { id: stat } : { id: printed };
   };
 
   const one = (fighter: Fighter, sides: readonly (readonly Fighter[])[]): CombatantHistory | undefined => {
@@ -107,10 +130,7 @@ export function historyDeclarer(facts: HistoryFacts | null, config: OutcomeConfi
         out.stats_lowered_this_turn = known(stint.stats_lowered_this_turn);
         // Opponent PP is never declared: `moves_used` is an own fact (`moves_used` is null for an opponent).
         if (at.own && stint.moves_used !== null) out.moves_used = known([...stint.moves_used]);
-        const volatiles = config.volatiles === "omitted" ? [] : Object.entries(stint.volatile_started)
-          .filter(([id]) => exists.condition(id))
-          .map(([id, v]) => ({ id, started_turn: v.started_turn, after_residual: v.after_residual }))
-          .sort(byId);
+        const volatiles = config.volatiles === "omitted" ? [] : Object.entries(stint.volatile_started).map(([printed, v]) => ({ ...resolved(printed), started_turn: v.started_turn, after_residual: v.after_residual })).sort(byId);
         if (volatiles.length > 0) out.volatiles = known(volatiles);
         const attackers = stint.attackers_this_turn === null || stint.attackers_this_turn.length > 0 ? attackersOf(fighter, stint.attackers_this_turn, sides) : undefined;
         if (attackers !== undefined) out.attacked_by = attackers;
@@ -122,7 +142,7 @@ export function historyDeclarer(facts: HistoryFacts | null, config: OutcomeConfi
       else out.ate_berry = known(roster.ate_berry);
       if (roster.last_item === UNSETTLED) out.last_item = { kind: "unknown", ends: [null, config.unknown_item] };
       else if (roster.last_item === null || roster.last_item === "") out.last_item = known(null);
-      else if (exists.item(roster.last_item)) out.last_item = known(roster.last_item);
+      else out.last_item = known(roster.last_item);
     }
     return Object.keys(out).length === 0 ? undefined : out;
   };
@@ -140,7 +160,7 @@ export function historyDeclarer(facts: HistoryFacts | null, config: OutcomeConfi
       for (const [letter, byCondition] of Object.entries(side.pending_slot).sort()) {
         const position = list.findIndex((fighter) => fighter.at?.letter === letter);
         if (position < 0) continue;
-        for (const [id, slot] of Object.entries(byCondition).sort()) if (exists.condition(id)) slots.push({ position, id, started_turn: slot.started_turn, after_residual: slot.after_residual });
+        for (const [id, slot] of Object.entries(byCondition).sort()) slots.push({ position, id, started_turn: slot.started_turn, after_residual: slot.after_residual });
       }
       if (slots.length > 0) {
         dated = true;
@@ -150,7 +170,7 @@ export function historyDeclarer(facts: HistoryFacts | null, config: OutcomeConfi
     });
     const battle: BattleHistory = { sides: battleSides as NonNullable<BattleHistory["sides"]> };
     if (facts === null) battle.field_last_move = { kind: "unknown", ends: [null, config.unknown_move] };
-    else if (facts.field_last_move === null || exists.move(facts.field_last_move)) battle.field_last_move = known(facts.field_last_move);
+    else battle.field_last_move = known(facts.field_last_move);
     if (facts !== null && combatants.some((list) => list.some((h) => h?.volatiles !== undefined))) dated = true;
     if (dated && facts !== null) battle.turn = facts.turn;
     return { combatants, battle };

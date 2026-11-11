@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { checkOutcomeConfig, loadOutcomeConfig, OutcomeConfigError, outcomeConfigHash, readOutcomeConfig } from "../src/outcome-config.ts";
 import { GOLDEN_FORMAT } from "../src/golden.ts";
 
-const good = { schema_version: 1, format_id: GOLDEN_FORMAT, assumed_branch: "assumed-set-filler", max_branches: 5, unknown_count_end: 20, unknown_item: "sitrusberry", unknown_move: "tackle", volatiles: "omitted" };
+const good = { schema_version: 1, format_id: GOLDEN_FORMAT, assumed_branch: "assumed-set-filler", max_branches: 5, unknown_count_end: 20, unknown_item: "sitrusberry", unknown_move: "tackle", volatiles: "declared" };
 
 describe("the probe-outcome record", () => {
   it("reads the committed file, and its hash is the SHA-256 of its JCS bytes", () => {
