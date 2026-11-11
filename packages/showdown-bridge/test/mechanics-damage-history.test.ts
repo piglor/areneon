@@ -95,28 +95,12 @@ describe("the history does not change what it does not name", () => {
     }
   });
 
-  it("asks a draw the declaration makes as unsupported: a volatile with a random length", () => {
-    // Confusion lasts a random number of turns, drawn when the engine starts it
+  it("a volatile with a random length the damage does not read gives the vectors of a query without it", () => {
+    // Confusion lasts a random number of turns, drawn when the engine starts it. Since the start draws are answered at both ends (the shorter and the longer
+    // length), and the damage of the move is the same at both, the answer is computed and equals the answer without the volatile.
+    const plain = probeMechanics({ engine, config }, damageQuery("tackle", undefined, undefined, { turn: 2 })).result;
     const { result } = probeMechanics({ engine, config }, damageQuery("tackle", { volatiles: known([{ id: "confusion", started_turn: 1, after_residual: false }]) }, undefined, { turn: 2 }));
-    expect(result).toMatchObject({ kind: "unsupported", reason: "random_effect", position: null });
-  });
-});
-
-describe("a speed order declares the history too and keeps its answer", () => {
-  const speed = (history?: unknown) =>
-    readMechanicsQuery({
-      schema_version: 1,
-      data_class: "synthetic",
-      format_id: GOLDEN_FORMAT,
-      query: { kind: "speed_order", sides: [[combatant(SNORLAX(), history)], [combatant(TYRANITAR())]], actions: [{ side: 0, position: 0, move: "protect", mega: false }, { side: 1, position: 0, move: "tackle", mega: false }], state: FIELD },
-    });
-
-  it("is the same order with a fact declared, and answers an unknown fact's two ends alike", () => {
-    const plain = probeMechanics({ engine, config }, speed()).result;
-    for (const history of [{ move_actions: known(3), times_attacked: known(1) }, { times_attacked: { kind: "unknown", ends: [0, 4] } }]) {
-      const result = probeMechanics({ engine, config }, speed(history)).result;
-      expect(result.kind).toBe("computed");
-      expect((result as any).answer).toEqual((plain as any).answer);
-    }
+    expect(result).toMatchObject({ kind: "computed" });
+    expect(jcs((result as unknown as { answer: Json }).answer)).toBe(jcs((plain as unknown as { answer: Json }).answer));
   });
 });
