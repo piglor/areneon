@@ -213,7 +213,10 @@ def coverage_problem(
             for slot, action in enumerate(parse_choice(candidate["choice"]).slots):
                 if action.kind != "move":
                     continue
-                move = active[slot]["moves"][(action.index or 1) - 1]
+                moves = active[slot]["moves"] if slot < len(active) else []
+                if (action.index or 1) > len(moves):
+                    return "a candidate names a move slot or move the request does not list"
+                move = moves[(action.index or 1) - 1]
                 if not damaging(move["id"]):
                     continue
                 if action.target is not None:

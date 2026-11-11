@@ -830,3 +830,17 @@ def test_a_malformed_request_is_a_coverage_problem_not_a_crash() -> None:
             empty: dict[str, list[Any]] = {n: [] for n in OUTCOME_ARRAYS}
             features = {"feature_set": name, "rows": [], **empty}
             assert coverage_problem(query, features, DAMAGING) is not None
+
+
+def test_a_candidate_beyond_the_requests_actives_or_moves_is_a_problem_not_a_crash() -> None:
+    request = request_for([{"id": "protect"}], ["100/100"] * 2)
+    request["active"] = request["active"][:1]  # one active entry
+    for choice in ("move 1 1, move 1 1", "move 2 1, pass"):
+        query = {
+            "observation": {"log": ["|request|" + json.dumps(request)]},
+            "candidates": [{"choice": choice}],
+        }
+        features = {"feature_set": "probe-damage/1", "rows": []}
+        problem = coverage_problem(query, features, DAMAGING)
+        assert problem is not None
+        assert "does not list" in problem
