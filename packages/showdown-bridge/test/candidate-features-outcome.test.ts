@@ -5,6 +5,7 @@ import { type AssumedSet, buildAssumedSet } from "../src/damage-aware-assumed-se
 import { candidateFeatures2 } from "../src/candidate-features-2.ts";
 import { goldenHistoryFactsData } from "../src/history-facts-data.ts";
 import { assumedMoveOf, branchesOf, candidateFeaturesOutcome, factsOf, FEATURE_SET_OUTCOME, historyDataOf, otherFoeMove, type OutcomeRow } from "../src/candidate-features-outcome.ts";
+import { damageView } from "../src/damage-aware-view.ts";
 import { createFeatureMemo, type FeatureConfigs, featureSetHash, featureSetIdentity } from "../src/candidate-features.ts";
 import { buildFeatures } from "../src/feature-build.ts";
 import { parseJointChoice } from "../src/damage-aware-choice.ts";
@@ -46,7 +47,7 @@ function probe(log: ParsedMechanicsQuery[] = [], outcome: (asked: string, branch
     log.push(query);
     const q = query.query as OutcomeQuery;
     const answer = outcome(q.actions[q.asked]?.move as string, q.actions.filter((_, i) => i !== q.asked && q.actions[i]?.side === 1).map((a) => a.move), q);
-    if (answer === "refuse") throw new MechanicsProbeError("the engine refused the declared state");
+    if (answer === "refuse") throw new MechanicsProbeError("the engine does not take that action");
     const identity = { data_class: query.data_class, query_hash: mechanicsQueryHash(query), manifest, mechanics_config_hash: mechanicsConfigHash(withOutcome), gap_ids: [] };
     return { result: buildResult(identity, answer), diagnostics: [] };
   };
@@ -109,11 +110,10 @@ describe("identity and the earlier sets' bytes", () => {
     const c = moveRequests()[0] as Captured;
     expect(() => candidateFeaturesOutcome(engine, without, channelOf(c), teamOf(c), candidatesOf(c))).toThrow(/reviewed record/);
   });
-  it("is what buildFeatures builds for the id", () => {
+  it("is refused by buildFeatures until the wire has its outcomes (slice H4), while the builder itself works", () => {
     const c = moveRequests()[0] as Captured;
-    const direct = build(c);
-    const through = buildFeatures(engine, configs(), channelOf(c), teamOf(c), candidatesOf(c), createFeatureMemo(), FEATURE_SET_OUTCOME);
-    expect(JSON.stringify(through)).toBe(JSON.stringify(direct));
+    expect(() => buildFeatures(engine, configs(), channelOf(c), teamOf(c), candidatesOf(c), createFeatureMemo(), FEATURE_SET_OUTCOME)).toThrow(/slice H4/);
+    expect(build(c).feature_set).toBe(FEATURE_SET_OUTCOME);
   });
 });
 
@@ -222,10 +222,10 @@ describe("outcomes", () => {
 
   it("says unsupported with the probe's reason (history_unknown included) and turns a refused declared state into query_kind", () => {
     const c = twoFoes();
-    let n = 0;
+    const order = new Map<string, number>();
     const answers: (Outcome | "refuse")[] = [{ kind: "unsupported", reason: "history_unknown", position: null }, { kind: "unsupported", reason: "random_effect", position: 0 }, "refuse"];
     const memo = createFeatureMemo();
-    const features = build(c, { probe: probe([], () => answers[n++ % 3] as Outcome | "refuse") }, memo);
+    const features = build(c, { probe: probe([], (asked) => answers[(order.get(asked) ?? order.set(asked, order.size).get(asked)) % 3] as Outcome | "refuse") }, memo);
     const kinds = new Set(features.outcomes.map((r) => (r.kind === "unsupported" ? r.reason : "computed")));
     expect(kinds).toEqual(new Set(["history_unknown", "random_effect", "query_kind"]));
     expect(memo.counts.probe_refusals).toBeGreaterThan(0);
@@ -367,7 +367,7 @@ describe("the real probe", () => {
   it("answers a second consecutive Protect with the engine's 1/3 and a first one with success (hand-worked: the stall counter is declared)", () => {
     let checked = 0;
     for (const c of moveRequests()) {
-      for (const lines of [used, () => []]) {
+      for (const lines of [used, () => []] as const) {
         const built = withOwnMove(c, PROTECT, lines);
         let rows: OutcomeRow[];
         try {
@@ -376,7 +376,8 @@ describe("the real probe", () => {
           if (String(error).includes("probe refused a set")) continue;
           throw error;
         }
-        if (rows.length === 0) continue;
+        // a Pokemon that holds a volatile the engine cannot be given (Protean's typechange) is `history_unknown`, which is its own test: this one wants a clean request
+        if (rows.length === 0 || rows.some((r) => r.kind === "unsupported")) continue;
         const second = lines === used;
         for (const row of rows) {
           expect(row.kind, JSON.stringify(row)).toBe("computed");
@@ -420,6 +421,139 @@ describe("failure paths", () => {
     expect(new Set(features.outcomes.map((r) => r.slot))).toEqual(new Set([1]));
     expect(features.outcomes.every((r) => r.kind === "unsupported" && r.reason === "query_kind")).toBe(true);
   });
+});
+
+describe("a volatile the engine cannot be given", () => {
+  it("makes the answers that hold it history_unknown, not the request or the other rows unsupported", () => {
+    const c = twoFoes();
+    const own = [...c.context.channel];
+    const body = JSON.parse((own[own.length - 1] as string).slice("|request|".length)) as { side: { pokemon: { ident: string }[] } };
+    const ident = (body.side.pokemon[0] as { ident: string }).ident.replace(/^(p[12]):/, "$1a:");
+    const channel = playerChannel({ schema_version: 1, data_class: "synthetic", player: c.context.player, lines: [...own.slice(0, -1), `|-start|${ident}|confusion`, own[own.length - 1] as string] });
+    const log: ParsedMechanicsQuery[] = [];
+    const base = probe(log);
+    // the engine refuses any query that declares a volatile (a start handler that needs more battle than the scenario has)
+    const refusing = (context: MechanicsContext, query: ParsedMechanicsQuery) => {
+      const q = query.query;
+      const holders = q.kind === "damage" ? [q.attacker, q.defender] : q.kind === "stats" ? [] : q.sides.flat();
+      if (holders.some((h) => h.history?.volatiles !== undefined)) throw new MechanicsProbeError("the engine refused the declared volatile");
+      return base(context, query);
+    };
+    const memo = createFeatureMemo();
+    const features = build(c, { probe: refusing }, memo, candidatesOf(c), channel);
+    expect(features.outcomes.length).toBeGreaterThan(0);
+    expect(new Set(features.outcomes.map((r) => (r.kind === "unsupported" ? r.reason : "computed")))).toEqual(new Set(["history_unknown"]));
+    // a damage row of the Pokemon that holds it, and the request itself, are still there
+    expect(features.rows.some((r) => r.kind === "unsupported" && r.reason === "history_unknown")).toBe(true);
+    expect(memo.counts.probe_refusals).toBe(0);
+    // the same request without the volatile is computed
+    expect(new Set(build(c).outcomes.map((r) => r.kind))).toEqual(new Set(["computed"]));
+  });
+
+  it("relabels a random_effect that a declared volatile caused, and refuses only that row when even the rest of the history is refused", () => {
+    const c = twoFoes();
+    const own = [...c.context.channel];
+    const body = JSON.parse((own[own.length - 1] as string).slice("|request|".length)) as { side: { pokemon: { ident: string }[] } };
+    const ident = (body.side.pokemon[0] as { ident: string }).ident.replace(/^(p[12]):/, "$1a:");
+    const channel = playerChannel({ schema_version: 1, data_class: "synthetic", player: c.context.player, lines: [...own.slice(0, -1), `|-start|${ident}|confusion`, own[own.length - 1] as string] });
+    const base = probe();
+    const holders = (query: ParsedMechanicsQuery) => {
+      const q = query.query;
+      return q.kind === "damage" ? [q.attacker, q.defender] : q.kind === "stats" ? [] : q.sides.flat();
+    };
+    // a start handler that draws: the query that declares the volatile is `random_effect`, the rest of the history is answered
+    const drawing = (context: MechanicsContext, query: ParsedMechanicsQuery) => {
+      if (holders(query).some((h) => h.history?.volatiles !== undefined)) return { result: buildResult({ data_class: query.data_class, query_hash: mechanicsQueryHash(query), manifest, mechanics_config_hash: mechanicsConfigHash(withOutcome), gap_ids: [] }, { kind: "unsupported", reason: "random_effect", position: 0 }), diagnostics: [] };
+      return base(context, query);
+    };
+    const drawn = build(c, { probe: drawing }, undefined, candidatesOf(c), channel);
+    expect(new Set(drawn.outcomes.map((r) => (r.kind === "unsupported" ? r.reason : "computed")))).toEqual(new Set(["history_unknown"]));
+    // the volatile is refused AND the history without it is refused: that query is a refused declared state (query_kind), counted
+    const refusing = (context: MechanicsContext, query: ParsedMechanicsQuery) => {
+      if (query.query.kind === "move_outcome") throw new MechanicsProbeError(holders(query).some((h) => h.history?.volatiles !== undefined) ? "the engine refused the declared volatile" : "the engine does not take that action");
+      return base(context, query);
+    };
+    const memo = createFeatureMemo();
+    const refused = build(c, { probe: refusing }, memo, candidatesOf(c), channel);
+    expect(new Set(refused.outcomes.map((r) => (r.kind === "unsupported" ? r.reason : "computed")))).toEqual(new Set(["query_kind"]));
+    expect(memo.counts.probe_refusals).toBeGreaterThan(0);
+  });
+
+  it("lets a defect met while asking for the rest of the history through", () => {
+    const c = twoFoes();
+    const own = [...c.context.channel];
+    const body = JSON.parse((own[own.length - 1] as string).slice("|request|".length)) as { side: { pokemon: { ident: string }[] } };
+    const ident = (body.side.pokemon[0] as { ident: string }).ident.replace(/^(p[12]):/, "$1a:");
+    const channel = playerChannel({ schema_version: 1, data_class: "synthetic", player: c.context.player, lines: [...own.slice(0, -1), `|-start|${ident}|confusion`, own[own.length - 1] as string] });
+    const holds = (query: ParsedMechanicsQuery) => {
+      const q = query.query;
+      return (q.kind === "damage" ? [q.attacker, q.defender] : q.kind === "stats" ? [] : q.sides.flat()).some((h) => h.history?.volatiles !== undefined);
+    };
+    const base = probe();
+    for (const first of ["refused", "random"] as const) {
+      const failing = (context: MechanicsContext, query: ParsedMechanicsQuery) => {
+        if (!holds(query)) {
+          if (query.query.kind !== "stats" && query.query.kind !== "move_outcome" && first === "refused") return base(context, query);
+          throw new Error("a defect");
+        }
+        if (first === "refused") throw new MechanicsProbeError("the engine refused the declared volatile");
+        return { result: buildResult({ data_class: query.data_class, query_hash: mechanicsQueryHash(query), manifest, mechanics_config_hash: mechanicsConfigHash(withOutcome), gap_ids: [] }, { kind: "unsupported", reason: "random_effect", position: 0 }), diagnostics: [] };
+      };
+      expect(() => build(c, { probe: failing }, undefined, candidatesOf(c), channel), first).toThrow("a defect");
+    }
+  });
+  it("lets history_unknown through reasonOf only for a view that declares history", () => {
+    const options = { engine, vocabulary, config, v1: config, mechanics: withOutcome, snapshot, data_class: "synthetic" as const, probe: probe(), counts: createFeatureMemo().counts, memo: new Map() };
+    expect(() => damageView(options).reasonOf("history_unknown")).toThrow(/history_unknown/);
+    expect(damageView({ ...options, history: () => ({ combatants: [], battle: undefined }) }).reasonOf("history_unknown")).toBe("history_unknown");
+    expect(damageView(options).reasonOf("query_kind")).toBe("query_kind");
+  });
+});
+
+describe("the foe a part is about", () => {
+  it("is the foe at the part's location, and for an untargeted or ally-targeted move the foe at the lowest location", () => {
+    const c = twoFoes();
+    const state = stateOf(c);
+    const letters = Object.keys(state.opponent.slots).sort();
+    const names = letters.map((letter) => state.opponent.roster[state.opponent.slots[letter] as number]?.name as string);
+    // each foe reveals a move of its own, so the branch's move says which foe a part was about
+    const reveal = { [names[0] as string]: ["aerialace"], [names[1] as string]: ["bite"] };
+    const features = build(c, { assume: assuming(reveal) });
+    const about = (target: number) => new Set(features.outcomes.filter((r) => r.target === target && r.action === "move").map((r) => r.foe_move));
+    expect(about(1)).toEqual(new Set(["aerialace"]));
+    expect(about(2)).toEqual(new Set(["bite"]));
+    // untargeted (0) and ally-targeted (negative) parts follow the lowest location, the foe in slot a
+    for (const target of [0, -1, -2]) {
+      const set = about(target);
+      if (set.size > 0) expect(set).toEqual(new Set(["aerialace"]));
+    }
+    expect([...features.outcomes].some((r) => r.target <= 0)).toBe(true);
+  });
+});
+
+describe("what fails means (hand-checked against the engine)", () => {
+  it("is precondition fails, 0 ppm precondition, 0 ppm hit and 0 success for a type immunity, which the engine decides before its accuracy step", () => {
+    const c = twoFoes();
+    const features = build(c, { probe: undefined as never, mechanics: withOutcome });
+    const state = stateOf(c);
+    const body = c.request.request as unknown as { active: { moves: { id: string; target: string }[] }[] };
+    const typeOf = (id: string) => (engine.sim.Dex.mod("champions") as unknown as { moves: { get(id: string): { type: string; category: string } }; species: { get(id: string): { types: string[] } }; getImmunity(t: string, types: string[]): boolean }).moves.get(id);
+    const dexx = engine.sim.Dex.mod("champions") as unknown as { species: { get(id: string): { types: string[] } }; getImmunity(t: string, types: string[]): boolean };
+    const letters = Object.keys(state.opponent.slots).sort();
+    let immune = 0;
+    for (const row of features.outcomes) {
+      if (row.action !== "move" || row.target <= 0 || row.kind !== "computed") continue;
+      const move = body.active[row.slot]?.moves[row.move - 1];
+      const data = typeOf(move?.id as string);
+      if (data.category === "Status") continue;
+      const foe = state.opponent.roster[state.opponent.slots[letters[row.target - 1] as string] as number];
+      if (foe?.species === undefined || foe.species === null) continue;
+      if (dexx.getImmunity(data.type, dexx.species.get(foe.species).types)) continue;
+      immune += 1;
+      expect([row.precondition, row.precondition_ppm, row.hit_ppm, row.success_ppm], `${move?.id} into ${foe.species}`).toEqual(["fails", 0, 0, 0]);
+    }
+    expect(immune).toBeGreaterThan(0);
+  }, 120_000);
 });
 
 describe("the type rule", () => {

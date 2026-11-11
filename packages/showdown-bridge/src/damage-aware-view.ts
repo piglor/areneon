@@ -59,6 +59,8 @@ const NO_FOE = new Set(["self", "adjacentAlly", "adjacentAllyOrSelf", "allySide"
 const UNQUEUEABLE = "the action needs more than a move and a Mega Evolution";
 /** The probe's other speed-order limit: a fractional priority (Quick Claw, Custap Berry and the like), which its integer contract cannot state. */
 const FRACTIONAL = "the action's priority is not a whole number";
+/** The probe's words for a declared history fact the engine does not take (`mechanics-history.ts`): an id that is no condition, move or item, a start handler that refused, a volatile that had run out, a used move the Pokemon lacks. */
+const VOLATILE_REFUSED = /^(the engine refused the declared|the declared|a declared)/;
 const CONDITION = /^(\d+)(?:\/(\d+))?(?: ([a-z]+))?$/;
 
 /** One Pokemon as a probe combatant, with the pieces a query needs. */
@@ -107,6 +109,38 @@ const CONFIG_DEFECT = "the mechanics config is for another format";
 type DamageState = Extract<MechanicsQuery["query"], { kind: "damage" }>["state"];
 type Combatant = Extract<MechanicsQuery["query"], { kind: "damage" }>["attacker"];
 type BattleHistory = NonNullable<Extract<MechanicsQuery["query"], { kind: "damage" }>["history"]>;
+
+/** The query with the declared facts that name engine ids removed (volatiles, used moves, last items, slot conditions, the last move): the rest of the history, for the identity of the answer. */
+export function withoutVolatiles(value: MechanicsQuery): MechanicsQuery {
+  const copy = structuredClone(value) as MechanicsQuery;
+  const strip = (combatant: { history?: Record<string, unknown> }): void => {
+    for (const key of ["volatiles", "moves_used", "last_item"]) delete combatant.history?.[key];
+  };
+  const query = copy.query;
+  if (query.kind === "damage") [query.attacker, query.defender].forEach(strip);
+  else if (query.kind === "speed_order" || query.kind === "move_outcome") query.sides.flat().forEach(strip);
+  if (query.kind !== "stats" && query.history !== undefined) {
+    delete query.history.field_last_move;
+    for (const side of query.history.sides ?? []) delete side.pending_slots;
+    delete query.history.turn;
+  }
+  return copy;
+}
+
+/** Whether a query declares volatiles, used moves, last items, slot conditions or a last move (the facts that name engine ids). */
+export function declaresIds(value: MechanicsQuery): boolean {
+  const query = value.query;
+  const holders = query.kind === "damage" ? [query.attacker, query.defender] : query.kind === "stats" ? [] : query.sides.flat();
+  if (holders.some((h) => ["volatiles", "moves_used", "last_item"].some((key) => (h.history as Record<string, unknown> | undefined)?.[key] !== undefined))) return true;
+  return query.kind !== "stats" && query.history !== undefined && (query.history.field_last_move !== undefined || (query.history.sides ?? []).some((side) => side.pending_slots !== undefined));
+}
+
+/** `result` as the answer of a query that declares an unknown fact: `unsupported`, `history_unknown` (a result that is not `computed` is kept as it is). */
+export function unknownVolatiles(result: MechanicsResult): MechanicsResult {
+  if (result.kind !== "computed") return result;
+  const { answer: _answer, ...identity } = result;
+  return { ...identity, kind: "unsupported", reason: "history_unknown", position: null } as MechanicsResult;
+}
 
 /** The probe's two speed-order limits (ADR-022 erratum E-22.3): an action it cannot queue, and one whose priority is not a whole number. */
 export type SpeedLimit = "unqueueable" | "fractional_priority";
@@ -199,10 +233,30 @@ export function damageView(options: DamageViewOptions) {
         if (!(error instanceof MechanicsProbeError) || error.message.startsWith(CONFIG_DEFECT)) throw error; // a wrong config is a defect of the run, not of a state
         if (query.query.kind === "speed_order" && error.message.startsWith(UNQUEUEABLE)) result = { limit: "unqueueable" };
         else if (query.query.kind === "speed_order" && error.message.startsWith(FRACTIONAL)) result = { limit: "fractional_priority" };
-        else {
+        else if (options.history !== undefined && VOLATILE_REFUSED.test(error.message)) {
+          // A declared volatile the engine will not take in this scenario (a start handler that needs a battle's worth of state): its fact is
+          // unknown, not dropped, so the answer is `history_unknown` (ADR-022 E-22.5.3); the rest of the request is unaffected.
+          try {
+            result = unknownVolatiles(probe({ engine, config: mechanics, snapshot }, readMechanicsQuery(withoutVolatiles(value))).result);
+          } catch (again) {
+            if (!(again instanceof MechanicsProbeError)) throw again;
+            memo.set(key, { refused: again.message });
+            throw new ProbeRefusal(again.message);
+          }
+        } else {
           // Any other refusal of a state the caller declared: this request falls back.
           memo.set(key, { refused: error.message });
           throw new ProbeRefusal(error.message);
+        }
+      }
+      // A declared volatile whose start handler draws (a confusion or sleep duration) answers `random_effect`: if the query without the
+      // engine-id facts is computed, the volatile is what could not be declared, so the answer is `history_unknown` (ADR-022 E-22.5.3).
+      if (options.history !== undefined && "kind" in result && result.kind === "unsupported" && result.reason === "random_effect" && declaresIds(value)) {
+        try {
+          const stripped = probe({ engine, config: mechanics, snapshot }, readMechanicsQuery(withoutVolatiles(value))).result;
+          if (stripped.kind === "computed") result = unknownVolatiles(stripped);
+        } catch (again) {
+          if (!(again instanceof MechanicsProbeError)) throw again;
         }
       }
       memo.set(key, result);

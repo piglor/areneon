@@ -4,10 +4,9 @@
 //
 // - `assumed_branch`: how a foe that has revealed no move gets its one assumed opposing-action branch. The only rule is
 //   `assumed-set-filler`: the move the assumed set (ADR-018) holds in place of an unrevealed one (its filler), else its first move.
-// - `volatiles`: whether the volatiles of the facts are declared through the engine's own `addVolatile` (`declared`) or left out (`omitted`).
-//   Many start handlers refuse in a scenario that has none of the battle that led to them (Encore needs a last move, a counter needs its
-//   source), and the engine's refusal makes the whole query unsupported; the committed record omits them (a measured finding of slice H3,
-//   see CLAUDE.md), so a volatile's effect is the engine's default there. A way to write a volatile without its start handler is a later id.
+// - `volatiles`: whether the volatiles of the facts are declared through the engine's own `addVolatile` (`declared`, committed) or left out
+//   (`omitted`, a test seam: a known fact left out would be a confident default). A volatile the engine refuses in the scenario (Encore needs a
+//   last move) makes the answers that hold it `history_unknown`.
 // - `max_branches`: at most this many opposing-action branches per own move part (the `switch` branch and the revealed moves of
 //   the targeted foe, cut in move-id order).
 // - `unknown_count_end`: the upper end a history count the channel cannot settle is asked at (the two-ends rule asks the lower end 0 and this one).

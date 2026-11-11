@@ -90,14 +90,11 @@ export function factsOf(channel: PlayerChannel, data: HistoryFactsData): History
 
 function declarerOf(engine: Engine, configs: FeatureConfigs, setup: NonNullable<FeatureConfigs["outcome"]>, channel: PlayerChannel): HistoryDeclarer {
   const dex = engine.sim.Dex.mod(engine.sim.Dex.formats.get(configs.config.format_id).mod) as unknown as {
-    conditions: { get(id: string): { exists: boolean } };
-    moves: { get(id: string): { exists: boolean } };
-    items: { get(id: string): { exists: boolean } };
+    conditions: { get(id: string): { exists: boolean; onRestart?: unknown } };
   };
   return historyDeclarer(factsOf(channel, historyDataOf(engine, configs)), setup.config, {
     condition: (id) => dex.conditions.get(id).exists,
-    move: (id) => dex.moves.get(id).exists,
-    item: (id) => dex.items.get(id).exists,
+    stacking: (id) => dex.conditions.get(id).onRestart !== undefined,
   });
 }
 
