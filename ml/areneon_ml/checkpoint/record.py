@@ -15,6 +15,9 @@ from typing import Any
 
 from areneon_contracts.contracts import jcs, sha256_hex, validate
 
+#: A mixed-format run names the manifests of exactly two formats: the closed one and the open one.
+FORMATS = 2
+
 
 class RecordError(ValueError):
     """A CheckpointRecord breaks a rule the contract profile cannot say."""
@@ -41,6 +44,9 @@ class CheckpointRecord:
     encoder_version: str
     data_class: str
     manifest: dict[str, Any]
+    #: ``game_manifests`` (ADR-027 5a), only for a run with ``sheet_regimes``: the version manifests
+    #: of the run's formats, sorted by JCS bytes; ``manifest`` is one of them.
+    game_manifests: tuple[dict[str, Any], ...] | None = None
 
     def to_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -61,6 +67,8 @@ class CheckpointRecord:
             out["parent"] = self.parent
         if self.exploiter_target is not None:
             out["exploiter_target"] = self.exploiter_target
+        if self.game_manifests is not None:
+            out["game_manifests"] = list(self.game_manifests)
         return out
 
     @property
@@ -83,6 +91,9 @@ def read_record(raw: object) -> CheckpointRecord:
         raise RecordError("checkpoint-record: a checkpoint cannot train against itself")
     if raw.get("exploiter_target") == own:
         raise RecordError("checkpoint-record: a checkpoint cannot be its own exploiter target")
+    game_manifests = raw.get("game_manifests")
+    if game_manifests is not None:
+        _check_game_manifests(raw["manifest"], game_manifests)
     return CheckpointRecord(
         checkpoint_id=own,
         role=raw["role"],
@@ -97,4 +108,25 @@ def read_record(raw: object) -> CheckpointRecord:
         encoder_version=raw["encoder_version"],
         data_class=raw["data_class"],
         manifest=raw["manifest"],
+        game_manifests=None if game_manifests is None else tuple(game_manifests),
     )
+
+
+def _check_game_manifests(manifest: dict[str, Any], found: list[dict[str, Any]]) -> None:
+    """``game_manifests``: sorted by JCS bytes and unique, ``manifest`` among them, one engine
+    commit and regulation (the sheet-variant check proper needs the engine: the Node side's)."""
+    keys = [jcs(m) for m in found]
+    if not all(a < b for a, b in itertools.pairwise(keys)):
+        raise RecordError(
+            "checkpoint-record: game_manifests must be sorted by JCS bytes, each once"
+        )
+    if manifest not in found:
+        raise RecordError("checkpoint-record: manifest must be one of game_manifests")
+    if len(found) != FORMATS or len({m["format_id"] for m in found}) != FORMATS:
+        raise RecordError(
+            "checkpoint-record: game_manifests must hold one manifest for each of two formats"
+        )
+    if len({(m["showdown_commit"], m["regulation"]) for m in found}) > 1:
+        raise RecordError(
+            "checkpoint-record: game_manifests must share one engine commit and regulation"
+        )

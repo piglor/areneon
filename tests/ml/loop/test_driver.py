@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from areneon_contracts.contracts import jcs, sha256_hex
+from areneon_ml.checkpoint.__main__ import main as checkpoint_main
 from areneon_ml.checkpoint.files import checkpoint_bytes, checkpoint_id
 from areneon_ml.checkpoint.provenance import HELD_OUT, SEEN
 from areneon_ml.checkpoint.record import read_record
@@ -582,10 +583,38 @@ def test_the_export_writes_records_and_the_registry_for_the_checkpoint_cli(
     out = tmp_path / "export"
     digest = export_provenance(finished, out)
     assert len(list((out / "records").iterdir())) == 6
+    binding = json.loads((out / "provenance.json").read_text())
+    assert binding["sources_hash"] == digest
+    assert sorted(binding["records"]) == sorted(p.stem for p in (out / "records").iterdir())
     assert sha256_hex((out / "sources.json").read_bytes()) == digest
     assert (out / "sources.json").read_bytes() == jcs(sources_registry(finished))
     export_provenance(finished, out)  # replaces what it wrote before
     assert len(list((out / "records").iterdir())) == 6
+
+
+def test_the_checkpoint_cli_derives_from_the_run_and_binds_the_export(
+    finished: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = tmp_path / "export"
+    digest = export_provenance(finished, out)
+    manifest = json.loads(layout.generation_dir(finished, 2).joinpath("manifest.json").read_text())
+    battle = manifest["checkpoints"]["battle"]
+    tail = ["--candidate", battle, "--opponent", "first-legal@golden"]
+    assert checkpoint_main(["classify", "--run-dir", str(finished), *tail]) == 0
+    derived = json.loads(capsys.readouterr().out)
+    assert derived["sources_hash"] == digest
+    assert derived["basis"] == "run-dir"
+    bound = ["classify", "--records", str(out / "records"), "--sources", str(out / "sources.json")]
+    assert checkpoint_main([*bound, *tail]) == 0
+    exported = json.loads(capsys.readouterr().out)
+    assert exported["basis"] == "exported-binding"
+    assert {**exported, "basis": "run-dir"} == derived
+    # a registry that differs from the derived one is refused, whoever supplies it
+    registry = json.loads((out / "sources.json").read_text())
+    key = next(iter(registry))
+    (out / "sources.json").write_bytes(jcs({**registry, key: []}))
+    assert checkpoint_main([*bound, *tail]) == 3
+    assert "differs from the one the run exported" in capsys.readouterr().err
 
 
 def test_no_provenance_without_a_committed_generation(tmp_path: Path) -> None:
