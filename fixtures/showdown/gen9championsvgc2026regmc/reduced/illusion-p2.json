@@ -11,6 +11,93 @@
     "field_conditions": [],
     "format_name": "[Gen 9 Champions] VGC 2026 Reg M-C",
     "gametype": "doubles",
+    "history": {
+      "field_last_move": "bodyslam",
+      "history_facts_format": "history-facts/1",
+      "opponent": {
+        "active": {
+          "a": {
+            "attackers_this_turn": [
+              "own:a"
+            ],
+            "hurt_this_turn": true,
+            "last_move_failed": false,
+            "move_actions": 8,
+            "moves_used": null,
+            "name": "Charizard",
+            "stall_counter": 3,
+            "stats_lowered_this_turn": false,
+            "stats_raised_this_turn": false,
+            "times_attacked": 2,
+            "unknown": false,
+            "volatile_started": {}
+          },
+          "b": {
+            "attackers_this_turn": [
+              "opponent:a"
+            ],
+            "hurt_this_turn": true,
+            "last_move_failed": true,
+            "move_actions": 13,
+            "moves_used": null,
+            "name": "Snorlax",
+            "stall_counter": null,
+            "stats_lowered_this_turn": false,
+            "stats_raised_this_turn": false,
+            "times_attacked": 8,
+            "unknown": false,
+            "volatile_started": {}
+          }
+        },
+        "pending_slot": {},
+        "roster": {
+          "Charizard": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Pikachu": {
+            "ate_berry": null,
+            "last_item": null
+          },
+          "Snorlax": {
+            "ate_berry": true,
+            "last_item": "sitrusberry"
+          },
+          "Zoroark": {
+            "ate_berry": null,
+            "last_item": null
+          }
+        },
+        "total_fainted": 2
+      },
+      "own": {
+        "active": {
+          "a": null,
+          "b": null
+        },
+        "pending_slot": {},
+        "roster": {
+          "Blastoise": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Charizard": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Pikachu": {
+            "ate_berry": null,
+            "last_item": null
+          },
+          "Zoroark": {
+            "ate_berry": null,
+            "last_item": null
+          }
+        },
+        "total_fainted": 4
+      },
+      "turn": 13
+    },
     "opponent": {
       "condition_turns": {},
       "conditions": {},
@@ -762,7 +849,7 @@
     },
     "player": "p2",
     "request_kind": "move",
-    "schema_version": 2,
+    "schema_version": 3,
     "started": true,
     "terrain": null,
     "turn": 13,

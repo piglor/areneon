@@ -72,3 +72,20 @@ export interface PolicyStreamLabel {
 }
 
 export const policyStreamLabel = (seed: string, game: number, player: "p1" | "p2", policy_id: string): PolicyStreamLabel => ({ seed, game, player, policy_id });
+
+/** Names the team-source draw below: which component (the synthetic pool or the private one) a seat's team comes from. */
+export const LEAGUE_TEAM_SOURCE_PURPOSE = "league-team-source/1";
+
+/**
+ * Whether one seat of one game takes its team from the private component (ADR-015 erratum E1 item 3): SHA-256 over the JCS of
+ * `{run_key, generation, game, seat, purpose: "league-team-source/1"}`, its first four bytes read big-endian as n, private when
+ * `n * 1000 < share_permille * 2^32` (exact in integers; 0 never, 1000 always). It is a separate digest from `league-seed/1`, so
+ * the battle seed, the team draws and the baseline stream of every game are what they were without a private pool.
+ */
+export function privateTeamSource(run_key: string, generation: number, game: number, seat: "p1" | "p2", share_permille: number): boolean {
+  requireIndex("generation", generation, 1);
+  requireIndex("game", game, 0);
+  if (!Number.isInteger(share_permille) || share_permille < 0 || share_permille > 1000) throw new RangeError("a share is a whole number of permille from 0 to 1000");
+  const digest = createHash("sha256").update(jcs({ run_key, generation, game, seat, purpose: LEAGUE_TEAM_SOURCE_PURPOSE } as Json)).digest();
+  return digest.readUInt32BE(0) * 1000 < share_permille * 2 ** 32;
+}

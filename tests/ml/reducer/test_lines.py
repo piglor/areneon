@@ -371,7 +371,9 @@ def test_a_cant_line_changes_only_the_recent_history(line: str) -> None:
     pokemon = state["opponent"]["roster"][0]
     assert pokemon["recent"]["last_action_order"] == 1
     pokemon["recent"].update(last_action_turn=None, last_action_order=None)
-    assert state == run().to_dict()
+    # the history facts (`history.py`) count the action too: they are held by `test_history.py`
+    assert state.pop("history") != run().to_dict()["history"]
+    assert state == {k: v for k, v in run().to_dict().items() if k != "history"}
 
 
 def test_bench_style_ids_and_shiny_and_zero_hp_forms() -> None:

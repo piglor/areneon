@@ -107,6 +107,52 @@ def read_stall_moves(commit: str, format_id: str) -> frozenset[str] | None:
     return frozenset(data["stall_moves"])
 
 
+_HISTORY_KEYS = frozenset(
+    {
+        "action_sources",
+        "direct_end_items",
+        "eat_tags",
+        "eaten_berries",
+        "external_action_sources",
+        "format_id",
+        "history_facts_data_hash",
+        "item_use_sources",
+        "last_item_restorers",
+        "last_item_takers",
+        "null_cant_reasons",
+        "protect_breaker_moves",
+        "schema_version",
+        "showdown_commit",
+        "slot_conditions",
+        "stall_counter",
+        "steal_eat_tags",
+        "gem_tags",
+    }
+)
+
+
+def read_history_facts(commit: str, format_id: str) -> dict[str, Any] | None:
+    """The committed history-facts data for this engine and format
+    (`data/history-facts.<format>.json`, exported by `export-history-facts-data.ts`: the stall
+    counter constants, the move-line action sources, the item and slot-condition rules), or None
+    when there is none for this pin (the history facts are then left out of the state). A
+    malformed file or a hash mismatch is refused."""
+    path = DATA_DIR / f"history-facts.{format_id}.json"
+    if not path.is_file():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or set(data) != _HISTORY_KEYS or data["schema_version"] != 1:
+        raise VocabularyError(f"{path.name} is not a history-facts table")
+    body = {k: v for k, v in data.items() if k != "history_facts_data_hash"}
+    if sha256_hex(jcs(body)) != data["history_facts_data_hash"]:
+        raise VocabularyError(f"{path.name} does not match its hash")
+    if data["format_id"] != format_id:
+        raise VocabularyError(f"{path.name} is for another format")
+    if data["showdown_commit"] != commit:
+        return None
+    return data
+
+
 @dataclass(frozen=True)
 class Vocabulary:
     """Id sets of one engine-data export; lookups raise `VocabularyError`."""
@@ -138,6 +184,11 @@ class Vocabulary:
     # export's move table): Quick Guard and Wide Guard print nothing when the condition is
     # already up (#1281).
     ally_side_moves: frozenset[str] = frozenset()
+    # What the history facts (`history.py`) need beyond the tables above: the committed
+    # history-facts data file merged with the stall moves, the side-target stall moves and the
+    # volatile copy table, as the TS module's `HistoryFactsData`. None when any of them is missing
+    # for this pin: the state then carries no history facts.
+    history_data: Mapping[str, Any] | None = None
 
     @classmethod
     def from_engine_data(cls, data: Mapping[str, Any]) -> Vocabulary:
@@ -146,7 +197,20 @@ class Vocabulary:
                 f"unsupported engine-data schema_version {data.get('schema_version')!r}"
             )
         copy = read_volatile_copy(str(data["showdown_commit"]), str(data["format_id"]))
+        stall = read_stall_moves(str(data["showdown_commit"]), str(data["format_id"]))
+        history = read_history_facts(str(data["showdown_commit"]), str(data["format_id"]))
+        ally_side = frozenset(str(r["id"]) for r in data["moves"] if r.get("target") == "allySide")
+        merged: dict[str, Any] | None = None
+        if history is not None and stall is not None and copy is not None:
+            merged = {
+                **{k: v for k, v in history.items() if k not in ("history_facts_data_hash",)},
+                "stall_moves": sorted(stall),
+                "ally_side_moves": sorted(ally_side & stall),
+                "volatile_not_copied": list(copy["not_copied"]),
+                "shed_tail_copies": list(copy["shed_tail_copies"]),
+            }
         return cls(
+            history_data=merged,
             ally_side_moves=frozenset(
                 str(r["id"]) for r in data["moves"] if r.get("target") == "allySide"
             ),
