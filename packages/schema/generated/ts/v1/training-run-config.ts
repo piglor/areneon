@@ -309,6 +309,27 @@ export interface TrainingRunConfig {
     battle: string;
   };
   /**
+   * Optional (a minor change within v1; ADR-027 section 5, ADR-010 erratum A8, #1153): the run trains on games of two sheet regimes. `format_id` stays the closed (target) format; `open_format` is the engine's open-sheet format of the same regulation (its rules record says `team_sheets: open` and the sheet-variant check passes: the engine-side checks are made where an engine is loaded, the readers check the shape). Each generation's self-play games are assigned a regime by the purpose `sheet-regime/1` over the run key, generation and game: generations 1 to `open_only_generations` are open only, then exactly round(games * closed_share_ppm / 10^6) closed games, chosen by hash order. Baseline games are always played in the closed format. `closed_sheet_source` names the block source of the closed games (`belief` is accepted by the contract and refused by the readers until it is built). Absent keeps today's plan, records and bytes. An older reader refuses a config that has it.
+   */
+  sheet_regimes?: {
+    /**
+     * The open-sheet Showdown format; differs from format_id.
+     */
+    open_format: string;
+    /**
+     * The share of self-play games, after the open-only generations, that are played in the closed format, in parts per million (the count is round(games * share / 10^6), half up).
+     */
+    closed_share_ppm: number;
+    /**
+     * Generations 1 to this number play their self-play games in the open format only (0: none).
+     */
+    open_only_generations: number;
+    /**
+     * The source of the opponent-sheet block in closed games.
+     */
+    closed_sheet_source: "revealed-only/1" | "belief";
+  };
+  /**
    * Optional (a minor change within v1; ADR-021 sections 2, 3, 5, 6 and 8, ADR-010 erratum A3, #982): the run is a population of learning members on one ladder instead of one lineage. Every value is config data; code holds only the outer bounds (members 1 to 16, exploiters 0 to 2). Integers only; shares and thresholds are parts per million. Absent keeps today's single-lineage loop and its bytes and run_config_hash; a config that carries it is a new run, and the loop driver refuses it until the scheduler lands (slice 5). Reader rules (both readers): the three opponent shares sum to 1,000,000; min_roots is at most members; every explore bound contains its starting value (the member's override, else the ppo value; shares start from population.shares); past_pool.max_past_per_member is at most past_pool.max_size; member_ppo is sorted by member, unique, and each member is below members.
    */
   population?: {

@@ -7,6 +7,8 @@ import type { Engine, PokemonSet } from "./engine.ts";
 import { resolveFormat } from "./formats.ts";
 import { type DamagePath, DamageStateError, probeDamage } from "./mechanics-damage.ts";
 import { MechanicsProbeError } from "./mechanics-error.ts";
+import { type HistoryDeclaration, historyVariants, type ResolvedHistory } from "./mechanics-history.ts";
+import { probeMoveOutcome } from "./mechanics-outcome.ts";
 import { checkScenario, ScenarioError, scenarioPokemon, startScenario } from "./mechanics-scenario.ts";
 import { type MechanicsConfig, mechanicsConfigHash } from "./mechanics-config.ts";
 import { declaredSets, mechanicsQueryHash, type ParsedMechanicsQuery } from "./mechanics-query.ts";
@@ -15,6 +17,8 @@ import { MEGA_GAP_ID, megaInvolved, probeSpeedOrder } from "./mechanics-speed.ts
 import { loadRulesSnapshot } from "./rules-load.ts";
 import type { RulesSnapshot } from "./rules.ts";
 import { importPaste } from "./teams.ts";
+import { statePlan } from "./world-state.ts";
+import { loadWorldWriters } from "./world-writers.ts";
 
 export { MechanicsProbeError };
 
@@ -67,6 +71,20 @@ function prepare(engine: Engine, config: MechanicsConfig, formatId: string, snap
   return entry;
 }
 
+/** The engine condition a declared stall counter is written to: the reviewed world writers record names it (the world builder's Protect counter). */
+const stallConditions = new WeakMap<Engine, Map<string, string>>();
+
+function stallCondition(engine: Engine, formatId: string): string {
+  const table = stallConditions.get(engine) ?? new Map<string, string>();
+  stallConditions.set(engine, table);
+  let id = table.get(formatId);
+  if (id === undefined) {
+    id = statePlan(loadWorldWriters(engine, formatId)).conditionOf("protect_counter");
+    table.set(formatId, id);
+  }
+  return id;
+}
+
 /** Declared sets by (engine, format, paste): the engine's verdict on a paste is a pure function of the pinned engine, so it is asked once. */
 const declared = new WeakMap<Engine, Map<string, Declared>>();
 
@@ -106,11 +124,11 @@ function statsOf(engine: Engine, scenarioId: string, set: PokemonSet): { hp: num
   return { hp: pokemon.maxhp, atk, def, spa, spd, spe };
 }
 
-/** The gap ledger rows a result of this query lists: the config's for the kind, and the Mega row when a speed order involves a Mega Evolution. */
+/** The gap ledger rows a result of this query lists: the config's for the kind, and the Mega row when a speed order or a move outcome involves a Mega Evolution. */
 function gapIds(config: MechanicsConfig, query: ParsedMechanicsQuery): string[] {
   const entry = config.scope.query_kinds.find((candidate) => candidate.kind === query.query.kind);
   if (entry === undefined) return [];
-  const extra = query.query.kind === "speed_order" && megaInvolved(query.query) ? [MEGA_GAP_ID] : [];
+  const extra = (query.query.kind === "speed_order" || query.query.kind === "move_outcome") && megaInvolved(query.query) ? [MEGA_GAP_ID] : [];
   return [...new Set([...entry.gap_ids, ...extra])].sort();
 }
 
@@ -147,15 +165,28 @@ export function probeMechanics(context: MechanicsContext, query: ParsedMechanics
   } catch (error) {
     return done({ kind: "unsupported", reason: "scenario_rule_table", position: null }, (error as ScenarioError).problems);
   }
-  if (query.query.kind === "damage") {
-    try {
-      const outcome = probeDamage(engine, scenarioId, query.query, sets[0] as PokemonSet, sets[1] as PokemonSet, config.ko_blockers, context.damage_path);
-      return done(outcome);
-    } catch (error) {
-      if (error instanceof DamageStateError) throw new MechanicsProbeError(error.message);
-      throw error;
+  // The query's history, one resolution per end of an unknown fact (the two ends rule): equal answers are kept, different ones are `unsupported`.
+  const variants = historyVariants(query.query);
+  const stall = variants.some((variant) => variant !== null) ? stallCondition(engine, query.format_id) : "";
+  const declaration = (resolved: ResolvedHistory | null): HistoryDeclaration | null => (resolved === null ? null : { resolved, stall });
+  const answer = (resolved: ResolvedHistory | null): Outcome => {
+    const history = declaration(resolved);
+    const asked = query.query;
+    if (asked.kind === "damage") {
+      try {
+        return probeDamage(engine, scenarioId, asked, sets[0] as PokemonSet, sets[1] as PokemonSet, config.ko_blockers, context.damage_path, history);
+      } catch (error) {
+        if (error instanceof DamageStateError) throw new MechanicsProbeError(error.message);
+        throw error;
+      }
     }
+    if (asked.kind === "speed_order") return probeSpeedOrder(engine, scenarioId, asked, sets, history);
+    if (asked.kind === "move_outcome") return probeMoveOutcome(engine, scenarioId, asked, sets, history);
+    return { kind: "computed", answer: { kind: "stats", stats: statsOf(engine, scenarioId, sets[0] as PokemonSet) } };
+  };
+  const first = answer(variants[0] as ResolvedHistory | null);
+  for (const variant of variants.slice(1)) {
+    if (JSON.stringify(answer(variant)) !== JSON.stringify(first)) return done({ kind: "unsupported", reason: "history_unknown", position: null });
   }
-  if (query.query.kind === "speed_order") return done(probeSpeedOrder(engine, scenarioId, query.query, sets));
-  return done({ kind: "computed", answer: { kind: "stats", stats: statsOf(engine, scenarioId, sets[0] as PokemonSet) } });
+  return done(first);
 }

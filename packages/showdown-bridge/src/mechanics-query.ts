@@ -8,6 +8,7 @@ import { ajvFor } from "@areneon/schema/ajv";
 import querySchema from "@areneon/schema/contracts/v1/mechanics-query.schema.json" with { type: "json" };
 import type { MechanicsQuery } from "@areneon/schema/types/v1/mechanics-query.ts";
 import { type Json, jcs } from "./canonical-json.ts";
+import { historyProblems } from "./mechanics-history.ts";
 import { sha256Hex } from "./rules.ts";
 
 export type { MechanicsQuery };
@@ -30,7 +31,11 @@ export function readMechanicsQuery(value: unknown): ParsedMechanicsQuery {
     throw new MechanicsQueryError(`invalid MechanicsQuery: ${where.join("; ")}`);
   }
   const parsed = structuredClone(value) as unknown as ParsedMechanicsQuery;
-  const problems = parsed.query.kind === "speed_order" ? speedOrderProblems(parsed.query) : [];
+  const problems = [
+    ...(parsed.query.kind === "speed_order" ? speedOrderProblems(parsed.query) : []),
+    ...(parsed.query.kind === "move_outcome" ? moveOutcomeProblems(parsed.query) : []),
+    ...historyProblems(parsed.query),
+  ];
   if (problems.length > 0) throw new MechanicsQueryError(`invalid MechanicsQuery: ${problems.join("; ")}`);
   return parsed;
 }
@@ -46,6 +51,16 @@ export function speedOrderProblems(query: Extract<MechanicsQuery["query"], { kin
     seen.add(`${action.side}/${action.position}`);
     if (action.mega && combatant?.mega) problems.push(`/actions/${index} Mega Evolves a Pokemon that already has`);
   }
+  return problems;
+}
+
+/** What the profile cannot say of a `move_outcome` query: its actions follow the `speed_order` rules, the asked one is a move, and the target is a declared Pokemon. */
+export function moveOutcomeProblems(query: Extract<MechanicsQuery["query"], { kind: "move_outcome" }>): string[] {
+  const problems = speedOrderProblems(query as unknown as Extract<MechanicsQuery["query"], { kind: "speed_order" }>);
+  const asked = query.actions[query.asked];
+  if (asked === undefined) problems.push("/asked names an action the query does not have");
+  else if (asked.move === null) problems.push("/asked names a switch, not a move");
+  if (query.sides[query.target.side]?.[query.target.position] === undefined) problems.push("/target names a Pokemon the sides do not declare");
   return problems;
 }
 

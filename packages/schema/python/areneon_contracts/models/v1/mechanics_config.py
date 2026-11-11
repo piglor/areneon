@@ -68,7 +68,7 @@ class SupportedKind(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    kind: Literal["damage", "speed_order", "stats"]
+    kind: Literal["damage", "move_outcome", "speed_order", "stats"]
     gap_ids: Annotated[list[GapId], Field(max_length=32)]
     """
     The gap ledger rows (rules/gaps/) a result of this kind depends on, sorted and unique; every result lists them, so an unverified row stays visible. Each must exist in the rules snapshot.
@@ -97,7 +97,7 @@ class Scope(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    query_kinds: Annotated[list[SupportedKind], Field(max_length=3)]
+    query_kinds: Annotated[list[SupportedKind], Field(max_length=4)]
     """
     Sorted by kind, each once.
     """

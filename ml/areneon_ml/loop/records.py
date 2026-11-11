@@ -227,6 +227,9 @@ class RecordFacts:
     learner_state_hash: str
     encoder_version: str
     manifest: dict[str, Any]
+    #: ``game_manifests`` of a run with ``sheet_regimes`` (ADR-027 5a): the manifests of its two
+    #: formats, sorted by JCS bytes, ``manifest`` (the closed one) among them; None otherwise.
+    game_manifests: tuple[dict[str, Any], ...] | None = None
     #: A population member's lineage label ``<lineage>.m<k>`` (ADR-021 section 7); None is the
     #: config's ``lineage_id``.
     lineage_id: str | None = None
@@ -258,6 +261,8 @@ def checkpoint_record(config: RunConfig, facts: RecordFacts) -> CheckpointRecord
     }
     if facts.parent is not None:
         raw["parent"] = facts.parent
+    if facts.game_manifests is not None:
+        raw["game_manifests"] = list(facts.game_manifests)
     return read_record(raw)
 
 

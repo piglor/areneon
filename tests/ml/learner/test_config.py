@@ -135,6 +135,10 @@ INVALID = sorted(p.name for p in (CONFIGS / "invalid").iterdir())
         ("population-member-ppo-duplicate.json", "sorted by member and unique"),
         ("population-member-ppo-out-of-range.json", "at or above members"),
         ("population-warm-start-both.json", "would give every member the same pair"),
+        ("sheet-regimes-same-format.json", "open_format must be another format"),
+        ("sheet-regimes-belief-source.json", "closed_sheet_source belief is accepted once"),
+        ("sheet-regimes-population.json", "cannot be combined with a population"),
+        ("sheet-regimes-opponent-sheet.json", "cannot be combined with the opponent_sheet"),
     ],
 )
 def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> None:
@@ -144,7 +148,7 @@ def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> Non
 
 
 def test_every_reader_invalid_sample_is_checked_above() -> None:
-    assert len(READER_INVALID) == 31
+    assert len(READER_INVALID) == 35
 
 
 @pytest.mark.parametrize("name", INVALID)

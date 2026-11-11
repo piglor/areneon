@@ -155,6 +155,16 @@ class PPOSettings:
 
 
 @dataclass(frozen=True)
+class SheetRegimes:
+    """``sheet_regimes`` (ADR-027 section 5, #1153): the closed format is ``format_id``."""
+
+    open_format: str
+    closed_share_ppm: int
+    open_only_generations: int
+    closed_sheet_source: str
+
+
+@dataclass(frozen=True)
 class RunConfig:
     """A validated TrainingRunConfig and its hash.
 
@@ -183,6 +193,9 @@ class RunConfig:
     population: bool
     raw: dict[str, Any]
     hash: str
+    #: ``sheet_regimes`` (ADR-027 5a): the run trains on open-sheet and closed-sheet games; ``None``
+    #: is a single-format run, whose every value and byte is as it was.
+    sheet_regimes: SheetRegimes | None = None
 
 
 def _schedule(ppo: dict[str, Any]) -> LinearSchedule | None:
@@ -267,6 +280,45 @@ def _check_search_distillation(raw: dict[str, Any]) -> None:
         )
     if "team_dataset" not in raw:
         fail("search distillation needs a team_dataset: the belief prior is generator-matched")
+
+
+def _sheet_regimes(raw: dict[str, Any]) -> SheetRegimes | None:
+    """``sheet_regimes`` and the rules the profile cannot say (TS ``checkSheetRegimes``).
+
+    Whether ``open_format``'s rules record is open and the pair passes the sheet-variant check is
+    asked of the engine where one is loaded (``resolveRegimes``); this reader checks the shape.
+    """
+    found = raw.get("sheet_regimes")
+    if found is None:
+        return None
+
+    def fail(message: str) -> None:
+        raise RunConfigError(f"training-run-config: sheet_regimes: {message}")
+
+    if found["open_format"] == raw["format_id"]:
+        fail("open_format must be another format than format_id (the closed target format)")
+    if found["closed_sheet_source"] == "belief":
+        fail(
+            "closed_sheet_source belief is accepted once the belief source for the closed games "
+            "exists (ADR-027 slice 6)"
+        )
+    if "population" in raw:
+        fail("cannot be combined with a population (its records are version 2)")
+    if "search_labels" in raw["generation"]:
+        fail(
+            "cannot be combined with generation.search_labels (the search plays the closed format)"
+        )
+    if "opponent_sheet" in raw["model"].get("encoder", {}).get("options", {}):
+        fail(
+            "cannot be combined with the opponent_sheet encoder option yet "
+            "(the open regime's engine-sheet source is a later slice)"
+        )
+    return SheetRegimes(
+        found["open_format"],
+        found["closed_share_ppm"],
+        found["open_only_generations"],
+        found["closed_sheet_source"],
+    )
 
 
 _START_FIELDS = (
@@ -387,6 +439,7 @@ def read_run_config(raw: object) -> RunConfig:
         _check_population(raw)
     _check_search_distillation(raw)
     _check_inference(raw)
+    sheet_regimes = _sheet_regimes(raw)
     gen, ppo, seeds = raw["generation"], raw["ppo"], raw["seeds"]
     play = gen.get("play")
     labels = gen.get("search_labels")
@@ -449,4 +502,5 @@ def read_run_config(raw: object) -> RunConfig:
         population="population" in raw,
         raw=raw,
         hash=sha256_hex(jcs(raw)),
+        sheet_regimes=sheet_regimes,
     )

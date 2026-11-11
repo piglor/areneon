@@ -13,6 +13,13 @@ from typing import Any
 import pytest
 from areneon_contracts.contracts import jcs
 from areneon_ml.checkpoint.__main__ import EXIT_REFUSED, main
+from areneon_ml.checkpoint.binding import (
+    BINDING_NAME,
+    BindingError,
+    binding_bytes,
+    record_files,
+    verify_binding,
+)
 from areneon_ml.checkpoint.files import checkpoint_bytes, load_checkpoint
 from areneon_ml.model.encoder import encoder_version
 from areneon_ml.model.network import init_network
@@ -106,14 +113,21 @@ def provenance(tmp_path: Path) -> tuple[Path, Path]:
         (records / f"{record.lineage_id}.json").write_bytes(jcs(record.to_json()))
     sources = tmp_path / "sources.json"
     sources.write_bytes(jcs(SOURCES))
+    bind(records, sources)
     return records, sources
+
+
+def bind(records: Path, sources: Path) -> None:
+    (sources.parent / BINDING_NAME).write_bytes(
+        binding_bytes(record_files(records), sources.read_bytes())
+    )
 
 
 def test_classify_prints_the_c1_class(provenance: tuple[Path, Path]) -> None:
     records, sources = provenance
     base = ["classify", "--records", str(records), "--sources", str(sources)]
     code, out = run(*base, "--candidate", h("A2"), "--opponent", h("B1"))
-    assert (code, out["label"]) == (0, "held_out")
+    assert (code, out["label"], out["basis"]) == (0, "held_out", "exported-binding")
     assert out["sources_hash"] == hashlib.sha256(jcs(SOURCES)).hexdigest()
     _, out = run(*base, "--candidate", h("A2"), "--opponent", h("C0"))
     assert out["label"] == "seen"
@@ -129,6 +143,7 @@ def test_independent_prints_c6(provenance: tuple[Path, Path]) -> None:
     code, out = run(*base, "--a", h("A2"), "--b", h("C0"))
     assert code == 0
     assert out == {
+        "basis": "exported-binding",
         "independent": False,
         "shared_checkpoints": [],
         "shared_sources": [h("bc")],
@@ -148,6 +163,9 @@ def test_unusable_records_are_refused_with_exit_3(
     assert run(*base, "--records", str(empty))[0] == EXIT_REFUSED
     assert "holds no CheckpointRecord" in capsys.readouterr().err
     (records / "A1.json").unlink()
+    assert run(*base, "--records", str(records))[0] == EXIT_REFUSED
+    assert "differs from the exported record set" in capsys.readouterr().err
+    bind(records, sources)  # a consistently re-bound set still needs every referenced record
     assert run(*base, "--records", str(records))[0] == EXIT_REFUSED
     assert "has no record" in capsys.readouterr().err
     (records / "bad.json").write_text("{}")
@@ -175,3 +193,103 @@ def test_the_module_runs_as_a_program(
         runpy.run_module("areneon_ml.checkpoint", run_name="__main__")
     assert exited.value.code == 0
     assert json.loads(out.getvalue())["independent"] is True
+
+
+def test_a_registry_without_its_binding_is_refused(
+    provenance: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    records, sources = provenance
+    (sources.parent / BINDING_NAME).unlink()
+    base = ["classify", "--records", str(records), "--sources", str(sources)]
+    assert run(*base, "--candidate", h("A2"), "--opponent", h("B1"))[0] == EXIT_REFUSED
+    assert "not bound to any run" in capsys.readouterr().err
+
+
+def test_a_doctored_registry_is_refused(
+    provenance: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    records, sources = provenance
+    key = next(k for k, v in SOURCES.items() if v)
+    doctored = {**SOURCES, key: []}  # a set that really came from a lineage, made independent
+    sources.write_bytes(jcs(doctored))
+    base = ["independent", "--records", str(records), "--sources", str(sources)]
+    code, _ = run(*base, "--a", h("A2"), "--b", h("C0"))
+    assert code == EXIT_REFUSED
+    assert "differs from the one the run exported" in capsys.readouterr().err
+
+
+def test_a_changed_or_dropped_record_is_refused(
+    provenance: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    records, sources = provenance
+    base = ["classify", "--records", str(records), "--sources", str(sources)]
+    base += ["--candidate", h("A2"), "--opponent", h("B1")]
+    victim = sorted(records.glob("*.json"))[0]
+    original = victim.read_bytes()
+    victim.write_bytes(original + b"\n")
+    assert run(*base)[0] == EXIT_REFUSED
+    assert "differs from the exported one" in capsys.readouterr().err
+    victim.write_bytes(original)
+    extra = records / "extra.json"
+    extra.write_bytes(jcs({**json.loads(original), "checkpoint_id": h("ee")}))
+    assert run(*base)[0] == EXIT_REFUSED
+    assert "differs from the exported record set" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        b"not json",
+        b"[]",
+        b'{"a": 1}',
+        b'{ "records": {}, "schema_version": 1, "sources_hash": "x"}',
+        jcs({"records": [], "schema_version": 1, "sources_hash": "x"}),
+        jcs({"records": {}, "schema_version": 2, "sources_hash": "x"}),
+    ],
+)
+def test_a_malformed_binding_is_refused(
+    provenance: tuple[Path, Path], capsys: pytest.CaptureFixture[str], text: bytes
+) -> None:
+    records, sources = provenance
+    (sources.parent / BINDING_NAME).write_bytes(text)
+    base = ["classify", "--records", str(records), "--sources", str(sources)]
+    assert run(*base, "--candidate", h("A2"), "--opponent", h("B1"))[0] == EXIT_REFUSED
+    error = capsys.readouterr().err
+    assert "binding" in error or "JSON" in error
+
+
+def test_the_inputs_are_run_dir_or_records_with_sources(
+    provenance: tuple[Path, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    records, _ = provenance
+    tail = ["--candidate", h("A2"), "--opponent", h("B1")]
+    assert run("classify", "--records", str(records), *tail)[0] == EXIT_REFUSED
+    assert "give --run-dir" in capsys.readouterr().err
+    both = ["classify", "--run-dir", str(tmp_path), "--records", str(records)]
+    assert run(*both, *tail)[0] == EXIT_REFUSED
+    assert "replaces" in capsys.readouterr().err
+    assert run("classify", "--run-dir", str(tmp_path), *tail)[0] == EXIT_REFUSED
+    assert "no committed generation" in capsys.readouterr().err
+
+
+def test_two_record_files_naming_one_checkpoint_are_refused(provenance: tuple[Path, Path]) -> None:
+    records, _ = provenance
+    first = sorted(records.glob("*.json"))[0]
+    (records / "copy.json").write_bytes(first.read_bytes())
+    with pytest.raises(BindingError, match="two record files"):
+        record_files(records)
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        (b"not json", "is not JSON"),
+        (b'{ "a": 1 }', "not a canonical"),
+        (jcs({"records": {}, "schema_version": 2, "sources_hash": "x"}), "not a version 1"),
+    ],
+)
+def test_verify_binding_branches(tmp_path: Path, text: bytes, message: str) -> None:
+    binding = tmp_path / BINDING_NAME
+    binding.write_bytes(text)
+    with pytest.raises(BindingError, match=message):
+        verify_binding(binding, b"{}", {})

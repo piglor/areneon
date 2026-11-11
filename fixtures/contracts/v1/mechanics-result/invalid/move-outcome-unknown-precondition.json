@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "adapter_format": 2,
+  "data_class": "synthetic",
+  "query_hash": "b675bd5b5d72ee1ae40c6dd35ece2b04103f0f0b88034be8a139b52e5c1342c1",
+  "manifest": {
+    "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3",
+    "format_rules_hash": "549cd2aa97324be093c567324676d46a5eff19d6b0c9d8491c483dab746d5dcc"
+  },
+  "mechanics_config_hash": "7b2bed9a269d3180a0608500b27f11503b052b453a81601cbf8ffe2429e7fa5a",
+  "gap_ids": [],
+  "kind": "computed",
+  "answer": {
+    "kind": "move_outcome",
+    "precondition": "maybe",
+    "precondition_ppm": 333333,
+    "hit_ppm": 1000000
+  }
+}

@@ -32,6 +32,7 @@ import torch
 from areneon_contracts.contracts import jcs, sha256_hex
 
 from areneon_ml import stopwatch
+from areneon_ml.checkpoint.binding import BINDING_NAME, binding_bytes
 from areneon_ml.checkpoint.files import checkpoint_bytes, checkpoint_id, write_checkpoint
 from areneon_ml.checkpoint.provenance import ProvenanceGraph
 from areneon_ml.checkpoint.record import CheckpointRecord, read_record
@@ -73,6 +74,7 @@ from areneon_ml.loop.records import (
     team_set_hash,
     team_set_manifest,
 )
+from areneon_ml.loop.sheet_regimes import manifests_problem
 from areneon_ml.loop.warm_start import WarmPair, WarmStartError, load_warm_start
 from areneon_ml.model.encoder import Encoder, encoder_version
 from areneon_ml.model.gamedata import GameData
@@ -154,6 +156,9 @@ class Sealing:
     #: Hashes of the label sets (``label-set.json``, ADR-026 erratum E2) the update was trained on,
     #: listed with the training set in each record's ``training_set_hashes``.
     label_set_hashes: tuple[str, ...] = ()
+    #: ``game_manifests`` of a run with ``sheet_regimes`` (ADR-027 5a): its two formats'
+    #: version manifests, sorted by JCS bytes; ``version_manifest`` is the closed one.
+    game_manifests: tuple[dict[str, Any], ...] | None = None
 
 
 class Timing:
@@ -307,7 +312,14 @@ class Loop:
         work = layout.partial_dir(self.run_dir, 0)
         work.mkdir(parents=True)
         manifest = self.player.manifest(self.config.format_id)
-        return self._seal(0, work, Sealing(None, None, (), manifest, records), Timing(self.clock))
+        sheet = self.config.sheet_regimes
+        game_manifests = (
+            None
+            if sheet is None
+            else tuple(sorted([manifest, self.player.manifest(sheet.open_format)], key=jcs))
+        )
+        sealing = Sealing(None, None, (), manifest, records, game_manifests=game_manifests)
+        return self._seal(0, work, sealing, Timing(self.clock))
 
     def _warm_pair(self, warm_ids: Mapping[str, str]) -> WarmPair:
         try:
@@ -434,6 +446,7 @@ class Loop:
                 if summary.get("generation") != generation:
                     raise LoopError("the simulator side played another generation than asked")
                 league = self._check_league_run(work, generation, pair, summary)
+                game_manifests = self._check_game_manifests(summary, league)
                 if sha256_hex(jcs(training_set)) != summary.get("training_set_hash"):
                     raise LoopError(
                         "the TrainingSet differs from the hash the simulator side reported"
@@ -480,6 +493,7 @@ class Loop:
             tuple(teams),
             summary["manifest"],
             label_set_hashes=label_sets,
+            game_manifests=game_manifests,
         )
         return self._seal(generation, work, sealing, timing)
 
@@ -569,6 +583,28 @@ class Loop:
             raise LoopError("league-run.json counts other forfeit causes than generation.json")
         return record
 
+    def _check_game_manifests(
+        self, summary: dict[str, Any], league: LeagueRunRecord
+    ) -> tuple[dict[str, Any], ...] | None:
+        """A mixed-format run's manifests (ADR-027 5a): ``generation.json`` and ``league-run.json``
+        hold the same sorted list, the closed format's manifest among them; any other run has
+        none."""
+        found = summary.get("game_manifests")
+        if self.config.sheet_regimes is None:
+            if found is not None:
+                raise LoopError(
+                    "generation.json lists game_manifests, but the config has no sheet_regimes"
+                )
+            return None
+        if found is None:
+            raise LoopError("generation.json lacks game_manifests: the config has sheet_regimes")
+        problem = manifests_problem(found, self.config, summary["manifest"])
+        if problem is not None:
+            raise LoopError(f"generation.json: {problem}")
+        if league.raw.get("game_manifests") != found:
+            raise LoopError("league-run.json lists other game_manifests than generation.json")
+        return tuple(found)
+
     # -- freezing a generation -----------------------------------------------
 
     def _seal(self, generation: int, work: Path, sealing: Sealing, timing: Timing) -> Frozen:
@@ -611,6 +647,7 @@ class Loop:
                         learner_state_hash=packed.hash,
                         encoder_version=self.encoder_version,
                         manifest=sealing.version_manifest,
+                        game_manifests=sealing.game_manifests,
                     ),
                 )
                 layout.write_json(work / "records" / f"{role}.json", record.to_json())
@@ -755,6 +792,7 @@ def export_provenance(run_dir: Path, out_dir: Path) -> str:
             (out_dir / "records" / f"{record.checkpoint_id}.json").write_bytes(source.read_bytes())
         registry = jcs(sources)
         (out_dir / "sources.json").write_bytes(registry)
+        _write_binding(out_dir, registry)
         return str(sha256_hex(registry))
     provenance_graph(run_dir)  # refuse a run whose records do not form a graph
     shutil.rmtree(out_dir, ignore_errors=True)
@@ -766,7 +804,15 @@ def export_provenance(run_dir: Path, out_dir: Path) -> str:
             (out_dir / "records" / f"{record.checkpoint_id}.json").write_bytes(source.read_bytes())
     registry = jcs(sources_registry(run_dir))
     (out_dir / "sources.json").write_bytes(registry)
-    return sha256_hex(registry)
+    _write_binding(out_dir, registry)
+    digest: str = sha256_hex(registry)
+    return digest
+
+
+def _write_binding(out_dir: Path, registry: bytes) -> None:
+    """``provenance.json``: the registry's hash and each exported record's (#853)."""
+    files = {path.stem: path.read_bytes() for path in sorted((out_dir / "records").glob("*.json"))}
+    (out_dir / BINDING_NAME).write_bytes(binding_bytes(files, registry))
 
 
 def population_learner_steps(run_dir: Path) -> dict[str, int]:

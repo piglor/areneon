@@ -948,7 +948,19 @@ but a game process's `cpu_ms` still includes Node and engine start-up, which sta
 operating system did not schedule them, which an idle machine keeps small; the load split is summed
 over the load workers, so it can exceed the load phase's wall time.
 
-## 10. Batched self-play inference (`generation.inference`, ADR-028 section 2 F2)
+## 10. The C1/C6 sources registry (provenance)
+
+`python -m areneon_ml.checkpoint classify|independent --run-dir R ...` derives the records and the
+training-set sources registry from the verified run and prints `"basis": "run-dir"` and the
+registry's `sources_hash`. This is the authoritative path: an evaluation plan must pin the
+`sources_hash` computed with `--run-dir`. The `--records DIR --sources FILE` path (basis
+`exported-binding`) reads a directory written by `loop provenance` or `learner clone`, which
+carries `provenance.json` (the registry's hash and each record's hash). That is a
+self-consistency check: it catches a single-file edit or a corrupted copy, but not someone who
+rewrites both files. `import-clone` verifies the same binding of a clone output before it trusts
+its `sources.json`.
+
+## 11. Batched self-play inference (`generation.inference`, ADR-028 section 2 F2)
 
 By default the policy worker scores one query per forward pass (batch 1), as evaluation requires. A run
 may ask for the forward pass of its training self-play and scripted-baseline games to be batched on the

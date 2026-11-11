@@ -501,6 +501,43 @@
         }
       }
     },
+    "sheet_regimes": {
+      "description": "Optional (a minor change within v1; ADR-027 section 5, ADR-010 erratum A8, #1153): the run trains on games of two sheet regimes. `format_id` stays the closed (target) format; `open_format` is the engine's open-sheet format of the same regulation (its rules record says `team_sheets: open` and the sheet-variant check passes: the engine-side checks are made where an engine is loaded, the readers check the shape). Each generation's self-play games are assigned a regime by the purpose `sheet-regime/1` over the run key, generation and game: generations 1 to `open_only_generations` are open only, then exactly round(games * closed_share_ppm / 10^6) closed games, chosen by hash order. Baseline games are always played in the closed format. `closed_sheet_source` names the block source of the closed games (`belief` is accepted by the contract and refused by the readers until it is built). Absent keeps today's plan, records and bytes. An older reader refuses a config that has it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "open_format",
+        "closed_share_ppm",
+        "open_only_generations",
+        "closed_sheet_source"
+      ],
+      "properties": {
+        "open_format": {
+          "description": "The open-sheet Showdown format; differs from format_id.",
+          "type": "string",
+          "pattern": "^[a-z0-9]+$"
+        },
+        "closed_share_ppm": {
+          "description": "The share of self-play games, after the open-only generations, that are played in the closed format, in parts per million (the count is round(games * share / 10^6), half up).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "open_only_generations": {
+          "description": "Generations 1 to this number play their self-play games in the open format only (0: none).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "closed_sheet_source": {
+          "description": "The source of the opponent-sheet block in closed games.",
+          "enum": [
+            "revealed-only/1",
+            "belief"
+          ]
+        }
+      }
+    },
     "population": {
       "type": "object",
       "additionalProperties": false,

@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "format_id": "gen9championsvgc2026regmc",
+  "query": {
+    "kind": "damage",
+    "attacker": {
+      "set": "Garchomp  \nAbility: Rough Skin  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 Spe  \nAdamant Nature  \n- Dragon Claw  \n- Rock Slide  \n- Slash  \n\n",
+      "boosts": {
+        "atk": 0,
+        "def": 0,
+        "spa": 0,
+        "spd": 0,
+        "spe": 0
+      },
+      "status": null,
+      "hp": null,
+      "mega": false,
+      "history": {
+        "times_attacked": {
+          "kind": "known",
+          "value": 2
+        },
+        "stats_lowered_this_turn": {
+          "kind": "unknown",
+          "ends": [
+            false,
+            true
+          ]
+        }
+      }
+    },
+    "defender": {
+      "set": "Arcanine  \nAbility: Intimidate  \nLevel: 50  \nEVs: 32 HP / 32 SpA  \nModest Nature  \n- Heat Wave  \n- Protect  \n\n",
+      "boosts": {
+        "atk": 0,
+        "def": 0,
+        "spa": 0,
+        "spd": 0,
+        "spe": 0
+      },
+      "status": null,
+      "hp": null,
+      "mega": false
+    },
+    "move": "dragonclaw",
+    "state": {
+      "weather": null,
+      "terrain": null,
+      "trick_room": false,
+      "sides": [
+        {
+          "aurora_veil": false,
+          "light_screen": false,
+          "reflect": false,
+          "tailwind": false
+        },
+        {
+          "aurora_veil": false,
+          "light_screen": false,
+          "reflect": false,
+          "tailwind": false
+        }
+      ]
+    },
+    "history": {
+      "sides": [
+        {
+          "total_fainted": {
+            "kind": "known",
+            "value": 2
+          }
+        },
+        {}
+      ]
+    }
+  }
+}

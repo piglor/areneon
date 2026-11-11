@@ -21,6 +21,15 @@ export class MechanicsResultError extends Error {
   override name = "MechanicsResultError";
 }
 
+/** The reasons of an `unsupported` result of a query that declares no history: `history_unknown` answers only a query that holds an unknown fact. */
+export type PlainReason = Exclude<Extract<MechanicsResult, { kind: "unsupported" }>["reason"], "history_unknown">;
+
+/** The reason of an `unsupported` result of a query with no history block; `history_unknown` there is a defect. */
+export function plainReason(reason: Extract<MechanicsResult, { kind: "unsupported" }>["reason"]): PlainReason {
+  if (reason === "history_unknown") throw new MechanicsResultError("history_unknown answers a query that declares an unknown history fact");
+  return reason;
+}
+
 /** The fields every outcome carries. */
 export interface ResultIdentity {
   data_class: "synthetic" | "private";
