@@ -34,6 +34,11 @@ Defined so far:
 - ``recent_history`` (encoder, layout changing; ADR-010 erratum A4 item 7): the reducer's recent
   history (``Recent``, ``elapsed``, ``condition_turns``) on the Pokémon and field features. Only
   ``true`` is a value: leave the key out to turn it off.
+- ``history_facts`` (encoder, layout changing; ADR-022 erratum E-22.5.4): the reducer's history
+  facts (``BattleState.history``: move actions, stall counter, times attacked, hurt and attackers
+  this turn, last move failed, stat changes this turn, berries eaten, last item, own moves used,
+  faints, the battle's last move, pending slot effects) on the Pokémon and field tokens, with an
+  unknown fact as its own category or flag (``model/history.py``). Only ``true`` is a value.
 - ``exact_volatiles`` (encoder, layout changing; ADR-010 erratum A4 item 7): volatiles and field and
   side conditions as exact vocabulary ids (a multi-hot over the engine-data ids) instead of
   SHA-256 buckets, plus the types a ``typechange`` set. Needs a version 2 engine-data table. Only
@@ -105,6 +110,7 @@ OPPONENT_SHEET = "opponent_sheet"
 SHEET_SETS = ("opponent-sheet/1",)
 CANDIDATE_TARGET = "candidate_target"
 RECENT_HISTORY = "recent_history"
+HISTORY_FACTS = "history_facts"
 EXACT_VOLATILES = "exact_volatiles"
 FACTORED_PREVIEW = "factored_preview"
 SEPARATE_VALUE = "separate_value"
@@ -116,8 +122,15 @@ MAX_OUTPUT_SCALE_PPM = 999_999  # 1,000,000 is the default: leave the option out
 #: The feature sets the encoder can read (ADR-022 §3, erratum E-22.3: ``/2`` also carries the
 #: threat, speed and priority arrays, which the encoder attaches to the own and foe tokens;
 #: ``probe-damage-belief/1``, ADR-025 slice 5, has ``/1``'s rows over sampled belief worlds, so
-#: the encoder reads it exactly as it reads ``/1``).
-FEATURE_SETS = ("probe-damage/1", "probe-damage/2", "probe-damage/3", "probe-damage-belief/1")
+#: the encoder reads it exactly as it reads ``/1``; ``probe-outcome/1``, ADR-022 erratum E-22.5.3,
+#: has ``/2``'s five arrays read exactly as ``/2`` reads them and the ``outcomes`` array).
+FEATURE_SETS = (
+    "probe-damage/1",
+    "probe-damage/2",
+    "probe-damage/3",
+    "probe-damage-belief/1",
+    "probe-outcome/1",
+)
 _HASH = re.compile(r"[0-9a-f]{64}")
 
 
@@ -152,6 +165,7 @@ REGISTRY: dict[str, dict[str, OptionSpec]] = {
         OPPONENT_SHEET: OptionSpec(OPPONENT_SHEET, None, True, parse=_parse_sheet_set),
         CANDIDATE_TARGET: OptionSpec(CANDIDATE_TARGET, lambda value: value is True, True),
         RECENT_HISTORY: OptionSpec(RECENT_HISTORY, lambda value: value is True, True),
+        HISTORY_FACTS: OptionSpec(HISTORY_FACTS, lambda value: value is True, True),
         EXACT_VOLATILES: OptionSpec(EXACT_VOLATILES, lambda value: value is True, True),
     },
     "network": {

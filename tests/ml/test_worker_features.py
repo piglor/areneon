@@ -805,3 +805,27 @@ def test_the_stream_reader_validates_probe_outcome_arrays() -> None:
     }
     with pytest.raises(TrainingStreamError, match="history_unknown is a probe-outcome/1 value"):
         checker_for(two).line(1, stream_line(two))
+
+
+def test_the_worker_states_the_outcome_set_and_answers_a_query_with_its_outcomes(
+    tmp_path: Path,
+) -> None:
+    query = sample("policy-query/valid/battle-features-outcome.json")
+    run_dir, preview, battle = make_run_dir(tmp_path, feature_model(stated(query)))
+    worker = build(cli(run_dir, preview, battle))
+    assert worker._ready["message"]["feature_set"] == stated(query)
+    code, frames = session(worker, line(hello()), line(query))
+    assert code == EXIT_OK
+    assert frames[1]["reply"]["kind"] == "recommendation"
+    # a query missing the outcomes its checkpoint needs is an invalid query, not a guess
+    short = copy.deepcopy(query)
+    del short["candidate_features"]["outcomes"]
+    _, frames = session(worker, line(hello()), line(short))
+    assert frames[1]["reply"]["error"] == "invalid_query"
+    # and one whose outcomes miss a block the candidates need is refused as invalid too
+    thin = copy.deepcopy(query)
+    thin["candidate_features"]["outcomes"] = [
+        r for r in thin["candidate_features"]["outcomes"] if (r["slot"], r["move"]) != (0, 1)
+    ]
+    _, frames = session(worker, line(hello()), line(thin))
+    assert frames[1]["reply"]["error"] == "invalid_query"

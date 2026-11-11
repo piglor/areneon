@@ -39,7 +39,7 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
       model: { ...config.model, encoder: { ...config.model.encoder, options: { candidate_features: { feature_set, feature_set_hash: "c".repeat(64) } } } },
     });
     for (const allowed of ["probe-damage/1", "probe-damage-belief/1"]) expect(readTrainingRunConfig(withFeatures(allowed)).ppo.search_distill).toBeDefined();
-    for (const refused of ["probe-damage/2", "probe-damage/3"]) expect(() => readTrainingRunConfig(withFeatures(refused))).toThrow("its value reads candidate rows");
+    for (const refused of ["probe-damage/2", "probe-damage/3", "probe-outcome/1"]) expect(() => readTrainingRunConfig(withFeatures(refused))).toThrow("its value reads candidate rows");
   });
 
   it("reads a warm start, hashes it apart from none and refuses the same checkpoint for both roles (ADR-010 erratum A2)", async () => {

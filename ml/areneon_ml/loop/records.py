@@ -286,6 +286,14 @@ FEATURES_BELIEF_FAMILY = (
 )
 
 
+#: ``probe-outcome/1`` (ADR-022 erratum E-22.5): ``/2``'s arrays recomputed with the player's own
+#: battle history declared, and whether each move works now.
+FEATURES_OUTCOME_FAMILY = (
+    "learned policy that consults the engine's damage calculation, turn order and move outcomes "
+    "on assumed opponent sets and the player's own battle history at decision time"
+)
+
+
 def family_label(config: RunConfig) -> str | None:
     """The family label of the run's pair, or None for a pair without a feature set."""
     named = feature_set(config.model.encoder.options)
@@ -293,6 +301,8 @@ def family_label(config: RunConfig) -> str | None:
         return None
     if named.feature_set == "probe-damage-belief/1":
         return FEATURES_BELIEF_FAMILY
+    if named.feature_set == "probe-outcome/1":
+        return FEATURES_OUTCOME_FAMILY
     if named.feature_set == "probe-damage/3":
         return FEATURES_3_FAMILY
     return FEATURES_2_FAMILY if named.feature_set == "probe-damage/2" else FEATURES_FAMILY

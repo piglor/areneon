@@ -28,21 +28,28 @@ const run = (config: string, runDir: string, generations: number, ...extra: stri
     execFileSync(PYTHON, ["-I", "-m", "areneon_ml.loop", "run", "--config", config, "--run-dir", runDir, "--engine-data", DATA, "--generations", String(generations), "--node", process.execPath, "--worker-python", PYTHON, ...extra], { encoding: "utf8", env }),
   ) as Summary;
 
-describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER !== "1")("the training loop with candidate features (probe-damage/1 and /2), tiny and on CPU", () => {
+describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER !== "1")("the training loop with candidate features (probe-damage/1, /2 and probe-outcome/1, the last also with history_facts), tiny and on CPU", () => {
   const dir = mkdtempSync(join(tmpdir(), "areneon-loop-features-"));
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-  it.each(["probe-damage/1", "probe-damage/2"] as const)("plays, trains, and a run resumed after generation 1 reaches the same learner state as an uninterrupted one (%s)", (set) => {
-    const base = join(dir, set.replace("/", "-"));
+  const cases = [
+    { name: "probe-damage/1", set: "probe-damage/1", history: false },
+    { name: "probe-damage/2", set: "probe-damage/2", history: false },
+    { name: "probe-outcome/1", set: "probe-outcome/1", history: false },
+    { name: "probe-outcome/1 with history_facts", set: "probe-outcome/1", history: true },
+  ] as const;
+  it.each(cases)("plays, trains, and a run resumed after generation 1 reaches the same learner state as an uninterrupted one ($name)", ({ name, set, history }) => {
+    const base = join(dir, name.replace(/[^a-z0-9]+/g, "-"));
     const raw = JSON.parse(readFileSync(join(SAMPLES_DIR, "v1/training-run-config/valid/tiny.json"), "utf8")) as { model: { encoder: { options?: unknown } } };
-    raw.model.encoder.options = { candidate_features: { feature_set: set, feature_set_hash: "0".repeat(64) } };
+    const options = (hash: string) => ({ candidate_features: { feature_set: set, feature_set_hash: hash }, ...(history ? { history_facts: true } : {}) });
+    raw.model.encoder.options = options("0".repeat(64));
     let hash = "";
     try {
       featureSetup(loadEngine(), readTrainingRunConfig(raw));
     } catch (error) {
       hash = /computes as ([0-9a-f]{64})/.exec((error as Error).message)?.[1] ?? "";
     }
-    raw.model.encoder.options = { candidate_features: { feature_set: set, feature_set_hash: hash } };
+    raw.model.encoder.options = options(hash);
     const config = join(base, "config.json");
     mkdirSync(base, { recursive: true });
     writeFileSync(config, JSON.stringify(raw));

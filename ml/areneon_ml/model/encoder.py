@@ -33,6 +33,7 @@ from areneon_contracts.contracts import jcs, sha256_hex
 
 from areneon_ml import stopwatch
 from areneon_ml.model import features as rows_of
+from areneon_ml.model import history as history_of
 from areneon_ml.model import sheet as sheet_of
 from areneon_ml.model.candidates import (
     EVENTS,
@@ -46,6 +47,7 @@ from areneon_ml.model.options import (
     CANDIDATE_MATCHUP,
     CANDIDATE_TARGET,
     EXACT_VOLATILES,
+    HISTORY_FACTS,
     RECENT_HISTORY,
     Options,
     feature_set,
@@ -61,6 +63,7 @@ from areneon_ml.reducer import (
     VocabularyError,
     reduce_channel,
 )
+from areneon_ml.reducer.history import HISTORY_FACTS_FORMAT
 from areneon_ml.reducer.reducer import TYPELESS
 from areneon_ml.reducer.state import STAT_KEYS
 from areneon_ml.reducer.vocab import PROTOCOL_VOLATILES
@@ -201,6 +204,81 @@ def _priority_columns(config: EncoderConfig) -> tuple[tuple[str, str], ...]:
     )
 
 
+def _reads_outcomes(config: EncoderConfig) -> bool:
+    """Whether the config reads ``probe-outcome/1`` (``/2``'s arrays and ``outcomes``)."""
+    named = feature_set(config.options)
+    return named is not None and rows_of.reads_outcomes(named.feature_set)
+
+
+def _outcome_columns(config: EncoderConfig) -> tuple[tuple[str, str], ...]:
+    """A move part's ``outcomes`` categories (probe-outcome/1): per foe location the pooled kind
+    and precondition, then per branch the kind and the foe's move. Empty for any other set."""
+    if not _reads_outcomes(config):
+        return ()
+    return (
+        *(
+            col
+            for loc in range(SLOTS)
+            for col in (
+                (f"outcome_kind_{loc + 1}", "outcome_kind"),
+                (f"outcome_pre_{loc + 1}", "outcome_pre"),
+            )
+        ),
+        *(
+            col
+            for b in range(rows_of.MAX_BRANCHES)
+            for col in (
+                (f"outcome_branch_kind_{b}", "outcome_branch_kind"),
+                (f"outcome_branch_move_{b}", "move"),
+            )
+        ),
+    )
+
+
+def _outcome_numbers(config: EncoderConfig) -> tuple[str, ...]:
+    """A move part's ``outcomes`` numbers: the pooled mean, minimum and known flag per foe
+    location, then each branch's success and assumed flag. Empty for any other set."""
+    if not _reads_outcomes(config):
+        return ()
+    return (
+        *(f"outcome_{name}_{loc + 1}" for loc in range(SLOTS) for name in rows_of.OUTCOME_POOLED),
+        *(
+            f"outcome_branch_{name}_{b}"
+            for b in range(rows_of.MAX_BRANCHES)
+            for name in rows_of.OUTCOME_BRANCH_NUMBERS
+        ),
+    )
+
+
+def _history(config: EncoderConfig) -> bool:
+    return is_set(config.options, HISTORY_FACTS)
+
+
+def _history_cat(config: EncoderConfig) -> tuple[tuple[str, str], ...]:
+    """The ``history_facts`` categories of a Pokémon token. Empty unless set."""
+    return history_of.mon_cat_columns() if _history(config) else ()
+
+
+def _history_num(config: EncoderConfig) -> tuple[str, ...]:
+    """The ``history_facts`` numbers of a Pokémon token. Empty unless set."""
+    return history_of.mon_num_columns(config.max_moves) if _history(config) else ()
+
+
+def _history_field_cat(config: EncoderConfig) -> tuple[tuple[str, str], ...]:
+    return history_of.field_cat_columns() if _history(config) else ()
+
+
+def _history_field_num(config: EncoderConfig, game: GameData | None) -> tuple[str, ...]:
+    if not _history(config):
+        return ()
+    if game is None:
+        raise EncodingError("history_facts needs the game data to lay out its columns")
+    try:
+        return history_of.field_num_columns(game)
+    except history_of.HistoryError as exc:
+        raise EncodingError(str(exc)) from exc
+
+
 def _sheet(config: EncoderConfig) -> bool:
     return sheet_set(config.options) is not None
 
@@ -333,6 +411,10 @@ class Layout:
     # gives the very value a full query gives. Not part of ``as_dict``: it is derived from the
     # columns above, and the encoder version hashes those.
     value_reads_candidates: bool = False
+    # Whether the feature set is ``probe-outcome/1``: its kinds have the extra ``history_unknown``
+    # category and the move parts carry the outcome columns. Derived from the config, which the
+    # encoder version hashes, so not part of ``as_dict`` either.
+    outcome: bool = False
 
     @classmethod
     def of(cls, config: EncoderConfig, game: GameData | None = None) -> Layout:
@@ -355,6 +437,7 @@ class Layout:
                 ("active_slot", "slot"),
                 *moves,
                 *_recent_cat(config),
+                *_history_cat(config),
                 *_sheet_cat(config),
                 *_speed_columns(config),
             ),
@@ -380,12 +463,14 @@ class Layout:
                 *(f"volatile_{i}" for i in range(volatiles)),
                 *_typechange_num(config, game),
                 *_recent_mon_num(config),
+                *_history_num(config),
                 *_sheet_num(config),
             ),
             field_cat=(
                 ("weather", "weather"),
                 ("terrain", "terrain"),
                 ("request", "request"),
+                *_history_field_cat(config),
                 *((("belief_refusal", "belief_refusal"),) if _reads_belief_threats(config) else ()),
             ),
             field_num=(
@@ -395,6 +480,7 @@ class Layout:
                 *(f"own_side_{i}" for i in range(buckets)),
                 *(f"opponent_side_{i}" for i in range(buckets)),
                 *_recent_field_num(config, game),
+                *_history_field_num(config, game),
             ),
             cand_cat=(
                 ("action", "action"),
@@ -405,8 +491,13 @@ class Layout:
                 *_matchup_columns(config),
                 *_feature_columns(config),
                 *_priority_columns(config),
+                *_outcome_columns(config),
             ),
-            cand_num=(*_feature_numbers(config), *(rows_of.OWN_NUMBERS if arrays else ())),
+            cand_num=(
+                *_feature_numbers(config),
+                *(rows_of.OWN_NUMBERS if arrays else ()),
+                *_outcome_numbers(config),
+            ),
             thr_cat=(
                 (("move", "move"), ("kind", "probe_kind"), ("foe_priority_kind", "probe_kind"))
                 if arrays
@@ -431,6 +522,7 @@ class Layout:
                 or arrays
                 or belief_field
             ),
+            outcome=_reads_outcomes(config),
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -523,6 +615,27 @@ def encoder_version(game: GameData, config: EncoderConfig) -> str:
             "units": "taken: own exact hp / stat_scale, opponent points / percent_scale; "
             "dealt: own actor points / percent_scale, opponent actor exact hp / stat_scale",
         }
+    if _history(config):
+        # The columns are in the layout; the divisors that are not config fields, the engine
+        # data the stall counter and the slot conditions come from, and the unknown rules.
+        try:
+            stall, slots = history_of.stall_maximum(game), list(history_of.slot_ids(game))
+        except history_of.HistoryError as exc:
+            raise EncodingError(str(exc)) from exc
+        body["constants"]["history_facts"] = {
+            "history_facts_format": HISTORY_FACTS_FORMAT,
+            "count_scale": history_of.COUNT_SCALE,
+            "stall_counter_max": stall,
+            "slot_conditions": slots,
+            "slot_letters": history_of.LETTERS,
+            "states": "history_state: none (not in play, or no entry), unknown, known",
+            "unknown": "a position or roster entry the channel cannot settle, or a tracker that "
+            "refused a line, is the unknown category with zero numbers; attackers and "
+            "last_move_failed unknown alone have their own flag",
+            "units": "move actions, remaining turns, volatile age over turn_scale; hits taken "
+            "and volatile count over count_scale; stall counter over its maximum; faints over "
+            "max_team",
+        }
     if _sheet(config):
         # The set and its hash are in the config; the words, k values and scales are constants.
         body["constants"]["opponent_sheet"] = sheet_of.CONSTANTS
@@ -536,21 +649,43 @@ def encoder_version(game: GameData, config: EncoderConfig) -> str:
             "ohko_rolls": rows_of.OHKO_ROLLS,
             "foe_locations": SLOTS,
         }
-        if _reads_arrays(config):
+        if _reads_outcomes(config):
+            # probe-outcome/1: /2's arrays with the extra history_unknown category, and the
+            # outcomes' own words (kinds, the pooling rule, the branch limit): a change is a new
+            # encoder version.
+            body["constants"]["features"]["kinds"] = list(rows_of.KINDS_OUTCOME)
+            body["constants"]["features"]["arrays"] = {
+                "probe_kinds": list(rows_of.PROBE_KINDS_OUTCOME),
+                "speed_kinds": list(rows_of.SPEED_KINDS_OUTCOME),
+                "priority_scale": rows_of.PRIORITY_SCALE,
+                "outcomes": {
+                    "kinds": list(rows_of.OUTCOME_KINDS),
+                    "preconditions": list(rows_of.PRECONDITIONS),
+                    "branch_kinds": list(rows_of.BRANCH_KINDS),
+                    "max_branches": rows_of.MAX_BRANCHES,
+                    "pooled": list(rows_of.OUTCOME_POOLED),
+                    "branch_numbers": list(rows_of.OUTCOME_BRANCH_NUMBERS),
+                    "pooling": "over the computed branches of the part: mean and minimum of "
+                    "success_ppm / ppm and a known flag; precondition passes when all computed "
+                    "branches pass, fails when all fail, else chance, none without a computed "
+                    "branch; kind computed when every branch is, else the first unsupported "
+                    "reason; the foe is the part's target location, else the lowest living foe",
+                },
+            }
+        elif _reads_arrays(config):
             body["constants"]["features"]["arrays"] = {
                 "probe_kinds": list(rows_of.PROBE_KINDS),
                 "speed_kinds": list(rows_of.SPEED_KINDS),
                 "priority_scale": rows_of.PRIORITY_SCALE,
             }
-            if _reads_belief_threats(
-                config
-            ):  # the belief rows' own words: a change is a new encoder version
-                body["constants"]["features"]["arrays"]["belief_threats"] = {
-                    "numbers": list(rows_of.THREAT_NUMBERS_3),
-                    "revealed": "belief 0, inclusion 1",
-                    "belief_priority_kind": "none",
-                    "refusals": list(rows_of.BELIEF_REFUSALS),
-                }
+        if _reads_belief_threats(config):
+            # the belief rows' own words: a change is a new encoder version
+            body["constants"]["features"]["arrays"]["belief_threats"] = {
+                "numbers": list(rows_of.THREAT_NUMBERS_3),
+                "revealed": "belief 0, inclusion 1",
+                "belief_priority_kind": "none",
+                "refusals": list(rows_of.BELIEF_REFUSALS),
+            }
     return f"enc{ENCODER_FORMAT}:{sha256_hex(jcs(body))}"
 
 
@@ -626,6 +761,9 @@ class _Probe:
     """The ``probe-damage/2`` arrays of one query, placed on the tokens they belong to."""
 
     arrays: rows_of.Arrays
+    # probe-outcome/1: the ``outcomes`` blocks by own move part, and the parts a candidate used
+    blocks: dict[rows_of.OutcomeKey, list[rows_of.Row]] = field(default_factory=dict)
+    used: set[rows_of.OutcomeKey] = field(default_factory=set)
     speed_cols: dict[int, list[int]] = field(default_factory=dict)  # token -> category per foe
     threats: list[tuple[list[int], list[int], list[float]]] = field(default_factory=list)
     foes: list[tuple[list[int], list[int], list[float]]] = field(default_factory=list)
@@ -689,7 +827,8 @@ class Encoder:
         observation = query["observation"]
         if value_only:
             self._check_value_only(query)
-        field_features = self._field(state)
+        hist = self._history_view(state) if _history(self.config) else None
+        field_features = self._field(state, hist)
         if _reads_belief_threats(self.config):  # the belief's refusal code, or none
             sent = query.get("candidate_features") or {}
             field_features = (
@@ -706,14 +845,37 @@ class Encoder:
             )
         request = self._request(state, last_request)
         if value_only:  # no rows, sheet or probe arrays are read (the check above); no candidates
-            return self._assemble(observation["kind"], state, field_features, [], None, None)
-        rows = self._rows(query)
-        sheet = self._sheet_columns(query, state)
-        probe = self._probe(query, request, state) if _reads_arrays(self.config) else None
-        candidates = [
-            self._candidate(c, request, wanted, state, rows, probe) for c in query["candidates"]
-        ]
-        return self._assemble(observation["kind"], state, field_features, candidates, probe, sheet)
+            return self._assemble(
+                observation["kind"], state, field_features, [], None, None, hist=hist
+            )
+        try:
+            rows = self._rows(query)
+            sheet = self._sheet_columns(query, state)
+            probe = self._probe(query, request, state) if _reads_arrays(self.config) else None
+            candidates = [
+                self._candidate(c, request, wanted, state, rows, probe) for c in query["candidates"]
+            ]
+            if probe is not None and set(probe.blocks) != probe.used:
+                raise EncodingError("the outcomes name a move part no candidate has")
+            return self._assemble(
+                observation["kind"], state, field_features, candidates, probe, sheet, hist=hist
+            )
+        except (rows_of.RowError, history_of.HistoryError) as exc:
+            raise EncodingError(str(exc)) from exc
+
+    def _history_view(self, state: BattleState) -> history_of.HistoryView:
+        """The reduced state's history facts, or an ``EncodingError`` when the state has none."""
+        try:
+            facts = None if state.history is None else state.history.facts()
+            return history_of.HistoryView(
+                facts,
+                self.game,
+                turn_scale=self.config.turn_scale,
+                max_moves=self.config.max_moves,
+                max_team=self.config.max_team,
+            )
+        except history_of.HistoryError as exc:
+            raise EncodingError(str(exc)) from exc
 
     # -- tokens --------------------------------------------------------------
 
@@ -932,7 +1094,9 @@ class Encoder:
             out[self._condition_column(name)] += float(counts[name])
         return out
 
-    def _field(self, state: BattleState) -> tuple[list[int], list[float]]:
+    def _field(
+        self, state: BattleState, hist: history_of.HistoryView | None = None
+    ) -> tuple[list[int], list[float]]:
         game = self.game
         if state.request_kind not in REQUEST_KINDS:
             raise EncodingError(f"no decision to encode at a {state.request_kind!r} request")
@@ -941,6 +1105,8 @@ class Encoder:
             game.terrains.lookup(state.terrain) if state.terrain else NONE,
             REQUEST_KINDS.index(state.request_kind) + 1,
         ]
+        hist_cat, hist_num = hist.field() if hist is not None else ([], [])
+        cat += hist_cat
         num = [
             state.turn / self.config.turn_scale,
             1.0 if state.started else 0.0,
@@ -948,6 +1114,7 @@ class Encoder:
             *self._conditions(state.own.conditions),
             *self._conditions(state.opponent.conditions),
             *(self._recent_field(state) if _recent(self.config) else []),
+            *hist_num,
         ]
         return cat, num
 
@@ -1001,6 +1168,8 @@ class Encoder:
             for name in (*rows_of.ARRAY_NAMES, rows_of.BELIEF_ARRAY, rows_of.BELIEF_REFUSED)
         ):
             raise EncodingError("the query carries arrays this feature set does not read")
+        if not _reads_outcomes(self.config) and rows_of.OUTCOME_ARRAY in sent:
+            raise EncodingError("the query carries outcomes this feature set does not read")
         try:
             return rows_of.row_index(sent)
         except ValueError as exc:
@@ -1078,6 +1247,9 @@ class Encoder:
         game = self.game
         probe = _Probe(arrays)
         belief = _reads_belief_threats(self.config)
+        outcome = self.layout.outcome
+        if outcome:
+            probe.blocks = rows_of.outcome_blocks(arrays.outcomes)
         for (own, mega, foe), row in arrays.speeds.items():
             token = self._own_token(request, own)
             if not 1 <= foe <= SLOTS:
@@ -1086,7 +1258,7 @@ class Encoder:
                 )
             if not mega:
                 cols = probe.speed_cols.setdefault(token, [NONE] * SLOTS)
-                cols[foe - 1] = rows_of.speed_category(row)
+                cols[foe - 1] = rows_of.speed_category(row, outcome)
         for row in arrays.threats:
             foe_row = arrays.foe_priorities.get((row["foe"], row["move"]))
             if foe_row is None and request.moves:
@@ -1102,8 +1274,8 @@ class Encoder:
                     ],
                     [
                         game.moves.lookup(row["move"]),
-                        rows_of.probe_category(row),
-                        NONE if foe_row is None else rows_of.probe_category(foe_row),
+                        rows_of.probe_category(row, outcome),
+                        NONE if foe_row is None else rows_of.probe_category(foe_row, outcome),
                     ],
                     (
                         rows_of.revealed_threat_numbers_3(row, foe_row)
@@ -1121,7 +1293,7 @@ class Encoder:
                         self._foe_token(state, row["foe"]),
                         int(row["mega"]),
                     ],
-                    [game.moves.lookup(row["move"]), rows_of.probe_category(row), NONE],
+                    [game.moves.lookup(row["move"]), rows_of.probe_category(row, outcome), NONE],
                     rows_of.belief_threat_numbers(row),
                 )
             )
@@ -1129,7 +1301,7 @@ class Encoder:
             probe.foes.append(
                 (
                     [self._foe_token(state, row["foe"])],
-                    [game.moves.lookup(row["move"]), rows_of.probe_category(row)],
+                    [game.moves.lookup(row["move"]), rows_of.probe_category(row, outcome)],
                     [rows_of.priority_number(row)],
                 )
             )
@@ -1192,7 +1364,7 @@ class Encoder:
         )
         if missing:
             raise EncodingError("a damaging move part of a candidate has no candidate_features row")
-        return rows_of.part_columns(found)
+        return rows_of.part_columns(found, self.layout.outcome)
 
     # -- candidates ----------------------------------------------------------
 
@@ -1319,6 +1491,11 @@ class Encoder:
                     cat[slot][start : start + SLOTS] = kinds
                     if probe is not None:
                         self._probe_part(probe, slot, action, cat[slot], num[slot], start + SLOTS)
+                        if self.layout.outcome:
+                            at = start + SLOTS + 1 + SLOTS  # after the priority columns
+                            self._outcome_part(
+                                probe, state, slot, action, tok[slot][0], cat[slot], num[slot], at
+                            )
         return cat, tok, team, 1.0 if candidate["pending"] else 0.0, num
 
     def _probe_part(  # noqa: PLR0913, PLR0917
@@ -1330,11 +1507,56 @@ class Encoder:
         if row is None:
             raise EncodingError("a move part of a candidate has no candidate_features priority row")
         self._need_speeds(probe, slot, mega)
-        cat[at] = rows_of.probe_category(row)
+        cat[at] = rows_of.probe_category(row, self.layout.outcome)
         num.append(rows_of.priority_number(row))
         if mega:
             for loc in probe.arrays.locations:  # _need_speeds found a row for each
-                cat[at + loc] = rows_of.speed_category(probe.arrays.speeds[(slot, True, loc)])
+                cat[at + loc] = rows_of.speed_category(
+                    probe.arrays.speeds[(slot, True, loc)], self.layout.outcome
+                )
+
+    def _outcome_part(  # noqa: PLR0913, PLR0917
+        self,
+        probe: _Probe,
+        state: BattleState,
+        slot: int,
+        action: Any,
+        actor: int,
+        cat: list[int],
+        num: list[float],
+        at: int,
+    ) -> None:
+        """A move part's ``outcomes`` columns (probe-outcome/1): its block's pooled summary in the
+        group of its foe and each branch. A part with a living actor and a foe to ask about must
+        have its block (the worker's coverage rule); a part with none has none."""
+        target = action.target or 0
+        key: rows_of.OutcomeKey = (slot, action.index, target, action.event == "mega")
+        group = probe.blocks.get(key)
+        alive = not state.own.roster[actor].fainted
+        wanted = (
+            alive
+            and bool(probe.arrays.locations)
+            and (target <= 0 or target in probe.arrays.locations)
+        )
+        if group is None:
+            if wanted:
+                raise EncodingError("a move part of a candidate has no candidate_features outcomes")
+            num += rows_of.outcome_no_columns()[1]
+            return
+        location = target if target > 0 else self._lowest_foe(state)
+        if location is None:
+            raise EncodingError("the outcomes of a move part name a foe the state lacks")
+        cats, nums = rows_of.outcome_columns(group, location, self.game.moves.lookup_or_unknown)
+        cat[at : at + len(cats)] = cats
+        num += nums
+        probe.used.add(key)
+
+    def _lowest_foe(self, state: BattleState) -> int | None:
+        """The lowest choice location that holds a living foe, or None."""
+        return next(
+            (loc for loc in range(1, SLOTS + 1) if self._foe_alive(state, loc)),
+            None,
+        )
 
     # -- assembly ------------------------------------------------------------
 
@@ -1348,6 +1570,7 @@ class Encoder:
         ],
         probe: _Probe | None = None,
         sheet: list[tuple[list[int], list[float]]] | None = None,
+        hist: history_of.HistoryView | None = None,
     ) -> EncodedQuery:
         own = [(state.own, mon) for mon in state.own.roster]
         opponent = [(state.opponent, mon) for mon in state.opponent.roster]
@@ -1360,6 +1583,12 @@ class Encoder:
         field_cat, field_num = field_features
         rows = [*own, *opponent]
         none = [NONE] * SLOTS  # a token with no speed row (a foe, or no foe at that location)
+        facts = [
+            hist.mon("own" if s is state.own else "opponent", s.slots, s.roster, m)
+            if hist is not None
+            else ([], [])
+            for s, m in rows
+        ]
         n = len(candidates)
         return EncodedQuery(
             kind=kind,
@@ -1368,6 +1597,7 @@ class Encoder:
                 [
                     [
                         *self._mon_cat(s, m),
+                        *facts[i][0],
                         *(sheet[i][0] if sheet else []),
                         *(probe.speed_cols.get(i, none) if probe else []),
                     ]
@@ -1377,7 +1607,7 @@ class Encoder:
             ),
             mon_num=torch.tensor(
                 [
-                    [*self._mon_num(m, state.turn), *(sheet[i][1] if sheet else [])]
+                    [*self._mon_num(m, state.turn), *facts[i][1], *(sheet[i][1] if sheet else [])]
                     for i, (_, m) in enumerate(rows)
                 ],
                 dtype=torch.float32,
