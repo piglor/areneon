@@ -12,6 +12,7 @@ import { MechanicsProbeError, probeMechanics } from "../src/mechanics-probe.ts";
 import { type MechanicsQuery, readMechanicsQuery } from "../src/mechanics-query.ts";
 import { MECHANICS_ADAPTER_FORMAT, readMechanicsResult } from "../src/mechanics-result.ts";
 import { checkScenario } from "../src/mechanics-scenario.ts";
+import { SPEED_FIXTURE } from "./mechanics-speed-cases.ts";
 import { exportPaste, importPaste } from "../src/teams.ts";
 
 // ADR-022 erratum E-22.5.3, slice H2: the `move_outcome` kind and the declared history, against the pinned engine. Each case is worked
@@ -87,6 +88,11 @@ describe("the contract of the kind", () => {
     expect(MECHANICS_ADAPTER_FORMAT).toBe(2);
     expect(OUTCOME_FORMAT).toBe(1);
     expect(result).toMatchObject({ kind: "computed", adapter_format: 2, gap_ids: [] });
+  });
+
+  it("runs the Mega Evolution of the asked action first and names the Mega row", () => {
+    const { result } = run({ own: SPEED_FIXTURE.sets.gengar as string, foe: SPEED_FIXTURE.sets.garchomp_fast as string, actions: [{ ...move(0, "shadowball"), mega: true }, move(1, "earthquake")] });
+    expect(result).toMatchObject({ kind: "computed", gap_ids: ["mega-evolution"], answer: { kind: "move_outcome", precondition: "passes", hit_ppm: 1_000_000 } });
   });
 
   it("gives the same JCS bytes on a rerun", () => {

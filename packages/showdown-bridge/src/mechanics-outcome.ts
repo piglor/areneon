@@ -112,13 +112,12 @@ export function probeMoveOutcome(engine: Engine, scenarioId: string, query: Move
     need(target !== undefined && target.hp > 0, "the asked target is not a Pokemon in play");
     // The engine's own order decides what stays queued after the asked action (willAct, willMove read it): the actions that act later. A tie would be shuffled by the engine.
     const queued: Queued[] = [];
-    for (const item of resolved) {
+    for (const item of [...resolved].sort((a, b) => battle.comparePriority(a.own, b.own))) {
       if (item === asked) continue;
       const order = battle.comparePriority(item.own, (asked as { own: Queued }).own);
       if (order === 0) return { kind: "unsupported", reason: "random_effect", position: item.index };
       if (order > 0) queued.push(item.own);
     }
-    queued.sort((a, b) => battle.comparePriority(a, b));
     battle.queue.list.push(...queued);
 
     battle.prng = recorder;
