@@ -68,8 +68,8 @@ describe("the two ends rule", () => {
   it("asks once with every unknown fact at its first end, then once per unknown fact whose ends differ with that fact alone at its second end", () => {
     const query = outcome({ times_attacked: unknown(0, 4), last_move_failed: unknown(false, true), ate_berry: unknown(true, true) }, { field_last_move: unknown(null, "tackle") });
     const variants = historyVariants(query);
-    // the unknown facts are met in order: field_last_move, times_attacked, last_move_failed, ate_berry (equal ends: no variant)
-    expect(variants).toHaveLength(4);
+    // the unknown facts are met in order: field_last_move, times_attacked, last_move_failed, ate_berry (equal ends: no variant), then the corner
+    expect(variants).toHaveLength(5);
     const facts = (index: number) => variants[index]?.combatants[0]?.facts;
     expect(variants[0]?.field_last_move).toBeNull();
     expect(facts(0)).toEqual({ times_attacked: 0, last_move_failed: false, ate_berry: true });
@@ -78,6 +78,15 @@ describe("the two ends rule", () => {
     expect(facts(2)).toEqual({ times_attacked: 4, last_move_failed: false, ate_berry: true });
     expect(facts(3)).toEqual({ times_attacked: 0, last_move_failed: true, ate_berry: true });
     expect(variants[2]?.field_last_move).toBeNull();
+  });
+
+  it("adds the all-second-ends corner when two or more facts differ, so a joint effect is asked", () => {
+    const query = outcome({ times_attacked: unknown(0, 4), last_move_failed: unknown(false, true), ate_berry: unknown(true, true) });
+    const variants = historyVariants(query);
+    expect(variants).toHaveLength(4);
+    expect(variants[3]?.combatants[0]?.facts).toEqual({ times_attacked: 4, last_move_failed: true, ate_berry: true });
+    // one differing fact: its single variant is already the corner
+    expect(historyVariants(outcome({ times_attacked: unknown(0, 4) }))).toHaveLength(2);
   });
 
   it("takes whole lists as the ends of a fact", () => {

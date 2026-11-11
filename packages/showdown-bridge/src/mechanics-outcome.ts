@@ -166,7 +166,9 @@ export function probeMoveOutcome(engine: Engine, scenarioId: string, query: Move
       // The engine aims a move of its own side at the user whatever target the query names.
       hitPpm = hitChance(reached.targets.get(target) ?? reached.targets.get(user));
     }
-    const preconditionPpm = chancePpm(reached.pre);
+    // A chance below one part per million stays a chance of 1 ppm: 0 would read as a failed precondition, which only a move that never reaches its hit step is.
+    const rawPpm = chancePpm(reached.pre);
+    const preconditionPpm = rawPpm === MILLION ? rawPpm : Math.max(1, rawPpm);
     const precondition = preconditionPpm === MILLION ? "passes" : "chance";
     return { kind: "computed", answer: { kind: "move_outcome", precondition, precondition_ppm: preconditionPpm, hit_ppm: hitPpm } };
   } catch (error) {

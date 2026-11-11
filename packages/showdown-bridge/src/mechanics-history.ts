@@ -7,10 +7,9 @@
 // which move reads which fact: it declares and the engine answers.
 //
 // Two ends rule: a fact the channel cannot settle is `unknown` in the query with its two ends. A query that holds
-// one is asked once with every unknown fact at its first end, and once more per unknown fact with that fact alone at its
-// second end (a corner of every combination would be 2^n queries; the facts of a Pokemon are read by different moves
-// and the interaction of two unknown facts is not modelled: stated as a decision, ADR-022 E-22.5.3 leaves the
-// combination open). `probeMechanics` keeps equal answers and makes different ones `unsupported` (`history_unknown`).
+// one is asked with every unknown fact at its first end, once more per unknown fact with that fact alone at its second end, and
+// once with all of them at their second end (all 2^n corners would be too many). Each unknown fact alone and the all-second-ends
+// corner are covered; other joint interactions of unknown facts are not modelled (ADR-022 E-22.5.3 leaves the combination open). `probeMechanics` keeps equal answers and makes different ones `unsupported` (`history_unknown`).
 
 import type { MechanicsQuery } from "./mechanics-query.ts";
 import { need } from "./mechanics-guard.ts";
@@ -133,12 +132,14 @@ export function resolveHistory(query: AnyQuery, ones: ReadonlySet<number>): Reso
 
 /**
  * The histories a query is asked with: the first end of every unknown fact, then one more per unknown fact whose two ends differ, with that
- * fact alone at its second end. A query with no history is `[null]` (the probe's old path, byte for byte).
+ * fact alone at its second end, then (when two or more differ) one with every differing fact at its second end. A query with no history is `[null]` (the probe's old path, byte for byte).
  */
 export function historyVariants(query: AnyQuery): (ResolvedHistory | null)[] {
   const base = resolveHistory(query, new Set());
   const out: (ResolvedHistory | null)[] = [base.history];
-  for (const [index, differs] of base.unknowns.entries()) if (differs) out.push(resolveHistory(query, new Set([index])).history);
+  const differing = base.unknowns.flatMap((differs, index) => (differs ? [index] : []));
+  for (const index of differing) out.push(resolveHistory(query, new Set([index])).history);
+  if (differing.length >= 2) out.push(resolveHistory(query, new Set(differing)).history);
   return out;
 }
 
