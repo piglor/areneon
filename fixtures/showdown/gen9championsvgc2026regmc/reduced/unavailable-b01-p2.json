@@ -11,6 +11,98 @@
     "field_conditions": [],
     "format_name": "[Gen 9 Champions] VGC 2026 Reg M-C",
     "gametype": "doubles",
+    "history": {
+      "field_last_move": "drainpunch",
+      "history_facts_format": "history-facts/1",
+      "opponent": {
+        "active": {
+          "a": null,
+          "b": null
+        },
+        "pending_slot": {},
+        "roster": {
+          "Aerodactyl": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Aurorus": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Castform": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Lopunny": {
+            "ate_berry": false,
+            "last_item": null
+          }
+        },
+        "total_fainted": 4
+      },
+      "own": {
+        "active": {
+          "a": {
+            "attackers_this_turn": [],
+            "hurt_this_turn": false,
+            "last_move_failed": null,
+            "move_actions": 4,
+            "moves_used": [
+              "bodyslam",
+              "fling",
+              "upperhand"
+            ],
+            "name": "Heracross",
+            "stall_counter": null,
+            "stats_lowered_this_turn": false,
+            "stats_raised_this_turn": false,
+            "times_attacked": 2,
+            "unknown": false,
+            "volatile_started": {}
+          },
+          "b": {
+            "attackers_this_turn": [],
+            "hurt_this_turn": false,
+            "last_move_failed": false,
+            "move_actions": 5,
+            "moves_used": [
+              "bodyslam",
+              "drainpunch",
+              "focusblast",
+              "toxicspikes"
+            ],
+            "name": "Gengar",
+            "stall_counter": null,
+            "stats_lowered_this_turn": false,
+            "stats_raised_this_turn": false,
+            "times_attacked": 0,
+            "unknown": false,
+            "volatile_started": {}
+          }
+        },
+        "pending_slot": {},
+        "roster": {
+          "Abomasnow": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Gengar": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Heracross": {
+            "ate_berry": false,
+            "last_item": null
+          },
+          "Vaporeon": {
+            "ate_berry": false,
+            "last_item": null
+          }
+        },
+        "total_fainted": 1
+      },
+      "turn": 19
+    },
     "opponent": {
       "condition_turns": {
         "toxicspikes": 4
@@ -773,7 +865,7 @@
     },
     "player": "p2",
     "request_kind": "move",
-    "schema_version": 2,
+    "schema_version": 3,
     "started": true,
     "terrain": null,
     "turn": 19,

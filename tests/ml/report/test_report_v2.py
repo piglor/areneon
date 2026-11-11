@@ -512,3 +512,35 @@ def test_a_page_without_a_comparison_has_no_gap_section(run: Path, tmp_path: Pat
     root = tmp_path / "progress"
     played(run, root, 2, games=4, preview_ablation=True)
     assert "Play-mode gap" not in text_of(run, root)
+
+
+def test_open_sheet_matches_have_their_own_rows_and_a_closed_versus_open_row(
+    run: Path, tmp_path: Path
+) -> None:
+    from tests.ml.progress.test_team_sheets import add_open  # noqa: PLC0415
+
+    root = tmp_path / "progress"
+    fake = FakeProgressPlayer(_config(run), committed_manifest(run, 0), add_open, previous=False)
+    run_module.progress_generation(
+        run, 1, root, fake, 2, 1, (), 4, damage_aware_budget_minutes=30, team_sheets_open=True
+    )
+    model = read_report_model(run, root)
+    found = {m.match_id: m for m in model.progress[1].matches}
+    assert found["open-damage-aware-argmax"].team_sheets == "open"
+    assert found["damage-aware-argmax"].team_sheets == "closed"
+    rows = model.progress[1].team_sheets["rows"]
+    assert [r["mode"] for r in rows] == ["argmax", "sample"]
+    text = text_of(run, root)
+    assert "Closed versus open team sheets" in text
+    assert "never pooled with it" in text
+    assert "(open-sheet format)" in text
+    closed = rows[0]["closed"]["score_ppm"]
+    assert f"{closed // 10000}" in text
+
+
+def test_a_page_without_open_matches_has_no_closed_versus_open_section(
+    run: Path, tmp_path: Path
+) -> None:
+    root = tmp_path / "progress"
+    played(run, root, 1, damage_aware_budget_minutes=30)
+    assert "Closed versus open team sheets" not in text_of(run, root)

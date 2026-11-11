@@ -14,6 +14,7 @@ export interface FactsTable {
   terrains: readonly { id: string }[];
   moves: readonly { id: string; name: string; target?: string }[];
   abilities: readonly { id: string; name: string }[];
+  items?: readonly { id: string }[];
 }
 
 /** A value read from the pinned engine's source: a source that no longer has the shape this reader expects is a typed failure, never NaN or an opaque TypeError. */
@@ -54,7 +55,7 @@ function toxicStageMax(dir: string): number {
  * `runMove` (Pursuit), and the ability whose `runMove` call sits in `battle-actions.ts` (Dancer). Read from the
  * pinned engine's own source, as the stall moves are.
  */
-function actionSources(dir: string, table: FactsTable): string[] {
+export function actionSources(dir: string, table: FactsTable): string[] {
   const source = readFileSync(join(dir, "data", "moves.ts"), "utf8");
   const names = new Map(table.moves.map((m) => [m.id, m.name] as const));
   const out: string[] = [];
@@ -81,7 +82,7 @@ function partialTrapMoves(dir: string, table: FactsTable): string[] {
 }
 
 /** The stall moves whose engine target is the user's own side (`allySide` in the engine-data table): Quick Guard and Wide Guard. */
-function allySideStallMoves(table: FactsTable, stall: readonly string[]): string[] {
+export function allySideStallMoves(table: FactsTable, stall: readonly string[]): string[] {
   return table.moves.filter((m) => m.target === "allySide" && stall.includes(m.id)).map((m) => m.id).sort();
 }
 
