@@ -20,7 +20,7 @@
 // Not here: incoming threats and turn order (`probe-damage/2`, `candidate-features-2.ts`, which reuses the
 // pieces exported below), the belief-based sets (ADR-025 slice 5), the transport field, the encoder and the worker pool.
 
-import { createInterpreter, type PublicFlag, type PublicMon, type PublicState, readerSha256 } from "@areneon/public-state";
+import { createInterpreter, HISTORY_FACTS_FORMAT, historyFactsSha256, type PublicFlag, type PublicMon, type PublicState, readerSha256, WORLD_FACTS_FORMAT, worldFactsSha256 } from "@areneon/public-state";
 import { type Json, jcs } from "./canonical-json.ts";
 import { type AssumedSet, AssumedSetError } from "./damage-aware-assumed-set.ts";
 import { parseJointChoice } from "./damage-aware-choice.ts";
@@ -28,6 +28,10 @@ import { type DamageAwareConfig, damageAwareConfigHash } from "./damage-aware-co
 import { PPM, rollsValue } from "./damage-aware-score.ts";
 import type { BeliefThreatsPort } from "./belief-features.ts";
 import type { BeliefWorldsPort } from "./damage-aware-worlds.ts";
+import type { HistoryDeclarer } from "./candidate-history.ts";
+import type { HistoryFactsData, WorldFactsData } from "@areneon/public-state";
+import { type OutcomeConfig, outcomeConfigHash } from "./outcome-config.ts";
+import { OUTCOME_FORMAT } from "./mechanics-outcome.ts";
 import { array, DamageAwareError, type DamageView, damageView, type Foe, foesHit, object, type OwnSlot, ProbeRefusal, type ProbeMemo, type ProbeCounts, ReaderGap, text } from "./damage-aware-view.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import type { Candidate } from "./choices.ts";
@@ -45,7 +49,13 @@ import type { TeamVocabulary } from "./team-vocabulary.ts";
 /** The feature set this module builds (ADR-022 section 3). A change of what a row holds is a new id. */
 export const FEATURE_SET = "probe-damage/1";
 /** The ids a feature set identity can carry: `probe-damage/2` is built by `candidate-features-2.ts`. */
-export type FeatureSetId = typeof FEATURE_SET | "probe-damage/2" | typeof FEATURE_SET_3 | typeof FEATURE_SET_BELIEF;
+export type FeatureSetId = typeof FEATURE_SET | "probe-damage/2" | typeof FEATURE_SET_3 | typeof FEATURE_SET_BELIEF | typeof FEATURE_SET_OUTCOME;
+/**
+ * `probe-outcome/1` (ADR-022 erratum E-22.5, `candidate-features-outcome.ts`): `probe-damage/2`'s five arrays recomputed with the
+ * history facts of the player's own channel declared, plus `outcomes`, the engine's answer to "does this move work now" per
+ * opposing-action branch.
+ */
+export const FEATURE_SET_OUTCOME = "probe-outcome/1";
 /** `probe-damage/2`'s arrays plus `belief_threats` (`candidate-features-3.ts`): the damage of moves the belief says a foe may hold. */
 export const FEATURE_SET_3 = "probe-damage/3";
 /** Bumped when `probe-damage/3` chooses, cuts or values its belief threats differently for the same input: part of its identity. */
@@ -69,6 +79,14 @@ export interface BeliefThreatsSetup {
   port: BeliefThreatsPort;
   /** Belief moves kept per foe, after the damaging filter and before the rows are made (reviewed; named by the identity). */
   per_foe: number;
+}
+
+/** What `probe-outcome/1` reads besides the other sets' records: its reviewed record, and the history facts' engine data (default: read from the pinned engine). */
+export interface OutcomeSetup {
+  config: OutcomeConfig;
+  history_data?: HistoryFactsData;
+  /** The world facts' engine data (the last move of each Pokemon); default: read from the pinned engine. */
+  world_data?: WorldFactsData;
 }
 
 /** What the belief set counts about its worlds, per game (a service reports the delta of a task). All integers. */
@@ -120,6 +138,8 @@ export interface FeatureConfigs {
   belief?: BeliefFeatureSetup;
   /** The belief `probe-damage/3` reads its move inclusions from; required by that set. */
   belief_threats?: BeliefThreatsSetup;
+  /** The record `probe-outcome/1` reads; required by that set. Its `mechanics` must list `speed_order` and `move_outcome` (`withMoveOutcome`). */
+  outcome?: OutcomeSetup;
   /** Test seam: the probe (default `probeMechanics`). */
   probe?: (context: MechanicsContext, query: ParsedMechanicsQuery) => ProbeOutcome;
   /** Test seam (the negative control of the invariance test): the assumed opponent set of a public Pokemon (default `buildAssumedSet`). */
@@ -164,13 +184,24 @@ export interface FeatureSetIdentity {
   belief_threats_identity_hash?: string;
   belief_threats_per_foe?: number;
   belief_threats_format?: number;
+  /** `probe-outcome/1` only (likewise absent from the other sets' preimages): the probe's outcome format, the history facts' format and file hash, and the reviewed record. */
+  outcome_format?: number;
+  history_facts_format?: string;
+  history_facts_sha256?: string;
+  world_facts_format?: string;
+  world_facts_sha256?: string;
+  outcome_config_hash?: string;
 }
 
-export function featureSetIdentity(engine: Engine, configs: Pick<FeatureConfigs, "config" | "mechanics" | "snapshot" | "belief" | "belief_threats">, featureSet: FeatureSetId = FEATURE_SET): FeatureSetIdentity {
+export function featureSetIdentity(engine: Engine, configs: Pick<FeatureConfigs, "config" | "mechanics" | "snapshot" | "belief" | "belief_threats" | "outcome">, featureSet: FeatureSetId = FEATURE_SET): FeatureSetIdentity {
   if (featureSet === FEATURE_SET_BELIEF && configs.belief === undefined) throw new DamageAwareError("probe-damage-belief/1 needs the belief port");
   // `probe-damage/2` asks speed orders (ADR-022 erratum E-22.3.1): a config that does not list the kind would answer every such row `query_kind`.
   if (featureSet === FEATURE_SET_3 && configs.belief_threats === undefined) throw new DamageAwareError("probe-damage/3 needs the belief threats port");
-  if ((featureSet === "probe-damage/2" || featureSet === FEATURE_SET_3) && !configs.mechanics.scope.query_kinds.some((entry) => entry.kind === "speed_order")) throw new DamageAwareError("the mechanics config does not list speed_order in scope");
+  if (featureSet === FEATURE_SET_OUTCOME) {
+    if (configs.outcome === undefined) throw new DamageAwareError("probe-outcome/1 needs its reviewed record");
+    if (!configs.mechanics.scope.query_kinds.some((entry) => entry.kind === "move_outcome")) throw new DamageAwareError("the mechanics config does not list move_outcome in scope");
+  }
+  if ((featureSet === "probe-damage/2" || featureSet === FEATURE_SET_3 || featureSet === FEATURE_SET_OUTCOME) && !configs.mechanics.scope.query_kinds.some((entry) => entry.kind === "speed_order")) throw new DamageAwareError("the mechanics config does not list speed_order in scope");
   const snapshot = configs.snapshot ?? loadRulesSnapshot(engine.commit);
   return {
     feature_set: featureSet,
@@ -182,6 +213,9 @@ export function featureSetIdentity(engine: Engine, configs: Pick<FeatureConfigs,
     ...(featureSet === FEATURE_SET_BELIEF && configs.belief !== undefined ? { belief_identity_hash: configs.belief.port.identity_hash, worlds: configs.belief.worlds, belief_features_format: BELIEF_FEATURES_FORMAT } : {}),
     ...(featureSet === FEATURE_SET_3 && configs.belief_threats !== undefined
       ? { belief_threats_identity_hash: configs.belief_threats.port.identity_hash, belief_threats_per_foe: configs.belief_threats.per_foe, belief_threats_format: BELIEF_THREATS_FORMAT }
+      : {}),
+    ...(featureSet === FEATURE_SET_OUTCOME && configs.outcome !== undefined
+      ? { outcome_format: OUTCOME_FORMAT, history_facts_format: HISTORY_FACTS_FORMAT, history_facts_sha256: historyFactsSha256(), world_facts_format: WORLD_FACTS_FORMAT, world_facts_sha256: worldFactsSha256(), outcome_config_hash: outcomeConfigHash(configs.outcome.config) }
       : {}),
   };
 }
@@ -210,13 +244,14 @@ export function lastRequest(channel: PlayerChannel): Record<string, unknown> {
 }
 
 /** The view of one request: the shared damage view (with this game's memo) and the reader's state, fed the whole channel. */
-export function openRequest(engine: Engine, configs: FeatureConfigs, snapshot: RulesSnapshot, channel: PlayerChannel, memo: FeatureMemo): { view: DamageView; state: PublicState; allFlags: PublicFlag[] } {
+export function openRequest(engine: Engine, configs: FeatureConfigs, snapshot: RulesSnapshot, channel: PlayerChannel, memo: FeatureMemo, history?: HistoryDeclarer): { view: DamageView; state: PublicState; allFlags: PublicFlag[] } {
   const view = damageView({
     engine, vocabulary: configs.vocabulary, config: configs.config, v1: configs.config, mechanics: configs.mechanics, snapshot,
     data_class: configs.data_class, probe: configs.probe ?? probeMechanics, counts: memo.counts, memo: memo.results,
     // The engine's choice-location convention (#1180), whatever the assumed-set record says. This changes which foe a row's `target` names
     // while `feature_set_hash` stays: ticket #1180 decided so because no run, checkpoint or stored record used the rows yet.
     engine_targets: true,
+    ...(history === undefined ? {} : { history }),
     ...(configs.assume === undefined ? {} : { assume: configs.assume }),
   });
 
@@ -315,8 +350,8 @@ export type DamageValues =
   | { kind: "unsupported"; reason: PlainReason };
 
 /** Integers from the engine's rolls, or the probe's closed reason. */
-export function damageValues(result: MechanicsResult | null): DamageValues {
-  if (result?.kind === "unsupported") return { kind: "unsupported", reason: plainReason(result.reason) };
+export function damageValues(result: MechanicsResult | null, reasonOf: (reason: Parameters<typeof plainReason>[0]) => PlainReason = plainReason): DamageValues {
+  if (result?.kind === "unsupported") return { kind: "unsupported", reason: reasonOf(result.reason) };
   if (result?.kind !== "computed" || result.answer.kind !== "damage") throw new DamageAwareError("the probe gave no damage answer to a damage query");
   const { no_crit: rolls, hp_current: hp, ko } = result.answer;
   return {
@@ -332,9 +367,9 @@ export function damageValues(result: MechanicsResult | null): DamageValues {
  * `damageValues` of one damage query, asked here. A state the probe refuses to declare (`ProbeRefusal`, #1246) makes only this
  * row `unsupported` (`query_kind`: the probe cannot answer this query), never the whole request, so the seat is not forfeited for it.
  */
-export function damageValuesOf(view: Pick<DamageView, "noteRefused">, ask: () => MechanicsResult | null): DamageValues {
+export function damageValuesOf(view: Pick<DamageView, "noteRefused"> & Partial<Pick<DamageView, "reasonOf">>, ask: () => MechanicsResult | null): DamageValues {
   try {
-    return damageValues(ask());
+    return damageValues(ask(), view.reasonOf);
   } catch (error) {
     if (!(error instanceof ProbeRefusal)) throw error;
     view.noteRefused();

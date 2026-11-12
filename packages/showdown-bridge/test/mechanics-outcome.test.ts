@@ -209,9 +209,10 @@ describe("refused states and unsupported draws", () => {
     expect(result).toMatchObject({ kind: "unsupported", reason: "random_effect", position: 1 });
   });
 
-  it("is unsupported when a declared volatile draws its length: the position is the Pokemon being declared", () => {
+  it("answers a declared volatile that draws its length at both ends of the draw (equal answers kept), not as a random effect", () => {
     const { result } = run({ actions: [move(0, "protect"), tackle], target: { side: 0, position: 0 }, own_history: { volatiles: known([{ id: "confusion", started_turn: 1, after_residual: false }]) }, history: { turn: 2 } });
-    expect(result).toMatchObject({ kind: "unsupported", reason: "random_effect", position: 0 });
+    // the length draw is answered at both ends (equal answers kept); the engine's confusion then self-hits with randomChance(33, 100) before the move: Protect works with 67 in 100
+    expect(result).toMatchObject({ kind: "computed", answer: { kind: "move_outcome", precondition: "chance", precondition_ppm: 670_000, hit_ppm: 1_000_000 } });
   });
 
   it("is unsupported when the engine draws anything but a chance before the hit step", () => {

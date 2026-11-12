@@ -33,6 +33,7 @@ ts: showdown
 	node packages/team-dataset/scripts/check-team-labels.ts
 	node packages/showdown-bridge/scripts/check-mechanics-config.ts
 	node packages/showdown-bridge/scripts/check-damage-aware-config.ts
+	node packages/showdown-bridge/scripts/check-outcome-config.ts
 	$(MAKE) contracts
 
 # Contract schemas (ADR-008): every schema in packages/schema/contracts/ must
