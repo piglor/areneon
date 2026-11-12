@@ -25,6 +25,7 @@ import { leaveFigures, printProfile, startProfile, stopProfile, timed } from "./
 import { exitWhenParentDies, vouchTo } from "./parent-link.ts";
 import { obtainPool } from "./pool-share.ts";
 import { type MemberFlag, parseMemberFlag, runCalibrationCli, runPopulationCli } from "./population-cli.ts";
+import { concurrentStarts } from "./start-slots.ts";
 import { largest, ownPeakRss } from "./process-usage.ts";
 import { combineUsage, featuresDirOf, optionalFlag, ownShard, parallelCount, POOL_FILE, readShardFile, type ResourceUsage, SHARD_FILE, type ShardProcess, startShard, USAGE_FILE, usageOf, writeShardFile } from "./shard-process.ts";
 import { readTrainingRunConfig, runConfigHash } from "./training-run-config.ts";
@@ -67,6 +68,10 @@ const FLAGS = {
   "policy-workers": { type: "string" },
   // Operational too: game processes, this one included, each with its own workers (default 1).
   "game-processes": { type: "string" },
+  // Operational: worker start-ups in flight across all game processes of a population run (default 2; #1355).
+  "max-concurrent-starts": { type: "string" },
+  // Internal: the directory of the start-up slots the game processes share (#1355).
+  "start-slots-dir": { type: "string" },
   // Internal: set on the game processes this one starts (`INDEX/COUNT`); such a process plays its slice and writes `shard.jsonl`.
   shard: { type: "string" },
   // Internal: the directory the Episodes of the generation are written to as their games finish (the process that started this one gives it to the game processes; by default `<out>/episodes`).
@@ -89,7 +94,7 @@ const FLAGS = {
   calibrate: { type: "boolean" },
 } as const;
 
-const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "shard", "episodes-dir", "features-dir", "labels-dir", "pool-file", "profile", "profile-dir", "member", "calibrate", "past-pool"];
+const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "max-concurrent-starts", "start-slots-dir", "shard", "episodes-dir", "features-dir", "labels-dir", "pool-file", "profile", "profile-dir", "member", "calibrate", "past-pool"];
 /** The flags a population run gives per member instead. */
 const PER_MEMBER: readonly (keyof typeof FLAGS)[] = ["preview", "battle", "policy-id"];
 
@@ -108,7 +113,7 @@ export function combinedLoad(processes: number, workers: number, nParallel: numb
 
 /** The flags a further game process is started with: the ones this process was given, but its own output, slice and internal directories. */
 export function forwardedFlags(values: Record<string, string | string[] | boolean | undefined>): string[] {
-  const internal = ["out", "game-processes", "shard", "episodes-dir", "features-dir", "labels-dir", "pool-file", "profile", "profile-dir"];
+  const internal = ["out", "game-processes", "shard", "episodes-dir", "features-dir", "labels-dir", "pool-file", "start-slots-dir", "profile", "profile-dir"];
   return Object.entries(values).flatMap(([name, value]) => {
     if (internal.includes(name) || value === undefined) return [];
     if (Array.isArray(value)) return value.flatMap((each) => [`--${name}`, each]); // --member, once per member
@@ -201,6 +206,8 @@ export async function runGenerationCli(
         features,
         policy_workers: workerCount,
         processes,
+        max_concurrent_starts: concurrentStarts(values["max-concurrent-starts"], refuse),
+        ...(values["start-slots-dir"] === undefined ? {} : { start_slots_dir: values["start-slots-dir"] }),
         ...(shard === undefined ? {} : { shard }),
         ...(values.shard === undefined ? {} : { further: true }),
         ...(shardScript === undefined ? {} : { shard_script: shardScript }),

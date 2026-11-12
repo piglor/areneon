@@ -176,7 +176,7 @@ describe("game processes and policy workers (#1333)", () => {
 
   it("gives the single process's files when a slice is played elsewhere and merged, whichever slices there are", async () => {
     const expected = await single("whole");
-    for (const of of [2, 3, 7]) {
+    for (const of of [2, 3, 7, 25]) {
       const dir = join(scratch, `sharded-${of}`);
       const others = (
         await Promise.all(Array.from({ length: of - 1 }, (_, k) => playPopulationEntries(options(join(scratch, `elsewhere-${of}-${k}`), { shared_dir: dir }), { index: k + 1, of })))
@@ -254,7 +254,7 @@ describe("game processes and policy workers (#1333)", () => {
     expect(treeBytes(shared)).toEqual(treeBytes(out));
     expect(started).toHaveLength(1);
     expect(started[0]?.args.slice(0, 2)).toEqual(["--config", "c.json"]);
-    expect(started[0]?.args).toEqual(expect.arrayContaining(["--shard", "1/2", "--episodes-dir", shared, "--pool-file"]));
+    expect(started[0]?.args).toEqual(expect.arrayContaining(["--shard", "1/2", "--episodes-dir", shared, "--pool-file", "--start-slots-dir"]));
     expect(started[0]?.stopped).toBe(true);
     expect(started[0]?.told).toEqual([`pool ${"f".repeat(64)}\n`]);
     expect(written).toMatch(/pool\.json$/);
@@ -288,6 +288,18 @@ describe("game processes and policy workers (#1333)", () => {
     const played = membersPlaying(planPopulation(config, 1, pool.teams.length), { index: 99, of: 100 });
     expect(await runPopulationCli(run, () => undefined)).toBe(0);
     expect(made).toBe(played.size);
+  }, 300_000);
+
+  it("starts the workers of a process one at a time, within the cap", async () => {
+    let live = 0;
+    let peak = 0;
+    const slow = () => Object.assign(actorClient(), { start: async () => { live++; peak = Math.max(peak, live); await new Promise((resolve) => setTimeout(resolve, 5)); live--; }, close: () => Promise.resolve() });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const run = input(join(scratch, "cli-serial"), { policy_workers: 2, max_concurrent_starts: 3, make_client: slow });
+    expect(await runPopulationCli(run, () => undefined)).toBe(0);
+    expect(peak).toBe(1);
+    expect(error.mock.calls.flat().join(" ")).toMatch(/starts 4 policy workers for 2 of 2 members/);
+    error.mockRestore();
   }, 300_000);
 
   it("starts the policy workers of a member as many as it was asked for", async () => {

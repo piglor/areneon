@@ -152,7 +152,10 @@ function membersOf(entry: PopulationGamePlan): string[] {
   return [...new Set([entry.seats.p1, entry.seats.p2].flatMap((seat) => ("member" in seat ? [seat.member] : [])))].sort(compareMembers);
 }
 
-const compareMembers = (a: string, b: string): number => Number(a.slice(1)) - Number(b.slice(1));
+const compareMembers = (a: string, b: string): number => {
+  if (!/^m\d+$/.test(a) || !/^m\d+$/.test(b)) throw new PopulationPlanError("population: a member label is m<k>");
+  return Number(a.slice(1)) - Number(b.slice(1));
+};
 
 /**
  * Which game process plays each game (#1355): a pure function of the plan and the number of processes. The games are

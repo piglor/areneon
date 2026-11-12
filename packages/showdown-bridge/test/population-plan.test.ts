@@ -136,6 +136,11 @@ describe("populationShards (#1355)", () => {
     expect(found.reduce((sum, set) => sum + set.size, 0)).toBeLessThan(9 * 4);
   });
 
+  it("refuses a seat whose member label is not m<k>", () => {
+    const bad = planPopulation(populationConfig(2, 4), 1, 50).map((entry) => ({ ...entry, seats: { p1: { member: "x" }, p2: { member: "m1" } } }));
+    expect(() => populationShards(bad, 2)).toThrow(/m<k>/);
+  });
+
   it("refuses a count that is not a positive integer, and an empty plan has no owner", () => {
     expect(() => populationShards([], 0)).toThrow(RangeError);
     expect(populationShards([], 3)).toEqual([]);
