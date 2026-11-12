@@ -69,6 +69,7 @@ def test_play_passes_the_whole_request_and_the_run_as_flags(tmp_path: Path) -> N
 
 
 def test_play_population_passes_a_member_flag_per_member_and_no_pair_flags(tmp_path: Path) -> None:
+    """The worker and process counts go to the play script only when they are not 1 (#1333)."""
     out = tmp_path / "args.json"
     script = f"import sys, json; open({str(out)!r}, 'w').write(json.dumps(sys.argv[1:]))"
     members = (
@@ -84,11 +85,17 @@ def test_play_population_passes_a_member_flag_per_member_and_no_pair_flags(tmp_p
         f"m0,{'a' * 64},{'b' * 64},policy:{'1' * 64}",
         f"m1,{'c' * 64},{'d' * 64},policy:{'2' * 64}",
     ]
-    for absent in ("--policy-id", "--preview", "--battle", "--policy-workers", "--game-processes"):
+    for absent in ("--policy-id", "--preview", "--battle"):
         assert absent not in argv
     flags = {a: argv[i + 1] for i, a in enumerate(argv) if a.startswith("--") and a != "--member"}
     assert flags["--generation"] == "2"
     assert flags["--out"] == str(tmp_path / "work")
+    assert flags["--policy-workers"] == "3"
+    assert flags["--game-processes"] == "2"
+    chosen.play_population(PopulationPlayRequest(2, members, tmp_path / "work"))
+    plain = json.loads(out.read_text())
+    assert "--policy-workers" not in plain
+    assert "--game-processes" not in plain
 
 
 def test_calibrate_population_plays_generation_zero_with_the_calibrate_flag(tmp_path: Path) -> None:

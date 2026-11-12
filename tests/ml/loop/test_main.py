@@ -294,16 +294,17 @@ def test_a_population_config_runs_the_population_loop_and_prints_every_member(
     assert built[0]["play_script"] == "packages/showdown-bridge/scripts/play-generation.ts"
 
 
-def test_a_population_run_is_one_process_with_one_worker_per_member(
+def test_a_population_run_takes_worker_and_process_counts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     config = population_config()
     path = tmp_path / "pop.json"
     path.write_text(json.dumps(config.raw))
-    fake_node(monkeypatch, FakePopulationPlayer(config))  # type: ignore[arg-type]
-    assert main(run(path, tmp_path / "r", 1, "--game-processes", "2")) == EXIT_REFUSED
-    assert "one process with one worker per member" in capsys.readouterr().err
-    assert main(run(path, tmp_path / "r", 1, "--policy-workers", "2")) == EXIT_REFUSED
+    built = fake_node(monkeypatch, FakePopulationPlayer(config))  # type: ignore[arg-type]
+    args = run(path, tmp_path / "r", 1, "--game-processes", "2", "--policy-workers", "2")
+    assert main(args) == 0
+    assert built[0]["game_processes"] == 2
+    assert built[0]["policy_workers"] == 2
 
 
 def test_a_population_run_cannot_be_profiled_and_says_so(

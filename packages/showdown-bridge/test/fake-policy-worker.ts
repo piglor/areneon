@@ -10,7 +10,13 @@ const write = (value: unknown): void => {
 };
 
 const contracts = contractVersions();
-const ready = {
+const stateInference = (hello: { message?: { inference?: unknown } }): Record<string, unknown> => {
+  // The batching this worker was started with (ADR-028 section 2 F2): FAKE_INFERENCE is its JSON, or "echo" to state what the hello asked for.
+  if (process.env.FAKE_INFERENCE === undefined) return {};
+  return { inference: process.env.FAKE_INFERENCE === "echo" ? hello.message?.inference : (JSON.parse(process.env.FAKE_INFERENCE) as unknown) };
+};
+
+const ready = (hello: { message?: { inference?: unknown } }) => ({
   schema_version: 1,
   message: {
     kind: "ready",
@@ -24,8 +30,9 @@ const ready = {
     ...(process.env.FAKE_OPPONENT_SHEET === undefined ? {} : { opponent_sheet: JSON.parse(process.env.FAKE_OPPONENT_SHEET) as unknown }),
     // The worker answers value queries (ADR-026 erratum E2 decision 7), when the test says so.
     ...(process.env.FAKE_VALUE_QUERY === undefined ? {} : { value_query: true }),
+    ...stateInference(hello),
   },
-};
+});
 
 const recommendation = (query: PolicyQuery, change: Record<string, unknown> = {}) => {
   const pool = query.candidates.filter((c) => !c.pending);
@@ -67,7 +74,7 @@ lines.on("line", (text) => {
     if (mode === "silent") return;
     if (mode === "garbage-ready") return void process.stdout.write("this is not json\n");
     if (mode === "no-ready") return void write({ schema_version: 1, message: { kind: "hello", contracts } });
-    write(ready);
+    write(ready(JSON.parse(text) as { message?: { inference?: unknown } }));
     return;
   }
   const query = JSON.parse(text) as PolicyQuery;

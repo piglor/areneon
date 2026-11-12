@@ -847,6 +847,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/entropy-constant": runConfigWith((c) => (runSection(c, "ppo").entropy_schedule = { kind: "constant" })),
     "training-run-config/constant-schedule": runConfigWith((c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "constant" })),
     "training-run-config/play-temperature": runConfigWith((c) => (runSection(c, "generation").play = { temperature_ppm: 500000 })),
+    "training-run-config/inference-batched": runConfigWith((c) => (runSection(c, "generation").inference = { kind: "batched", max_batch: 2 })),
     "training-run-config/damage-aware": runConfigWith((c) => {
       runSection(c, "generation").baseline_games = [
         { actor: "random-legal", policy_id: "random-legal@tiny", games: 2 },
@@ -993,6 +994,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "run-metrics/rss-only": runMetricsWith((r) => (r.peak_rss_bytes = { driver: 1_073_741_824 })),
     "run-metrics/profile": runMetricsWith((r) => (r.profile = profileSample())),
+    "run-metrics/inference-divergence": runMetricsWith((r) => (r.inference_divergence = { max_batch: 2, decisions: 2000, sampled: 256, differing: 3, max_prior_diff_ppm: 41, target_met: true })),
     "run-metrics/seeded-pair": runMetricsWith((r) => {
       r.generation = 0;
       r.phase_ms = { play: 0, write: 95, load: 0, train: 0, seal: 60 };
@@ -1088,6 +1090,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-handshake/ready-features-3": readyWith((m) => (m.feature_set = feature3Ref)),
     "policy-handshake/ready-sheet": readyWith((m) => (m.opponent_sheet = sheetSetRef)),
     "policy-handshake/ready-value-query": readyWith((m) => (m.value_query = true)),
+    "policy-handshake/hello-inference": helloWith((m) => (m.inference = { kind: "batched", max_batch: 2 })),
+    "policy-handshake/ready-inference": readyWith((m) => (m.inference = { kind: "batched", max_batch: 2 })),
     "training-run-config/opponent-sheet": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { opponent_sheet: sheetSetRef };
     }),
@@ -1188,6 +1192,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/population-member-ppo-duplicate": populated((p) => (p.member_ppo = [{ member: 1, epochs: 3 }, { member: 1, epochs: 2 }])),
     "training-run-config/population-member-ppo-out-of-range": populated((p) => (p.member_ppo = [{ member: 4, epochs: 3 }])),
     "training-run-config/play-temperature-default": runConfigWith((c) => (runSection(c, "generation").play = { temperature_ppm: 1000000 })),
+    "training-run-config/inference-above-parallel": runConfigWith((c) => (runSection(c, "generation").inference = { kind: "batched", max_batch: 3 })),
+    "training-run-config/inference-search-labels": distilling((c) => (runSection(c, "generation").inference = { kind: "batched", max_batch: 2 })),
+    "training-run-config/inference-population": populated((_p, c) => (runSection(c, "generation").inference = { kind: "batched", max_batch: 2 })),
     "clone-run-config/heads-do-not-divide-width": cloneWith((c) => (runSection(c, "model").n_heads = 3)),
     "clone-run-config/picks-exceed-team": cloneWith((c) => {
       const encoder = runSection(runSection(c, "model"), "encoder");
@@ -1385,6 +1392,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "checkpoint-record/blank-lineage": recordWith((r) => (r.lineage_id = "")),
     "checkpoint-record/no-learner-state": recordWith((r) => delete r.learner_state_hash),
     "run-metrics/extra-field": runMetricsWith((r) => (r.notes = "x")),
+    "run-metrics/inference-divergence-extra-field": runMetricsWith((r) => (r.inference_divergence = { max_batch: 2, decisions: 2, sampled: 1, differing: 0, max_prior_diff_ppm: 0, target_met: true, share: 1 })),
+    "run-metrics/inference-divergence-fractional": runMetricsWith((r) => (r.inference_divergence = { max_batch: 2, decisions: 2, sampled: 1, differing: 0, max_prior_diff_ppm: 0.5, target_met: true })),
     "run-metrics/fractional-ms": runMetricsWith((r) => (r.phase_ms = { ...runMetrics.phase_ms, play: 1.5 })),
     "run-metrics/negative-reserved": runMetricsWith((r) => (r.peak_accelerator_reserved_bytes = -1)),
     "run-metrics/profile-unknown-field": runMetricsWith((r) => (r.profile = { ...profileSample(), kernel: 1 })),
@@ -1703,6 +1712,11 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "evaluation-reply/value-float": valueOf(0.5),
     "evaluation-reply/value-no-identity": mutated(valueOf(0), (r) => delete ((r.reply as Record<string, Record<string, unknown>>).value as Record<string, unknown>).identity),
     "policy-handshake/ready-value-query-false": readyWith((m) => (m.value_query = false)),
+    "policy-handshake/hello-inference-one": helloWith((m) => (m.inference = { kind: "batched", max_batch: 1 })),
+    "policy-handshake/ready-inference-unknown-kind": readyWith((m) => (m.inference = { kind: "streamed", max_batch: 2 })),
+    "training-run-config/inference-max-batch-one": runConfigWith((c) => (runSection(c, "generation").inference = { kind: "batched", max_batch: 1 })),
+    "training-run-config/inference-unknown-kind": runConfigWith((c) => (runSection(c, "generation").inference = { kind: "async", max_batch: 2 })),
+    "training-run-config/inference-extra-field": runConfigWith((c) => (runSection(c, "generation").inference = { kind: "batched", max_batch: 2, device: "cuda" })),
     "policy-query/too-many-candidates": { ...battleQuery, candidates: candidatesOf(1025) },
     "policy-query/seed": { ...battleQuery, seed: record.seed },
     "policy-query/candidate-verdict": mutated(battleQuery, (q) => ((q.candidates as Record<string, unknown>[])[0] as Record<string, unknown>).legal = true),

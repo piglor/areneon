@@ -7,7 +7,7 @@ import { spawn } from "node:child_process";
 import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { exitWhenParentDies, poolLine, vouchTo } from "../src/parent-link.ts";
-import { combinedLoad, combineUsage, featuresDirOf, interimPoolSource, MAX_COMBINED_LOAD, optionalFlag, readShardFile, runGenerationCli, runManifestCli, startShard, UsageError, writeShardFile } from "../src/generation-cli.ts";
+import { combinedLoad, combineUsage, featuresDirOf, forwardedFlags, interimPoolSource, MAX_COMBINED_LOAD, optionalFlag, readShardFile, runGenerationCli, runManifestCli, startShard, UsageError, writeShardFile } from "../src/generation-cli.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT } from "../src/golden.ts";
 import { loadEngine, readTrainingRunConfig } from "../src/index.ts";
 import { runConfigHash } from "../src/training-run-config.ts";
@@ -139,9 +139,19 @@ describe("a population run (ADR-021 slice 4)", () => {
     await expect(runGenerationCli(flags(file, perMember))).rejects.toThrow(/is required/);
     await expect(runGenerationCli([...flags(file, perMember), "--member", "m0,x"])).rejects.toThrow(/--member is m<k>/);
     await expect(runGenerationCli([...flags(file, perMember), ...member(0), ...member(1), "--profile"], console.log, undefined, "play.ts")).rejects.toThrow(/--profile does not apply/);
-    for (const extra of [["--policy-workers", "2"], ["--game-processes", "2"], ["--shard", "0/2"]]) {
-      await expect(runGenerationCli([...flags(file, perMember), ...member(0), ...member(1), ...extra], console.log, undefined, "play.ts")).rejects.toThrow(/one process with one worker per member/);
-    }
+    // Worker and process counts and slices are checked as a single lineage checks them (#1333).
+    const both = [...flags(file, perMember), ...member(0), ...member(1)];
+    await expect(runGenerationCli([...both, "--policy-workers", "0"], console.log, undefined, "play.ts")).rejects.toThrow(/--policy-workers must be an integer/);
+    await expect(runGenerationCli([...both, "--game-processes", "x"], console.log, undefined, "play.ts")).rejects.toThrow(/--game-processes must be an integer/);
+    await expect(runGenerationCli([...both, "--game-processes", "2"])).rejects.toThrow(/needs the script to start again/);
+    await expect(runGenerationCli([...both, "--shard", "0/2", "--game-processes", "2"], console.log, undefined, "play.ts")).rejects.toThrow(/--shard is INDEX\/COUNT/);
+    await expect(runGenerationCli([...both, "--shard", "2/2"], console.log, undefined, "play.ts")).rejects.toThrow(/--shard is INDEX\/COUNT/);
+    await expect(runGenerationCli([...both, "--pool-file", join(dir, "pool.json")], console.log, undefined, "play.ts")).rejects.toThrow(/--pool-file is for a further game process only/);
+  });
+
+  it("forwards its own flags, one --member per member, to a further game process and none of its internal ones", () => {
+    const flagsOf = forwardedFlags({ config: "c.json", member: ["m0,x", "m1,y"], "policy-workers": "2", out: "o", shard: "1/2", "episodes-dir": "e", profile: true, calibrate: true, quiet: false });
+    expect(flagsOf).toEqual(["--config", "c.json", "--member", "m0,x", "--member", "m1,y", "--policy-workers", "2"]);
   });
 
   it("reaches the population branch with the members it was given, and the pool source", async () => {
@@ -234,6 +244,28 @@ describe("a run config that names a candidate feature set (ADR-022)", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
       expect(await runGenerationCli(flags(file))).toBe(1);
+      expect(error.mock.calls.flat().join(" ")).toMatch(/names the candidate feature set probe-damage\/1 0{64}, which this checkout computes as [0-9a-f]{64}/);
+    } finally {
+      error.mockRestore();
+    }
+  });
+});
+
+describe("a population config that names a candidate feature set (#1333)", () => {
+  const member = (k: number): string[] => ["--member", `m${k},${String(k).repeat(64)},${String(k + 2).repeat(64)},policy:${String(k + 4).repeat(64)}`];
+
+  it("fails with exit 1, before it starts a worker, when this checkout does not compute the named hash", async () => {
+    const raw = structuredClone(populationConfig(2, 2)) as unknown as { model: { encoder: { options?: unknown } } };
+    raw.model.encoder.options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: "0".repeat(64) } };
+    const file = join(dir, "population-features.json");
+    writeFileSync(file, JSON.stringify(raw));
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const refuse = (): never => {
+        throw new UsageError("the pool must not be loaded");
+      };
+      const perMember = { preview: undefined, battle: undefined, "policy-id": undefined };
+      expect(await runGenerationCli([...flags(file, perMember), ...member(0), ...member(1)], console.log, refuse)).toBe(1);
       expect(error.mock.calls.flat().join(" ")).toMatch(/names the candidate feature set probe-damage\/1 0{64}, which this checkout computes as [0-9a-f]{64}/);
     } finally {
       error.mockRestore();
