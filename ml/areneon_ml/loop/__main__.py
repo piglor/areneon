@@ -447,7 +447,8 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         default=None,
         help="with --damage-aware: which baseline record plays, v1 (default; matches "
         "damage-aware-<mode>) v3 (the corrected scorer, #1180; matches damage-aware-v3-<mode>) "
-        "or v4 (v3 plus switch and Protect values, #1329; matches damage-aware-v4-<mode>)",
+        "v4 (v3 plus switch and Protect values, #1329; matches damage-aware-v4-<mode>) "
+        "or v5 (v4 scaled by the engine's success chance, #1344; matches damage-aware-v5-<mode>)",
     )
     progress.add_argument(
         "--member",

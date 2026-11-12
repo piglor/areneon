@@ -19,8 +19,9 @@ export function damageAwareSamples(): { valid: Cases; invalid: Cases; readerInva
   const config = JSON.parse(readFileSync(join(DAMAGE_AWARE_CONFIG_DIR, "damage-aware.v1.json"), "utf8")) as unknown;
   const second = JSON.parse(readFileSync(join(DAMAGE_AWARE_CONFIG_DIR, "damage-aware.v2.json"), "utf8")) as unknown;
   const fourth = JSON.parse(readFileSync(join(DAMAGE_AWARE_CONFIG_DIR, "damage-aware.v4.json"), "utf8")) as unknown;
+  const fifth = JSON.parse(readFileSync(join(DAMAGE_AWARE_CONFIG_DIR, "damage-aware.v5.json"), "utf8")) as unknown;
   return {
-    valid: { "damage-aware-config/v1": config, "damage-aware-config-2/v2": second, "damage-aware-config/v4": fourth },
+    valid: { "damage-aware-config/v1": config, "damage-aware-config-2/v2": second, "damage-aware-config/v4": fourth, "damage-aware-config/v5": fifth },
     invalid: {
       "damage-aware-config-2/extra-field": mutated(second, (c) => (c.note = "x")),
       "damage-aware-config-2/field-rules-instead-of-belief": mutated(second, (c) => (c.assumed_set = (config as any).assumed_set)),
@@ -41,9 +42,11 @@ export function damageAwareSamples(): { valid: Cases; invalid: Cases; readerInva
       "damage-aware-config/situational-missing-protect": mutated(fourth, (c) => delete c.situational.protect_value_ppm),
       "damage-aware-config/situational-fractional-switch": mutated(fourth, (c) => (c.situational.switch_value_ppm = 0.5)),
       "damage-aware-config/situational-weight-over-one": mutated(fourth, (c) => (c.situational.protect_value_ppm = 1000001)),
+      "damage-aware-config/success-scaling-unknown": mutated(fifth, (c) => (c.success_scaling = "guess")),
       "damage-aware-config/unknown-rounding": mutated(config, (c) => (c.hp_rounding = "banker")),
     },
     readerInvalid: {
+      "damage-aware-config/success-scaling-without-situational": mutated(fifth, (c) => delete c.situational),
       "damage-aware-config/situational-without-engine-convention": mutated(fourth, (c) => delete c.target_convention),
       "damage-aware-config-2/other-format": mutated(second, (c) => (c.format_id = "gen9ou")),
       "damage-aware-config/unknown-nature": mutated(config, (c) => (c.assumed_set.nature = "grumpy")),

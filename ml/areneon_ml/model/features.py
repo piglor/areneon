@@ -37,6 +37,11 @@ NUMBER_COLUMNS = len(NUMBERS)
 # list (feature-rows.ts); a test requires them equal.
 FOE_SPREAD_TARGET_TYPES = ("allAdjacent", "allAdjacentFoes", "randomNormal")
 
+
+class RowError(ValueError):
+    """A row the set's categories cannot name (the encoder turns it into an ``EncodingError``)."""
+
+
 Row = Mapping[str, Any]
 RowKey = tuple[int, int, int, bool]  # slot, move position, target location, Mega flag
 
@@ -54,12 +59,27 @@ def row_index(features: Mapping[str, Any]) -> dict[RowKey, Row]:
     return found
 
 
-def category(row: Row | None) -> int:
+# ``probe-outcome/1`` (ADR-022 erratum E-22.5.3) also has the reason ``history_unknown``, appended
+# after every other category so that no other set's index moves.
+FEATURE_SET_OUTCOME = "probe-outcome/1"
+HISTORY_UNKNOWN = "history_unknown"
+REASONS_OUTCOME = (*REASONS, HISTORY_UNKNOWN)
+KINDS_OUTCOME = (*KINDS, f"unsupported:{HISTORY_UNKNOWN}")
+KIND_CATEGORIES_OUTCOME = RESERVED + 1 + len(REASONS_OUTCOME)
+
+
+def _index(reasons: tuple[str, ...], reason: str) -> int:
+    if reason not in reasons:
+        raise RowError(f"a candidate_features row has the reason {reason!r}, which this set lacks")
+    return reasons.index(reason)
+
+
+def category(row: Row | None, outcome: bool = False) -> int:
     if row is None:
         return NONE
     if row["kind"] == "computed":
         return RESERVED
-    return RESERVED + 1 + REASONS.index(row["reason"])
+    return RESERVED + 1 + _index(REASONS_OUTCOME if outcome else REASONS, row["reason"])
 
 
 def numbers(row: Row | None) -> list[float]:
@@ -76,9 +96,11 @@ def numbers(row: Row | None) -> list[float]:
     ]
 
 
-def part_columns(rows: Sequence[Row | None]) -> tuple[list[int], list[float]]:
+def part_columns(
+    rows: Sequence[Row | None], outcome: bool = False
+) -> tuple[list[int], list[float]]:
     """The categorical and numeric columns of one move part, from its row per foe location."""
-    cats = [category(row) for row in rows]
+    cats = [category(row, outcome) for row in rows]
     nums = [x for row in rows for x in numbers(row)]
     return cats, nums
 
@@ -100,6 +122,7 @@ FEATURE_SET_ARRAYS = "probe-damage/2"  # the set whose object carries the four a
 FEATURE_SET_BELIEF_THREATS = "probe-damage/3"  # ... and belief_threats beside them
 ARRAY_NAMES = ("threats", "speeds", "own_priorities", "foe_priorities")
 BELIEF_ARRAY = "belief_threats"
+OUTCOME_ARRAY = "outcomes"
 BELIEF_REFUSED = "belief_threats_refused"
 # The opponent model's fixed refusal codes (the contract's enum, in its order). A refused belief
 # gives no belief rows and says so: the field token carries the code as a category, so the
@@ -145,9 +168,21 @@ ThreatKey = tuple[int, bool, int, str]  # own position, own Mega flag, foe locat
 SpeedKey = tuple[int, bool, int]  # own position, own Mega flag, foe location
 
 
+PROBE_KINDS_OUTCOME = (*PROBE_KINDS, f"unsupported:{HISTORY_UNKNOWN}")
+PROBE_KIND_CATEGORIES_OUTCOME = RESERVED + len(PROBE_KINDS_OUTCOME)
+ALL_REASONS_OUTCOME = (*ALL_REASONS, HISTORY_UNKNOWN)
+SPEED_KINDS_OUTCOME = (*SPEED_KINDS, f"unsupported:{HISTORY_UNKNOWN}")
+SPEED_CATEGORIES_OUTCOME = RESERVED + len(SPEED_KINDS_OUTCOME)
+
+
 def reads_arrays(feature_set: str | None) -> bool:
-    """Whether the feature set carries the four arrays (``/2`` and ``/3``)."""
-    return feature_set in (FEATURE_SET_ARRAYS, FEATURE_SET_BELIEF_THREATS)
+    """Whether the feature set carries the four arrays (``/2``, ``/3`` and ``probe-outcome/1``)."""
+    return feature_set in (FEATURE_SET_ARRAYS, FEATURE_SET_BELIEF_THREATS, FEATURE_SET_OUTCOME)
+
+
+def reads_outcomes(feature_set: str | None) -> bool:
+    """Whether the feature set also carries ``outcomes`` (``probe-outcome/1``)."""
+    return feature_set == FEATURE_SET_OUTCOME
 
 
 def reads_belief_threats(feature_set: str | None) -> bool:
@@ -159,21 +194,24 @@ def array_names(feature_set: str | None) -> tuple[str, ...]:
     """The arrays a feature set carries beside ``rows`` (none for ``/1`` and the belief set)."""
     if reads_belief_threats(feature_set):
         return (*ARRAY_NAMES, BELIEF_ARRAY)
+    if reads_outcomes(feature_set):
+        return (*ARRAY_NAMES, OUTCOME_ARRAY)
     return ARRAY_NAMES if reads_arrays(feature_set) else ()
 
 
-def probe_category(row: Row) -> int:
+def probe_category(row: Row, outcome: bool = False) -> int:
     """The learned category of a threat or priority row: computed or its closed reason."""
     if row["kind"] == "computed":
         return RESERVED
-    return RESERVED + 1 + ALL_REASONS.index(row["reason"])
+    return RESERVED + 1 + _index(ALL_REASONS_OUTCOME if outcome else ALL_REASONS, row["reason"])
 
 
-def speed_category(row: Row) -> int:
+def speed_category(row: Row, outcome: bool = False) -> int:
     """The learned category of a speed row: one of the relations or its closed reason."""
     if row["kind"] == "computed":
         return RESERVED + RELATIONS.index(row["relation"])
-    return RESERVED + len(RELATIONS) + ALL_REASONS.index(row["reason"])
+    reasons = ALL_REASONS_OUTCOME if outcome else ALL_REASONS
+    return RESERVED + len(RELATIONS) + _index(reasons, row["reason"])
 
 
 def priority_number(row: Row) -> float:
@@ -193,6 +231,7 @@ class Arrays:
     foe_priorities: dict[tuple[int, str], Row]
     locations: frozenset[int]  # the foe locations any array or row names (the reader's rule)
     belief_threats: list[Row] = field(default_factory=list)  # ``probe-damage/3`` only
+    outcomes: list[Row] = field(default_factory=list)  # ``probe-outcome/1`` only
     refused: str | None = None  # the model's code when the belief was refused (then no belief rows)
 
     @classmethod
@@ -221,7 +260,18 @@ class Arrays:
         revealed = {(r["foe"], r["move"]) for r in features["threats"]}
         if any((r["foe"], r["move"]) in revealed for r in belief):
             raise ValueError("a belief_threats row repeats a move already in threats for that foe")
-        return cls(list(features["threats"]), speeds, own, foes, frozenset(where), belief, refused)
+        outcomes = list(features.get(OUTCOME_ARRAY, []))
+        _unique(outcomes, _outcome_key)
+        return cls(
+            list(features["threats"]),
+            speeds,
+            own,
+            foes,
+            frozenset(where),
+            belief_threats=belief,
+            refused=refused,
+            outcomes=outcomes,
+        )
 
 
 def _unique(rows: Sequence[Row], key: Callable[[Row], Any]) -> dict[Any, Row]:
@@ -246,3 +296,137 @@ def belief_threat_numbers(row: Row) -> list[float]:
 def revealed_threat_numbers_3(row: Row, foe: Row | None) -> list[float]:
     """A revealed threat's numbers under ``/3``: ``/2``'s, not the belief's, inclusion 1."""
     return [*threat_numbers(row, foe), 0.0, 1.0]
+
+
+# -- probe-outcome/1 (ADR-022 erratum E-22.5.3, encoder reading E-22.5.4) ------------------------
+#
+# An ``outcomes`` row is one own move part (slot, move position, target, Mega flag) against one
+# opposing-action branch: the switch branch first, then one branch per revealed foe move in move-id
+# order (a foe with no revealed move has one assumed branch), at most ``MAX_BRANCHES`` in all. The
+# part is about ONE foe (the foe at its target location, else the lowest living foe), so the
+# encoder puts a pooled summary of the part's branches in that foe's location group of the move
+# part and, because that foe is the part's own, the per-branch values in a block of their own.
+# Pooling rule: over the COMPUTED branches the mean and the minimum of ``success_ppm / 10^6``; the
+# pooled precondition is ``passes`` when every computed branch passes, ``fails`` when every one
+# fails and ``chance`` otherwise (none when no branch is computed); the pooled kind is ``computed``
+# when every branch is, else the first unsupported branch's reason. Nothing is guessed: an
+# unsupported branch adds no number.
+
+MAX_BRANCHES = 5  # the reviewed record's ceiling (``max_branches``): switch plus four moves
+OUTCOME_REASONS = (*REASONS, HISTORY_UNKNOWN)
+OUTCOME_KINDS = ("computed", *(f"unsupported:{reason}" for reason in OUTCOME_REASONS))
+OUTCOME_KIND_CATEGORIES = RESERVED + len(OUTCOME_KINDS)
+PRECONDITIONS = ("passes", "fails", "chance")
+OUTCOME_PRE_CATEGORIES = RESERVED + len(PRECONDITIONS)
+BRANCH_KINDS = (*PRECONDITIONS, *(f"unsupported:{reason}" for reason in OUTCOME_REASONS))
+BRANCH_KIND_CATEGORIES = RESERVED + len(BRANCH_KINDS)
+OUTCOME_POOLED = ("mean", "min", "known")  # numbers per foe location
+OUTCOME_BRANCH_NUMBERS = ("success", "assumed")  # numbers per branch
+OutcomeKey = tuple[int, int, int, bool]  # slot, move position, target, Mega flag
+
+
+def _outcome_key(row: Row) -> tuple[int, int, int, bool, str, str]:
+    return (
+        row["slot"],
+        row["move"],
+        row["target"],
+        row["mega"],
+        row["action"],
+        row["foe_move"] or "",
+    )
+
+
+def outcome_blocks(rows: Sequence[Row]) -> dict[OutcomeKey, list[Row]]:
+    """The rows by part, each part's branches in the wire's order; a malformed block is refused.
+
+    The wire lists a part's switch branch first and then its move branches (the readers hold
+    this); the encoder re-checks it, since it indexes the per-branch columns by position.
+    """
+    blocks: dict[OutcomeKey, list[Row]] = {}
+    for row in rows:
+        blocks.setdefault((row["slot"], row["move"], row["target"], row["mega"]), []).append(row)
+    for group in blocks.values():
+        if group[0]["action"] != "switch" or any(r["action"] != "move" for r in group[1:]):
+            raise RowError("an outcomes block must start with its switch branch")
+        if not 1 + 1 <= len(group) <= MAX_BRANCHES:
+            raise RowError("an outcomes block has a switch branch and one to four move branches")
+    return blocks
+
+
+def _outcome_kind(group: Sequence[Row]) -> int:
+    for row in group:
+        if row["kind"] != "computed":
+            return RESERVED + 1 + OUTCOME_REASONS.index(row["reason"])
+    return RESERVED
+
+
+def _pooled_precondition(computed: Sequence[Row]) -> int:
+    if not computed:
+        return NONE
+    found = {row["precondition"] for row in computed}
+    if found == {"passes"}:
+        return RESERVED + PRECONDITIONS.index("passes")
+    if found == {"fails"}:
+        return RESERVED + PRECONDITIONS.index("fails")
+    return RESERVED + PRECONDITIONS.index("chance")
+
+
+def outcome_pooled(group: Sequence[Row]) -> tuple[list[int], list[float]]:
+    """The pooled categories (kind, precondition) and numbers (mean, min, known) of one part."""
+    computed = [row for row in group if row["kind"] == "computed"]
+    shares = [row["success_ppm"] / PPM for row in computed]
+    cats = [_outcome_kind(group), _pooled_precondition(computed)]
+    nums = [sum(shares) / len(shares), min(shares), 1.0] if shares else [0.0] * len(OUTCOME_POOLED)
+    return cats, nums
+
+
+def _branch_kind(row: Row) -> int:
+    if row["kind"] == "computed":
+        return RESERVED + PRECONDITIONS.index(row["precondition"])
+    return RESERVED + len(PRECONDITIONS) + OUTCOME_REASONS.index(row["reason"])
+
+
+def outcome_branches(
+    group: Sequence[Row], move_index: Callable[[str], int]
+) -> tuple[list[int], list[float]]:
+    """The per-branch categories (kind, foe move) and numbers (success, assumed) of one part,
+    ``MAX_BRANCHES`` blocks, an absent branch NONE and zero. The switch branch has no foe move."""
+    cats: list[int] = []
+    nums: list[float] = []
+    for index in range(MAX_BRANCHES):
+        if index >= len(group):
+            cats += [NONE, NONE]
+            nums += [0.0, 0.0]
+            continue
+        row = group[index]
+        move = row["foe_move"]
+        cats += [_branch_kind(row), NONE if move is None else move_index(move)]
+        success = row["success_ppm"] / PPM if row["kind"] == "computed" else 0.0
+        nums += [success, 1.0 if row["assumed"] else 0.0]
+    return cats, nums
+
+
+def outcome_no_columns() -> tuple[list[int], list[float]]:
+    """The columns of a part with no outcome block, in the layout's order."""
+    pooled = SLOTS * 2 + MAX_BRANCHES * 2
+    return [NONE] * pooled, [0.0] * (SLOTS * len(OUTCOME_POOLED) + MAX_BRANCHES * 2)
+
+
+def outcome_columns(
+    group: Sequence[Row], location: int, move_index: Callable[[str], int]
+) -> tuple[list[int], list[float]]:
+    """The columns of a move part's block, in the layout's order: the pooled categories and
+    numbers of every foe location (only ``location``, the part's foe, is filled) and then the
+    per-branch ones."""
+    if not 1 <= location <= SLOTS:
+        raise RowError("an outcomes block is about a foe location the format lacks")
+    cats, nums = outcome_no_columns()
+    pooled_cats, pooled_nums = outcome_pooled(group)
+    branch_cats, branch_nums = outcome_branches(group, move_index)
+    at = (location - 1) * 2
+    cats[at : at + 2] = pooled_cats
+    at = (location - 1) * len(OUTCOME_POOLED)
+    nums[at : at + len(OUTCOME_POOLED)] = pooled_nums
+    cats[SLOTS * 2 :] = branch_cats
+    nums[SLOTS * len(OUTCOME_POOLED) :] = branch_nums
+    return cats, nums

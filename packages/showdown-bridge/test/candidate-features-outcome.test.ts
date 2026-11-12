@@ -114,10 +114,11 @@ describe("identity and the earlier sets' bytes", () => {
     const c = moveRequests()[0] as Captured;
     expect(() => candidateFeaturesOutcome(engine, without, channelOf(c), teamOf(c), candidatesOf(c))).toThrow(/reviewed record/);
   });
-  it("is refused by buildFeatures until the wire has its outcomes (slice H4), while the builder itself works", () => {
+  it("is built by buildFeatures, the one dispatch, to the builder's own bytes (the wire carries it since slice H4)", () => {
     const c = moveRequests()[0] as Captured;
-    expect(() => buildFeatures(engine, configs(), channelOf(c), teamOf(c), candidatesOf(c), createFeatureMemo(), FEATURE_SET_OUTCOME)).toThrow(/slice H4/);
-    expect(build(c).feature_set).toBe(FEATURE_SET_OUTCOME);
+    const dispatched = buildFeatures(engine, configs(), channelOf(c), teamOf(c), candidatesOf(c), createFeatureMemo(), FEATURE_SET_OUTCOME);
+    expect(JSON.stringify(dispatched)).toBe(JSON.stringify(build(c)));
+    expect(dispatched.feature_set).toBe(FEATURE_SET_OUTCOME);
   });
 });
 

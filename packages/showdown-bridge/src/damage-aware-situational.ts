@@ -12,8 +12,12 @@ import { PPM } from "./damage-aware-score.ts";
 
 export interface SituationalInput {
   rows: SituationRows;
-  /** Per own active slot, the world facts' `protect_streak`; null when the facts are unavailable (then no stalling move scores). */
-  streaks: readonly (number | null)[];
+  /**
+   * Per own active slot, the world facts' `protect_streak`; an entry null when the facts are unavailable (then no stalling move scores).
+   * The whole list null (`damage-aware@v5`) means no streak rule: a stalling move by a Threatened slot is worth the weight and the
+   * engine's success chance scales it instead (`damage-aware-success.ts`).
+   */
+  streaks: readonly (number | null)[] | null;
   /** The engine's stalling moves. */
   stall: ReadonlySet<string>;
   /** The id of the move a `move N` part of own slot `slot` plays, or null. */
@@ -34,6 +38,7 @@ export function situationalScore(input: SituationalInput, slot: number, part: Sl
   }
   const id = input.moveId(slot, part.index);
   if (id === null || !input.stall.has(id)) return 0;
+  if (input.streaks === null) return input.weights.protect_value_ppm;
   const streak = input.streaks[slot] ?? null;
   return streak !== null && streak < 1 ? input.weights.protect_value_ppm : 0;
 }

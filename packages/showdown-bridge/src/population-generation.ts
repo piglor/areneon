@@ -15,8 +15,9 @@
 // the rows of that set, built at play with the same `FeatureConfigs` the single-lineage generation uses; the loader
 // recomputes them for each member's examples or reads the play-time sidecar the game processes left (`features_dir`).
 //
-// Game processes (#1333): the games are the plan's, and game `g` is played by the process whose slice holds it
-// (`g mod of = index`); a further process leaves its entries (row, facts, the Episode files it wrote) and the process that
+// Game processes (#1333): the games are the plan's, and a game is played by the process whose slice holds it
+// (`populationShards`, #1355: consecutive runs of the games ordered by the members that hold their seats, so a process needs
+// the workers of few members); a further process leaves its entries (row, facts, the Episode files it wrote) and the process that
 // started it merges them in plan order, so the generation's files are the same for any number of processes and workers.
 //
 // What this does not do (later slices): train, freeze or copy anything (the Python driver, slice 5), exploiter
@@ -31,7 +32,7 @@ import { createFeatureMemo, type FeatureConfigs } from "./candidate-features.ts"
 import type { AnyCandidateFeatures } from "./feature-build.ts";
 import { readFeatureRows, writeFeatureRows, writePlayRows } from "./feature-recompute.ts";
 import { buildLeagueRunRecordV2, type FactSeat, type LeagueRunRecordV2 } from "./league-run-record.ts";
-import { type PopulationGamePlan, type PopulationSeat, planPopulation } from "./population-plan.ts";
+import { type PopulationGamePlan, type PopulationSeat, planPopulation, populationShards } from "./population-plan.ts";
 import type { PastPoolFile, PastSnapshot } from "./past-pool.ts";
 import { episodeHash } from "./episode.ts";
 import type { PlayedGame } from "./evaluation-harness.ts";
@@ -89,6 +90,7 @@ export interface PopulationOptions {
   damage_aware?: DamageAwareSetup;
   damage_aware_v3?: DamageAwareSetup;
   damage_aware_v4?: DamageAwareSetup;
+  damage_aware_v5?: DamageAwareSetup;
   damage_aware_v2?: DamageAwareSetup;
   belief_worlds?: BeliefWorldsFactory | undefined;
   stream_limits?: ChunkLimits;
@@ -201,7 +203,8 @@ export function populationPlanOf(config: TrainingRunConfig, generation: number, 
 /** The members that hold a seat in a game of `shard` (all of them without one): the only members whose workers this process needs. */
 export function membersPlaying(plan: readonly PopulationGamePlan[], shard: Shard = { index: 0, of: 1 }): Set<string> {
   const found = new Set<string>();
-  for (const entry of plan) if (entry.game % shard.of === shard.index) for (const seat of [entry.seats.p1, entry.seats.p2]) if ("member" in seat) found.add(seat.member);
+  const owner = populationShards(plan, shard.of);
+  for (const [at, entry] of plan.entries()) if (owner[at] === shard.index) for (const seat of [entry.seats.p1, entry.seats.p2]) if ("member" in seat) found.add(seat.member);
   return found;
 }
 
@@ -312,7 +315,8 @@ export async function playPopulationEntries(options: PopulationOptions, shard: S
   checkPopulationConfig(config, members, generation, pool.teams.length, options.past?.pool);
   const root = options.shared_dir ?? options.out_dir;
   const plan = populationPlanOf(config, generation, pool.teams.length, members, options.past?.pool);
-  const mine = plan.filter((entry) => entry.game % shard.of === shard.index);
+  const owner = populationShards(plan, shard.of);
+  const mine = plan.filter((_, at) => owner[at] === shard.index);
   const withRecords: PopulationOptions = { ...options, ...(baselineRecords(options, config) as Pick<PopulationOptions, "damage_aware" | "damage_aware_v2" | "damage_aware_v3" | "damage_aware_v4">) };
   const byLabel = new Map<string, PopulationMember>(members.map((entry) => [entry.member, entry]));
   const workersOf = (label: string): number => 1 + (byLabel.get(label)?.peers?.length ?? 0);
