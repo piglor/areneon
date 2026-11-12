@@ -9,8 +9,10 @@ per pass, which is also what evaluation and sealed runs require.
 
 from __future__ import annotations
 
+import queue
+import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, cast
@@ -33,6 +35,13 @@ from areneon_ml.worker.protocol import (
 from areneon_ml.worker.sampler import FULL_TEMPERATURE_PPM, check_probabilities, select, to_ppm
 from areneon_ml.worker.scorer import Scorer, ValueScorer
 from areneon_ml.worker.view import encoder_input
+
+#: The batching a worker states when it answers several queued queries per forward pass
+#: (``generation.inference``, ADR-028 section 2 F2): ``{kind, max_batch}``; absent is batch 1.
+BATCHED = "batched"
+
+#: The smallest batched forward pass; batch 1 is stated by omission.
+MIN_BATCH = 2
 
 EXIT_OK = 0
 EXIT_FRAME = 2
@@ -156,7 +165,16 @@ class Worker:
         features: FeatureSupport | None = None,
         sheet: SheetSupport | None = None,
         value_scorer: ValueScorer | None = None,
+        inference_max_batch: int | None = None,
     ) -> None:
+        if inference_max_batch is not None and inference_max_batch < MIN_BATCH:
+            raise ValueError("inference_max_batch is at least 2; batch 1 is stated by omission")
+        self._inference_max_batch = inference_max_batch
+        self._inference: dict[str, Any] | None = (
+            None
+            if inference_max_batch is None
+            else {"kind": BATCHED, "max_batch": inference_max_batch}
+        )
         self._value_scorer = value_scorer
         self._features = features
         self._sheet = sheet
@@ -179,6 +197,8 @@ class Worker:
             self._ready["message"]["opponent_sheet"] = dict(sheet.source)
         if value_scorer is not None:
             self._ready["message"]["value_query"] = True
+        if self._inference is not None:
+            self._ready["message"]["inference"] = dict(self._inference)
         self._max = max_line_bytes
 
     def handshake(self, stdin: BinaryIO, stdout: BinaryIO) -> None:
@@ -194,6 +214,8 @@ class Worker:
         stdout.flush()
         if message["contracts"] != contract_versions():
             raise SessionRefused("the client speaks other contract versions")
+        if message.get("inference") != self._inference:
+            raise SessionRefused("the client expects another batching than this worker states")
 
     def answer(self, frame: dict[str, Any]) -> dict[str, Any]:  # noqa: PLR0911
         """The PolicyReply of one query frame."""
@@ -234,6 +256,83 @@ class Worker:
             if evaluating
             else self._recommendation(query, probabilities, started)
         )
+
+    def answer_batch(self, frames: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+        """The PolicyReplies of several query frames, in their order; the forward pass batches.
+
+        Each frame is read and refused on its own exactly as ``answer`` does; the queries that
+        need the network go through ``Scorer.score_batch`` together (a scorer without it, a
+        test stand-in, is asked one at a time). Only a run whose config says
+        ``generation.inference`` asks for this.
+        """
+        started = time.perf_counter()
+        replies: list[dict[str, Any] | None] = [None] * len(frames)
+        scored: list[tuple[int, dict[str, Any], bool]] = []
+        for index, frame in enumerate(frames):
+            query_id = frame.get("query_id")
+            try:
+                query = read_query(
+                    frame, self._features, self._sheet, self._value_scorer is not None
+                )
+                for candidate in query["candidates"]:
+                    parse_choice(candidate["choice"])
+            except QueryError as exc:
+                replies[index] = self._error(query_id, "invalid_query", str(exc))
+                continue
+            except UnsupportedCandidate as exc:
+                replies[index] = self._error(query_id, "unsupported_candidate", str(exc))
+                continue
+            if query["sampling"]["kind"] == "value":
+                replies[index] = self._answer_value(query_id, query)
+            else:
+                scored.append((index, query, query["sampling"]["kind"] == "evaluate"))
+        for (index, query, evaluating), found in zip(
+            scored, self._score([query for _, query, _ in scored]), strict=True
+        ):
+            query_id = query["query_id"]
+            if isinstance(found, UnsupportedCandidate):
+                replies[index] = self._error(query_id, "unsupported_candidate", str(found))
+            elif isinstance(found, ReducerError):
+                replies[index] = self._error(
+                    query_id, "invalid_query", f"{type(found).__name__}: {found.message}"
+                )
+            elif isinstance(found, EncodingError):
+                replies[index] = self._error(query_id, "invalid_query", f"EncodingError: {found}")
+            else:
+                assert isinstance(found, tuple)  # every refusal was handled above
+                probabilities, value = found
+                check_probabilities(probabilities, len(query["candidates"]))
+                replies[index] = (
+                    self._evaluation(query, probabilities, value)
+                    if evaluating
+                    else self._recommendation(query, probabilities, started)
+                )
+        return [reply for reply in replies if reply is not None]
+
+    def _score(
+        self, queries: Sequence[dict[str, Any]]
+    ) -> list[tuple[list[float], float] | Exception]:
+        """The probabilities and value of each query, or the refusal of that query alone."""
+        items = [
+            (encoder_input(query), query["sampling"].get("temperature_ppm")) for query in queries
+        ]
+        batch = getattr(self._scorer, "score_batch", None)
+        if batch is not None:
+            return cast("list[tuple[list[float], float] | Exception]", batch(items))
+        found: list[tuple[list[float], float] | Exception] = []
+        for query, (view, temperature_ppm) in zip(queries, items, strict=True):
+            try:
+                if query["sampling"]["kind"] == "evaluate":
+                    found.append(self._scorer.evaluate(view))
+                elif temperature_ppm is None:
+                    found.append((self._scorer.probabilities(view), 0.0))
+                else:
+                    found.append(
+                        (self._scorer.probabilities(view, temperature_ppm=temperature_ppm), 0.0)
+                    )
+            except (UnsupportedCandidate, ReducerError, EncodingError) as exc:
+                found.append(exc)
+        return found
 
     def _answer_value(self, query_id: object, query: dict[str, Any]) -> dict[str, Any]:
         """The EvaluationReply of a ``value`` query: the value in ppm."""
@@ -314,6 +413,8 @@ class Worker:
         """Run one session; the process exit code."""
         try:
             self.handshake(stdin, stdout)
+            if self._inference_max_batch is not None:
+                return self._serve_batched(stdin, stdout, self._inference_max_batch)
             while (frame := read_frame(stdin, self._max)) is not None:
                 stdout.write(encode_frame(self.answer(frame), self._max))
                 stdout.flush()
@@ -322,3 +423,48 @@ class Worker:
         except (FrameError, QueryError):
             return EXIT_FRAME
         return EXIT_OK
+
+    def _serve_batched(self, stdin: BinaryIO, stdout: BinaryIO, max_batch: int) -> int:
+        """The batched session (ADR-028 section 2 F2): answer what is queued, up to ``max_batch``.
+
+        A reader thread turns the input into frames; the main thread takes the next frame
+        (waiting for one), then every frame already queued up to ``max_batch``, answers them in
+        one pass and writes the replies in their order. What is grouped depends on timing, so a
+        batched session is not reproducible; a frame error is answered after the frames that
+        arrived before it, as in the serial session.
+        """
+        frames: queue.Queue[dict[str, Any] | BaseException | None] = queue.Queue()
+
+        def read() -> None:
+            try:
+                while (frame := read_frame(stdin, self._max)) is not None:
+                    frames.put(frame)
+                frames.put(None)
+            except BaseException as exc:
+                frames.put(exc)
+
+        threading.Thread(target=read, daemon=True).start()
+        ended: BaseException | None = None
+        while ended is None:
+            batch: list[dict[str, Any]] = []
+            item = frames.get()
+            while True:
+                if isinstance(item, BaseException) or item is None:
+                    ended = item if item is not None else StopIteration()
+                    break
+                batch.append(item)
+                if len(batch) == max_batch:
+                    break
+                try:
+                    item = frames.get_nowait()
+                except queue.Empty:
+                    break
+            if batch:
+                for reply in self.answer_batch(batch):
+                    stdout.write(encode_frame(reply, self._max))
+                stdout.flush()
+        if isinstance(ended, StopIteration):
+            return EXIT_OK
+        if isinstance(ended, (FrameError, QueryError)):
+            return EXIT_FRAME
+        raise ended

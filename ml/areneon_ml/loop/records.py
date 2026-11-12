@@ -20,9 +20,10 @@ TEMPERATURE = 1
 PRECISION = "float32"
 FULL_TEMPERATURE_PPM = 1_000_000  # temperature 1 in millionths: the default, never written
 DIGEST_CHARS = 64  # a SHA-256 digest in lowercase hex
+MIN_BATCH = 2  # the smallest batched forward pass: batch 1 is stated by omission
 
 
-def policy_id(  # noqa: PLR0913, PLR0917
+def policy_id(  # noqa: PLR0912, PLR0913, PLR0917
     preview: str,
     battle: str,
     mode: str = MODE,
@@ -31,6 +32,7 @@ def policy_id(  # noqa: PLR0913, PLR0917
     features: str | None = None,
     search: str | None = None,
     preview_solve: str | None = None,
+    inference: dict[str, Any] | None = None,
 ) -> str:
     """``policy:`` + SHA-256 of ``JCS({preview, battle, mode, temperature, precision})``.
 
@@ -48,6 +50,10 @@ def policy_id(  # noqa: PLR0913, PLR0917
     A pair played with decision-time search (ADR-026 §5) adds ``search: <search identity hash>``
     (label "learned pair with decision-time search (one-ply re-rank)"); ``search`` is None for every
     other policy, whose id is unchanged.
+
+    A pair whose self-play forward pass is batched (ADR-028 §2 F2, ``generation.inference``) adds
+    ``inference: {kind, max_batch}``; ``inference`` is None for every other policy, whose id is
+    unchanged (an evaluation or sealed path never batches, so it never has one).
 
     Play settings (ADR-023 §1) enter the preimage only when set, so every earlier id is
     unchanged: ``temperature_ppm`` (1 to 999,999; the default 1,000,000 is never written)
@@ -70,6 +76,12 @@ def policy_id(  # noqa: PLR0913, PLR0917
             if len(value) != DIGEST_CHARS or value.strip("0123456789abcdef"):
                 raise ValueError(f"{key} is {what}: 64 lowercase hex digits")
             body[key] = value
+    if inference is not None:
+        if inference.keys() != {"kind", "max_batch"} or inference["kind"] != "batched":
+            raise ValueError("an unknown inference setting")
+        if not isinstance(inference["max_batch"], int) or inference["max_batch"] < MIN_BATCH:
+            raise ValueError("inference max_batch must be an integer of at least 2")
+        body["inference"] = dict(inference)
     if temperature_ppm is not None or truncation is not None:
         if mode != "sample":
             raise ValueError("a temperature or a truncation applies to sample mode only")

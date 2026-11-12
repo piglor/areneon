@@ -69,10 +69,16 @@ class FakePlayer:
         assert format_id == tiny_config().format_id
         return dict(MANIFEST)
 
+    def perturbation(self) -> int:
+        """What is added to the generation number to seed the games: 0 here, so a replayed
+        generation is the same bytes. A subclass that plays like a run that is not reproducible
+        (batched inference, ADR-028) returns something else on every call."""
+        return 0
+
     def play(self, request: PlayRequest) -> None:
         self.requests.append(request)
         generation = request.generation
-        picker = random.Random(generation)
+        picker = random.Random(generation + self.perturbation())
         examples = [e for player in ("p1", "p2") for e in episode_lines(generation, player, picker)]
         text, training_set = stream_of(examples, request.policy_id)
         summary = {

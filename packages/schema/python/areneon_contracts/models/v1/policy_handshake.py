@@ -48,6 +48,18 @@ class FeatureSetStatement(BaseModel):
     feature_set_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
 
 
+class Inference(BaseModel):
+    """
+    The batching of the worker's forward pass (ADR-028 section 2, #1195): up to max_batch queued queries are scored in one padded forward pass on the CPU. Absent means batch 1, which is what every evaluation, sealed and head-to-head path asks for.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["batched"]
+    max_batch: Annotated[StrictInt, Field(ge=2, le=1024)]
+
+
 class Hello(BaseModel):
     """
     Client to worker: the contracts the client speaks.
@@ -60,6 +72,10 @@ class Hello(BaseModel):
     contracts: Annotated[list[ContractVersion], Field(max_length=5, min_length=1)]
     """
     Sorted by name, no name twice (a reader rule).
+    """
+    inference: Inference | MISSING = MISSING
+    """
+    The batching the client expects (a training self-play client of a run whose config sets generation.inference). Omitted means batch 1. The worker refuses the session if its own batching differs, and the client refuses a ready that states another.
     """
 
 
@@ -99,6 +115,10 @@ class Ready(BaseModel):
     value_query: Literal[True] | MISSING = MISSING
     """
     True when the worker answers value queries (PolicyQuery sampling kind value): its checkpoints' encoder layout does not fill any token or field column from candidate_features arrays or opponent_sheet, so the value head needs no candidate rows (ADR-026 erratum E2 decision 7). Omitted otherwise, and then a value query is refused.
+    """
+    inference: Inference | MISSING = MISSING
+    """
+    The batching the worker was started with: omitted for batch 1. The client refuses a ready whose batching is not the one its hello asked for.
     """
 
 

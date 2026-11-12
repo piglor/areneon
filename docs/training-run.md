@@ -178,6 +178,18 @@ two runs filled the swap and made workers miss their 30 s latency budget (a reco
 back. On a larger machine scale `S` with the cores (4 game processes on 28 cores were measured;
 the best ratio is not) and the memory with the rule above; a rented GPU needs no change beyond `device: "cuda"`.
 
+A population run (ADR-021) takes `--game-processes` and `--policy-workers` too (#1333) and its generation
+files are the same for any value (`training-loop-population-features.python.test.ts` compares one process
+with two game processes of two workers per member, with candidate features, a shared trunk and a Battle-only
+warm start). Each game process starts policy workers only for the members that hold a seat in its slice of
+the plan, `K` of them per member, plus one worker for each past-pool snapshot a wave uses; a member's
+workers are 0.43 GB each, so the rule of thumb above becomes `RAM = S x (0.6 + 0.43 x K x M)` GB for `M`
+members that all play in every slice (they do, in practice), and the ladder games of a snapshot add at most
+the snapshots in use at once. A run that names `candidate_features` builds its rows in every game
+process (the play-time sidecar and the post-game pass, as in a single lineage), which is what makes
+game processes worth having. `--profile` does not apply to a population run, and an opponent sheet
+and exploiter seats are still refused.
+
 The run's `metrics/g<NNNNNN>.json` has the resident-set peaks of the driver, the largest game
 process and the largest policy worker (`peak_rss_bytes`, Linux, optional) and the peak reserved
 accelerator memory (`peak_accelerator_reserved_bytes`, optional), so a run reports what it used.
@@ -959,3 +971,56 @@ carries `provenance.json` (the registry's hash and each record's hash). That is 
 self-consistency check: it catches a single-file edit or a corrupted copy, but not someone who
 rewrites both files. `import-clone` verifies the same binding of a clone output before it trusts
 its `sources.json`.
+
+## 11. Batched self-play inference (`generation.inference`, ADR-028 section 2 F2)
+
+By default the policy worker scores one query per forward pass (batch 1), as evaluation requires. A run
+may ask for the forward pass of its training self-play and scripted-baseline games to be batched on the
+CPU:
+
+```json
+"generation": { ..., "n_parallel": 8, "inference": { "kind": "batched", "max_batch": 4 } }
+```
+
+`max_batch` is 2 to `n_parallel`; neither a population run nor a run with `generation.search_labels` can set it (labels are training targets and stay batch-1 functions of the Episode). The run is a new run from
+generation 0 (the field enters `run_config_hash`).
+
+What batches, and what does not. The game processes still send one query per decision; the worker
+(`--inference-max-batch`, which the play script gives it from the config) reads the queries that are queued,
+up to `max_batch`, reduces and encodes each alone, and runs the network once over the padded batch of each
+role (`NetworkScorer.score_batch`). Float32, CPU torch from the shipped closure, deterministic algorithms on;
+there is no GPU inference. Only `W_fwd` batches.
+
+Identity. The pair's `behaviour_policy_id` gains `inference: {kind, max_batch}` in its preimage (TS
+`policyId`, Python `policy_id`; the vectors are pinned on both sides), so a stream played this way is
+refused by a learner that expects the unbatched id and the reverse. The worker states its batching in the
+handshake (`ready.inference`), the client puts what it expects in the `hello`, and each side refuses a
+difference: a client that asks for batch 1 refuses a batching worker, and a batching worker refuses a hello
+that expects another batching. Only the generation play script gives a client the option; the progress
+evaluation, the head to head, the private test, the scripted head to head, the best-response command and
+every other client are built with none, so they score batch 1 (a source scan tests this).
+
+Claims. For a batched run these hold, and tests check them: the plan, seeds, teams and policy ids are the
+same on a rerun; every committed generation verifies; retraining from a committed stream reproduces the
+learner-state hash; a generation killed at any stage resumes to a valid generation. These do NOT hold:
+a byte-identical rerun of a generation, the same bytes for any `--game-processes` and `--policy-workers`,
+and the SIGKILL-resumes-to-equal-bytes claim (what is grouped into a batch depends on timing, and a padded
+batch is not bit-identical to batch 1, so a choice can differ and the game then goes differently).
+
+Divergence measure. Each game process computes a key for every decision the pair plays (a hash of the
+decision's own request and sampling draw `u`) and keeps the query of the decisions with the smallest keys,
+at least 512 of them and 2 percent of the decisions so far, so memory grows with the sample and not with the
+generation. When its games are done it scores the smallest-keyed of them, at least 1 percent of its
+decisions and at least 256 (all of them when fewer were played), again at batch 1 on a worker of its own with each decision's own `u`, and asks the
+batched worker and the batch-1 worker for the prior (temperature 1) of the same queries. The play script prints
+`{"inference_divergence": ...}` and the driver stores it as the optional `inference_divergence` of
+`metrics/g<N>.json` (outside every hash): `decisions` played, `sampled`, `differing` (the sampled decisions
+whose choice differs from the played one), `max_prior_diff_ppm` (the largest absolute difference of any
+candidate's prior) and `target_met` (the sample reached the target of `min(decisions, max(256, 1 percent))`; false only when fewer were kept, which a real generation does not do, and a tiny run's few decisions can). The batched priors it is compared with depend on what happened to be queued with each query, so `max_prior_diff_ppm` is a noisy diagnostic and not a bound; the dashboard shows the figures per generation under a note that the run is not byte-reproducible.
+It adds one worker start and a few thousand queries to the end of the play phase, which the play time
+includes. Before and after play times on an idle machine are measured as for section 9 and journaled on the
+ticket.
+
+Latency. A query waits for the others queued with it, so its `elapsed_ms` and its share of the
+per-decision budget include the whole batch's forward pass (up to `max_batch` queries); the budgets of the
+run config apply to that, and a run that batches should size `max_batch` against `latency_budget_ms`.

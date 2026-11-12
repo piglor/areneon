@@ -15,7 +15,11 @@ learner's generation that trains nothing (generation 0) records a peak of 0. The
 when measured. The optional ``profile`` (ADR-028 section 1, #1191) is written only by a run
 started with ``--profile``: where a generation's time goes, by phase and process, for the
 loop-share measurement (``loop/share.py``). It is outside every hash like the rest of the
-record. A failed write
+record. The optional
+``inference_divergence`` (ADR-028 section 2 F2, #1195) is written only by a run whose config
+says ``generation.inference``: the share of a deterministic sample of the generation's
+decisions whose choice differs when scored again at batch 1, and the largest prior difference.
+A failed write
 raises out of ``Loop.run`` after the commit: the generation is whole and a resume continues.
 """
 
@@ -77,6 +81,9 @@ class Peaks:
     rss: dict[str, int] | None = None
     #: The ``profile`` value (``profile_record``) of a run started with ``--profile`` (#1191).
     profile: dict[str, Any] | None = None
+    #: The ``inference_divergence`` value of a run whose config says ``generation.inference``
+    #: (ADR-028 section 2 F2, #1195): how far batched self-play strayed from batch 1.
+    inference: dict[str, Any] | None = None
 
 
 def build_metrics(
@@ -114,6 +121,8 @@ def build_metrics(
         record["peak_rss_bytes"] = dict(sorted(peaks.rss.items()))
     if peaks.profile is not None:
         record["profile"] = peaks.profile
+    if peaks.inference is not None:
+        record["inference_divergence"] = peaks.inference
     validate("run-metrics", record)
     return record
 
@@ -187,7 +196,17 @@ def read_run_metrics(raw: object, config: RunConfig, generation: int) -> dict[st
             raise MetricsError("the allocator cannot have reserved less than the tensors used")
     if "profile" in raw:
         check_profile(raw["profile"])
+    if "inference_divergence" in raw:
+        check_divergence(raw["inference_divergence"], config)
     return raw
+
+
+def check_divergence(found: dict[str, Any], config: RunConfig) -> None:
+    """The divergence record is of the config's batching and its counts nest (nothing else)."""
+    if found["max_batch"] != config.generation.inference_max_batch:
+        raise MetricsError("the divergence record is not of the config's batching")
+    if not found["differing"] <= found["sampled"] <= found["decisions"]:
+        raise MetricsError("the divergence counts must satisfy differing <= sampled <= decisions")
 
 
 def check_profile(profile: dict[str, Any]) -> None:
