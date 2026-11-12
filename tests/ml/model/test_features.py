@@ -393,7 +393,7 @@ def test_the_reasons_are_the_probe_contract_s_in_its_order() -> None:
     )
     assert (
         tuple(schema["$defs"]["UnsupportedFeatureRow"]["properties"]["reason"]["enum"])
-        == rows_of.REASONS
+        == (*rows_of.REASONS, "history_unknown")  # the probe-outcome/1 reader rule's reason
     )
 
 

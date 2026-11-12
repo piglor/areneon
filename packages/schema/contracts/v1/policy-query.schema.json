@@ -532,7 +532,7 @@
       }
     },
     "CandidateFeatures": {
-      "description": "The rows of one decision under one feature set. feature_set names the set (probe-damage/1, probe-damage/2 or probe-damage/3); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true. Under probe-damage/2 the four arrays threats, speeds, own_priorities and foe_priorities are all present, and probe-damage/3 adds belief_threats; under any other set none is (a reader rule: the profile has no if/then).",
+      "description": "The rows of one decision under one feature set. feature_set names the set (probe-damage/1, probe-damage/2, probe-damage/3 or probe-outcome/1); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true. Under probe-damage/2 the four arrays threats, speeds, own_priorities and foe_priorities are all present, and probe-damage/3 adds belief_threats; probe-outcome/1 holds the same five arrays (recomputed with the history facts declared) and outcomes; under any other set none is (a reader rule: the profile has no if/then).",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -678,6 +678,25 @@
             "empty_distribution",
             "disguise_unsettled"
           ]
+        },
+        "outcomes": {
+          "description": "probe-outcome/1 only: one row per (own move part of the candidates, opposing-action branch), sorted by (slot, move, target, mega false first, action with switch first, foe move id): whether the move works now and with what chance, as the engine answers it on the assumed opponent set, not facts about the real opponent. Per part: one switch branch, then one branch per revealed move of the targeted foe (or exactly one assumed branch when it has revealed none), at most 5 in all (a reader rule). A part with no living foe at its target location has no rows.",
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "type": "object",
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ComputedOutcomeRow"
+              },
+              {
+                "$ref": "#/$defs/UnsupportedOutcomeRow"
+              }
+            ],
+            "discriminator": {
+              "propertyName": "kind"
+            }
+          }
         }
       }
     },
@@ -748,7 +767,7 @@
       }
     },
     "UnsupportedFeatureRow": {
-      "description": "A row the probe could not answer exactly: its closed reason (the MechanicsResult unsupported reasons), never a guess.",
+      "description": "A row the probe could not answer exactly: its closed reason (the MechanicsResult unsupported reasons), never a guess. history_unknown (probe-outcome/1 only, a reader rule) means a history fact of the query could not be settled and the two ends of its range gave different answers.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -785,7 +804,8 @@
           "enum": [
             "query_kind",
             "random_effect",
-            "scenario_rule_table"
+            "scenario_rule_table",
+            "history_unknown"
           ]
         }
       }
@@ -973,7 +993,7 @@
       }
     },
     "UnsupportedThreatRow": {
-      "description": "A threat the probe could not answer exactly: its closed reason, never a guess.",
+      "description": "A threat the probe could not answer exactly: its closed reason, never a guess. history_unknown (probe-outcome/1 only, a reader rule) means a history fact of the query could not be settled and the two ends of its range gave different answers.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -1014,7 +1034,8 @@
           "enum": [
             "query_kind",
             "random_effect",
-            "scenario_rule_table"
+            "scenario_rule_table",
+            "history_unknown"
           ]
         }
       }
@@ -1060,7 +1081,7 @@
       }
     },
     "UnsupportedSpeedRow": {
-      "description": "A speed relation the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority.",
+      "description": "A speed relation the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority. history_unknown (probe-outcome/1 only, a reader rule) means a history fact of the query could not be settled and the two ends of its range gave different answers.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -1096,7 +1117,8 @@
             "random_effect",
             "scenario_rule_table",
             "unqueueable",
-            "fractional_priority"
+            "fractional_priority",
+            "history_unknown"
           ]
         }
       }
@@ -1141,7 +1163,7 @@
       }
     },
     "UnsupportedOwnPriorityRow": {
-      "description": "An own priority the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority (a pseudo-move such as recharge is query_kind).",
+      "description": "An own priority the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority (a pseudo-move such as recharge is query_kind). history_unknown (probe-outcome/1 only, a reader rule) means a history fact of the query could not be settled and the two ends of its range gave different answers.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -1174,7 +1196,8 @@
             "random_effect",
             "scenario_rule_table",
             "unqueueable",
-            "fractional_priority"
+            "fractional_priority",
+            "history_unknown"
           ]
         }
       }
@@ -1214,7 +1237,7 @@
       }
     },
     "UnsupportedFoePriorityRow": {
-      "description": "A foe priority the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority.",
+      "description": "A foe priority the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority. history_unknown (probe-outcome/1 only, a reader rule) means a history fact of the query could not be settled and the two ends of its range gave different answers.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -1245,7 +1268,8 @@
             "random_effect",
             "scenario_rule_table",
             "unqueueable",
-            "fractional_priority"
+            "fractional_priority",
+            "history_unknown"
           ]
         }
       }
@@ -1637,6 +1661,171 @@
             "query_kind",
             "random_effect",
             "scenario_rule_table"
+          ]
+        }
+      }
+    },
+    "ComputedOutcomeRow": {
+      "description": "What one own move part does against one opposing-action branch, as integers.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "slot",
+        "move",
+        "target",
+        "mega",
+        "action",
+        "foe_move",
+        "assumed",
+        "precondition",
+        "precondition_ppm",
+        "hit_ppm",
+        "success_ppm"
+      ],
+      "properties": {
+        "kind": {
+          "const": "computed"
+        },
+        "slot": {
+          "description": "The acting active Pokemon's slot, 0-based.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "move": {
+          "description": "The move's position in the request, 1-based.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "target": {
+          "description": "The part's own target location in a choice (move 1 1): 0 for none, negative for an ally.",
+          "type": "integer",
+          "minimum": -9,
+          "maximum": 9
+        },
+        "mega": {
+          "type": "boolean",
+          "description": "True when the move part also Mega Evolves."
+        },
+        "action": {
+          "description": "The opposing action of the branch: every foe switches, or the targeted foe uses foe_move.",
+          "enum": [
+            "switch",
+            "move"
+          ]
+        },
+        "foe_move": {
+          "description": "The move the targeted foe uses in a move branch (null for a switch branch).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z0-9]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "assumed": {
+          "type": "boolean",
+          "description": "True for the one branch of a foe that has revealed no move: its move is the reviewed assumption, not a fact of the channel."
+        },
+        "precondition": {
+          "description": "Whether the move's precondition passes, fails or holds with a chance, as the engine answers it with every random draw of the path answered with success.",
+          "enum": [
+            "passes",
+            "fails",
+            "chance"
+          ]
+        },
+        "precondition_ppm": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "The engine's precondition success chance in ppm: 1000000 when it passes, 0 when it fails."
+        },
+        "hit_ppm": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "The engine's accuracy chance in ppm: 1000000 when the move cannot miss."
+        },
+        "success_ppm": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "floor(precondition_ppm x hit_ppm / 10^6)."
+        }
+      }
+    },
+    "UnsupportedOutcomeRow": {
+      "description": "An outcome the probe could not answer exactly: its closed reason (the probe's, or history_unknown), never a guess.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "slot",
+        "move",
+        "target",
+        "mega",
+        "action",
+        "foe_move",
+        "assumed",
+        "reason"
+      ],
+      "properties": {
+        "kind": {
+          "const": "unsupported"
+        },
+        "slot": {
+          "description": "The acting active Pokemon's slot, 0-based.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "move": {
+          "description": "The move's position in the request, 1-based.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "target": {
+          "description": "The part's own target location in a choice (move 1 1): 0 for none, negative for an ally.",
+          "type": "integer",
+          "minimum": -9,
+          "maximum": 9
+        },
+        "mega": {
+          "type": "boolean",
+          "description": "True when the move part also Mega Evolves."
+        },
+        "action": {
+          "description": "The opposing action of the branch: every foe switches, or the targeted foe uses foe_move.",
+          "enum": [
+            "switch",
+            "move"
+          ]
+        },
+        "foe_move": {
+          "description": "The move the targeted foe uses in a move branch (null for a switch branch).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z0-9]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "assumed": {
+          "type": "boolean",
+          "description": "True for the one branch of a foe that has revealed no move: its move is the reviewed assumption, not a fact of the channel."
+        },
+        "reason": {
+          "enum": [
+            "query_kind",
+            "random_effect",
+            "scenario_rule_table",
+            "history_unknown"
           ]
         }
       }
