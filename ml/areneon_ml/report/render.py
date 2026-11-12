@@ -1660,6 +1660,69 @@ def _rate(part: int, interval: dict[str, int] | None) -> str:
     )
 
 
+_HISTORY_NAMES = [
+    ("stall_repeat", "Stall at counter > 1"),
+    ("stall_fresh", "Stall, fresh"),
+    ("stall_repeat_success", "Success of repeat stalls"),
+    ("stall_repeat_minus_fresh", "Repeat minus fresh"),
+    ("power_up", "Scaled up"),
+    ("power_down", "Scaled down"),
+    ("power_up_minus_down", "Up minus down"),
+    ("fails_all", "Fails every branch"),
+    ("fails_all_acted", "Fails, actor acted"),
+    ("fails_all_fresh", "Fails, actor fresh"),
+    ("fails_all_item", "Fails, item history"),
+    ("fails_all_ppm_of_decisions", "Failing chosen, ppm of decisions"),
+    ("history_build_failed", "History build failed, share of decisions"),
+    ("conditional", "Conditional"),
+    ("conditional_chosen_pass_share", "Chosen conditional branches passing"),
+]
+
+
+def _history_table(found: dict[str, Any]) -> str:
+    """The history rows of the situational diagnostic (#1345), beside its table; empty without them."""
+    rows = [
+        [
+            str(found["generation"]),
+            esc(match_id),
+            esc(policy[:24]),
+            str(body["pairs"]),
+            *(_situational_cell(body["history"]["statistics"][name]) for name, _ in _HISTORY_NAMES),
+        ]
+        for match_id, policies in found["matches"].items()
+        for policy, body in policies.items()
+        if "history" in body
+    ]
+    if not rows:
+        return ""
+    return (
+        "<h4>History groups</h4>"
+        "<p class=\"note\">Groups come from the engine's answers on the seat's own channel "
+        "(probe-outcome/1: stall counter, history-scaled damage against the default-history "
+        "damage, outcomes that fail in every branch or differ by branch); chosen per offered "
+        "part, in parts per million. Descriptive only; never a gate by itself.</p>"
+        + _table(
+            [
+                ("Generation", True),
+                ("Match", False),
+                ("Policy", False),
+                ("Pairs", True),
+                *((label, True) for _, label in _HISTORY_NAMES),
+            ],
+            rows,
+            "History rows, from the stored games re-simulated on the pinned engine.",
+        )
+    )
+
+
+def _situational_cell(stat: dict[str, Any]) -> str:
+    if stat["mean_ppm"] is None:
+        return "none offered"
+    iv = stat["interval"]
+    span = "no interval" if iv is None else f"{iv['low_ppm']} to {iv['high_ppm']}"
+    return f"{stat['mean_ppm']} ppm ({span})"
+
+
 def _situational_section(model: ReportModel) -> str:
     """The situational move-use diagnostic (#1283), from a summary file given to the command."""
     found = model.situational
@@ -1675,20 +1738,13 @@ def _situational_section(model: ReportModel) -> str:
         ("switch_bad_matchup_minus_not_threatened", "Bad matchup minus not threatened"),
     ]
 
-    def cell(stat: dict[str, Any]) -> str:
-        if stat["mean_ppm"] is None:
-            return "none offered"
-        iv = stat["interval"]
-        span = "no interval" if iv is None else f"{iv['low_ppm']} to {iv['high_ppm']}"
-        return f"{stat['mean_ppm']} ppm ({span})"
-
     rows = [
         [
             str(found["generation"]),
             esc(match_id),
             esc(policy[:24]),
             str(body["pairs"]),
-            *(cell(body["statistics"][name]) for name, _ in names),
+            *(_situational_cell(body["statistics"][name]) for name, _ in names),
         ]
         for match_id, policies in found["matches"].items()
         for policy, body in policies.items()
@@ -1712,6 +1768,7 @@ def _situational_section(model: ReportModel) -> str:
             rows,
             "Rates over offered decisions, from the stored games re-simulated on the pinned engine.",
         )
+        + _history_table(found)
     )
 
 

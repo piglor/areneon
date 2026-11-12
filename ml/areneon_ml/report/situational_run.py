@@ -10,6 +10,9 @@ A rerun with the same counts leaves the file's bytes as they were.
 
 LABEL: situational move-use diagnostic on assumed opponent sets: descriptive, not a strength
 measure.
+
+With ``history=True`` (``progress --situational-history``) the script also writes the history
+rows of #1345 and the file is ``g<NNNNNN>.history.json``.
 """
 
 from __future__ import annotations
@@ -22,7 +25,12 @@ from typing import Any
 
 from areneon_contracts.contracts import jcs
 
-from areneon_ml.report.situational import LABEL, SituationalError, summarise
+from areneon_ml.report.situational import (
+    HISTORY_STATISTIC_NAMES,
+    LABEL,
+    SituationalError,
+    summarise,
+)
 
 SUFFIX = ".situational"
 SCRIPT = "packages/showdown-bridge/scripts/situational-move-use.ts"
@@ -57,6 +65,7 @@ def situational_generation(  # noqa: PLR0913
     repo: Path,
     node: str,
     max_games: int | None = None,
+    history: bool = False,
     run: Runner = _run,
 ) -> dict[str, Any]:
     """Run the Node script on one committed generation; write and return the printed block."""
@@ -64,7 +73,8 @@ def situational_generation(  # noqa: PLR0913
     if out_dir == run_dir.resolve() or run_dir.resolve() in out_dir.parents:
         raise SituationalError("the situational summary must not be inside the run directory")
     out_dir.mkdir(parents=True, exist_ok=True)
-    cap = "" if max_games is None else f".max{max_games}"
+    # The history rows (#1345) have their own file: a plain summary is never replaced.
+    cap = ("" if max_games is None else f".max{max_games}") + (".history" if history else "")
     raw_path = out_dir / f".g{generation:06d}{cap}.raw.json"
     command = [
         "nice",
@@ -83,6 +93,8 @@ def situational_generation(  # noqa: PLR0913
     ]
     if max_games is not None:
         command += ["--max-games", str(max_games)]
+    if history:
+        command += ["--history"]
     try:
         if run(command) != 0:
             raise SituationalError("the situational move-use script failed")
@@ -111,6 +123,16 @@ def printed(summary: dict[str, Any], path: Path) -> dict[str, Any]:
                 policy: {
                     "pairs": body["pairs"],
                     **{name: body["statistics"][name]["mean_ppm"] for name in PRINTED},
+                    **(
+                        {
+                            "history": {
+                                name: body["history"]["statistics"][name]["mean_ppm"]
+                                for name in HISTORY_STATISTIC_NAMES
+                            }
+                        }
+                        if "history" in body
+                        else {}
+                    ),
                 }
                 for policy, body in policies.items()
             }
