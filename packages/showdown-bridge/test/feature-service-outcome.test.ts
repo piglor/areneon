@@ -21,6 +21,9 @@ describe("the feature service for probe-outcome/1", () => {
     expect(result.outcome.features.feature_set).toBe(FEATURE_SET_OUTCOME);
     expect((result.outcome.features as unknown as { outcomes: unknown[] }).outcomes.length).toBeGreaterThan(0);
     expect(result.parts?.outcomes?.queries).toBeGreaterThan(0);
+    // the cost reductions are reported per task (#1353): rows skipped or folded, and the refusal and history_unknown causes
+    expect(result.outcome_counts).toMatchObject({ skipped: expect.any(Number), folded: expect.any(Number), asked_all: expect.any(Number), causes: expect.any(Object) });
+    expect((result.outcome_counts?.skipped ?? 0) + (result.outcome_counts?.folded ?? 0)).toBeGreaterThan(0);
     const again = createFeatureService(spec, engine).run({ ...task, game: "h" });
     expect(JSON.stringify(again.outcome)).toBe(JSON.stringify(result.outcome));
   }, 120_000);

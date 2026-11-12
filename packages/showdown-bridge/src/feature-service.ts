@@ -54,6 +54,8 @@ export interface FeatureResult {
   parts?: CostTrace;
   /** `probe-damage-belief/1` only: the world counts this task added (the fallbacks by cause). */
   belief?: BeliefFeatureCounts;
+  /** `probe-outcome/1` only (#1353): outcome rows skipped or folded, parts asked in full, and the probe runs that refused or were `history_unknown`, by cause. */
+  outcome_counts?: { skipped: number; folded: number; asked_all: number; causes: Record<string, number> };
 }
 
 export interface FeatureService {
@@ -90,6 +92,8 @@ export function createFeatureService(spec: FeatureServiceSpec, engineOverride?: 
       if (memo === undefined) memos.set(task.game, (memo = createFeatureMemo()));
       const before = { ...memo.counts };
       const beforeBelief = structuredClone(memo.belief ?? emptyBeliefCounts());
+      const beforeOutcome = { skipped: memo.outcome?.skipped ?? 0, folded: memo.outcome?.folded ?? 0, asked_all: memo.outcome?.asked_all ?? 0 };
+      const beforeCauses = { ...(memo.counts.causes ?? {}) };
       const started = performance.now();
       let outcome: FeatureOutcome;
       const parts = spec.feature_set === "probe-damage/2" || spec.feature_set === FEATURE_SET_3 || spec.feature_set === FEATURE_SET_OUTCOME ? emptyTrace() : undefined;
@@ -109,11 +113,15 @@ export function createFeatureService(spec: FeatureServiceSpec, engineOverride?: 
       const ms = performance.now() - started;
       if (task.final === true) memos.delete(task.game);
       const counts = { queries: memo.counts.queries - before.queries, probe_runs: memo.counts.probe_runs - before.probe_runs, unsupported_queries: memo.counts.unsupported_queries - before.unsupported_queries, probe_refusals: memo.counts.probe_refusals - before.probe_refusals };
+      const outcomeNow = memo.outcome;
+      const outcomeCounts = spec.feature_set === FEATURE_SET_OUTCOME && outcomeNow !== undefined ? { skipped: outcomeNow.skipped - beforeOutcome.skipped, folded: outcomeNow.folded - beforeOutcome.folded, asked_all: outcomeNow.asked_all - beforeOutcome.asked_all, causes: causesDelta(beforeCauses, memo.counts.causes ?? {}) } : undefined;
       const belief = memo.belief === undefined ? undefined : beliefDelta(beforeBelief, memo.belief);
-      return { outcome, ms, counts, ...(parts === undefined ? {} : { parts }), ...(belief === undefined ? {} : { belief }) };
+      return { outcome, ms, counts, ...(parts === undefined ? {} : { parts }), ...(belief === undefined ? {} : { belief }), ...(outcomeCounts === undefined ? {} : { outcome_counts: outcomeCounts }) };
     },
   };
 }
+
+const causesDelta = (before: Record<string, number>, after: Record<string, number>): Record<string, number> => Object.fromEntries(Object.entries(after).map(([cause, count]) => [cause, count - (before[cause] ?? 0)]).filter(([, count]) => (count as number) > 0));
 
 const beliefDelta = (before: BeliefFeatureCounts, after: BeliefFeatureCounts): BeliefFeatureCounts => ({
   decisions: after.decisions - before.decisions,

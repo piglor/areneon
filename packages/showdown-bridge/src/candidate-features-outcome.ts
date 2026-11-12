@@ -26,12 +26,14 @@ import { buildArrays, type ArrayContext, type CostTrace, type FoePriorityRow, ty
 import { type FeatureConfigs, type FeatureMemo, type FeatureRow, FEATURE_SET_OUTCOME, createFeatureMemo } from "./candidate-features.ts";
 import { type HistoryDeclarer, historyDeclarer } from "./candidate-history.ts";
 import type { Candidate } from "./choices.ts";
-import { array, DamageAwareError, type DamageView, type Fighter, type Foe, object, ProbeRefusal } from "./damage-aware-view.ts";
+import { array, DamageAwareError, type DamageView, type Fighter, type Foe, object, ProbeRefusal, UNKNOWN_HISTORIES } from "./damage-aware-view.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { GOLDEN_FORMAT } from "./golden.ts";
 import { goldenHistoryFactsData } from "./history-facts-data.ts";
 import { goldenWorldFactsData } from "./world-facts-data.ts";
+import { observationOf } from "./mechanics-outcome.ts";
 import type { MechanicsQuery } from "./mechanics-query.ts";
+import { provenPasses } from "./outcome-skip.ts";
 import type { PlainReason } from "./mechanics-result.ts";
 import type { PlayerChannel } from "./observation.ts";
 import type { OutcomeConfig } from "./outcome-config.ts";
@@ -177,11 +179,21 @@ export function candidateFeaturesOutcome(
     memo,
     trace,
     FEATURE_SET_OUTCOME,
-    (context) => ({ outcomes: outcomeRows(setup.config, context) }),
+    (context) => ({ outcomes: outcomeRows(setup.config, context, rawDexOf(engine, configs), memo, setup.skip !== false, setup.fold !== false) }),
     { outcomes: [] as OutcomeRow[] },
     lazyDeclarer(() => declarerOf(engine, configs, setup, channel)),
   );
   return out as unknown as CandidateFeaturesOutcome;
+}
+
+type RawDex = { moves: { get(id: string): Record<string, unknown> }; abilities: { get(name: string): Record<string, unknown> }; items: { get(name: string): Record<string, unknown> } };
+const rawDexOf = (engine: Engine, configs: FeatureConfigs): RawDex => engine.sim.Dex.mod(engine.sim.Dex.formats.get(configs.config.format_id).mod) as unknown as RawDex;
+
+/** The user's ability and item names from its paste (`Name @ Item`, `Ability: X`). */
+function abilityAndItem(paste: string): { ability: string | null; item: string | null } {
+  const ability = /^Ability: (.+)$/m.exec(paste)?.[1] ?? null;
+  const item = /^[^\n]* @ (.+)$/m.exec(paste)?.[1] ?? null;
+  return { ability, item };
 }
 
 /** A declarer that builds its facts on first use (a request with nothing to declare never replays the channel). */
@@ -191,7 +203,7 @@ function lazyDeclarer(make: () => HistoryDeclarer): HistoryDeclarer {
 }
 
 /** The `outcomes` of one move request. */
-function outcomeRows(record: OutcomeConfig, { view, state, entries, foes, parsed, body, measured }: ArrayContext): OutcomeRow[] {
+function outcomeRows(record: OutcomeConfig, { view, state, entries, foes, parsed, body, measured }: ArrayContext, raw: RawDex, memo: FeatureMemo, skip: boolean, fold: boolean): OutcomeRow[] {
   const active = Array.isArray(body.active) ? (body.active as unknown[]) : null;
   if (active === null) return []; // a forced switch asks no move
   const actives = entries.filter((entry) => entry.slot !== null);
@@ -212,20 +224,23 @@ function outcomeRows(record: OutcomeConfig, { view, state, entries, foes, parsed
   const ownFighters = actives.map((entry) => entry.fighter);
   const foeFighters = foes.map((foe) => foe.fighter);
   const out: OutcomeRow[] = [];
-  const ask = (query: OutcomeQuery): OutcomeValue => {
+  /** The answer, and whether the engine's run did not touch the action queue (then other opposing actions cannot change it). */
+  const ask = (query: OutcomeQuery): { value: OutcomeValue; foldable: boolean } => {
     let result: ReturnType<DamageView["query"]>;
     try {
       result = view.query(query);
     } catch (error) {
       if (!(error instanceof ProbeRefusal)) throw error;
       view.noteRefused();
-      return { kind: "unsupported", reason: "query_kind" };
+      return { value: { kind: "unsupported", reason: "query_kind" }, foldable: false };
     }
-    if (result?.kind === "unsupported") return { kind: "unsupported", reason: view.reasonOf(result.reason) };
+    const foldable = result !== null && observationOf(result)?.queue_read === false;
+    if (result?.kind === "unsupported") return { value: { kind: "unsupported", reason: view.reasonOf(result.reason) }, foldable };
     if (result?.kind !== "computed" || result.answer.kind !== "move_outcome") throw new DamageAwareError("the probe gave no outcome to a move-outcome query");
     const { precondition, precondition_ppm: pre, hit_ppm: hit } = result.answer;
-    return { kind: "computed", precondition, precondition_ppm: pre, hit_ppm: hit, success_ppm: Math.floor((pre * hit) / MILLION) };
+    return { value: { kind: "computed", precondition, precondition_ppm: pre, hit_ppm: hit, success_ppm: Math.floor((pre * hit) / MILLION) }, foldable };
   };
+  const counts = (memo.outcome ??= { skipped: 0, folded: 0, asked_all: 0 });
 
   for (const part of [...parts.values()]) {
     const actor = actives.findIndex((entry) => entry.slot === part.slot);
@@ -238,18 +253,49 @@ function outcomeRows(record: OutcomeConfig, { view, state, entries, foes, parsed
     const revealed = aimed.assumed.revealed_moves.filter((id) => view.dex.moves.get(id).exists).map((id) => view.dex.moves.get(id).id);
     const branches = branchesOf(revealed, assumedMoveOf(aimed, view.dex), record.max_branches);
     const key = { slot: part.slot, move: part.move, target: part.target ?? 0, mega: part.mega };
+    const row = (branch: Branch, value: OutcomeValue): void => void out.push({ ...key, action: branch.action, foe_move: branch.foe_move, assumed: branch.assumed, ...value });
+    if (!known) {
+      for (const branch of branches) row(branch, { kind: "unsupported", reason: "query_kind" });
+      continue;
+    }
+    // One declaration per part: the branches differ only in the foes' actions.
+    const { sides, history } = measured("outcomes", () => view.declared([ownFighters, foeFighters], [ownFighters[actor] as Fighter]));
+    if (skip) {
+      const { ability, item } = abilityAndItem((ownFighters[actor] as Fighter).paste);
+      const marked = history !== undefined && UNKNOWN_HISTORIES.has(history);
+      const everyone = sides.flat().flatMap((each) => {
+        const { ability: a, item: i } = abilityAndItem(each.set);
+        return [a === null ? undefined : raw.abilities.get(a), i === null ? undefined : raw.items.get(i)].filter((data): data is Record<string, unknown> => data !== undefined);
+      });
+      const combatants = sides.flat().map((each) => ({ status: each.status, history: each.history }));
+      if (provenPasses({ move: raw.moves.get(part.id), ability: ability === null ? undefined : raw.abilities.get(ability), item: item === null ? undefined : raw.items.get(item), everyone, combatants, battle: history, marked })) {
+        for (const branch of branches) row(branch, { kind: "computed", precondition: "passes", precondition_ppm: MILLION, hit_ppm: MILLION, success_ppm: MILLION });
+        counts.skipped += branches.length;
+        continue;
+      }
+    }
+    // The first branch is `switch`: nothing of the foes is queued. When the engine's run for it never touches the queue, no later opposing
+    // action can change the answer, so every move branch has the same one and is not asked.
+    let shared: OutcomeValue | null = null;
     for (const branch of branches) {
-      const row = measured("outcomes", () => {
-        if (!known) return { kind: "unsupported", reason: "query_kind" } as OutcomeValue;
+      if (shared !== null && branch.action === "move") {
+        row(branch, shared);
+        counts.folded += 1;
+        continue;
+      }
+      const asked = measured("outcomes", () => {
         const actions: [Action, ...Action[]] = [{ side: 0, position: actor, move: part.id, mega: part.mega }];
         foes.forEach((foe, position) => {
           const move = branch.action === "switch" ? null : foe === aimed ? (branch.foe_move as string) : otherFoeMove(foe, view.dex);
           actions.push({ side: 1, position, move, mega: false });
         });
-        const { sides, history } = view.declared([ownFighters, foeFighters], [ownFighters[actor] as Fighter]);
         return ask({ kind: "move_outcome", sides: sides as unknown as OutcomeQuery["sides"], actions, asked: 0, target: { side: 1, position: targetIndex }, state: view.field(state, true), history: history as NonNullable<typeof history> });
       });
-      out.push({ ...key, action: branch.action, foe_move: branch.foe_move, assumed: branch.assumed, ...row });
+      if (fold && branch.action === "switch") {
+        if (asked.foldable) shared = asked.value;
+        else if (branches.length > 1) counts.asked_all += 1;
+      }
+      row(branch, asked.value);
     }
   }
   return out.sort((a, b) => a.slot - b.slot || a.move - b.move || a.target - b.target || Number(a.mega) - Number(b.mega) || Number(a.action !== "switch") - Number(b.action !== "switch") || compare(a.foe_move ?? "", b.foe_move ?? ""));

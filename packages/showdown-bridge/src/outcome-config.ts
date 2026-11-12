@@ -97,7 +97,7 @@ interface ConditionLike {
 }
 
 /** The handlers of a volatile that the engine's move path runs (`runMove`: OverrideAction, BeforeMove, the lock; the move step: ModifyMove, TryMove). */
-const MOVE_PATH_HANDLERS = ["onBeforeMove", "onLockMove", "onModifyMove", "onOverrideAction", "onTryMove"];
+export const MOVE_PATH_HANDLERS = ["onBeforeMove", "onLockMove", "onModifyMove", "onOverrideAction", "onTryMove"];
 const NOT_VOLATILES = new Set(["Status", "Weather", "Terrain", "Rule", "Format", "Ruleset"]);
 
 /** The condition ids of the mod with a move-path handler (a condition of a move, ability or item is its `condition` object), sorted: derived from the engine's data, no id named. */

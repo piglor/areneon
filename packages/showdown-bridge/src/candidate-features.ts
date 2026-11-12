@@ -87,6 +87,10 @@ export interface OutcomeSetup {
   history_data?: HistoryFactsData;
   /** The world facts' engine data (the last move of each Pokemon); default: read from the pinned engine. */
   world_data?: WorldFactsData;
+  /** Test seam (#1353): false asks every outcome query, even one the engine's data proves (the differential tests compare the two). Default true. */
+  skip?: boolean;
+  /** Test seam (#1353): false asks every opposing branch, even when the `switch` branch's run never read the queue. Default true. */
+  fold?: boolean;
 }
 
 /** What the belief set counts about its worlds, per game (a service reports the delta of a task). All integers. */
@@ -165,6 +169,8 @@ export interface FeatureMemo {
   counts: ProbeCounts & { probe_refusals: number };
   /** `probe-damage-belief/1` only: this game's world counts (created by the first belief build). */
   belief?: BeliefFeatureCounts;
+  /** `probe-outcome/1` only: outcome rows made without a query because the engine's data proves them (`skipped`) or folded into a sibling branch's answer (`folded`). */
+  outcome?: { skipped: number; folded: number; /** Parts whose `switch` branch read the queue, so every branch was asked. */ asked_all: number };
 }
 export const createFeatureMemo = (): FeatureMemo => ({ results: new Map(), counts: { queries: 0, probe_runs: 0, unsupported_queries: 0, probe_refusals: 0 } });
 
