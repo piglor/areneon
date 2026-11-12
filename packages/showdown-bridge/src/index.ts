@@ -455,7 +455,7 @@ export {
   type PolicyStreamLabel,
   policyStreamLabel,
 } from "./league-seed.ts";
-export { checkPopulationConfig, memberDir, playPopulationGeneration, type PopulationMember, type PopulationOptions, type PopulationResult, writePopulationGeneration } from "./population-generation.ts";
+export { checkPopulationConfig, memberDir, membersPlaying, playPopulationEntries, playPopulationGeneration, type PopulationEntry, type PopulationMember, type PopulationOptions, type PopulationResult, writePopulationGeneration } from "./population-generation.ts";
 export { CALIBRATION_FORMAT, type CalibrationGameRow, type CalibrationResult, playCalibration, writeCalibration } from "./population-calibration.ts";
 export { ANCHOR_ACTORS, calibrationAnchors, type CalibrationGamePlan, planCalibration, memberLabel, planPopulation, type PopulationGamePlan, PopulationPlanError, POPULATION_PLAN_FORMAT, seatCounts } from "./population-plan.ts";
 export { populationDraw, POPULATION_SEED_DERIVATION, POPULATION_SEED_PURPOSES, type PopulationSeedPurpose } from "./population-seed.ts";

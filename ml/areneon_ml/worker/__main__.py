@@ -26,7 +26,7 @@ from areneon_ml.model.runtime import configure_cpu_inference
 from areneon_ml.model.scorer import NetworkScorer, ScorerError
 from areneon_ml.worker.checkpoints import CheckpointError, CheckpointStore
 from areneon_ml.worker.features import damaging_moves
-from areneon_ml.worker.serve import FeatureSupport, SheetSupport, Worker
+from areneon_ml.worker.serve import MIN_BATCH, FeatureSupport, SheetSupport, Worker
 
 EXIT_CHECKPOINT = 4
 
@@ -61,6 +61,13 @@ def build(argv: list[str]) -> Worker:
         help="accept an oracle-diagnostic opponent_sheet (a labelled, test-only diagnostic run)",
     )
     parser.add_argument(
+        "--inference-max-batch",
+        type=int,
+        help="answer up to this many queued queries in one padded forward pass (training "
+        "self-play of a run whose config sets generation.inference, ADR-028 section 2 F2); "
+        "absent is batch 1, which every evaluation and sealed path uses",
+    )
+    parser.add_argument(
         "--profile-dir",
         type=Path,
         help="time the encoder and the forward pass and leave worker-<pid>.json here when the "
@@ -69,6 +76,8 @@ def build(argv: list[str]) -> Worker:
     args = parser.parse_args(argv)
     if args.max_line_bytes < 1:
         parser.error("--max-line-bytes must be positive")
+    if args.inference_max_batch is not None and args.inference_max_batch < MIN_BATCH:
+        parser.error("--inference-max-batch must be at least 2 (batch 1 is the default)")
     store = CheckpointStore(args.run_dir)
     game = GameData.from_table(json.loads(args.engine_data.read_text(encoding="utf-8")))
     configure_cpu_inference()
@@ -97,6 +106,7 @@ def build(argv: list[str]) -> Worker:
             {"role": "preview", "checkpoint_id": args.preview},
         ],
         max_line_bytes=args.max_line_bytes,
+        inference_max_batch=args.inference_max_batch,
     )
     worker.profile_dir = args.profile_dir
     return worker

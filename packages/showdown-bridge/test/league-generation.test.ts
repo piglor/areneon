@@ -472,6 +472,14 @@ describe("Episodes kept on disk as their games finish (#1069)", () => {
 
 describe("several workers and game processes (#957)", () => {
   const opts = (change: Partial<GenerationOptions> = {}): GenerationOptions => ({ engine, config, generation: 1, policy_id: POLICY, client: actorClient(), pool, ...change });
+  it("reports each decision of the pair's seats to on_answer and changes no byte (#1195)", async () => {
+    const seen: string[] = [];
+    const watched = await playEntries(opts({ on_answer: (_query, choice) => void seen.push(choice) }));
+    const plain = await playEntries(opts());
+    expect(seen.length).toBeGreaterThan(0);
+    expect(JSON.stringify(watched)).toBe(JSON.stringify(plain));
+  });
+
   let single: GenerationResult;
   beforeAll(async () => {
     single = await playGeneration(opts());

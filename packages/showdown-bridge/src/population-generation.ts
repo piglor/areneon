@@ -11,17 +11,27 @@
 // resident. Its Episodes are kept under the member the pair was scheduled for and are never loaded into a TrainingSet
 // (the loader accepts an Episode only for the policy that played it), as a scripted baseline's are.
 //
+// Candidate features (#1333): a run that names a feature set gives every seat that reads a worker (a member's, a snapshot's)
+// the rows of that set, built at play with the same `FeatureConfigs` the single-lineage generation uses; the loader
+// recomputes them for each member's examples or reads the play-time sidecar the game processes left (`features_dir`).
+//
+// Game processes (#1333): the games are the plan's, and game `g` is played by the process whose slice holds it
+// (`g mod of = index`); a further process leaves its entries (row, facts, the Episode files it wrote) and the process that
+// started it merges them in plan order, so the generation's files are the same for any number of processes and workers.
+//
 // What this does not do (later slices): train, freeze or copy anything (the Python driver, slice 5), exploiter
-// seats (the plan refuses them), candidate features or an opponent sheet (a population run
-// that names either is refused), or split a generation over game processes.
+// seats (the plan refuses them), or an opponent sheet (a population run that names one is refused).
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { jcs, type Json } from "./canonical-json.ts";
-import { type BaselineOpponent, baselineActor, type DamageAwareSetup, baselineRecords, forfeitCauses, GenerationError, seatEpisodes, type TrainingPool, writeDurable } from "./league-generation.ts";
+import { type BaselineOpponent, baselineActor, type DamageAwareSetup, baselineRecords, checkShard, forfeitCauses, GenerationError, IDLE_GRACE_MS, seatEpisodes, type Shard, type TrainingPool, watchIdle, writeDurable } from "./league-generation.ts";
+import { createFeatureMemo, type FeatureConfigs } from "./candidate-features.ts";
+import type { AnyCandidateFeatures } from "./feature-build.ts";
+import { readFeatureRows, writeFeatureRows, writePlayRows } from "./feature-recompute.ts";
 import { buildLeagueRunRecordV2, type FactSeat, type LeagueRunRecordV2 } from "./league-run-record.ts";
-import { type PastPlanInput, type PopulationGamePlan, type PopulationSeat, planPopulation } from "./population-plan.ts";
+import { type PopulationGamePlan, type PopulationSeat, planPopulation } from "./population-plan.ts";
 import type { PastPoolFile, PastSnapshot } from "./past-pool.ts";
 import { episodeHash } from "./episode.ts";
 import type { PlayedGame } from "./evaluation-harness.ts";
@@ -36,7 +46,7 @@ import type { ChunkLimits } from "./chunked-file.ts";
 import type { TrainingRunConfig } from "./training-run-config.ts";
 import type { BaselineGameReport } from "./league-run-record.ts";
 
-export const POPULATION_FEATURES_REFUSAL = "population: a run that names candidate features or an opponent sheet is refused until the driver builds them per member";
+export const POPULATION_SHEET_REFUSAL = "population: a run that names an opponent sheet is refused until the driver builds it per member";
 
 /** One learning member's frozen pair and the worker that serves it. */
 export interface PopulationMember {
@@ -46,6 +56,12 @@ export interface PopulationMember {
   policy_id: string;
   checkpoints: { preview: string; battle: string };
   client: PolicyClient & { beginGame?: () => Promise<void> };
+  /**
+   * Further workers of the same frozen pair (`--policy-workers`): a game stays on one worker, and every worker answers a
+   * query the same way (it is deterministic and the sampling draw is the harness's), so the generation's files do not
+   * depend on how many there are. Waves grow with them so each keeps `n_parallel` games in flight.
+   */
+  peers?: readonly (PolicyClient & { beginGame?: () => Promise<void> })[];
 }
 
 /** The frozen worker session of a snapshot, and how to end it. */
@@ -79,6 +95,44 @@ export interface PopulationOptions {
   stream_limits?: ChunkLimits;
   /** Ends this process's games between waves. */
   signal?: AbortSignal;
+  /**
+   * The candidate features the run's pair reads (`featureSetup`): given to every seat that reads a worker (the workers state
+   * the set at the handshake), and to the training loader, which recomputes the rows of each member's examples.
+   */
+  features?: FeatureConfigs;
+  /**
+   * With `features`: the scratch directory the game processes leave the rows of their Episodes in (the play-time sidecar and the
+   * post-game pass of #1185, #1271), so the loader reads them instead of recomputing. Never part of a generation: the stream's
+   * bytes do not depend on whether the files exist.
+   */
+  features_dir?: string | undefined;
+  /** The generation's directory the Episodes are written below (a further game process writes into its starter's); default `out_dir`. */
+  shared_dir?: string;
+  /** The games this process plays (default all); the rest come from `others`. */
+  shard?: Shard;
+  /** The entries of the games of the other shards, played by further game processes. */
+  others?: Promise<readonly PopulationEntry[]>;
+  /** The number of waves in progress, for the idle watchdog (#1100). */
+  activity?: { busy: number };
+  /** How many further game processes are still running; the idle watchdog reads it. */
+  live_children?: () => number;
+  /** How long a generation may have no live game process and no game in flight before it fails (default 60 s). */
+  idle_grace_ms?: number;
+}
+
+/** An Episode file a played game wrote: the member directory it is under, its hash and the policy that played the seat. */
+export interface PopulationStored {
+  owner: string;
+  hash: string;
+  behaviour_policy_id: string;
+}
+
+/** One played game as a game process hands it back: its row, what the run record needs of it, and the Episode files it wrote. */
+export interface PopulationEntry {
+  game: number;
+  row: PopulationGameRow;
+  fact: { outcome: "played" | "forfeit"; forfeit?: { cause: ForfeitCause }; baseline_report?: BaselineGameReport };
+  stored: PopulationStored[];
 }
 
 export interface PopulationGameRow {
@@ -130,14 +184,26 @@ const clientLabel = (seat: PopulationSeat): string[] => ("member" in seat ? [sea
 /**
  * Everything that can be refused before a worker starts: the plan's own refusals (past-pool share, exploiter seats, odd
  * baseline counts), the members (one per `population.members`, labelled m0.., with distinct pairs) and a run that names
- * candidate features or an opponent sheet. The CLI calls it before it creates a client (each worker session costs memory).
+ * an opponent sheet. The CLI calls it before it creates a client (each worker session costs memory).
  * `generation` and `poolSize` only make the plan well-formed; no refusal depends on them.
  */
 export function checkPopulationConfig(config: TrainingRunConfig, members: readonly { member: string; policy_id: string }[], generation = 1, poolSize = 1, past?: PastPoolFile): void {
   const wantsPast = (config.population?.shares.past_pool_ppm ?? 0) !== 0;
   if (wantsPast !== (past !== undefined)) throw new GenerationError(wantsPast ? "population: a past-pool share needs the committed past pool (options.past)" : "population: a past pool was given to a config without a past-pool share");
-  planPopulation(config, generation, poolSize, past === undefined ? undefined : { pool: past, current: Object.fromEntries(members.map((entry) => [entry.member, entry.policy_id])) });
+  populationPlanOf(config, generation, poolSize, members, past);
   checkMembers(config, members);
+}
+
+/** The plan of a generation: `planPopulation` with the members' current pairs as the past pool's "current" policies. */
+export function populationPlanOf(config: TrainingRunConfig, generation: number, poolSize: number, members: readonly { member: string; policy_id: string }[], past?: PastPoolFile): PopulationGamePlan[] {
+  return planPopulation(config, generation, poolSize, past === undefined ? undefined : { pool: past, current: Object.fromEntries(members.map((entry) => [entry.member, entry.policy_id])) });
+}
+
+/** The members that hold a seat in a game of `shard` (all of them without one): the only members whose workers this process needs. */
+export function membersPlaying(plan: readonly PopulationGamePlan[], shard: Shard = { index: 0, of: 1 }): Set<string> {
+  const found = new Set<string>();
+  for (const entry of plan) if (entry.game % shard.of === shard.index) for (const seat of [entry.seats.p1, entry.seats.p2]) if ("member" in seat) found.add(seat.member);
+  return found;
 }
 
 function checkMembers(config: TrainingRunConfig, members: readonly { member: string; policy_id: string }[]): void {
@@ -149,13 +215,16 @@ function checkMembers(config: TrainingRunConfig, members: readonly { member: str
   if (new Set(members.map((entry) => entry.policy_id)).size !== members.length) {
     throw new GenerationError("population: two members have the same frozen pair, so their Episodes could not be told apart");
   }
-  if (config.model.encoder.options?.candidate_features !== undefined || config.model.encoder.options?.opponent_sheet !== undefined) {
-    throw new GenerationError(POPULATION_FEATURES_REFUSAL);
+  if (config.model.encoder.options?.opponent_sheet !== undefined) {
+    throw new GenerationError(POPULATION_SHEET_REFUSAL);
   }
 }
 
-/** Waves of games: no client serves more than `n_parallel` games of a wave (a game counts once for each member it uses). */
-export function populationWaves(plan: readonly PopulationGamePlan[], n_parallel: number): PopulationGamePlan[][] {
+/**
+ * Waves of games: no worker serves more than `n_parallel` games of a wave (a game counts once for each member it uses).
+ * `workers` says how many workers a label has (default 1: a snapshot has one), so a member with peers takes more games.
+ */
+export function populationWaves(plan: readonly PopulationGamePlan[], n_parallel: number, workers: (label: string) => number = () => 1): PopulationGamePlan[][] {
   const waves: PopulationGamePlan[][] = [];
   let rest = [...plan];
   while (rest.length > 0) {
@@ -164,7 +233,7 @@ export function populationWaves(plan: readonly PopulationGamePlan[], n_parallel:
     const left: PopulationGamePlan[] = [];
     for (const entry of rest) {
       const used = [...new Set([entry.seats.p1, entry.seats.p2].flatMap(clientLabel))];
-      if (used.every((label) => (load.get(label) ?? 0) < n_parallel)) {
+      if (used.every((label) => (load.get(label) ?? 0) < n_parallel * workers(label))) {
         for (const label of used) load.set(label, (load.get(label) ?? 0) + 1);
         wave.push(entry);
       } else {
@@ -179,22 +248,33 @@ export function populationWaves(plan: readonly PopulationGamePlan[], n_parallel:
 
 interface PlayedPopulationGame extends PlayedGame {
   baseline?: BaselineGameReport;
+  /** With a rows directory: the rows each member seat attached to its queries, by request number (the play-time sidecar). */
+  play_rows?: Partial<Record<Player, Map<number, AnyCandidateFeatures>>>;
 }
 
 /**
- * Play one game: member seats query their own member's client, a baseline seat is a scripted actor behind the
+ * Play one game: member seats query the worker chosen for their member, a baseline seat is a scripted actor behind the
  * latency guard (a fresh one per game, seeded by the pair's baseline stream).
  */
-async function playOne(options: PopulationOptions, entry: PopulationGamePlan, byLabel: ReadonlyMap<string, PopulationMember>): Promise<PlayedPopulationGame> {
+async function playOne(options: PopulationOptions, entry: PopulationGamePlan, clients: ReadonlyMap<string, PopulationMember["client"]>, byLabel: ReadonlyMap<string, PopulationMember>): Promise<PlayedPopulationGame> {
   const { engine, config, pool } = options;
   const { generation: settings } = config;
   const budget = { preview_ms: settings.latency_budget_ms.preview_ms, battle_ms: settings.latency_budget_ms.battle_ms };
   const play = settings.play?.temperature_ppm === undefined ? undefined : { temperature_ppm: settings.play.temperature_ppm };
+  const keepRows = options.features !== undefined && options.features_dir !== undefined;
+  const rows: Partial<Record<Player, Map<number, AnyCandidateFeatures>>> = {};
   let report: (() => BaselineGameReport) | undefined;
-  const seatFor = (seat: PopulationSeat): PolicySeat | ReturnType<typeof baselineActor>["actor"] => {
+  const seatFor = (seat: PopulationSeat, player: Player): PolicySeat | ReturnType<typeof baselineActor>["actor"] => {
     if ("member" in seat || "snapshot" in seat) {
-      const member = byLabel.get("member" in seat ? seat.member : seat.snapshot) as PopulationMember;
-      return { client: member.client, policy_id: member.policy_id, sampling: "sample", ...(play === undefined ? {} : { play }) };
+      const label = "member" in seat ? seat.member : seat.snapshot;
+      const member = byLabel.get(label) as PopulationMember;
+      const base = { client: clients.get(label) as PopulationMember["client"], policy_id: member.policy_id, sampling: "sample" as const, ...(play === undefined ? {} : { play }) };
+      if (options.features === undefined) return base;
+      // Every worker states the run's feature set, so every seat that reads one attaches the rows (a snapshot's seat too); only a member's own seat leaves them as a sidecar.
+      const kept = new Map<number, AnyCandidateFeatures>();
+      const record = keepRows && "member" in seat ? { record: (seq: number, found: AnyCandidateFeatures) => void kept.set(seq, found) } : {};
+      if (Object.keys(record).length > 0) rows[player] = kept;
+      return { ...base, features: { configs: options.features, memo: createFeatureMemo(), ...record } };
     }
     const opponent: BaselineOpponent = { actor: seat.actor, policy_id: seat.policy_id };
     const baseline = baselineActor(options, opponent, entry, budget);
@@ -208,31 +288,37 @@ async function playOne(options: PopulationOptions, entry: PopulationGamePlan, by
     game: entry.game,
     teams: { p1: pool.teams[entry.teams.p1] as PokemonSet[], p2: pool.teams[entry.teams.p2] as PokemonSet[] },
     known_synthetic: pool.known_synthetic,
-    seats: { p1: seatFor(entry.seats.p1), p2: seatFor(entry.seats.p2) } as PolicyGameOptions["seats"],
+    seats: { p1: seatFor(entry.seats.p1, "p1"), p2: seatFor(entry.seats.p2, "p2") } as PolicyGameOptions["seats"],
     latency_budget: budget,
     maxTurns: settings.max_turns,
   });
-  return { ...played, ...(report === undefined ? {} : { baseline: report() }) };
+  return { ...played, ...(report === undefined ? {} : { baseline: report() }), ...(keepRows ? { play_rows: rows } : {}) };
 }
 
 // A snapshot is an opponent that is neither a member nor a scripted baseline with a report: the record names it by its pair's policy id, as it names a baseline.
 const factSeat = (seat: PopulationSeat): FactSeat => ("member" in seat ? { member: seat.member } : { baseline: seat.policy_id });
 
 /**
- * Play the generation's population plan against the members' workers, writing each member's Episodes under
- * `out_dir/members/<member>/episodes/` as the games finish, then each member's `stream.jsonl` and
- * `training-set.json`. Refused: a harness incident in any game (nothing is retried), a member with no Episode of
- * its own pair, and everything `planPopulation` and the member checks refuse.
+ * Play the games of `shard` (all of them without one) against the members' workers in waves, writing each Episode under
+ * `<shared_dir>/members/<member>/episodes/` as its game finishes, and return each played game's entry. With a rows directory
+ * and a feature set, the rows of the members' own Episodes are left in it afterwards (the play-time sidecar while the game
+ * runs, then the post-game pass for any that are missing). A game's result depends on its plan entry alone, never on its
+ * worker, its wave or the other games, so any split of the plan gives the same entries.
+ *
+ * Refused: a harness incident in any game (nothing is retried), and everything `planPopulation` and the member checks refuse.
  */
-export async function playPopulationGeneration(options: PopulationOptions): Promise<PopulationResult> {
-  const { engine, config, generation, members, pool, out_dir } = options;
+export async function playPopulationEntries(options: PopulationOptions, shard: Shard = { index: 0, of: 1 }): Promise<PopulationEntry[]> {
+  checkShard(shard);
+  const { engine, config, generation, members, pool } = options;
   checkPopulationConfig(config, members, generation, pool.teams.length, options.past?.pool);
-  const pastInput: PastPlanInput | undefined = options.past === undefined ? undefined : { pool: options.past.pool, current: Object.fromEntries(members.map((entry) => [entry.member, entry.policy_id])) };
-  const plan = planPopulation(config, generation, pool.teams.length, pastInput);
-  const withRecords: PopulationOptions = { ...options, ...baselineRecords(options, config) };
+  const root = options.shared_dir ?? options.out_dir;
+  const plan = populationPlanOf(config, generation, pool.teams.length, members, options.past?.pool);
+  const mine = plan.filter((entry) => entry.game % shard.of === shard.index);
+  const withRecords: PopulationOptions = { ...options, ...(baselineRecords(options, config) as Pick<PopulationOptions, "damage_aware" | "damage_aware_v2" | "damage_aware_v3" | "damage_aware_v4">) };
   const byLabel = new Map<string, PopulationMember>(members.map((entry) => [entry.member, entry]));
+  const workersOf = (label: string): number => 1 + (byLabel.get(label)?.peers?.length ?? 0);
   // A snapshot's session lives from the first wave that uses it to the last (`last` is that wave's index).
-  const waves = populationWaves(plan, config.generation.n_parallel);
+  const waves = populationWaves(mine, config.generation.n_parallel, workersOf);
   const snapshots = new Map(options.past?.pool.snapshots.map((entry) => [entry.id, entry]));
   const last = new Map<string, number>();
   waves.forEach((wave, index) => {
@@ -245,11 +331,9 @@ export async function playPopulationGeneration(options: PopulationOptions): Prom
     byLabel.delete(id);
     await session?.close();
   };
-  for (const entry of members) mkdirSync(join(memberDir(out_dir, entry.member), "episodes"), { recursive: true });
-  const rows = new Map<number, PopulationGameRow>();
-  const facts = new Map<number, { outcome: "played" | "forfeit"; forfeit?: { cause: ForfeitCause }; baseline_report?: BaselineGameReport }>();
-  // The Episode files each member's directory holds: the hash and the policy that played the seat.
-  const stored = new Map<string, { hash: string; behaviour_policy_id: string }[]>(members.map((entry) => [entry.member, []]));
+  for (const entry of members) mkdirSync(join(memberDir(root, entry.member), "episodes"), { recursive: true });
+  const entries: PopulationEntry[] = [];
+  const activity = options.activity ?? { busy: 0 };
   const stopped = (): void => {
     if (options.signal?.aborted === true) throw new GenerationError("the generation was stopped: this process plays no further game");
   };
@@ -264,10 +348,33 @@ export async function playPopulationGeneration(options: PopulationOptions): Prom
         sessions.set(id, session);
         byLabel.set(id, { member: id, policy_id: snapshot.policy_id, checkpoints: { preview: snapshot.preview, battle: snapshot.battle }, client: session.client });
       }
-      // The client's overrun rule: call `beginGame` while no game runs on it, so each wave starts every client it uses afresh (a query that overran its budget may still be outstanding).
-      await Promise.all(used.map((label) => (byLabel.get(label) as PopulationMember).client.beginGame?.()));
-      stopped();
-      const played = await Promise.all(wave.map((entry) => playOne(withRecords, entry, byLabel)));
+      const workers = (label: string): PopulationMember["client"][] => {
+        const member = byLabel.get(label) as PopulationMember;
+        return [member.client, ...(member.peers ?? [])];
+      };
+      activity.busy++;
+      let played: PlayedPopulationGame[];
+      try {
+        // The client's overrun rule: call `beginGame` while no game runs on it, so each wave starts every worker it uses afresh (a query that overran its budget may still be outstanding).
+        await Promise.all(used.flatMap((label) => workers(label).map((client) => client.beginGame?.())));
+        stopped();
+        // A game stays on one worker of each member it uses, chosen by its place among the wave's games of that member.
+        const places = new Map<string, number>();
+        const chosen = wave.map((entry) => {
+          const labels = [...new Set([entry.seats.p1, entry.seats.p2].flatMap(clientLabel))];
+          return new Map(
+            labels.map((label) => {
+              const place = places.get(label) ?? 0;
+              places.set(label, place + 1);
+              const all = workers(label);
+              return [label, all[place % all.length] as PopulationMember["client"]] as const;
+            }),
+          );
+        });
+        played = await Promise.all(wave.map((entry, index) => playOne(withRecords, entry, chosen[index] as Map<string, PopulationMember["client"]>, byLabel)));
+      } finally {
+        activity.busy--;
+      }
       stopped();
       for (const [index, game] of played.entries()) {
         const entry = wave[index] as PopulationGamePlan;
@@ -285,20 +392,75 @@ export async function playPopulationGeneration(options: PopulationOptions): Prom
         };
         if (outcome.kind === "forfeit") {
           const { loser, cause, request_seq, detail } = outcome;
-          rows.set(entry.game, { ...base, outcome: "forfeit", winner: outcome.winner, turns: outcome.turns, forfeit: { loser, cause, request_seq, detail } });
-          facts.set(entry.game, { outcome: "forfeit", forfeit: { cause }, ...(baseline === undefined ? {} : { baseline_report: baseline }) });
+          entries.push({
+            game: entry.game,
+            row: { ...base, outcome: "forfeit", winner: outcome.winner, turns: outcome.turns, forfeit: { loser, cause, request_seq, detail } },
+            fact: { outcome: "forfeit", forfeit: { cause }, ...(baseline === undefined ? {} : { baseline_report: baseline }) },
+            stored: [],
+          });
           continue;
         }
         if (record === null) throw new GenerationError(`game ${entry.game} (${entry.seed}): a played game has no record`);
-        rows.set(entry.game, { ...base, outcome: "played", winner: record.winner, turns: record.turns });
-        facts.set(entry.game, { outcome: "played", ...(baseline === undefined ? {} : { baseline_report: baseline }) });
-        await writeEpisodes(withRecords, entry, record, stored);
+        const stored = await writeEpisodes(withRecords, root, entry, record, game.play_rows);
+        entries.push({ game: entry.game, row: { ...base, outcome: "played", winner: record.winner, turns: record.turns }, fact: { outcome: "played", ...(baseline === undefined ? {} : { baseline_report: baseline }) }, stored });
       }
       for (const id of used) if (last.get(id) === waveIndex && sessions.has(id)) await closeSession(id);
     }
   } finally {
     await Promise.all([...sessions.keys()].map(closeSession));
   }
+  if (options.features !== undefined && options.features_dir !== undefined) {
+    // The post-game pass: the rows of each member's own Episodes that the play-time sidecar did not leave (a gap, a failure).
+    const policyOf = new Map(members.map((entry) => [entry.member, entry.policy_id]));
+    const own = entries.flatMap((entry) => entry.stored).filter((ref) => ref.behaviour_policy_id === policyOf.get(ref.owner));
+    await writeFeatureRows(
+      { engine, configs: options.features, known_synthetic: pool.known_synthetic },
+      own.map(({ owner, hash }) => ({ hash, path: join(memberDir(root, owner), "episodes", `${hash}.json`) })),
+      options.features_dir,
+      () => options.signal?.aborted === true,
+    );
+  }
+  return entries;
+}
+
+/**
+ * Play the generation's population plan against the members' workers (this process's shard here, the rest through
+ * `options.others`: entries played by further game processes), writing each member's Episodes under
+ * `out_dir/members/<member>/episodes/` as the games finish, then each member's `stream.jsonl` and `training-set.json`.
+ * The entries are put in plan order, so the result is the one a single process gives. Refused: a harness incident in any
+ * game (nothing is retried), a game missing or played twice, a member with no Episode of its own pair, and everything
+ * `planPopulation` and the member checks refuse.
+ */
+export async function playPopulationGeneration(options: PopulationOptions): Promise<PopulationResult> {
+  const { engine, config, generation, members, pool, out_dir } = options;
+  checkPopulationConfig(config, members, generation, pool.teams.length, options.past?.pool);
+  const plan = populationPlanOf(config, generation, pool.teams.length, members, options.past?.pool);
+  const stop = new AbortController();
+  if (options.signal?.aborted === true) stop.abort();
+  else options.signal?.addEventListener("abort", () => stop.abort(), { once: true });
+  const activity = options.activity ?? { busy: 0 };
+  const here = playPopulationEntries({ ...options, signal: stop.signal, activity }, options.shard);
+  const there = options.others ?? Promise.resolve([]);
+  here.catch(() => stop.abort()); // a failure of either side ends the other's games at once (#1100)
+  there.catch(() => stop.abort());
+  const idle = watchIdle(options.live_children, activity, options.idle_grace_ms ?? IDLE_GRACE_MS, there);
+  let entries: PopulationEntry[];
+  try {
+    entries = (await Promise.race([Promise.all([here, there]), idle.tripped])).flat().sort((a, b) => a.game - b.game);
+  } catch (error) {
+    stop.abort();
+    throw error;
+  } finally {
+    idle.stop();
+  }
+  if (entries.length !== plan.length || entries.some((entry, index) => entry.game !== index)) {
+    throw new GenerationError("the played games are not the plan's games, each once");
+  }
+  const rows = new Map<number, PopulationGameRow>(entries.map((entry) => [entry.game, entry.row]));
+  const facts = new Map(entries.map((entry) => [entry.game, entry.fact]));
+  // The Episode files each member's directory holds: the hash and the policy that played the seat.
+  const stored = new Map<string, { hash: string; behaviour_policy_id: string }[]>(members.map((entry) => [entry.member, []]));
+  for (const entry of entries) for (const ref of entry.stored) stored.get(ref.owner)?.push({ hash: ref.hash, behaviour_policy_id: ref.behaviour_policy_id });
   const results: PopulationMemberResult[] = [];
   for (const entry of members) {
     const dir = memberDir(out_dir, entry.member);
@@ -307,7 +469,13 @@ export async function playPopulationGeneration(options: PopulationOptions): Prom
     if (own.length === 0) throw new GenerationError(`no Episode of ${entry.member}'s frozen pair: every game it played was forfeited`);
     const episodes: StoredEpisode[] = own.map(({ hash }) => ({ hash, path: join(dir, "episodes", `${hash}.json`) }));
     const set = await writeStoredTrainingStream(
-      { episodes, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: entry.policy_id },
+      {
+        episodes,
+        evaluation_manifests: [],
+        known_synthetic: pool.known_synthetic,
+        behaviour_policy_id: entry.policy_id,
+        ...(options.features === undefined ? {} : { features: { engine, configs: options.features, ...(options.features_dir === undefined ? {} : { precomputed: readFeatureRows(engine, options.features, options.features_dir) }) } }),
+      },
       { ...(options.stream_limits ?? {}), path: join(dir, "stream.jsonl") },
     );
     const training_set_hash = await nodeSha256(new TextEncoder().encode(jcs(set as unknown as Json)));
@@ -336,19 +504,32 @@ export async function playPopulationGeneration(options: PopulationOptions): Prom
 
 /**
  * Write the Episodes of a played game: a member's seat under that member, a baseline's seat under the member
- * the game was scheduled for. Each is flushed before the next wave starts (memory does not grow with games).
+ * the game was scheduled for. Each is flushed before the next wave starts (memory does not grow with games). A member's
+ * own seat also leaves its play-time rows as the Episode's rows file (a gap or a failure leaves nothing: the post-game pass builds them).
  */
-async function writeEpisodes(options: PopulationOptions, entry: PopulationGamePlan, record: BattleRecord, stored: Map<string, { hash: string; behaviour_policy_id: string }[]>): Promise<void> {
+async function writeEpisodes(options: PopulationOptions, root: string, entry: PopulationGamePlan, record: BattleRecord, playedRows: PlayedPopulationGame["play_rows"]): Promise<PopulationStored[]> {
   const policyOf = (seat: PopulationSeat): string => ("member" in seat ? (options.members.find((m) => m.member === seat.member) as PopulationMember).policy_id : seat.policy_id);
   const sides: Record<Player, string> = { p1: policyOf(entry.seats.p1), p2: policyOf(entry.seats.p2) };
   const episodes = await seatEpisodes(record, entry.teams, options.pool, options.config.seeds.run_key, sides);
+  const stored: PopulationStored[] = [];
   for (const [seat, episode] of episodes.entries()) {
-    const holder = entry.seats[seat === 0 ? "p1" : "p2"];
+    const player: Player = seat === 0 ? "p1" : "p2";
+    const holder = entry.seats[player];
     const owner = "member" in holder ? holder.member : entry.member;
     const hash = await episodeHash(episode, nodeSha256);
-    writeDurable(join(memberDir(options.out_dir, owner), "episodes", `${hash}.json`), `${jcs(episode as unknown as Json)}\n`);
-    (stored.get(owner) as { hash: string; behaviour_policy_id: string }[]).push({ hash, behaviour_policy_id: episode.provenance.behaviour_policy_id });
+    writeDurable(join(memberDir(root, owner), "episodes", `${hash}.json`), `${jcs(episode as unknown as Json)}\n`);
+    stored.push({ owner, hash, behaviour_policy_id: episode.provenance.behaviour_policy_id });
+    const kept = playedRows?.[player];
+    if (kept !== undefined && options.features !== undefined && options.features_dir !== undefined) {
+      // A failure here skips the sidecar (the post-game pass builds the rows) and never fails the generation; it is logged without any content.
+      try {
+        await writePlayRows({ engine: options.engine, configs: options.features }, episode, hash, kept, options.features_dir);
+      } catch (error) {
+        process.stderr.write(`rows sidecar skipped for game ${entry.game}: ${(error as Error).name}\n`);
+      }
+    }
   }
+  return stored;
 }
 
 /**

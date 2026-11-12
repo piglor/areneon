@@ -22,6 +22,7 @@ export interface Hello {
    * @maxItems 5
    */
   contracts: [ContractVersion, ...ContractVersion[]];
+  inference?: Inference;
 }
 /**
  * One contract the two sides must agree on: its name, schema_version and the SHA-256 of its schema file's JCS bytes.
@@ -36,6 +37,13 @@ export interface ContractVersion {
    * SHA-256 of the contract schema's JCS bytes: lowercase hex.
    */
   schema_sha256: string;
+}
+/**
+ * The batching the client expects (a training self-play client of a run whose config sets generation.inference). Omitted means batch 1. The worker refuses the session if its own batching differs, and the client refuses a ready that states another.
+ */
+export interface Inference {
+  kind: "batched";
+  max_batch: number;
 }
 /**
  * Worker to client: its contracts and what it loaded.
@@ -73,6 +81,7 @@ export interface Ready {
    * True when the worker answers value queries (PolicyQuery sampling kind value): its checkpoints' encoder layout does not fill any token or field column from candidate_features arrays or opponent_sheet, so the value head needs no candidate rows (ADR-026 erratum E2 decision 7). Omitted otherwise, and then a value query is refused.
    */
   value_query?: true;
+  inference?: Inference1;
 }
 /**
  * A loaded checkpoint: its role and id (the SHA-256 of its safetensors file bytes).
@@ -99,6 +108,13 @@ export interface FeatureSetStatement1 {
   feature_set_hash: string;
 }
 /**
+ * The batching the worker was started with: omitted for batch 1. The client refuses a ready whose batching is not the one its hello asked for.
+ */
+export interface Inference1 {
+  kind: "batched";
+  max_batch: number;
+}
+/**
  * A candidate feature set by name and identity hash (CandidateFeatures.feature_set and feature_set_hash).
  *
  * This interface was referenced by `PolicyHandshake`'s JSON-Schema
@@ -107,4 +123,14 @@ export interface FeatureSetStatement1 {
 export interface FeatureSetStatement2 {
   feature_set: string;
   feature_set_hash: string;
+}
+/**
+ * The batching of the worker's forward pass (ADR-028 section 2, #1195): up to max_batch queued queries are scored in one padded forward pass on the CPU. Absent means batch 1, which is what every evaluation, sealed and head-to-head path asks for.
+ *
+ * This interface was referenced by `PolicyHandshake`'s JSON-Schema
+ * via the `definition` "Inference".
+ */
+export interface Inference2 {
+  kind: "batched";
+  max_batch: number;
 }

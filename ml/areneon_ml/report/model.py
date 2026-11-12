@@ -285,6 +285,9 @@ class ReportModel:
     #: A population run's ladder facts (ADR-021 slice 11, ``report.population``); None for a
     #: single-lineage run, which renders exactly as before.
     population: PopulationFacts | None = None
+    #: ``generation.inference.max_batch`` of the run (ADR-028 section 2 F2): None for the default
+    #: batch 1. A batched run is not byte-reproducible and the page says so.
+    inference_max_batch: int | None = None
     #: A population run's progress roots: generation -> the member (``m<k>``) whose frozen pair
     #: the generation's record evaluates (#1335); empty for a single-lineage run.
     progress_members: dict[int, str] = field(default_factory=dict)
@@ -753,5 +756,6 @@ def read_report_model(run_dir: Path, progress_dir: Path | None) -> ReportModel:
         dict(sorted(inputs.items())),
         family=family_label(config),
         population=facts,
+        inference_max_batch=config.generation.inference_max_batch,
         progress_members=tie.found if tie is not None else {},
     )

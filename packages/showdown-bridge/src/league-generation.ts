@@ -38,6 +38,7 @@ import { goldenWorldFactsData } from "./world-facts-data.ts";
 import { resolveFormat, type VersionManifest } from "./formats.ts";
 import { nodeSha256 } from "./player-channel.ts";
 import { type PolicyClient } from "./policy-worker.ts";
+import type { PolicyQueryInput } from "./policy-protocol.ts";
 import { type PolicyGameOptions, policyGame, type PolicySeat } from "./policy-actor.ts";
 import { readerSha256 } from "@areneon/public-state";
 import { loadRandomCorpus } from "./random-corpus.ts";
@@ -447,6 +448,11 @@ export interface GenerationOptions {
    * worker that stated the source, and to the training loader, which recomputes it for every example.
    */
   sheet?: SheetSetup;
+  /**
+   * Called with each decision the pair's own seats play: its query and the answered choice (batched-inference divergence, #1195;
+   * `inference-divergence.ts`). Observes only; never changes a byte.
+   */
+  on_answer?: (query: PolicyQueryInput, choice: string) => void;
   /** Called after each game with the counts of each of the pair's seats' sheet builders (blocks built, refusals by code). */
   on_sheet_counts?: (game: number, counts: readonly SheetCounts[]) => void;
   /** The belief port factory of the composition root (`packages/team-dataset`); without it a plan that names `damage-aware@v2` is refused. */
@@ -674,13 +680,14 @@ async function playOne(options: GenerationOptions, plan: GamePlan, client: Polic
     sheets[player] = kept;
     return { sheet: { builder, record: (seq: number, block: OpponentSheet) => void kept.set(seq, block) } };
   };
+  const observed = options.on_answer === undefined ? {} : { on_answer: options.on_answer };
   const seatFor = (player: Player): PolicySeat => {
-    if (options.features === undefined) return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), ...sheetFor(player) };
+    if (options.features === undefined) return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), ...observed, ...sheetFor(player) };
     const memo = createFeatureMemo();
     memos[player] = memo;
     const kept = new Map<number, AnyCandidateFeatures>();
     rows[player] = kept;
-    return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), features: { configs: options.features, memo, ...(keepRows ? { record: (seq: number, found: AnyCandidateFeatures) => void kept.set(seq, found) } : {}) }, ...sheetFor(player) };
+    return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), features: { configs: options.features, memo, ...(keepRows ? { record: (seq: number, found: AnyCandidateFeatures) => void kept.set(seq, found) } : {}) }, ...observed, ...sheetFor(player) };
   };
   // The open regime's opponent-sheet block (engine-sheet) is a later slice: a run that reads blocks cannot play an open game yet.
   if (options.sheet !== undefined && plan.format_id !== undefined && plan.format_id !== config.format_id) throw new GenerationError("an open-format game needs the engine-sheet source of the opponent sheet block, which is not built yet");
@@ -738,7 +745,7 @@ export interface StoredRef {
   behaviour_policy_id: string;
 }
 
-function checkShard(shard: Shard): void {
+export function checkShard(shard: Shard): void {
   if (!Number.isInteger(shard.of) || shard.of < 1 || !Number.isInteger(shard.index) || shard.index < 0 || shard.index >= shard.of) {
     throw new RangeError("a shard is an index below a positive count");
   }
@@ -914,7 +921,7 @@ function labelContext(options: GenerationOptions, client: PolicyClient): LabelCo
 }
 
 /** How long a generation may stand with no live game process and no game in flight (#1100). */
-const IDLE_GRACE_MS = 60_000;
+export const IDLE_GRACE_MS = 60_000;
 
 /**
  * The idle watchdog (#1100): while the other game processes' entries are still awaited, a
@@ -922,7 +929,7 @@ const IDLE_GRACE_MS = 60_000;
  * progress is not going to finish. `tripped` rejects after `graceMs` of that state; it never
  * resolves. Without a `live` probe (one game process) there is nothing to watch.
  */
-function watchIdle(live: (() => number) | undefined, activity: { busy: number }, graceMs: number, awaited: Promise<unknown>): { tripped: Promise<never>; stop: () => void } {
+export function watchIdle(live: (() => number) | undefined, activity: { busy: number }, graceMs: number, awaited: Promise<unknown>): { tripped: Promise<never>; stop: () => void } {
   let timer: ReturnType<typeof setInterval> | undefined;
   let settled = false;
   awaited.then(() => (settled = true), () => (settled = true));

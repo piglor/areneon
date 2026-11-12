@@ -24,7 +24,7 @@ import { assertOwnTeamStats, pinnedEngine } from "./own-team-stats.ts";
 import { observe, playerChannel } from "./player-channel.ts";
 import { startTimer, addSince, timed, timedAsync } from "./profile.ts";
 import { type PolicyClient, PolicyReplyError } from "./policy-worker.ts";
-import { PolicyProtocolError, type PlaySettings } from "./policy-protocol.ts";
+import { type PolicyQueryInput, PolicyProtocolError, type PlaySettings } from "./policy-protocol.ts";
 import { type Actor, declareReadsLegal, ForfeitSignal, type Player } from "./runner.ts";
 import { battleClass, type DataClass, stampTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
 import { sheetRegimeOf } from "./team-sheet-binding.ts";
@@ -125,6 +125,11 @@ export interface PolicyActorOptions {
    * `guardActor`, which makes it a `crash` of this seat.
    */
   sheet?: ActorSheet;
+  /**
+   * Called with each decision's query and the choice the worker answered (not for a Team Preview a `preview_actor` plays). Observes
+   * only; never changes a byte. The batched-inference divergence measure keeps a sample of these (`inference-divergence.ts`).
+   */
+  on_answer?: (query: PolicyQueryInput, choice: string) => void;
   /** The engine that checks the team's stats against the Team Preview request (default: the pinned checkout). */
   engine?: Engine;
   /**
@@ -141,7 +146,7 @@ export interface PolicyActorOptions {
  * request the adapter cannot observe is a harness incident.
  */
 export function policyActor(options: PolicyActorOptions): Actor {
-  const { client, battle, player, team, manifest, channel_class, seed, game, policy_id, sampling, play, engine, preview_actor, features, sheet } = options;
+  const { client, battle, player, team, manifest, channel_class, seed, game, policy_id, sampling, play, engine, preview_actor, features, sheet, on_answer } = options;
   // The channel is judged against the team-sheet regime of the format its manifest names (ADR-027 section 5).
   const regime = sheetRegimeOf(manifest.showdown_commit, manifest.format_id);
   const memo = features?.memo ?? createFeatureMemo();
@@ -227,7 +232,9 @@ export function policyActor(options: PolicyActorOptions): Actor {
       policy_id,
     } as Omit<PolicyQuery, "query_id">;
     try {
-      return (await timedAsync("ipc_wait", () => client.ask(battle, query))).choice;
+      const choice = (await timedAsync("ipc_wait", () => client.ask(battle, query))).choice;
+      on_answer?.(query, choice);
+      return choice;
     } catch (error) {
       if (error instanceof PolicyReplyError) throw new ForfeitSignal("invalid_reply", error.message);
       throw error;
@@ -248,6 +255,8 @@ export interface PolicySeat {
   features?: ActorFeatures;
   /** The opponent sheet builder of this seat (see `PolicyActorOptions.sheet`); the block goes only to a worker that stated a source. */
   sheet?: ActorSheet;
+  /** Observes each decision's query and answer (see `PolicyActorOptions.on_answer`). */
+  on_answer?: (query: PolicyQueryInput, choice: string) => void;
   /** Play the Team Preview uniformly at random among the legal Preview choices (the Preview ablation), seeded per seat. */
   random_preview?: true;
   /**

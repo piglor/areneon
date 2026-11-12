@@ -445,3 +445,21 @@ describe("a whole A1 battle through the worker process (stub model)", () => {
     expect((await run(worker)).outcome).toMatchObject({ kind: "forfeit", cause: "invalid_reply" });
   });
 });
+
+describe("on_answer observes each decision (batched-inference divergence, #1195)", () => {
+  it("is called with the query sent and the choice answered, once per query, and changes no byte", async () => {
+    const seen: { query: PolicyQueryInput; choice: string }[] = [];
+    const watched = recorder();
+    const observed = await play(both(watched, { on_answer: (query, choice) => void seen.push({ query, choice }) }));
+    const plain = recorder();
+    const unobserved = await play(both(plain));
+    expect(seen.length).toBe(watched.queries.length);
+    expect(seen.length).toBeGreaterThan(4);
+    for (const [i, found] of seen.entries()) {
+      expect(found.query).toBe((watched.queries[i] as { query: PolicyQueryInput }).query);
+      expect(found.query.candidates.map((c) => c.choice)).toContain(found.choice);
+    }
+    expect((observed.record as BattleRecord).omniscient_log).toEqual((unobserved.record as BattleRecord).omniscient_log);
+    expect(plain.queries.map((q) => q.query)).toEqual(watched.queries.map((q) => q.query));
+  });
+});
