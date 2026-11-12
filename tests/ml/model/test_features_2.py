@@ -658,12 +658,14 @@ def test_the_closed_enums_are_the_probe_contract_s_in_their_order() -> None:
         (SOURCES.parents[2] / "packages/schema/contracts/v1/policy-query.schema.json").read_text()
     )
     defs = schema["$defs"]
-    assert tuple(defs["UnsupportedSpeedRow"]["properties"]["reason"]["enum"]) == rows_of.ALL_REASONS
-    assert (
-        tuple(defs["UnsupportedFoePriorityRow"]["properties"]["reason"]["enum"])
-        == rows_of.ALL_REASONS
+    # probe-outcome/1 adds the reader-rule reason history_unknown after the probe's own
+    expected = (*rows_of.ALL_REASONS, "history_unknown")
+    assert tuple(defs["UnsupportedSpeedRow"]["properties"]["reason"]["enum"]) == expected
+    assert tuple(defs["UnsupportedFoePriorityRow"]["properties"]["reason"]["enum"]) == expected
+    assert tuple(defs["UnsupportedThreatRow"]["properties"]["reason"]["enum"]) == (
+        *rows_of.REASONS,
+        "history_unknown",
     )
-    assert tuple(defs["UnsupportedThreatRow"]["properties"]["reason"]["enum"]) == rows_of.REASONS
     assert tuple(defs["ComputedSpeedRow"]["properties"]["relation"]["enum"]) == rows_of.RELATIONS
 
 
