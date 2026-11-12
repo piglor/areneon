@@ -194,3 +194,53 @@ def test_a_profiled_generation_has_its_own_table_and_the_others_none(run: Path) 
     assert page.count("<h2>Where the time went (profile)</h2>") == 1
     assert model.generations[1].metrics is not None
     assert "profile" not in model.generations[1].metrics
+
+
+def batched_run(path: Path) -> Any:
+    from areneon_ml.learner.config import read_run_config  # noqa: PLC0415
+
+    from tests.ml.progress.support import dataset_config  # noqa: PLC0415
+
+    raw = copy.deepcopy(dataset_config().raw)
+    raw["generation"]["inference"] = {"kind": "batched", "max_batch": 2}
+    return make_run(path, generations=2, config=read_run_config(raw))
+
+
+def test_a_batched_run_is_marked_and_shows_each_generations_divergence(tmp_path: Path) -> None:
+    path = tmp_path / "run"
+    batched_run(path)
+    found = {
+        "max_batch": 2,
+        "decisions": 2000,
+        "sampled": 256,
+        "differing": 3,
+        "max_prior_diff_ppm": 41,
+        "target_met": True,
+    }
+    rewrite(path, 1, lambda r: r.update(inference_divergence=found))
+    rewrite(path, 2, lambda r: r.update(inference_divergence={**found, "target_met": False}))
+    model = read_report_model(path, None)
+    assert model.inference_max_batch == 2
+    page = build_report(model)
+    assert page.count("<h2>Batched inference: not byte-reproducible</h2>") == 1
+    assert "depend on timing" in page
+    assert (
+        '<td class="n">2000</td><td class="n">256</td><td class="n">3</td><td class="n">41</td>'
+        in page
+    )
+    assert ">yes<" in page
+    assert ">no<" in page
+
+
+def test_a_batched_run_with_no_recorded_divergence_says_so(tmp_path: Path) -> None:
+    path = tmp_path / "run"
+    batched_run(path)
+    page = build_report(read_report_model(path, None))
+    assert "Batched inference: not byte-reproducible" in page
+    assert "No generation recorded a divergence yet." in page
+
+
+def test_a_run_at_batch_one_has_no_such_section(run: Path) -> None:
+    model = read_report_model(run, None)
+    assert model.inference_max_batch is None
+    assert "Batched inference" not in build_report(model)
