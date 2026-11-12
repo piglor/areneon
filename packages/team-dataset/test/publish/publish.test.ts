@@ -271,6 +271,21 @@ describe("command", () => {
     expect(await runPublishCli(["upload", "--snapshot", dir], ok.io)).toBe(2);
   });
 
+  it("opens the R2 client when no store is injected (a refused request is exit 1)", async () => {
+    const dir = copy();
+    writePlan(dir);
+    vi.stubGlobal("fetch", () => {
+      return Promise.resolve(new Response("", { status: 503 }));
+    });
+    try {
+      const a = io({ AWS_ACCESS_KEY_ID: "AKIA0123456789ABCDEF", AWS_SECRET_ACCESS_KEY: "s".repeat(40), AWS_ENDPOINT_URL: "https://0123456789abcdef.r2.cloudflarestorage.com", AWS_DEFAULT_REGION: "auto" });
+      expect(await runPublishCli(["upload", "--snapshot", dir, "--bucket", "teams-test"], a.io)).toBe(1);
+      expect(a.err.join("\n")).toContain("object store refused");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("exits 2 on a usage error and 1 on a refusal, and rethrows a defect", async () => {
     const a = io();
     expect(await runPublishCli([], a.io)).toBe(2);
