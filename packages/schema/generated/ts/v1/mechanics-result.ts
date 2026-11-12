@@ -70,7 +70,7 @@ export interface Computed {
   /**
    * The engine's values, tagged by the query kind.
    */
-  answer: StatsAnswer | SpeedOrderAnswer | DamageAnswer;
+  answer: StatsAnswer | SpeedOrderAnswer | DamageAnswer | MoveOutcomeAnswer;
 }
 /**
  * Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.
@@ -193,6 +193,15 @@ export interface KoUnsupported {
   reason: "ko_state_change";
 }
 /**
+ * Whether the asked move works. precondition: passes (no chance before the hit step), chance (the engine drew a chance before it) or fails (the move never reaches its hit step). Both chances are integers in parts per million, the product of the engine's own draws rounded down.
+ */
+export interface MoveOutcomeAnswer {
+  kind: "move_outcome";
+  precondition: "chance" | "fails" | "passes";
+  precondition_ppm: number;
+  hit_ppm: number;
+}
+/**
  * The query is outside what the probe answers exactly; nothing is approximated.
  */
 export interface Unsupported {
@@ -222,9 +231,9 @@ export interface Unsupported {
    */
   gap_ids: string[];
   /**
-   * query_kind: the kind is not in the mechanics config's scope. scenario_rule_table: the engine's rule tables differ from the config's scenario. random_effect: the engine drew a random number the probe does not expect.
+   * query_kind: the kind is not in the mechanics config's scope. scenario_rule_table: the engine's rule tables differ from the config's scenario. random_effect: the engine drew a random number the probe does not expect. history_unknown: a history fact the channel cannot settle was asked at both ends of its range and the answers differ.
    */
-  reason: "query_kind" | "random_effect" | "scenario_rule_table";
+  reason: "history_unknown" | "query_kind" | "random_effect" | "scenario_rule_table";
   /**
    * The index of the set, action or Pokemon the reason names; null when it names the query as a whole.
    */

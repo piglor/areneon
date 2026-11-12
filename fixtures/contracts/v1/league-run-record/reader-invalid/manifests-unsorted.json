@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "run_id": "tiny-run",
+  "run_config_hash": "4f6a054f1a4e2d258795aa0f1689aeeb91d0c1c2f609de4ecfeedf84b1c2f810",
+  "generation": 11,
+  "seed_derivation": "league-seed/1",
+  "plan_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "pair_policy_id": "policy:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "games": 6,
+  "played": 6,
+  "forfeits": 0,
+  "episodes": 12,
+  "opponents": [
+    {
+      "opponent_policy_id": "policy:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "games": 4
+    },
+    {
+      "opponent_policy_id": "random-legal@tiny",
+      "games": 2
+    }
+  ],
+  "regimes": {
+    "open": 2,
+    "closed": 4
+  },
+  "game_manifests": [
+    {
+      "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+      "format_id": "gen9championsvgc2026regmcbo3",
+      "regulation": "M-C",
+      "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3",
+      "format_rules_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    {
+      "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+      "format_id": "gen9championsvgc2026regmc",
+      "regulation": "M-C",
+      "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3",
+      "format_rules_hash": "549cd2aa97324be093c567324676d46a5eff19d6b0c9d8491c483dab746d5dcc"
+    }
+  ]
+}

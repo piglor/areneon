@@ -61,10 +61,10 @@ export interface StubOptions {
   /** Whether the foe's action precedes the actor's in a `speed_order` query. */
   foeFirst?: boolean;
   /** Make the probe answer these query kinds with this outcome instead. */
-  override?: Partial<Record<"damage" | "stats" | "speed_order", Outcome>>;
+  override?: Partial<Record<"damage" | "stats" | "speed_order" | "move_outcome", Outcome>>;
   log?: ParsedMechanicsQuery[];
   /** Make the probe throw this for these query kinds. */
-  throwOn?: Partial<Record<"damage" | "stats" | "speed_order", Error>>;
+  throwOn?: Partial<Record<"damage" | "stats" | "speed_order" | "move_outcome", Error>>;
 }
 
 /** A probe stand-in: damage answers a constant roll per move, every set has 100 hit points, and the order is the test's. */

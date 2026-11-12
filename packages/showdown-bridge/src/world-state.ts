@@ -313,6 +313,21 @@ export function writeProtectCounter(mon: WMon, condition: string, streak: number
   if (held !== undefined) held.duration = 1;
 }
 
+/**
+ * The stall condition at the engine's own counter value (the probe's declared history, ADR-022 E-22.5.3): the condition is added through the
+ * engine (its start handler sets the first value, which the declared counter then replaces) and, as for the Protect counter above, one turn of it is left. 0 is no condition.
+ */
+export function writeStallCounter(mon: WMon, condition: string, counter: number): void {
+  Reflect.deleteProperty(mon.volatiles, condition);
+  if (counter <= 0) return;
+  mon.addVolatile(condition);
+  const held = mon.volatiles[condition];
+  if (held !== undefined) {
+    held.counter = counter;
+    held.duration = 1;
+  }
+}
+
 /** Turns of a side's and the field's counters from the log. */
 export function writeSide(side: WSide, facts: { total_fainted: number; fainted_last_turn: boolean }): void {
   side.totalFainted = facts.total_fainted;

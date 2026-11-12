@@ -51,6 +51,16 @@ export function readMechanicsConfig(value: unknown): MechanicsConfig {
   return config;
 }
 
+/**
+ * The config with `move_outcome` in scope (ADR-022 E-22.5.3). The committed config does not list the kind, so its bytes, its hash and
+ * every identity that names it stay as they are; a caller of the new kind names this config (another `mechanics_config_hash`).
+ */
+export function withMoveOutcome(config: MechanicsConfig): MechanicsConfig {
+  if (config.scope.query_kinds.some((entry) => entry.kind === "move_outcome")) return config;
+  const kinds = [...config.scope.query_kinds, { kind: "move_outcome" as const, gap_ids: [] }].sort((a, b) => (a.kind < b.kind ? -1 : 1));
+  return { ...config, scope: { ...config.scope, query_kinds: kinds } as MechanicsConfig["scope"] };
+}
+
 /** The hash a result names its config by: SHA-256 of the config's JCS bytes. */
 export const mechanicsConfigHash = (config: MechanicsConfig): string => sha256Hex(jcs(config as unknown as Json));
 
@@ -80,7 +90,9 @@ export function checkMechanicsConfig(engine: Engine, config: MechanicsConfig, sn
     }
   }
   // a speed order names the Mega row itself when a Mega Evolution is involved (the probe's constant, not the config's)
-  if (config.scope.query_kinds.some((entry) => entry.kind === "speed_order") && !(MEGA_GAP_ID in snapshot.gaps)) problems.push(`speed_order: gap ${MEGA_GAP_ID} is not in the gap ledger`);
+  for (const kind of ["speed_order", "move_outcome"]) {
+    if (config.scope.query_kinds.some((entry) => entry.kind === kind) && !(MEGA_GAP_ID in snapshot.gaps)) problems.push(`${kind}: gap ${MEGA_GAP_ID} is not in the gap ledger`);
+  }
   const dex = engine.sim.Dex.mod(engine.sim.Dex.formats.get(config.format_id).mod);
   for (const id of config.ko_blockers.items) if (!dex.items.get(id).exists) problems.push(`ko_blockers: ${id} is not an item`);
   for (const id of config.ko_blockers.abilities) if (!dex.abilities.get(id).exists) problems.push(`ko_blockers: ${id} is not an ability`);

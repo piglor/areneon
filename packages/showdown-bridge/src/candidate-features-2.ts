@@ -29,14 +29,14 @@ import type { SpeedOrderAnswer } from "./damage-aware-score.ts";
 import { array, DamageAwareError, type DamageView, type Fighter, type Foe, foeTargetKind, object, type OwnSlot, ProbeRefusal, type SpeedLimit, text } from "./damage-aware-view.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import type { MechanicsQuery } from "./mechanics-query.ts";
-import type { MechanicsResult } from "./mechanics-result.ts";
+import { type PlainReason, plainReason } from "./mechanics-result.ts";
 import type { PlayerChannel } from "./observation.ts";
 import { loadRulesSnapshot } from "./rules-load.ts";
 
 /** The feature set this module builds. A change of what any array holds is a new id. */
 export const FEATURE_SET_2 = "probe-damage/2";
 
-type ProbeReason = Extract<MechanicsResult, { kind: "unsupported" }>["reason"];
+type ProbeReason = PlainReason;
 /** Why a speed or priority row is `unsupported`: the probe's closed reasons, plus its two speed-order limits. */
 export type OrderReason = ProbeReason | SpeedLimit;
 export type OrderValue<V> = ({ kind: "computed" } & V) | { kind: "unsupported"; reason: OrderReason };
@@ -254,7 +254,7 @@ function ask(view: DamageView, state: PublicState, own: readonly Fighter[], foes
     return { kind: "unsupported", reason: "query_kind" };
   }
   if ("limit" in result) return { kind: "unsupported", reason: result.limit };
-  if (result.kind === "unsupported") return { kind: "unsupported", reason: result.reason };
+  if (result.kind === "unsupported") return { kind: "unsupported", reason: plainReason(result.reason) };
   if (result.kind !== "computed" || result.answer.kind !== "speed_order") throw new DamageAwareError("the probe gave no speed order to a speed-order query");
   return { kind: "answer", answer: result.answer as SpeedOrderAnswer };
 }

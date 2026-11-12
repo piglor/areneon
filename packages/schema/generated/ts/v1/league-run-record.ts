@@ -61,6 +61,19 @@ export interface LeagueRunRecord {
    * @minItems 1
    */
   baselines?: [BaselineRecord, ...BaselineRecord[]];
+  /**
+   * The version manifests of the games the generation's games were played under (ADR-027 section 5a): present only for a run with sheet_regimes, sorted by their JCS bytes, each once. The closed (target) format's manifest is the one whose format_id is the config's format_id; the others are the open-sheet formats of the same regulation. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+   *
+   * @minItems 1
+   */
+  game_manifests?: [VersionManifest, ...VersionManifest[]];
+  /**
+   * Games per sheet regime (ADR-027 section 5a): present only for a run with sheet_regimes. open + closed = games; a baseline game counts as closed. The counts equal those of the plan's per-entry formats. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+   */
+  regimes?: {
+    open: number;
+    closed: number;
+  };
 }
 /**
  * This interface was referenced by `LeagueRunRecord`'s JSON-Schema
@@ -150,4 +163,26 @@ export interface BaselineCounts {
    * Optional (a minor change within v1; absent means 0 and is written only when above 0): requests answered by the actor-rule candidate because the mechanics probe refused a query the baseline built (a declared state the engine does not take). A high rate means the baseline plays like actor-rule; never more than queries.
    */
   probe_refusals?: number;
+}
+/**
+ * Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.
+ *
+ * This interface was referenced by `LeagueRunRecord`'s JSON-Schema
+ * via the `definition` "VersionManifest".
+ */
+export interface VersionManifest {
+  /**
+   * The pinned engine commit.
+   */
+  showdown_commit: string;
+  format_id: string;
+  regulation: string;
+  /**
+   * SHA-256 of the canonical engine ruleset.
+   */
+  ruleset_hash: string;
+  /**
+   * SHA-256 of Areneon's format rules record (ADR-007).
+   */
+  format_rules_hash: string;
 }
