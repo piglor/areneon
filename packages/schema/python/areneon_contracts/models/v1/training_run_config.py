@@ -89,6 +89,21 @@ class Play(BaseModel):
     """
 
 
+class Inference(BaseModel):
+    """
+    Optional (a minor change within v1, ADR-028 section 2 F2, ADR-010 section 2, #1195): the policy worker batches the forward pass of the frozen pair's self-play and baseline games on the CPU (float32, deterministic algorithms, no GPU inference): it answers up to max_batch queued queries in one padded forward pass. Only the network's forward pass batches; reduction and encoding stay per query. max_batch is 2 to n_parallel (a reader rule). The pair's behaviour_policy_id gains inference: {kind, max_batch} in its preimage (so a stream played this way is refused by a learner that expects another id), the worker states it in the handshake, and every evaluation path builds batch-1 clients. A batched generation is NOT byte-reproducible: the plan, seeds, teams and policy ids are, the choices, Episodes and training stream are not, and the killed-generation-resumes-to-equal-bytes and any-S-and-K claims do not hold; retraining from a committed stream does reproduce the learner-state hash, and every committed generation verifies. Absent means batch 1 and today's bytes, ids and run_config_hash. A config that carries it is a new run from generation 0. Not combined with a population.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["batched"]
+    max_batch: Annotated[StrictInt, Field(ge=2, le=1024)]
+    """
+    Most queries answered in one forward pass: 2 to n_parallel (a reader rule).
+    """
+
+
 class SearchLabels(BaseModel):
     """
     Optional (a minor change within v1, ADR-026 erratum E2 decisions 3 and 5, #1291): the frozen pair's own Battle move decisions are also LABELLED by the decision-time search after the game, from the stored Episode, into a separate label stream (labels.jsonl with its manifest label-set.json); nothing the search does is played or enters an Episode or the PPO stream. search_config_hash is the SHA-256 of the JCS bytes of the label search config (config/search/rerank-1-label.v1.json). An eligible decision (a Battle move request of the pair's own seat with two or more non-pending candidates) is selected when the first 8 bytes of SHA-256 over the JCS of {run_key, generation, game, player, request_seq, purpose: "search-label/1"}, read big-endian as n, satisfy n * 10^6 < label_share_ppm * 2^64. Labels start at start_generation. Comes with ppo.search_distill (both or neither) and needs warm_start, ppo.value_warmup (start_generation at least value_warmup.generations + 1), a team_dataset, and no opponent_sheet and no candidate feature set whose value reads candidate rows (probe-damage/1 and probe-damage-belief/1 are allowed). Absent keeps every byte and run_config_hash; a config that carries it is a new run from generation 0.
@@ -926,6 +941,10 @@ class Generation(BaseModel):
     play: Play | MISSING = MISSING
     """
     Optional (a minor change within v1, ADR-023 section 1, ADR-010 erratum A6 item 3, #1046): the play settings of the frozen pair's own seats. temperature_ppm is the sampling temperature in millionths: the pair samples softmax(logits * 10^6 / temperature_ppm) over the real candidates in self-play and baseline games, its behaviour_policy_id is the tempered pair's id, and the learner computes the old and new log-probabilities, the entropy, the approximate KL, the KL early stop and the anchor's KL (both policies) on the same tempered policy, so PPO stays on-policy. Absent means temperature 1 and today's bytes and run_config_hash; an explicit 1,000,000 is refused by the readers (one rule has one encoding, as in the policy query). The progress evaluation of a run that declares it adds this mode to argmax and temperature 1. A config that carries it is a new run from generation 0.
+    """
+    inference: Inference | MISSING = MISSING
+    """
+    Optional (a minor change within v1, ADR-028 section 2 F2, ADR-010 section 2, #1195): the policy worker batches the forward pass of the frozen pair's self-play and baseline games on the CPU (float32, deterministic algorithms, no GPU inference): it answers up to max_batch queued queries in one padded forward pass. Only the network's forward pass batches; reduction and encoding stay per query. max_batch is 2 to n_parallel (a reader rule). The pair's behaviour_policy_id gains inference: {kind, max_batch} in its preimage (so a stream played this way is refused by a learner that expects another id), the worker states it in the handshake, and every evaluation path builds batch-1 clients. A batched generation is NOT byte-reproducible: the plan, seeds, teams and policy ids are, the choices, Episodes and training stream are not, and the killed-generation-resumes-to-equal-bytes and any-S-and-K claims do not hold; retraining from a committed stream does reproduce the learner-state hash, and every committed generation verifies. Absent means batch 1 and today's bytes, ids and run_config_hash. A config that carries it is a new run from generation 0. Not combined with a population.
     """
     search_labels: SearchLabels | MISSING = MISSING
     """

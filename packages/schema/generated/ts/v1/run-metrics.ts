@@ -32,6 +32,7 @@ export interface RunMetrics {
   peak_accelerator_reserved_bytes?: number;
   peak_rss_bytes?: PeakRss;
   profile?: Profile;
+  inference_divergence?: InferenceDivergence;
   /**
    * The learner's device, as the run config names it.
    */
@@ -175,4 +176,21 @@ export interface LoadProfile {
   validate_cpu_ms: Count;
   reduce_cpu_ms: Count;
   encode_cpu_ms: Count;
+}
+/**
+ * How far batched self-play inference (generation.inference) strayed from batch 1 on a deterministic sample of this generation's own decisions (ADR-028 section 2 F2, #1195). Each sampled decision was scored again at batch 1 with its own sampling draw u: differing counts those whose choice differs from the played one, and max_prior_diff_ppm is the largest absolute difference, over the candidates of any sampled decision, between the batched and the batch-1 prior (temperature 1, in ppm). A diagnostic outside every hash; the sample is at least 1 percent of the decisions and at least 256 when that many were played (target_met says so).
+ *
+ * This interface was referenced by `RunMetrics`'s JSON-Schema
+ * via the `definition` "InferenceDivergence".
+ */
+export interface InferenceDivergence {
+  max_batch: number;
+  /**
+   * The pair's own decisions played this generation by the processes that reported.
+   */
+  decisions: number;
+  sampled: Count;
+  differing: Count;
+  max_prior_diff_ppm: Count;
+  target_met: boolean;
 }
