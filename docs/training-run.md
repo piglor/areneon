@@ -623,6 +623,21 @@ about 1 hour in one process and about 10 minutes with 8; the real dataset's pool
 adds to the start-up. Memory grows with the number of Episodes held (the same as a
 generation of that many games).
 
+### Binding a clone made before the provenance binding
+
+A clone directory written before #853 has no `provenance.json`, and `import-clone` refuses it.
+Bind it once, in place:
+
+```bash
+.venv/bin/python -m areneon_ml.learner bind --clone-dir .tmp/clone/CLONE-1
+```
+
+The command first verifies what the cloning run and `import-clone` require (a clone record per
+role named by its checkpoint id, each checkpoint hashing to its record's id, `sources.json`
+mapping each teacher set to `[]`, the clone state agreeing with the records) and writes
+`provenance.json` only if all of it holds. Any mismatch exits 3 and writes nothing; rerunning on a
+bound directory is a no-op; a different existing binding is never overwritten.
+
 ### Starting a run from the cloned pair (`warm_start`)
 
 A run config may declare `"warm_start": {"preview": "<id>", "battle": "<id>"}` (the checkpoint

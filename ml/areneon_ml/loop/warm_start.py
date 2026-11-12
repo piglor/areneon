@@ -182,15 +182,21 @@ def import_clone(clone_dir: Path, run_dir: Path, roles: tuple[str, ...] = ROLES)
     return {role: found[role][0].checkpoint_id for role in roles}
 
 
-def _check_sources(clone_dir: Path, records: list[CheckpointRecord]) -> None:
+def check_sources_registry(clone_dir: Path, records: list[CheckpointRecord]) -> bytes:
+    """Check ``sources.json`` maps each teacher set of ``records`` to ``[]``; return its bytes."""
     try:
         sources: Any = json.loads((clone_dir / "sources.json").read_bytes())
-        canonical = jcs(sources)
+        canonical: bytes = jcs(sources)
     except (OSError, ValueError, CanonicalError) as exc:
         raise WarmStartError(f"sources.json: {exc}") from exc
     needed = {h for record in records for h in record.training_set_hashes}
     if sources != {h: [] for h in needed} or (clone_dir / "sources.json").read_bytes() != canonical:
         raise WarmStartError("sources.json must map each teacher set of the records to []")
+    return canonical
+
+
+def _check_sources(clone_dir: Path, records: list[CheckpointRecord]) -> None:
+    canonical = check_sources_registry(clone_dir, records)
     try:  # the exported binding: every record file of the output and the registry (#853)
         verify_binding(
             clone_dir / BINDING_NAME,

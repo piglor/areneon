@@ -25,6 +25,7 @@ from areneon_contracts.contracts import ContractError, jcs
 from areneon_ml.checkpoint.record import RecordError
 from areneon_ml.learner.bench import Recorded, benchmark
 from areneon_ml.learner.clone import CloneError, clone
+from areneon_ml.learner.clone_bind import CloneBindError, bind_clone
 from areneon_ml.learner.clone_config import CloneConfigError, read_clone_config
 from areneon_ml.learner.clone_run import CloneOutputError, write_clone
 from areneon_ml.learner.config import RunConfigError, read_run_config
@@ -64,6 +65,16 @@ def _clone(args: argparse.Namespace) -> int:
     return 0
 
 
+def _bind(args: argparse.Namespace) -> int:
+    try:
+        bound = bind_clone(args.clone_dir)
+    except (CloneBindError, OSError, ValueError) as exc:
+        print(f"areneon_ml.learner: {exc}", file=sys.stderr)
+        return EXIT_REFUSED
+    print(f"{bound.path.name}: {'written' if bound.written else 'already bound'}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="areneon_ml.learner")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -84,7 +95,13 @@ def main(argv: list[str] | None = None) -> int:
         "--version-manifest", type=Path, required=True, help="the teacher games' version manifest"
     )
     cloning.add_argument("--out", type=Path, required=True, help="a new directory")
+    binding = commands.add_parser(
+        "bind", help="bind the provenance of a clone directory made before #853"
+    )
+    binding.add_argument("--clone-dir", type=Path, required=True)
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
+    if args.command == "bind":
+        return _bind(args)
     if args.command == "clone":
         return _clone(args)
     try:
