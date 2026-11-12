@@ -6,7 +6,8 @@
 //   it is no stalling move, no charge move, and its priority is 0 (a foe's priority-blocking ability reads the priority);
 // - it aims at no foe and no single Pokemon (`self`, a side, the field), so no immunity or protection step can remove its target;
 // - the user's ability and item have no handler of the engine's move path (`MOVE_PATH_HANDLERS`);
-// - no Pokemon of the query holds an ability or item that draws when actions are ordered (`onFractionalPriority`: the engine answers `random_effect`);
+// - no Pokemon of the query holds an ability or item with `onFractionalPriority` (the engine draws when it orders actions: `random_effect`). That is the
+//   only foe-side effect looked for: it is enough today because the move has priority 0 and aims at no foe, so no foe ability or item reads it otherwise;
 // - no Pokemon of the query has a status or a declared volatile, none of the declared facts is unknown and no slot condition is pending:
 //   the engine's declaration of a sleep or a confusion draws (the whole query is then `random_effect`), and a fact of the user's may name a
 //   condition whose handler blocks the move.

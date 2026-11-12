@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type CandidateFeaturesOutcome, candidateFeaturesOutcome } from "../src/candidate-features-outcome.ts";
+import { type CandidateFeaturesOutcome, candidateFeaturesOutcome, effectsOf, type RawDex } from "../src/candidate-features-outcome.ts";
 import { createFeatureMemo, type FeatureConfigs } from "../src/candidate-features.ts";
 import { jcs, type Json } from "../src/canonical-json.ts";
 import { GOLDEN_FORMAT } from "../src/golden.ts";
@@ -86,6 +86,7 @@ describe("skipping and folding are exact", () => {
     expect(skipped).toBeGreaterThan(0);
     expect(changed).toBeLessThan(folded);
     expect(queriesOn).toBeLessThan(queriesOff);
+    if (process.env.ARENEON_COST_BATTLES !== undefined) console.log(`cost sweep: ${compared} requests, skipped ${skipped}, folded ${folded}, queries ${queriesOn} against ${queriesOff}, branch rows now sharing the switch answer ${changed}`);
   }, 600_000);
 });
 
@@ -121,5 +122,20 @@ describe("provenPasses (engine-free)", () => {
 describe("what the probe observes of the queue", () => {
   it("is carried by the answer and absent for an answer built another way", () => {
     expect(observationOf({})).toBeUndefined();
+  });
+});
+
+describe("effectsOf (stand-in dex)", () => {
+  const raw = { moves: { get: () => ({}) }, abilities: { get: (name: string) => (name === "Known" ? { exists: true, onStart: 1 } : { exists: false }) }, items: { get: (name: string) => (name === "Thing" ? { exists: true } : { exists: false }) } } as unknown as RawDex;
+  const import1 = (set: { ability?: string; item?: string } | undefined) => () => (set === undefined ? [] : [set]);
+  it("reads the ability and item from the structured set, with none for an empty name", () => {
+    expect(effectsOf(import1({ ability: "Known", item: "Thing" }), raw, "x")).toEqual({ ability: { exists: true, onStart: 1 }, item: { exists: true } });
+    expect(effectsOf(import1({}), raw, "x")).toEqual({ ability: undefined, item: undefined });
+    expect(effectsOf(import1({ ability: "", item: "" }), raw, "x")).toEqual({ ability: undefined, item: undefined });
+  });
+  it("proves nothing (null) for an empty import or a name the engine does not know", () => {
+    expect(effectsOf(import1(undefined), raw, "x")).toBeNull();
+    expect(effectsOf(import1({ ability: "Nope" }), raw, "x")).toBeNull();
+    expect(effectsOf(import1({ ability: "Known", item: "Nope" }), raw, "x")).toBeNull();
   });
 });

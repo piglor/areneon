@@ -179,21 +179,31 @@ export function candidateFeaturesOutcome(
     memo,
     trace,
     FEATURE_SET_OUTCOME,
-    (context) => ({ outcomes: outcomeRows(setup.config, context, rawDexOf(engine, configs), memo, setup.skip !== false, setup.fold !== false) }),
+    (context) => ({ outcomes: outcomeRows(setup.config, context, rawDexOf(engine, configs), (paste) => engine.sim.Teams.import(paste) as { ability?: string; item?: string }[], memo, setup.skip !== false, setup.fold !== false) }),
     { outcomes: [] as OutcomeRow[] },
     lazyDeclarer(() => declarerOf(engine, configs, setup, channel)),
   );
   return out as unknown as CandidateFeaturesOutcome;
 }
 
-type RawDex = { moves: { get(id: string): Record<string, unknown> }; abilities: { get(name: string): Record<string, unknown> }; items: { get(name: string): Record<string, unknown> } };
+export type RawDex = { moves: { get(id: string): Record<string, unknown> }; abilities: { get(name: string): Record<string, unknown> }; items: { get(name: string): Record<string, unknown> } };
 const rawDexOf = (engine: Engine, configs: FeatureConfigs): RawDex => engine.sim.Dex.mod(engine.sim.Dex.formats.get(configs.config.format_id).mod) as unknown as RawDex;
 
-/** The user's ability and item names from its paste (`Name @ Item`, `Ability: X`). */
-function abilityAndItem(paste: string): { ability: string | null; item: string | null } {
-  const ability = /^Ability: (.+)$/m.exec(paste)?.[1] ?? null;
-  const item = /^[^\n]* @ (.+)$/m.exec(paste)?.[1] ?? null;
-  return { ability, item };
+/**
+ * The engine's data of a declared Pokemon's ability and item, read from the structured set (the engine's own import of the paste, so a nickname
+ * cannot be taken for an item), or null when either is named and the engine does not know it: nothing is then proven and the probe is asked.
+ */
+export function effectsOf(importSets: (paste: string) => readonly { ability?: string; item?: string }[], raw: RawDex, paste: string): { ability: Record<string, unknown> | undefined; item: Record<string, unknown> | undefined } | null {
+  const set = importSets(paste)[0];
+  if (set === undefined) return null;
+  const pick = (table: { get(name: string): Record<string, unknown> }, name: string | undefined): { data: Record<string, unknown> | undefined; ok: boolean } => {
+    if (name === undefined || name === "") return { data: undefined, ok: true };
+    const data = table.get(name);
+    return data.exists === true ? { data, ok: true } : { data: undefined, ok: false };
+  };
+  const ability = pick(raw.abilities, set.ability);
+  const item = pick(raw.items, set.item);
+  return ability.ok && item.ok ? { ability: ability.data, item: item.data } : null;
 }
 
 /** A declarer that builds its facts on first use (a request with nothing to declare never replays the channel). */
@@ -203,7 +213,7 @@ function lazyDeclarer(make: () => HistoryDeclarer): HistoryDeclarer {
 }
 
 /** The `outcomes` of one move request. */
-function outcomeRows(record: OutcomeConfig, { view, state, entries, foes, parsed, body, measured }: ArrayContext, raw: RawDex, memo: FeatureMemo, skip: boolean, fold: boolean): OutcomeRow[] {
+function outcomeRows(record: OutcomeConfig, { view, state, entries, foes, parsed, body, measured }: ArrayContext, raw: RawDex, importSets: (paste: string) => readonly { ability?: string; item?: string }[], memo: FeatureMemo, skip: boolean, fold: boolean): OutcomeRow[] {
   const active = Array.isArray(body.active) ? (body.active as unknown[]) : null;
   if (active === null) return []; // a forced switch asks no move
   const actives = entries.filter((entry) => entry.slot !== null);
@@ -260,18 +270,19 @@ function outcomeRows(record: OutcomeConfig, { view, state, entries, foes, parsed
     }
     // One declaration per part: the branches differ only in the foes' actions.
     const { sides, history } = measured("outcomes", () => view.declared([ownFighters, foeFighters], [ownFighters[actor] as Fighter]));
-    if (skip) {
-      const { ability, item } = abilityAndItem((ownFighters[actor] as Fighter).paste);
+    // A Mega part is never skipped (its forme's ability is not the set's); a name the engine does not know proves nothing.
+    if (skip && !part.mega) {
       const marked = history !== undefined && UNKNOWN_HISTORIES.has(history);
-      const everyone = sides.flat().flatMap((each) => {
-        const { ability: a, item: i } = abilityAndItem(each.set);
-        return [a === null ? undefined : raw.abilities.get(a), i === null ? undefined : raw.items.get(i)].filter((data): data is Record<string, unknown> => data !== undefined);
-      });
-      const combatants = sides.flat().map((each) => ({ status: each.status, history: each.history }));
-      if (provenPasses({ move: raw.moves.get(part.id), ability: ability === null ? undefined : raw.abilities.get(ability), item: item === null ? undefined : raw.items.get(item), everyone, combatants, battle: history, marked })) {
-        for (const branch of branches) row(branch, { kind: "computed", precondition: "passes", precondition_ppm: MILLION, hit_ppm: MILLION, success_ppm: MILLION });
-        counts.skipped += branches.length;
-        continue;
+      const all = sides.flat().map((each) => effectsOf(importSets, raw, each.set));
+      const user = effectsOf(importSets, raw, (ownFighters[actor] as Fighter).paste);
+      if (user !== null && all.every((each) => each !== null)) {
+        const everyone = all.flatMap((each) => [(each as NonNullable<typeof each>).ability, (each as NonNullable<typeof each>).item].filter((data): data is Record<string, unknown> => data !== undefined));
+        const combatants = sides.flat().map((each) => ({ status: each.status, history: each.history }));
+        if (provenPasses({ move: raw.moves.get(part.id), ability: user.ability, item: user.item, everyone, combatants, battle: history, marked })) {
+          for (const branch of branches) row(branch, { kind: "computed", precondition: "passes", precondition_ppm: MILLION, hit_ppm: MILLION, success_ppm: MILLION });
+          counts.skipped += branches.length;
+          continue;
+        }
       }
     }
     // The first branch is `switch`: nothing of the foes is queued. When the engine's run for it never touches the queue, no later opposing
