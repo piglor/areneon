@@ -147,6 +147,40 @@ export function planPopulation(config: TrainingRunConfig, generation: number, po
   return plan;
 }
 
+/** The members that hold a seat in a game (snapshots and baselines are not members). */
+function membersOf(entry: PopulationGamePlan): string[] {
+  return [...new Set([entry.seats.p1, entry.seats.p2].flatMap((seat) => ("member" in seat ? [seat.member] : [])))].sort(compareMembers);
+}
+
+const compareMembers = (a: string, b: string): number => Number(a.slice(1)) - Number(b.slice(1));
+
+/**
+ * Which game process plays each game (#1355): a pure function of the plan and the number of processes. The games are
+ * ordered by the members that hold their seats (self-play, past and anchor games of `m0`, then its ladder games against
+ * `m1`, `m2`, ..., then `m1`'s, and so on) and cut into `of` consecutive runs whose sizes differ by at most one, so a
+ * process plays the games of few members and starts workers only for those (one game index modulo the count put every
+ * member in every process). Only the choice of process depends on this: a game is a function of its plan entry alone.
+ * Returns the process index of each plan entry, in plan order.
+ */
+export function populationShards(plan: readonly PopulationGamePlan[], of: number): number[] {
+  if (!Number.isInteger(of) || of < 1) throw new RangeError("a shard count is a positive integer");
+  const keyed = plan.map((entry, at) => ({ at, key: membersOf(entry) }));
+  keyed.sort((a, b) => {
+    for (let i = 0; i < Math.max(a.key.length, b.key.length); i++) {
+      if (a.key[i] === undefined) return -1;
+      if (b.key[i] === undefined) return 1;
+      const order = compareMembers(a.key[i] as string, b.key[i] as string);
+      if (order !== 0) return order;
+    }
+    return a.at - b.at;
+  });
+  const owner = new Array<number>(plan.length).fill(0);
+  keyed.forEach(({ at }, rank) => {
+    owner[at] = Math.floor((rank * of) / plan.length);
+  });
+  return owner;
+}
+
 /** Names the calibration plan layout below. */
 export const CALIBRATION_PLAN_FORMAT = "population-calibration/1";
 

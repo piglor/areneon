@@ -1,7 +1,7 @@
 // The population branch of `scripts/play-generation.ts` (ADR-021 slice 4): policy workers per member, one
 // generation of population play, the members' files and the top-level files written, one canonical JSON line
 // printed. The Python driver (slice 5) passes `--member` for each member. With `--game-processes` above 1 the games
-// are shared over further game processes, each with workers for the members that play in its slice (#1333).
+// are shared over further game processes (runs of games grouped by member, #1355), each with workers for the members that play in its slice (#1333).
 
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -163,6 +163,8 @@ export async function runPopulationCli(input: PopulationCliInput, print: (line: 
       const [client, ...peers] = own as [MemberClient, ...MemberClient[]];
       return { member: entry.member, policy_id: entry.policy_id, checkpoints: { preview: entry.preview, battle: entry.battle }, client, ...(peers.length === 0 ? {} : { peers }) };
     });
+    // The workers this process starts (#1355): a process plays the games of few members, so this stays near the worker count.
+    console.error(`play-generation: process ${input.shard?.index ?? 0} of ${processes} starts ${clients.length} policy workers for ${needed.size} of ${input.members.length} members`);
     await Promise.all(clients.map((client) => client.start()));
     const options: PopulationOptions = {
       engine: input.engine,

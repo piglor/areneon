@@ -10,7 +10,7 @@ import { checkPopulationConfig, memberDir, membersPlaying, playPopulationEntries
 import { readShardFile } from "../src/shard-process.ts";
 import type { ShardProcess } from "../src/shard-process.ts";
 import { parseMemberFlag, runPopulationCli } from "../src/population-cli.ts";
-import { planPopulation } from "../src/population-plan.ts";
+import { planPopulation, populationShards } from "../src/population-plan.ts";
 import { emptyPastPool } from "../src/past-pool.ts";
 import { type PolicyClient, PolicyWorkerError } from "../src/index.ts";
 import { UnsupportedCandidateError } from "../src/evaluation-harness.ts";
@@ -176,7 +176,7 @@ describe("game processes and policy workers (#1333)", () => {
 
   it("gives the single process's files when a slice is played elsewhere and merged, whichever slices there are", async () => {
     const expected = await single("whole");
-    for (const of of [2, 3]) {
+    for (const of of [2, 3, 7]) {
       const dir = join(scratch, `sharded-${of}`);
       const others = (
         await Promise.all(Array.from({ length: of - 1 }, (_, k) => playPopulationEntries(options(join(scratch, `elsewhere-${of}-${k}`), { shared_dir: dir }), { index: k + 1, of })))
@@ -274,7 +274,8 @@ describe("game processes and policy workers (#1333)", () => {
     expect(seen).toEqual([{ file: "pool.json", digest: "a".repeat(64) }]);
     const entries = readShardFile<PopulationEntry>(join(out, "shard.jsonl"));
     expect(entries.length).toBeGreaterThan(0);
-    expect(entries.every((entry) => entry.game % 2 === 1)).toBe(true);
+    const owner = populationShards(planPopulation(config, 1, pool.teams.length), 2);
+    expect(entries.every((entry) => owner[entry.game] === 1)).toBe(true);
     const files = readdirSync(join(shared, "members", "m0", "episodes")).length + readdirSync(join(shared, "members", "m1", "episodes")).length;
     expect(files).toBe(entries.flatMap((entry) => entry.stored).length);
     expect(entries).toEqual(await playPopulationEntries(options(join(scratch, "further-ref"), { shared_dir: join(scratch, "further-ref-shared") }), { index: 1, of: 2 }));
