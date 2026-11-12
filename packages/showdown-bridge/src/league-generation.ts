@@ -149,18 +149,20 @@ export type DamageAwareSetup = Omit<DamageAwareOptions, "engine" | "seed" | "com
  * The reviewed records a damage-aware baseline reads, against the golden team vocabulary (the committed
  * export of the one supported format; another format is refused, never given another vocabulary).
  * `version` "v3" is the v1 scorer with the engine's choice-location convention (#1180); "v4" is v3 plus the two situational
- * actions (#1329), which also read the world facts' engine data (the stall moves) from the pinned checkout.
+ * actions (#1329), which also read the world facts' engine data (the stall moves) from the pinned checkout; "v5" is v4 with every
+ * part scaled by the engine's success chance (#1344), which also reads the `probe-outcome/1` record and a mechanics config that lists `move_outcome`.
  */
-export function damageAwareSetup(engine: Engine, formatId: string, version: "v1" | "v3" | "v4" = "v1"): DamageAwareSetup {
+export function damageAwareSetup(engine: Engine, formatId: string, version: "v1" | "v3" | "v4" | "v5" = "v1"): DamageAwareSetup {
   if (formatId !== GOLDEN_FORMAT) throw new GenerationError(`the damage-aware baseline has a vocabulary for ${GOLDEN_FORMAT} only, not ${formatId}`);
   const vocabulary = goldenTeamVocabulary();
   const config = loadDamageAwareConfig(version, vocabulary);
   return {
     vocabulary,
     config,
-    mechanics: loadMechanicsConfig(formatId),
+    mechanics: config.success_scaling === undefined ? loadMechanicsConfig(formatId) : withMoveOutcome(loadMechanicsConfig(formatId)),
     snapshot: loadRulesSnapshot(engine.commit),
     ...(config.situational === undefined ? {} : { facts_data: goldenWorldFactsData() }),
+    ...(config.success_scaling === undefined ? {} : { outcome: { config: loadOutcomeConfig(formatId) } }),
   };
 }
 
@@ -316,6 +318,9 @@ export const DAMAGE_AWARE_V3_POLICY_ID = damageAwarePolicyId("v3");
 /** The policy id of `damage-aware@v4`, v3 plus the switch and Protect values (#1329). */
 export const DAMAGE_AWARE_V4_POLICY_ID = damageAwarePolicyId("v4");
 
+/** The policy id of `damage-aware@v5`, v4 with every part scaled by the engine's success chance (#1344). */
+export const DAMAGE_AWARE_V5_POLICY_ID = damageAwarePolicyId("v5");
+
 /**
  * The records `damage-aware@v2` reads: its config (which names the usage prior and the belief config by hash) and
  * the belief port the composition root builds from them. The bridge does not import the opponent model, so the
@@ -431,6 +436,8 @@ export interface GenerationOptions {
   damage_aware_v3?: DamageAwareSetup;
   /** `damage-aware@v4`'s records, likewise (#1329). */
   damage_aware_v4?: DamageAwareSetup;
+  /** `damage-aware@v5`'s records, likewise (#1344). */
+  damage_aware_v5?: DamageAwareSetup;
   /** `damage-aware@v2`'s records, likewise (built from `belief_worlds` when a plan game needs them and this is absent). */
   damage_aware_v2?: DamageAwareSetup;
   /**
@@ -586,7 +593,7 @@ type StampSets = Parameters<typeof stampTeam>[0];
 const rival = (player: Player): Player => (player === "p1" ? "p2" : "p1");
 
 /** What a baseline game reads of the options: the engine and the damage-aware records. */
-export type BaselineRecordOptions = Pick<GenerationOptions, "engine" | "damage_aware" | "damage_aware_v2" | "damage_aware_v3" | "damage_aware_v4" | "belief_worlds">;
+export type BaselineRecordOptions = Pick<GenerationOptions, "engine" | "damage_aware" | "damage_aware_v2" | "damage_aware_v3" | "damage_aware_v4" | "damage_aware_v5" | "belief_worlds">;
 
 /**
  * The damage-aware records the config's baselines need and `options` lacks, read once from `config/`
@@ -594,15 +601,17 @@ export type BaselineRecordOptions = Pick<GenerationOptions, "engine" | "damage_a
  */
 export function baselineRecords(options: BaselineRecordOptions, config: Pick<TrainingRunConfig, "format_id" | "generation">): Partial<GenerationOptions> {
   const named = config.generation.baseline_games.filter((baseline) => baseline.actor === "damage-aware");
-  const needsV1 = named.some((baseline) => baseline.policy_id !== DAMAGE_AWARE_V2_POLICY_ID && baseline.policy_id !== DAMAGE_AWARE_V3_POLICY_ID && baseline.policy_id !== DAMAGE_AWARE_V4_POLICY_ID);
+  const needsV1 = named.some((baseline) => baseline.policy_id !== DAMAGE_AWARE_V2_POLICY_ID && baseline.policy_id !== DAMAGE_AWARE_V3_POLICY_ID && baseline.policy_id !== DAMAGE_AWARE_V4_POLICY_ID && baseline.policy_id !== DAMAGE_AWARE_V5_POLICY_ID);
   const needsV3 = named.some((baseline) => baseline.policy_id === DAMAGE_AWARE_V3_POLICY_ID);
   const needsV4 = named.some((baseline) => baseline.policy_id === DAMAGE_AWARE_V4_POLICY_ID);
+  const needsV5 = named.some((baseline) => baseline.policy_id === DAMAGE_AWARE_V5_POLICY_ID);
   const needsV2 = named.some((baseline) => baseline.policy_id === DAMAGE_AWARE_V2_POLICY_ID);
   if (needsV2 && options.damage_aware_v2 === undefined && options.belief_worlds === undefined) throw new GenerationError(`the plan names ${DAMAGE_AWARE_V2_POLICY_ID}: its script needs the belief port of the composition root (packages/team-dataset)`);
   return {
     ...(needsV1 && options.damage_aware === undefined ? { damage_aware: damageAwareSetup(options.engine, config.format_id) } : {}),
     ...(needsV3 && options.damage_aware_v3 === undefined ? { damage_aware_v3: damageAwareSetup(options.engine, config.format_id, "v3") } : {}),
     ...(needsV4 && options.damage_aware_v4 === undefined ? { damage_aware_v4: damageAwareSetup(options.engine, config.format_id, "v4") } : {}),
+    ...(needsV5 && options.damage_aware_v5 === undefined ? { damage_aware_v5: damageAwareSetup(options.engine, config.format_id, "v5") } : {}),
     ...(needsV2 && options.damage_aware_v2 === undefined ? { damage_aware_v2: damageAwareSetupV2(options.engine, config.format_id, options.belief_worlds as BeliefWorldsFactory) } : {}),
   };
 }
@@ -620,7 +629,7 @@ export function baselineActor(options: BaselineRecordOptions, opponent: Baseline
     return profiling() ? (request, context) => timedAsync("e_probe", async () => inner(request, context)) : inner;
   };
   if (opponent.actor !== "damage-aware") return { actor: guarded(opponent.actor === "actor-rule" ? firstLegal : randomLegalActor(plan.baseline_seed)) };
-  const setup = opponent.policy_id === DAMAGE_AWARE_V2_POLICY_ID ? options.damage_aware_v2 : opponent.policy_id === DAMAGE_AWARE_V3_POLICY_ID ? options.damage_aware_v3 : opponent.policy_id === DAMAGE_AWARE_V4_POLICY_ID ? options.damage_aware_v4 : options.damage_aware;
+  const setup = opponent.policy_id === DAMAGE_AWARE_V2_POLICY_ID ? options.damage_aware_v2 : opponent.policy_id === DAMAGE_AWARE_V3_POLICY_ID ? options.damage_aware_v3 : opponent.policy_id === DAMAGE_AWARE_V4_POLICY_ID ? options.damage_aware_v4 : opponent.policy_id === DAMAGE_AWARE_V5_POLICY_ID ? options.damage_aware_v5 : options.damage_aware;
   if (setup === undefined) throw new GenerationError("a damage-aware baseline game needs the baseline's records");
   // A fresh actor per game: it keeps the reader's state, the game's memo and counts. The seed is drawn from only when epsilon_ppm is above 0.
   const damage: DamageAwareActor = damageAwareActor({

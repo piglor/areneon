@@ -130,6 +130,7 @@ the load flags by a digest over every tensor). None is in the run config.
 | --- | --- | --- |
 | `--game-processes S` | Node game processes that share a generation's games | 1 |
 | `--policy-workers K` | policy worker processes per game process | 1 |
+| `--max-concurrent-starts N` | population runs: policy workers (handshakes) starting at once across all game processes | 2 |
 | `--node-heap-mb M` | `--max-old-space-size` of each Node game process | Node's own |
 | `--generation-timeout-minutes M` | wall-clock limit of a generation's play phase; past it the driver kills the Node process group and the generation fails, nothing committed | 180 |
 | `--load-processes N\|auto` | worker processes that check and encode the stream in the load phase; `auto` sizes them at each load phase from the usable cores (half, at most 16) and the `MemAvailable` read at that moment (400 MB each above a 2 GB reserve; an estimate, not a guarantee), capped by `--load-memory-mb` | 1 |
@@ -621,6 +622,21 @@ processes, byte-identical. So 1,500 games (3,000 Episodes, about 33,000 examples
 about 1 hour in one process and about 10 minutes with 8; the real dataset's pool load
 adds to the start-up. Memory grows with the number of Episodes held (the same as a
 generation of that many games).
+
+### Binding a clone made before the provenance binding
+
+A clone directory written before #853 has no `provenance.json`, and `import-clone` refuses it.
+Bind it once, in place:
+
+```bash
+.venv/bin/python -m areneon_ml.learner bind --clone-dir .tmp/clone/CLONE-1
+```
+
+The command first verifies what the cloning run and `import-clone` require (a clone record per
+role named by its checkpoint id, each checkpoint hashing to its record's id, `sources.json`
+mapping each teacher set to `[]`, the clone state agreeing with the records) and writes
+`provenance.json` only if all of it holds. Any mismatch exits 3 and writes nothing; rerunning on a
+bound directory is a no-op; a different existing binding is never overwritten.
 
 ### Starting a run from the cloned pair (`warm_start`)
 

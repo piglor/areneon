@@ -110,7 +110,8 @@ export function worldFactsOf(channel: PlayerChannel, data: WorldFactsData): Worl
   }
 }
 
-function declarerOf(engine: Engine, configs: FeatureConfigs, setup: NonNullable<FeatureConfigs["outcome"]>, channel: PlayerChannel): HistoryDeclarer {
+/** The history declarer of one decision: the facts of `channel` as the `history` blocks of queries (shared with `damage-aware@v5`, which declares the same history in its damage queries). */
+export function declarerOf(engine: Engine, configs: FeatureConfigs, setup: NonNullable<FeatureConfigs["outcome"]>, channel: PlayerChannel): HistoryDeclarer {
   const dex = engine.sim.Dex.mod(engine.sim.Dex.formats.get(configs.config.format_id).mod) as unknown as {
     conditions: { get(id: string): { exists: boolean; onRestart?: unknown } };
   };

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { jcs, type Json } from "../src/canonical-json.ts";
 import { leagueGameStreams } from "../src/league-seed.ts";
-import { EXPLOITER_REFUSAL, memberLabel, ODD_ANCHOR_REFUSAL, PAST_POOL_MISSING, planPopulation, PopulationPlanError, seatCounts } from "../src/population-plan.ts";
+import { EXPLOITER_REFUSAL, memberLabel, ODD_ANCHOR_REFUSAL, PAST_POOL_MISSING, planPopulation, PopulationPlanError, populationShards, seatCounts } from "../src/population-plan.ts";
 import { planGeneration } from "../src/league-generation.ts";
 import { readTrainingRunConfig, type TrainingRunConfig } from "../src/training-run-config.ts";
 import { populationConfig, populationOf, sample } from "./population-support.ts";
@@ -108,5 +108,41 @@ describe("planPopulation", () => {
     const tiny = readTrainingRunConfig(sample("tiny"));
     expect(planGeneration(tiny, 1, 50)).toHaveLength(6);
     expect(planGeneration(config, 1, 50).length).toBe(config.generation.games + 2);
+  });
+});
+
+describe("populationShards (#1355)", () => {
+  const members = (entry: { seats: Record<string, object> }): string[] => [...new Set(Object.values(entry.seats).flatMap((seat) => ("member" in seat ? [(seat as { member: string }).member] : [])))];
+
+  it("cuts the plan into runs of nearly equal size that cover every game once, for any count", () => {
+    const plan = planPopulation(populationConfig(4, 16), 1, 50);
+    for (const of of [1, 2, 3, 9, 40, plan.length + 5]) {
+      const owner = populationShards(plan, of);
+      expect(owner).toHaveLength(plan.length);
+      const sizes = Array.from({ length: of }, (_, index) => owner.filter((value) => value === index).length);
+      expect(sizes.reduce((sum, n) => sum + n, 0)).toBe(plan.length);
+      if (of <= plan.length) expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1);
+    }
+    expect(populationShards(plan, 1).every((value) => value === 0)).toBe(true);
+  });
+
+  it("puts few members in each process: 4 members over 9 processes use at most 3 members per process", () => {
+    const plan = planPopulation(populationConfig(4, 36), 1, 50);
+    const owner = populationShards(plan, 9);
+    const found = Array.from({ length: 9 }, () => new Set<string>());
+    plan.forEach((entry, at) => members(entry).forEach((member) => found[owner[at] as number]?.add(member)));
+    // One game modulo 9 would give every process all four members.
+    expect(Math.max(...found.map((set) => set.size))).toBeLessThanOrEqual(3);
+    expect(found.reduce((sum, set) => sum + set.size, 0)).toBeLessThan(9 * 4);
+  });
+
+  it("refuses a seat whose member label is not m<k>", () => {
+    const bad = planPopulation(populationConfig(2, 4), 1, 50).map((entry) => ({ ...entry, seats: { p1: { member: "x" }, p2: { member: "m1" } } }));
+    expect(() => populationShards(bad, 2)).toThrow(/m<k>/);
+  });
+
+  it("refuses a count that is not a positive integer, and an empty plan has no owner", () => {
+    expect(() => populationShards([], 0)).toThrow(RangeError);
+    expect(populationShards([], 3)).toEqual([]);
   });
 });

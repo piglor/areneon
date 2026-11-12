@@ -72,9 +72,9 @@ export const PROGRESS_BASELINES = [
 /** The damage-aware baseline's policy id (ADR-018 section 5; the opt-in third baseline of the progress evaluation). */
 export const DAMAGE_AWARE_POLICY_ID = damageAwarePolicyId("v1");
 /** The versions of the baseline a progress evaluation can play (#1183): v1 is the default and keeps every record's bytes. */
-export const DAMAGE_AWARE_VERSIONS = ["v1", "v3", "v4"] as const;
+export const DAMAGE_AWARE_VERSIONS = ["v1", "v3", "v4", "v5"] as const;
 export type DamageAwareVersion = (typeof DAMAGE_AWARE_VERSIONS)[number];
-/** The baseline's policy id for a version: `damage-aware@v1`, `@v3` or `@v4`. */
+/** The baseline's policy id for a version: `damage-aware@v1`, `@v3`, `@v4` or `@v5`. */
 export const damageAwareVersionPolicyId = (version: DamageAwareVersion): string => damageAwarePolicyId(version);
 /** The opponent id its matches are named by: `damage-aware` (v1, as always) or `damage-aware-v3`, so the ids cannot collide. */
 export const damageAwareMatchPrefix = (version: DamageAwareVersion): string => (version === "v1" ? "damage-aware" : `damage-aware-${version}`);
@@ -302,7 +302,7 @@ export function damageAwareBaseline(args: { engine: Engine; setup: DamageAwareSe
 } {
   const { engine, setup, manifest, data_class, budget } = args;
   const policyId = args.policy_id ?? DAMAGE_AWARE_POLICY_ID;
-  const identity = damageAwareIdentityHash(damageAwareIdentity({ config: setup.config, mechanics: setup.mechanics, manifest, reader_sha256: readerSha256() }));
+  const identity = damageAwareIdentityHash(damageAwareIdentity({ config: setup.config, mechanics: setup.mechanics, manifest, reader_sha256: readerSha256(), ...(setup.outcome === undefined ? {} : { outcome_config: setup.outcome.config }) }));
   return {
     identity,
     seat: (seed) => {

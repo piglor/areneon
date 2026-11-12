@@ -155,6 +155,10 @@ class DamageAwareConfig(BaseModel):
     """
     The two situational actions of damage-aware@v4 (#1329): the value of switching a Threatened own active out to a bench Pokemon the same foes' revealed moves do not threaten, and of a stalling move by a Threatened own active. Absent: the record scores a switch and a status move 0 (v1 and v3). A record that has it must select target_convention engine (reader rule) and is damage-aware@v4. A minor change within v1: an older reader refuses such a record.
     """
+    success_scaling: Literal["engine"] | MISSING = MISSING
+    """
+    How damage-aware@v5 weighs a part's chance to work (ADR-022 erratum E-22.5, #1344). Absent: the record does not scale (v1 to v4). "engine": every damaging part's value and every situational part's value is multiplied by the engine's success chance of the part (the move_outcome probe, the success_ppm of the probe-outcome/1 feature builder, under the branch of the targeted foe's first revealed damaging move, else the switch branch), damage values are computed with the player's own channel history declared, ties are broken by the higher summed success chance, and a candidate with a part that cannot work in any branch is never played while another candidate exists. A record that has it must carry situational and select target_convention engine (reader rule) and is damage-aware@v5. A minor change within v1: an older reader refuses such a record.
+    """
     assumed_set: AssumedSet
     """
     The rule for every opponent field that is not revealed. A revealed species, forme, level, gender, move, item, ability or Mega is used as revealed; an unrevealed move is never invented.

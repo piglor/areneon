@@ -1,7 +1,7 @@
 // The population branch of `scripts/play-generation.ts` (ADR-021 slice 4): policy workers per member, one
 // generation of population play, the members' files and the top-level files written, one canonical JSON line
 // printed. The Python driver (slice 5) passes `--member` for each member. With `--game-processes` above 1 the games
-// are shared over further game processes, each with workers for the members that play in its slice (#1333).
+// are shared over further game processes (runs of games grouped by member, #1355), each with workers for the members that play in its slice (#1333).
 
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,6 +17,7 @@ import { exitWhenParentDies, vouchTo } from "./parent-link.ts";
 import { obtainPool } from "./pool-share.ts";
 import { featuresDirOf, optionalFlag, POOL_FILE, SHARD_FILE, type ShardProcess, startShard, writeShardFile } from "./shard-process.ts";
 import type { PastPoolFile, PastSnapshot } from "./past-pool.ts";
+import { createStartLimiter, DEFAULT_CONCURRENT_STARTS } from "./start-slots.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import { runConfigHash, type TrainingRunConfig } from "./training-run-config.ts";
 
@@ -75,6 +76,10 @@ export interface PopulationCliInput {
   features_dir?: string;
   /** Internal, given by the starter: the file the pool is shared in. */
   pool_file?: string;
+  /** Worker start-ups in flight across all game processes (`--max-concurrent-starts`, default 2; operational). */
+  max_concurrent_starts?: number;
+  /** Internal, given by the starter: the directory of the start-up slots every game process shares. */
+  start_slots_dir?: string;
   /** A test seam: how a further game process is started (default `startShard`). */
   start_shard?: (script: string, args: readonly string[], out: string, index: number) => ShardProcess<PopulationEntry>;
   /** A test seam: the link to the starter of a further game process (default `exitWhenParentDies`). */
@@ -126,13 +131,16 @@ export async function runPopulationCli(input: PopulationCliInput, print: (line: 
   // A snapshot's session starts when the generation first needs it and is closed after its last wave (the generation closes it).
   const openSnapshot = async (snapshot: PastSnapshot): Promise<SnapshotSession> => {
     const client = input.make_snapshot_client?.(snapshot) ?? workerFor(snapshot);
-    await client.start();
+    await limiter().run(() => client.start());
     return { client, close: () => client.close() };
   };
   const clients: MemberClient[] = [];
+  let startLimiter: ReturnType<typeof createStartLimiter> | undefined;
+  const limiter = (): ReturnType<typeof createStartLimiter> => (startLimiter ??= createStartLimiter({ dir: slotsDir, max: input.max_concurrent_starts ?? DEFAULT_CONCURRENT_STARTS }));
   const children: ShardProcess<PopulationEntry>[] = [];
   const scratch = !input.further && processes > 1 ? mkdtempSync(join(tmpdir(), "areneon-shards-")) : undefined;
   const featuresDir = featuresDirOf(input.features_dir, scratch, input.features !== undefined);
+  const slotsDir = input.start_slots_dir ?? (scratch === undefined ? undefined : join(scratch, "slots"));
   const poolFile = input.pool_file ?? (scratch === undefined ? undefined : join(scratch, POOL_FILE));
   try {
     mkdirSync(input.out, { recursive: true });
@@ -142,7 +150,7 @@ export async function runPopulationCli(input: PopulationCliInput, print: (line: 
       const start = input.start_shard ?? ((script, args, out, index) => startShard<PopulationEntry>(script, args, out, index));
       for (let index = 1; index < processes; index++) {
         const out = join(scratch, String(index));
-        children.push(start(input.shard_script as string, [...(input.forward ?? []), "--out", out, "--shard", `${index}/${processes}`, "--episodes-dir", input.out, ...optionalFlag("--pool-file", poolFile), ...optionalFlag("--features-dir", featuresDir)], out, index));
+        children.push(start(input.shard_script as string, [...(input.forward ?? []), "--out", out, "--shard", `${index}/${processes}`, "--episodes-dir", input.out, ...optionalFlag("--pool-file", poolFile), ...optionalFlag("--features-dir", featuresDir), ...optionalFlag("--start-slots-dir", slotsDir)], out, index));
       }
     }
     // A further game process has no worker running while it waits for its starter's pool (its workers start once it knows the plan), and its pipe to the starter is unreferenced: keep the process alive until the pool arrives.
@@ -163,7 +171,10 @@ export async function runPopulationCli(input: PopulationCliInput, print: (line: 
       const [client, ...peers] = own as [MemberClient, ...MemberClient[]];
       return { member: entry.member, policy_id: entry.policy_id, checkpoints: { preview: entry.preview, battle: entry.battle }, client, ...(peers.length === 0 ? {} : { peers }) };
     });
-    await Promise.all(clients.map((client) => client.start()));
+    // The workers this process starts (#1355): a process plays the games of few members, so this stays near the worker count.
+    console.error(`play-generation: process ${input.shard?.index ?? 0} of ${processes} starts ${clients.length} policy workers for ${needed.size} of ${input.members.length} members`);
+    // One start at a time in this process, and at most `--max-concurrent-starts` across all of them: a worker's handshake timer runs only while it holds a slot.
+    for (const client of clients) await limiter().run(() => client.start());
     const options: PopulationOptions = {
       engine: input.engine,
       config,
