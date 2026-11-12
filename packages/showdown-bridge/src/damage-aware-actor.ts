@@ -23,7 +23,12 @@
 import { createInterpreter, type PublicFlag, type PublicInterpreter, type PublicMon, type PublicState, readerSha256, type WorldFacts, type WorldFactsData, WorldFactsReader } from "@areneon/public-state";
 import { actorRule, NoCandidateError } from "./actor-rule.ts";
 import { candidateFeatures2 } from "./candidate-features-2.ts";
-import { type FeatureMemo, FeatureBuildError } from "./candidate-features.ts";
+import { candidateFeaturesOutcome, declarerOf } from "./candidate-features-outcome.ts";
+import type { HistoryDeclarer } from "./candidate-history.ts";
+import type { PlayerChannel } from "./observation.ts";
+import type { SituationRows } from "./situation.ts";
+import { type FeatureConfigs, type FeatureMemo, FeatureBuildError, type OutcomeSetup } from "./candidate-features.ts";
+import { type PartSuccess, partSuccess, scaled } from "./damage-aware-success.ts";
 import { parseJointChoice, type SlotPart } from "./damage-aware-choice.ts";
 import { situationalScore } from "./damage-aware-situational.ts";
 import { classifySlot } from "./situation.ts";
@@ -98,15 +103,40 @@ export interface DamageAwareReport {
   counts: DamageAwareCounts;
   /** Present for `damage-aware@v2` only; v1's report has no such key. */
   belief?: BeliefCounts;
-  /** Present for `damage-aware@v4` only (not a stored count): what its situational part could not score. */
+  /** Present for `damage-aware@v4` and `@v5` (not a stored count): what its situational part could not score. */
   situational?: SituationalCounts;
+  /** Present for `damage-aware@v5` only (not a stored count): what its success scaling read. */
+  success?: SuccessCounts;
+}
+
+/** What `damage-aware@v5` reports beside the nine counts. Integers. */
+export interface SuccessCounts {
+  /** Move parts scaled by a computed success chance. */
+  parts_scaled: number;
+  /** Move parts with no reading (no outcome row, or an `unsupported` one): counted as certain. */
+  parts_unread: number;
+  /** Stalling parts of Threatened slots whose chosen branch had no computed outcome (the history was unknown or the row unsupported): their situational value is 0, as v4's was with no facts. */
+  stall_unread: number;
+  /** Candidates left out of the choice because a part of them cannot work in any branch (while another candidate existed). */
+  dead_candidates: number;
+  /** Requests where the best total was shared and the higher summed success chance decided. */
+  chance_ties: number;
 }
 
 /** What `damage-aware@v4` reports beside the nine counts. Integers. */
 export interface SituationalCounts {
-  /** Threatened slots with a stalling move offered whose Protect streak was unknown (the world facts were unavailable): the move was not scored. */
+  /** Threatened slots with a stalling move offered whose Protect streak was unknown (the world facts were unavailable): the move was not scored. Always 0 for v5, which reads no streak. */
   protect_no_facts: number;
 }
+
+/** One candidate's score: the sum of its parts' values (v5: scaled by their success chances), the summed chance of its parts (PPM for a part that is not a move) and whether a part of it cannot work in any branch. */
+interface Scored {
+  total: number;
+  chance: number;
+  dead: boolean;
+}
+
+type SituationalWeights = { switch_value_ppm: number; protect_value_ppm: number };
 
 export type DamageAwareActor = Actor & { report(): DamageAwareReport };
 
@@ -129,8 +159,10 @@ export interface DamageAwareOptions {
   /** Test seams: the probe (default `probeMechanics`) and the random draws (default the `random-legal` stream's). */
   probe?: (context: MechanicsContext, query: ParsedMechanicsQuery) => ProbeOutcome;
   random?: { below: typeof randomBelow; legal: typeof randomLegal };
-  /** The world facts' engine data (the stall moves); required by a record with `situational` weights (v4) and refused for any other. */
+  /** The world facts' engine data (the stall moves); required by a record with `situational` weights (v4, v5) and refused for any other. v5 reads only the stall list: the engine's chance replaces the Protect streak. */
   facts_data?: WorldFactsData;
+  /** The `probe-outcome/1` record (and, optionally, the history facts' engine data); required by a record with `success_scaling` (v5) and refused for any other. Its `mechanics` must list `move_outcome` (`withMoveOutcome`). */
+  outcome?: OutcomeSetup;
   /** Test seam (v1 only): the assumed opponent set of a public Pokemon (default `buildAssumedSet`). */
   assume?: (mon: PublicMon) => AssumedSet;
 }
@@ -174,12 +206,17 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
   if (situational !== null && v1?.target_convention !== "engine") throw new DamageAwareError("a record with situational weights selects the engine's target convention");
   if (situational !== null && options.facts_data === undefined) throw new DamageAwareError("a record with situational weights needs the world facts' engine data (the stall moves)");
   if (situational === null && options.facts_data !== undefined) throw new DamageAwareError("only a record with situational weights takes the world facts' engine data");
-  const recordVersion = situational !== null ? "4" : v1?.target_convention === "engine" ? "3" : String(config.schema_version);
+  const scaling = v1?.success_scaling !== undefined;
+  if (scaling && situational === null) throw new DamageAwareError("a record with success scaling carries the situational weights");
+  if (scaling && options.outcome === undefined) throw new DamageAwareError("a record with success scaling needs the probe-outcome record");
+  if (!scaling && options.outcome !== undefined) throw new DamageAwareError("only a record with success scaling takes the probe-outcome record");
+  if (scaling && !mechanics.scope.query_kinds.some((entry) => entry.kind === "move_outcome")) throw new DamageAwareError("a record with success scaling needs a mechanics config that lists move_outcome in scope");
+  const recordVersion = scaling ? "5" : situational !== null ? "4" : v1?.target_convention === "engine" ? "3" : String(config.schema_version);
   const commit = options.commit ?? `v${recordVersion}`;
   const named = /^v(\d+)(?:-|$)/.exec(commit);
   if (named !== null ? named[1] !== recordVersion : v2 !== null) throw new DamageAwareError("the policy id names another record version than the record the actor plays");
   const policy_id = damageAwarePolicyId(commit);
-  const identity = damageAwareIdentity({ config, mechanics, manifest, reader_sha256: readerSha256(), ...(worlds === undefined ? {} : { belief_identity_hash: worlds.identity_hash }) });
+  const identity = damageAwareIdentity({ config, mechanics, manifest, reader_sha256: readerSha256(), ...(worlds === undefined ? {} : { belief_identity_hash: worlds.identity_hash }), ...(options.outcome === undefined ? {} : { outcome_config: options.outcome.config }) });
   const identity_hash = damageAwareIdentityHash(identity);
   const counts: DamageAwareCounts = {
     decisions: 0, preview_decisions: 0, scored_decisions: 0, queries: 0, probe_runs: 0,
@@ -200,17 +237,23 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
   // The world facts before the request being answered (feed all but its own line, read, then feed it); null when the facts reader refused.
   let facts: WorldFacts | null = null;
   const situationalCounts: SituationalCounts = { protect_no_facts: 0 };
+  const successCounts: SuccessCounts = { parts_scaled: 0, parts_unread: 0, dead_candidates: 0, chance_ties: 0, stall_unread: 0 };
+  // v5 only: the history the player's own channel declares in every damage and speed-order query of the request being answered.
+  let currentHistory: HistoryDeclarer | null = null;
   // The feature reading shares the actor's probe memo and counts (a memo keyed by query hash changes no answer), so a query is asked once.
   const probeMemo: ProbeMemo = new Map();
   const featureMemo: FeatureMemo = { results: probeMemo, counts };
-  const view = damageView({ engine, vocabulary, config, v1, mechanics, snapshot, data_class, probe, counts, memo: probeMemo, engine_targets: v1?.target_convention === "engine", ...(options.assume === undefined ? {} : { assume: options.assume }) });
+  const view = damageView({ engine, vocabulary, config, v1, mechanics, snapshot, data_class, probe, counts, memo: probeMemo, engine_targets: v1?.target_convention === "engine", ...(scaling ? { history: (sides: Parameters<HistoryDeclarer>[0]) => {
+        if (currentHistory === null) throw new DamageAwareError("a success-scaled query was asked before the request's history was declared");
+        return currentHistory(sides);
+      } } : {}), ...(options.assume === undefined ? {} : { assume: options.assume }) });
   const { dex, query, damageOf, combatant, field, ownSlots, assumedFor, statusBlocked, foesOf } = view;
 
   /**
    * The score of every legal choice of one request, in the legal set's order, against the foes `foesNow`
    * gives (built on first use). Throws `AssumedSetError` for the caller's fallback.
    */
-  function scoreChoices(request: RequestRecord, state: PublicState, own: readonly OwnSlot[], foesNow: () => Foe[], extra?: (slot: number, part: SlotPart) => number): number[] {
+  function scoreChoices(request: RequestRecord, state: PublicState, own: readonly OwnSlot[], foesNow: () => Foe[], extra?: (slot: number, part: SlotPart) => number, success?: (slot: number, part: Extract<SlotPart, { kind: "move" }>) => PartSuccess): Scored[] {
     const body = object(request.request, "request");
     const active = array(body.active, "active");
     const scores = new Map<string, number>();
@@ -277,7 +320,23 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
     return (request.legal as NonNullable<RequestRecord["legal"]>).choices.map((choice) => {
       const parts = parseJointChoice(choice);
       if (parts.length !== active.length) throw new DamageAwareError("a choice has a different number of parts than the request has active Pokemon");
-      return parts.reduce((sum, part, slot) => sum + (part.kind === "move" ? moveScore(slot, part) : 0) + (extra?.(slot, part) ?? 0), 0);
+      let total = 0;
+      let chance = 0;
+      let dead = false;
+      parts.forEach((part, slot) => {
+        const value = (part.kind === "move" ? moveScore(slot, part) : 0) + (extra?.(slot, part) ?? 0);
+        if (success === undefined || part.kind !== "move") {
+          total += value;
+          chance += PPM;
+          return;
+        }
+        // v5: the part's value times the engine's chance that it works (the same chance breaks ties, a part that cannot work in any branch is dead).
+        const read = success(slot, part);
+        total += scaled(value, read.ppm);
+        chance += read.ppm;
+        dead ||= read.dead;
+      });
+      return { total, chance, dead };
     });
   }
 
@@ -290,12 +349,32 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
     return (request.legal as NonNullable<RequestRecord["legal"]>).choices[pick] as string;
   }
 
+  /**
+   * v5: the best total among the candidates that can work (a candidate with a part that cannot work in any branch is left out while
+   * another candidate exists), the higher summed success chance deciding a shared best total, then the legal set's order.
+   */
+  function bestScored(request: RequestRecord, scored: readonly Scored[]): string {
+    const choices = (request.legal as NonNullable<RequestRecord["legal"]>).choices;
+    const living = scored.some((entry) => !entry.dead);
+    const eligible = scored.map((entry, index) => ({ entry, index })).filter(({ entry }) => !living || !entry.dead);
+    successCounts.dead_candidates += scored.length - eligible.length;
+    const top = eligible.reduce((best, item) => (item.entry.total > best ? item.entry.total : best), -Infinity);
+    const tied = eligible.filter((item) => item.entry.total === top);
+    const pick = tied.reduce((best, item) => (item.entry.chance > best.entry.chance ? item : best), tied[0] as (typeof tied)[number]);
+    if (pick !== tied[0]) successCounts.chance_ties += 1;
+    return choices[pick.index] as string;
+  }
+
   /** v1: score one request's candidates on the record's assumed sets. Throws `AssumedSetError` for the caller's fallback. */
   function score(request: RequestRecord, state: PublicState, team: readonly Readonly<PokemonSet>[], context: ActorContext): string {
     let foes: Foe[] | null = null;
     const foesNow = (): Foe[] => (foes ??= foesOf(state, (mon) => assumedFor(mon, state)));
+    if (scaling) {
+      const { extra, success } = successPart(request, team, context, state, foesNow, situational as SituationalWeights);
+      return bestScored(request, scoreChoices(request, state, ownSlots(request.request, state, team), foesNow, extra, success));
+    }
     const extra = situational === null ? undefined : situationalPart(request, team, context, situational);
-    return best(request, scoreChoices(request, state, ownSlots(request.request, state, team), foesNow, extra));
+    return best(request, scoreChoices(request, state, ownSlots(request.request, state, team), foesNow, extra).map((entry) => entry.total));
   }
 
   /**
@@ -306,13 +385,7 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
    */
   function situationalPart(request: RequestRecord, team: readonly Readonly<PokemonSet>[], context: ActorContext, weights: { switch_value_ppm: number; protect_value_ppm: number }): (slot: number, part: SlotPart) => number {
     const legal = request.legal as NonNullable<RequestRecord["legal"]>;
-    let channel;
-    try {
-      channel = playerChannel({ schema_version: 1, data_class, player: context.player, lines: context.channel }, sheetRegimeOf(engine.commit, config.format_id));
-    } catch {
-      // a channel the reader of the observation refuses is the state reader's limit: the actor-rule candidate, counted as a reader fallback
-      throw new FeatureBuildError("reader_flagged");
-    }
+    const channel = ownChannel(context);
     const features = candidateFeatures2(
       engine,
       { vocabulary, config: v1 as NonNullable<typeof v1>, mechanics, snapshot, data_class, probe, ...(options.assume === undefined ? {} : { assume: options.assume }) },
@@ -336,6 +409,68 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
         situationalCounts.protect_no_facts += 1;
       }
       return situationalScore({ rows: features, streaks, stall, moveId, weights }, slot, part);
+    };
+  }
+
+  /** The player's own channel as the observation reader takes it; a channel it refuses is the state reader's limit: the `actor-rule` candidate, counted as a reader fallback. */
+  function ownChannel(context: ActorContext): PlayerChannel {
+    try {
+      return playerChannel({ schema_version: 1, data_class, player: context.player, lines: context.channel }, sheetRegimeOf(engine.commit, config.format_id));
+    } catch {
+      throw new FeatureBuildError("reader_flagged");
+    }
+  }
+
+  /**
+   * v5: the history of the player's own channel is declared in every damage and speed-order query of this request, the `probe-outcome/1`
+   * arrays (threats, speeds, priorities, outcomes) are read for it, and the two hooks of `scoreChoices` come back: the situational value
+   * of a part (no Protect streak rule: the engine's chance scales it) and the part's success chance, under the branch of the targeted foe's
+   * first revealed damaging move (else the `switch` branch). Throws the builder's refusal like `situationalPart`.
+   */
+  function successPart(request: RequestRecord, team: readonly Readonly<PokemonSet>[], context: ActorContext, state: PublicState, foesNow: () => Foe[], weights: SituationalWeights): { extra: (slot: number, part: SlotPart) => number; success: (slot: number, part: Extract<SlotPart, { kind: "move" }>) => PartSuccess } {
+    const setup = options.outcome as OutcomeSetup;
+    const legal = request.legal as NonNullable<RequestRecord["legal"]>;
+    const channel = ownChannel(context);
+    const configs: FeatureConfigs = { vocabulary, config: v1 as NonNullable<typeof v1>, mechanics, snapshot, data_class, probe, outcome: setup, ...(options.assume === undefined ? {} : { assume: options.assume }) };
+    currentHistory = declarerOf(engine, configs, setup, channel);
+    const features = candidateFeaturesOutcome(engine, configs, channel, team, legal.choices.map((choice) => ({ choice, pending: legal.pending.includes(choice) })), featureMemo);
+    // the widened reason of an `unsupported` row is never read by the situation (an unsupported row never threatens)
+    const rows = features as unknown as SituationRows;
+    const active = array(object(request.request, "request").active, "active");
+    const moveId = (slot: number, index: number): string | null => {
+      const moves = (active[slot] as { moves?: unknown } | undefined)?.moves;
+      const id = Array.isArray(moves) ? (moves[index - 1] as { id?: unknown } | undefined)?.id : undefined;
+      return typeof id === "string" ? id : null;
+    };
+    const known = new Map<string, PartSuccess>();
+    const unreadStall = new Set<string>();
+    const success = (slot: number, part: Extract<SlotPart, { kind: "move" }>): PartSuccess => {
+      const key = `${slot}/${part.index}/${part.target}/${part.mega}`;
+      let read = known.get(key);
+      if (read === undefined) {
+        const foes = foesNow();
+        const aimed = part.target !== null && part.target > 0 ? foes.find((foe) => foe.loc === part.target) : [...foes].sort((a, b) => a.loc - b.loc)[0];
+        const revealed = aimed?.assumed.revealed_moves.map((id) => view.dex.moves.get(id)).find((move) => move.exists && move.category !== "Status");
+        read = partSuccess(features.outcomes, { slot, move: part.index, target: part.target, mega: part.mega }, revealed === undefined ? null : revealed.id);
+        if (read.known) successCounts.parts_scaled += 1;
+        else successCounts.parts_unread += 1;
+        known.set(key, read);
+      }
+      return read;
+    };
+    return {
+      // An unread outcome never raises a stalling part's value: with no computed row for the chosen branch (unknown history) the Protect value is 0, v4's fail-safe.
+      extra: (slot, part) => {
+        const value = situationalScore({ rows, streaks: null, stall, moveId, weights }, slot, part);
+        if (value === 0 || part.kind !== "move" || success(slot, part).known) return value;
+        const key = `${slot}/${part.index}`;
+        if (!unreadStall.has(key)) {
+          unreadStall.add(key);
+          successCounts.stall_unread += 1;
+        }
+        return 0;
+      },
+      success,
     };
   }
 
@@ -381,7 +516,7 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
         counted.contradicted_worlds += 1;
         continue;
       }
-      scoreChoices(request, state, own, () => foes).forEach((total, index) => {
+      scoreChoices(request, state, own, () => foes).forEach(({ total }, index) => {
         sums[index] = (sums[index] as number) + total;
       });
       used += 1;
@@ -418,7 +553,7 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
       }
     }
     fed = context.channel.length;
-    if (situational !== null) {
+    if (situational !== null && !scaling) {
       const reader2 = (factsReader ??= new WorldFactsReader(context.player, options.facts_data as WorldFactsData));
       const last = context.channel.length - 1;
       for (; factsFed < last; factsFed++) reader2.feed(context.channel[factsFed] as string);
@@ -486,6 +621,7 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
       counts: { ...counts },
       ...(belief === null ? {} : { belief: { ...belief, refusals: { ...belief.refusals } } }),
       ...(situational === null ? {} : { situational: { ...situationalCounts } }),
+      ...(scaling ? { success: { ...successCounts } } : {}),
     }),
   });
 }
