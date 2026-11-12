@@ -383,6 +383,13 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "and a rerun is safe",
     )
     progress.add_argument(
+        "--situational-history",
+        action="store_true",
+        help="with --situational, also the history rows (#1345: stall repeats, history-scaled "
+        "power, parts that fail in every branch, conditional parts; a second feature build per "
+        "decision); the summary is g<N>.history.json",
+    )
+    progress.add_argument(
         "--situational-max-games",
         type=int,
         help="at most this many stored games per match for --situational (the summary is "
@@ -593,6 +600,8 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:  # noqa: PLR0912
         raise ProgressError("--preview-ablation needs --generation, not --all")
     if args.situational_max_games is not None and not args.situational:
         raise ProgressError("--situational-max-games needs --situational")
+    if args.situational_history and not args.situational:
+        raise ProgressError("--situational-history needs --situational")
     if args.damage_aware_budget_minutes is not None and not args.damage_aware:
         raise ProgressError("--damage-aware-budget-minutes needs --damage-aware")
     if args.damage_aware_version is not None and not args.damage_aware:
@@ -682,6 +691,7 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:  # noqa: PLR0912
                     repo=REPO,
                     node=args.node,
                     max_games=args.situational_max_games,
+                    history=args.situational_history,
                 )
             except SituationalError as exc:
                 raise ProgressError(f"--situational: {exc}") from exc
@@ -726,11 +736,6 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
     if config.population:
         if args.profile:
             raise LoopError("population: --profile does not apply to a population run")
-        if args.policy_workers != 1 or args.game_processes != 1:
-            raise LoopError(
-                "population: a population generation is played in one process with one worker "
-                "per member; --policy-workers and --game-processes do not apply"
-            )
         pop = PopulationLoop(config, args.run_dir.resolve(), game, player)
         pop.load_processes = load_processes
         pop.load_auto = auto

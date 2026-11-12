@@ -22,7 +22,10 @@
 //   Bad matchup     Threatened and a `switch` candidate of that slot names a bench Pokemon no revealed foe move reaches.
 //   Repeat          the slot's Pokemon used a stalling move successfully last turn (`protect_streak >= 1`).
 // An unsupported or null probe row never threatens (and is counted); nothing is guessed.
-import { type OwnChannel, ownChannel, type WorldFactsData, worldFactsAtRequests } from "@areneon/public-state";
+import { type OwnChannel, ownChannel, type HistoryFactsData, historyFactsAtRequests, ownHistoryChannel, type WorldFactsData, worldFactsAtRequests } from "@areneon/public-state";
+import type { CandidateFeaturesOutcome } from "./candidate-features-outcome.ts";
+import { goldenHistoryFactsData } from "./history-facts-data.ts";
+import { type HistoryCounts, type SlotFact, tallyHistoryDecision } from "./situational-history.ts";
 import type { CandidateFeatures2 } from "./candidate-features-2.ts";
 import { parseJointChoice, type SlotPart } from "./damage-aware-choice.ts";
 import { classifySlot, reaches as reachesRows, SITUATIONS, type Situation } from "./situation.ts";
@@ -123,6 +126,8 @@ export interface StoredGame {
 export interface SeatTally {
   policy: string;
   counts: Counts;
+  /** The history rows (#1345), present only when the diagnostic was asked for them (`situationalSetup(..., true)`). */
+  history?: HistoryCounts;
 }
 export interface GameTally {
   match_id: string;
@@ -138,11 +143,15 @@ export interface SituationalSetup {
   facts_data: WorldFactsData;
   /** The feature service (`probe-damage/2`); one per process, it keeps a probe memo per game. */
   service: FeatureService;
+  /** The history rows' inputs (#1345): the `probe-outcome/1` service and the history facts' engine data; absent without the rows. */
+  history?: { service: FeatureService; data: HistoryFactsData };
 }
 
-export function situationalSetup(engine: Engine, formatId: string, maxTurns: number, factsData: WorldFactsData, spec?: Partial<FeatureServiceSpec>): SituationalSetup {
+export function situationalSetup(engine: Engine, formatId: string, maxTurns: number, factsData: WorldFactsData, spec?: Partial<FeatureServiceSpec>, history = false): SituationalSetup {
   const full: FeatureServiceSpec = { format_id: formatId, data_class: "synthetic", feature_set: "probe-damage/2", ...spec };
-  return { engine, format_id: formatId, max_turns: maxTurns, facts_data: factsData, service: createFeatureService(full, engine) };
+  const base = { engine, format_id: formatId, max_turns: maxTurns, facts_data: factsData, service: createFeatureService(full, engine) };
+  if (!history) return base;
+  return { ...base, history: { service: createFeatureService({ ...full, feature_set: "probe-outcome/1" }, engine), data: goldenHistoryFactsData() } };
 }
 
 const REQUEST = "|request|";
@@ -170,9 +179,11 @@ export async function tallyGame(setup: SituationalSetup, record: StoredGame): Pr
   const seats = {} as Record<Player, SeatTally>;
   for (const player of ["p1", "p2"] as const) {
     const counts: Counts = {};
+    const historyCounts: HistoryCounts = {};
     const channel = channels[player];
     const own: OwnChannel = ownChannel(player, channel);
     const facts = worldFactsAtRequests({ channel: own, data: setup.facts_data });
+    const historyFacts = setup.history === undefined ? [] : historyFactsAtRequests({ channel: ownHistoryChannel(player, channel), data: setup.history.data });
     const requestLines = channel.flatMap((line, index) => (line.startsWith(REQUEST) ? [index] : []));
     const mine = record.decisions.filter((d) => d.player === player).sort((a, b) => a.request_seq - b.request_seq);
     mine.forEach((d, order) => {
@@ -192,8 +203,25 @@ export async function tallyGame(setup: SituationalSetup, record: StoredGame): Pr
       const letters = asList(body.active).map((_, slot) => String.fromCharCode(97 + slot));
       const streaks = letters.map((letter) => f?.facts?.own.active[letter]?.protect_streak ?? null);
       tallyDecision(counts, { body, candidates: d.candidates, chosen: d.chosen, features: result.outcome.features as CandidateFeatures2, streaks, stall });
+      if (setup.history !== undefined) {
+        const declared = setup.history.service.run({ game: `${record.match_id}:${record.game}:${player}`, player, lines: channel.slice(0, end + 1), team: record.teams[player].team, candidates: d.candidates, ...(order === mine.length - 1 ? { final: true } : {}) });
+        if (declared.outcome.kind === "error") {
+          bump(historyCounts, `history.feature_error.${declared.outcome.code}`);
+          bump(historyCounts, "history.feature_errors");
+        }
+        else {
+          const own = historyFacts.find((x) => x.line === end)?.facts?.own;
+          const slotFacts = letters.map((letter): SlotFact | null => {
+            const mon = own?.active[letter];
+            if (mon === undefined || mon === null || mon.unknown) return null;
+            const roster = own?.roster[mon.name];
+            return { move_actions: mon.move_actions, stall_counter: mon.stall_counter, item_history: roster !== undefined && (roster.ate_berry === true || (roster.last_item !== null && roster.last_item !== undefined)) };
+          });
+          tallyHistoryDecision(historyCounts, { body, candidates: d.candidates, chosen: d.chosen, base: result.outcome.features as CandidateFeatures2, outcome: declared.outcome.features as unknown as CandidateFeaturesOutcome, facts: slotFacts, stall });
+        }
+      }
     });
-    seats[player] = { policy: record.policies[player], counts: sortedCounts(counts) };
+    seats[player] = { policy: record.policies[player], counts: sortedCounts(counts), ...(setup.history === undefined ? {} : { history: sortedCounts(historyCounts) }) };
   }
   return { match_id: record.match_id, game: record.game, pair: record.pair ?? null, seats };
 }

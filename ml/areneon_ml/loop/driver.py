@@ -102,6 +102,9 @@ class Frozen:
     #: The run's ``generation.play.temperature_ppm`` (ADR-023 section 1): the pair's policy id is
     #: the tempered one (sample mode); None is temperature 1 and today's id.
     temperature_ppm: int | None = None
+    #: The run's ``generation.inference.max_batch`` (ADR-028 section 2 F2): the pair's policy id
+    #: says its self-play forward pass is batched; None is batch 1 and today's id.
+    inference_max_batch: int | None = None
 
     @property
     def policy_id(self) -> str:
@@ -110,6 +113,11 @@ class Frozen:
             self.checkpoints["battle"],
             temperature_ppm=self.temperature_ppm,
             features=self.features,
+            inference=(
+                None
+                if self.inference_max_batch is None
+                else {"kind": "batched", "max_batch": self.inference_max_batch}
+            ),
         )
 
 
@@ -166,6 +174,9 @@ class Timing:
         self.play_rss: dict[str, int] = {}
         #: The profile of the generation (ADR-028 section 1) when the run asked for one.
         self.profile: dict[str, Any] | None = None
+        #: The batched-inference divergence of the generation (ADR-028 section 2 F2) when the
+        #: play script reported one.
+        self.divergence: dict[str, Any] | None = None
 
     @contextmanager
     def phase(self, name: str) -> Iterator[None]:
@@ -394,6 +405,7 @@ class Loop:
             tuple(teams["teams"]),
             features_hash(self.config),
             self.config.generation.temperature_ppm,
+            self.config.generation.inference_max_batch,
         )
 
     def _read_record(self, path: Path, role: str) -> CheckpointRecord:
@@ -423,6 +435,7 @@ class Loop:
                 )
             )
         timing.play_rss = dict(getattr(self.player, "resource_usage", None) or {})
+        timing.divergence = dict(getattr(self.player, "last_divergence", None) or {}) or None
         self._on_stage(generation, "played")
         if self.profile:
             stopwatch.enable()
@@ -670,6 +683,7 @@ class Loop:
                     timing.peak_reserved,
                     {**timing.play_rss, "driver": self.rss_source()},
                     timing.profile,
+                    timing.divergence,
                 ),
             ),
         )
@@ -681,6 +695,7 @@ class Loop:
             sealing.teams,
             features_hash(self.config),
             self.config.generation.temperature_ppm,
+            self.config.generation.inference_max_batch,
         )
 
 

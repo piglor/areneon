@@ -870,6 +870,52 @@ def _profile_section(model: ReportModel) -> str:
     )
 
 
+def _inference_section(model: ReportModel) -> str:
+    """Batched self-play inference (ADR-028 section 2 F2): the note, and the divergence of each
+    generation that recorded one. Nothing for a run at batch 1."""
+    if model.inference_max_batch is None:
+        return ""
+    rows = []
+    for g in model.generations:
+        found = None if g.metrics is None else g.metrics.get("inference_divergence")
+        if found is None:
+            continue
+        rows.append(
+            [
+                str(g.number),
+                str(found["decisions"]),
+                str(found["sampled"]),
+                str(found["differing"]),
+                str(found["max_prior_diff_ppm"]),
+                "yes" if found["target_met"] else "no",
+            ]
+        )
+    heads = [
+        ("Generation", True),
+        ("Decisions", True),
+        ("Sampled", True),
+        ("Differing choices", True),
+        ("Largest prior difference (ppm)", True),
+        ("Sample target met", False),
+    ]
+    table = (
+        _table(heads, rows, "Batched inference against batch 1 on a sample of each generation.")
+        if rows
+        else '<p class="note">No generation recorded a divergence yet.</p>'
+    )
+    return (
+        "<h2>Batched inference: not byte-reproducible</h2>"
+        f'<p class="note">This run batches its self-play forward pass (up to {model.inference_max_batch} '
+        "queries per pass, <code>generation.inference</code>): a rerun, another process count or a "
+        "resumed generation gives other bytes, because what is grouped depends on timing and a padded "
+        "batch is not bit-identical to batch 1. Plan, seeds, teams and policy ids still repeat. "
+        "Each sampled decision was scored again at batch 1 with its own sampling draw; the batched "
+        "priors it is compared with depend on timing, so the largest prior difference is a noisy "
+        "diagnostic, not a bound. From the optional <code>inference_divergence</code> of "
+        "<code>metrics/gNNNNNN.json</code>, outside every hash.</p>" + table
+    )
+
+
 def _diagnostics_section(model: ReportModel, tips: Tips) -> str:
     played = [g for g in model.generations if g.number > 0]
     xs = [g.number for g in played]
@@ -1101,6 +1147,7 @@ def build_report(model: ReportModel, links: Links | None = None) -> str:
             _counts_section(model, tips),
             _metrics_section(model),
             _profile_section(model),
+            _inference_section(model),
             _diagnostics_section(model, tips),
             _comparison(model, links),
             _inputs(model),
@@ -1613,6 +1660,69 @@ def _rate(part: int, interval: dict[str, int] | None) -> str:
     )
 
 
+_HISTORY_NAMES = [
+    ("stall_repeat", "Stall at counter > 1"),
+    ("stall_fresh", "Stall, fresh"),
+    ("stall_repeat_success", "Success of repeat stalls"),
+    ("stall_repeat_minus_fresh", "Repeat minus fresh"),
+    ("power_up", "Scaled up"),
+    ("power_down", "Scaled down"),
+    ("power_up_minus_down", "Up minus down"),
+    ("fails_all", "Fails every branch"),
+    ("fails_all_acted", "Fails, actor acted"),
+    ("fails_all_fresh", "Fails, actor fresh"),
+    ("fails_all_item", "Fails, item history"),
+    ("fails_all_ppm_of_decisions", "Failing chosen, ppm of decisions"),
+    ("history_build_failed", "History build failed, share of decisions"),
+    ("conditional", "Conditional"),
+    ("conditional_chosen_pass_share", "Chosen conditional branches passing"),
+]
+
+
+def _history_table(found: dict[str, Any]) -> str:
+    """The history rows of the situational diagnostic (#1345), beside its table; empty without them."""
+    rows = [
+        [
+            str(found["generation"]),
+            esc(match_id),
+            esc(policy[:24]),
+            str(body["pairs"]),
+            *(_situational_cell(body["history"]["statistics"][name]) for name, _ in _HISTORY_NAMES),
+        ]
+        for match_id, policies in found["matches"].items()
+        for policy, body in policies.items()
+        if "history" in body
+    ]
+    if not rows:
+        return ""
+    return (
+        "<h4>History groups</h4>"
+        "<p class=\"note\">Groups come from the engine's answers on the seat's own channel "
+        "(probe-outcome/1: stall counter, history-scaled damage against the default-history "
+        "damage, outcomes that fail in every branch or differ by branch); chosen per offered "
+        "part, in parts per million. Descriptive only; never a gate by itself.</p>"
+        + _table(
+            [
+                ("Generation", True),
+                ("Match", False),
+                ("Policy", False),
+                ("Pairs", True),
+                *((label, True) for _, label in _HISTORY_NAMES),
+            ],
+            rows,
+            "History rows, from the stored games re-simulated on the pinned engine.",
+        )
+    )
+
+
+def _situational_cell(stat: dict[str, Any]) -> str:
+    if stat["mean_ppm"] is None:
+        return "none offered"
+    iv = stat["interval"]
+    span = "no interval" if iv is None else f"{iv['low_ppm']} to {iv['high_ppm']}"
+    return f"{stat['mean_ppm']} ppm ({span})"
+
+
 def _situational_section(model: ReportModel) -> str:
     """The situational move-use diagnostic (#1283), from a summary file given to the command."""
     found = model.situational
@@ -1628,20 +1738,13 @@ def _situational_section(model: ReportModel) -> str:
         ("switch_bad_matchup_minus_not_threatened", "Bad matchup minus not threatened"),
     ]
 
-    def cell(stat: dict[str, Any]) -> str:
-        if stat["mean_ppm"] is None:
-            return "none offered"
-        iv = stat["interval"]
-        span = "no interval" if iv is None else f"{iv['low_ppm']} to {iv['high_ppm']}"
-        return f"{stat['mean_ppm']} ppm ({span})"
-
     rows = [
         [
             str(found["generation"]),
             esc(match_id),
             esc(policy[:24]),
             str(body["pairs"]),
-            *(cell(body["statistics"][name]) for name, _ in names),
+            *(_situational_cell(body["statistics"][name]) for name, _ in names),
         ]
         for match_id, policies in found["matches"].items()
         for policy, body in policies.items()
@@ -1665,6 +1768,7 @@ def _situational_section(model: ReportModel) -> str:
             rows,
             "Rates over offered decisions, from the stored games re-simulated on the pinned engine.",
         )
+        + _history_table(found)
     )
 
 
