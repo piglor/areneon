@@ -11,6 +11,7 @@ from pydantic import (
     ConfigDict,
     Field,
     RootModel,
+    StrictBool,
     StrictInt,
     StrictStr,
 )
@@ -59,6 +60,25 @@ class LoadProfile(BaseModel):
     validate_cpu_ms: Count
     reduce_cpu_ms: Count
     encode_cpu_ms: Count
+
+
+class InferenceDivergence(BaseModel):
+    """
+    How far batched self-play inference (generation.inference) strayed from batch 1 on a deterministic sample of this generation's own decisions (ADR-028 section 2 F2, #1195). Each sampled decision was scored again at batch 1 with its own sampling draw u: differing counts those whose choice differs from the played one, and max_prior_diff_ppm is the largest absolute difference, over the candidates of any sampled decision, between the batched and the batch-1 prior (temperature 1, in ppm). A diagnostic outside every hash; the sample is at least 1 percent of the decisions and at least 256 when that many were played (target_met says so).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    max_batch: Annotated[StrictInt, Field(ge=2, le=1024)]
+    decisions: Count
+    """
+    The pair's own decisions played this generation by the processes that reported.
+    """
+    sampled: Count
+    differing: Count
+    max_prior_diff_ppm: Count
+    target_met: StrictBool
 
 
 class PhaseMs(BaseModel):
@@ -203,6 +223,7 @@ class RunMetrics(BaseModel):
     """
     peak_rss_bytes: PeakRss | MISSING = MISSING
     profile: Profile | MISSING = MISSING
+    inference_divergence: InferenceDivergence | MISSING = MISSING
     device: Literal["cpu", "cuda"]
     """
     The learner's device, as the run config names it.

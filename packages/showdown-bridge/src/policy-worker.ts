@@ -31,6 +31,7 @@ import {
   type EvaluateQueryInput,
   type Evaluation,
   encodeFrame,
+  type InferenceSettings,
   PolicyProtocolError,
   type PolicyQuery,
   type PolicyQueryInput,
@@ -110,6 +111,12 @@ export interface PolicyWorkerOptions {
    * worker that states another source, or any source when this is absent, is refused at the handshake.
    */
   sheet?: FeatureSetStatement;
+  /**
+   * The batching this client asks of the worker (ADR-028 section 2 F2): set only by a training self-play client of a run whose config
+   * says `generation.inference`. It goes in the hello and the worker must state exactly it in `ready`. Absent is batch 1, and a
+   * worker that states any batching is then refused: every evaluation, head-to-head, private-test and sealed client leaves it absent.
+   */
+  inference?: InferenceSettings;
   /** What the run expects the worker to have loaded. */
   expect: {
     encoder_version: string;
@@ -162,6 +169,9 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
     }
     if (!Number.isInteger(options.max_line_bytes) || options.max_line_bytes < 1) {
       throw new RangeError("max_line_bytes must be a positive integer");
+    }
+    if (options.inference !== undefined && (options.inference.kind !== "batched" || !Number.isInteger(options.inference.max_batch) || options.inference.max_batch < 2 || options.inference.max_batch > options.n_parallel)) {
+      throw new RangeError("inference is {kind: batched, max_batch} with 2 <= max_batch <= n_parallel");
     }
     this.#options = options;
   }
@@ -217,7 +227,8 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
     child.once("error", (error) => this.#fail(new PolicyWorkerError("crash", `cannot start the worker: ${error.message}`)));
     child.once("close", (code, signal) => this.#closed(code, signal));
     try {
-      child.stdin.write(encodeFrame({ schema_version: 1, message: { kind: "hello", contracts: contractVersions() } }, max_line_bytes));
+      const { inference } = this.#options;
+      child.stdin.write(encodeFrame({ schema_version: 1, message: { kind: "hello", contracts: contractVersions(), ...(inference === undefined ? {} : { inference: { kind: inference.kind, max_batch: inference.max_batch } }) } }, max_line_bytes));
       this.#check(await ready);
     } catch (error) {
       await this.close();
@@ -245,6 +256,11 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
     }
     if (!same(message.checkpoints, expect.checkpoints)) {
       throw new PolicyHandshakeError(`the worker loaded other checkpoints: ${jcs(message.checkpoints as unknown as Json)}`);
+    }
+    // The batching: exactly what the hello asked for (none: batch 1), so a client that asks for batch 1 refuses a batching worker.
+    const asked = this.#options.inference;
+    if (!same(message.inference ?? null, asked === undefined ? null : { kind: asked.kind, max_batch: asked.max_batch })) {
+      throw new PolicyHandshakeError(`the worker states the batching ${message.inference === undefined ? "none (batch 1)" : jcs(message.inference as unknown as Json)}, not the expected ${asked === undefined ? "none (batch 1)" : jcs(asked as unknown as Json)}`);
     }
     // A stated feature set must be exactly one this side supplies; no statement means the checkpoints need none.
     const stated = message.feature_set;

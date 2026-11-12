@@ -112,3 +112,4 @@ export {
   uploadRunInputs,
 } from "./run-inputs.ts";
 export { runInputsCli, type RunInputsDeps } from "./run-inputs-cli.ts";
+export * from "./publish/index.ts";

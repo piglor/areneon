@@ -5,7 +5,6 @@
 // generation's `generation.json`. Exit 0 ok, 1 a generation that failed, 2 a
 // usage or configuration error. Nothing is retried.
 
-import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,12 +12,12 @@ import { parseArgs } from "node:util";
 import { engineDataHash, readEngineDataAny } from "./engine-data.ts";
 import { loadEngine } from "./engine.ts";
 import type { Engine } from "./engine.ts";
-import { featureSetup, GenerationError, labelSetup, type SearchSetupFactory, sheetSetup, type PlayedEntry, type PoolRequest, playEntries, playGeneration, type Shard, type TrainingPool, trainingTeamPool, writeGeneration } from "./league-generation.ts";
+import { featureSetup, GenerationError, labelSetup, type SearchSetupFactory, sheetSetup, type PoolRequest, playEntries, playGeneration, type Shard, type TrainingPool, trainingTeamPool, writeGeneration } from "./league-generation.ts";
 import { type Json, jcs } from "./canonical-json.ts";
-import { ChunkedFileWriter, readFileLines } from "./chunked-file.ts";
 import { resolveFormat } from "./formats.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
 import { type BeliefFeaturesFactory, SheetTotals } from "./belief-features.ts";
+import { DivergenceRun } from "./inference-divergence.ts";
 import { labelCounts } from "./search-labeller.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import { PastPoolError, readPastPool } from "./past-pool.ts";
@@ -27,10 +26,11 @@ import { exitWhenParentDies, vouchTo } from "./parent-link.ts";
 import { obtainPool } from "./pool-share.ts";
 import { type MemberFlag, parseMemberFlag, runCalibrationCli, runPopulationCli } from "./population-cli.ts";
 import { largest, ownPeakRss } from "./process-usage.ts";
+import { combineUsage, featuresDirOf, optionalFlag, ownShard, parallelCount, POOL_FILE, readShardFile, type ResourceUsage, SHARD_FILE, type ShardProcess, startShard, USAGE_FILE, usageOf, writeShardFile } from "./shard-process.ts";
 import { readTrainingRunConfig, runConfigHash } from "./training-run-config.ts";
 
-/** An upper bound on `--policy-workers` and `--game-processes`: each is an operating system process. */
-const MAX_PARALLEL = 64;
+// The further-game-process helpers live in `shard-process.ts` (the population generation uses them too); re-exported for the existing importers.
+export { combineUsage, featuresDirOf, optionalFlag, readShardFile, type ResourceUsage, type ShardProcess, startShard, writeShardFile };
 
 export class UsageError extends Error {
   override name = "UsageError";
@@ -106,23 +106,14 @@ export function combinedLoad(processes: number, workers: number, nParallel: numb
   return { games, over: games > MAX_COMBINED_LOAD };
 }
 
-/** Peak memory of the processes of one generation's play (bytes), for the run-metrics record; any part may be missing. */
-export interface ResourceUsage {
-  game_process_peak_rss_bytes?: number;
-  policy_worker_peak_rss_bytes?: number;
-}
-
-const usageOf = (game: number | null, worker: number | null): ResourceUsage => ({
-  ...(game === null ? {} : { game_process_peak_rss_bytes: game }),
-  ...(worker === null ? {} : { policy_worker_peak_rss_bytes: worker }),
-});
-
-/** The largest peaks among several processes' usage. */
-export function combineUsage(parts: readonly ResourceUsage[]): ResourceUsage {
-  return usageOf(
-    largest(parts.map((part) => part.game_process_peak_rss_bytes ?? null)),
-    largest(parts.map((part) => part.policy_worker_peak_rss_bytes ?? null)),
-  );
+/** The flags a further game process is started with: the ones this process was given, but its own output, slice and internal directories. */
+export function forwardedFlags(values: Record<string, string | string[] | boolean | undefined>): string[] {
+  const internal = ["out", "game-processes", "shard", "episodes-dir", "features-dir", "labels-dir", "pool-file", "profile", "profile-dir"];
+  return Object.entries(values).flatMap(([name, value]) => {
+    if (internal.includes(name) || value === undefined) return [];
+    if (Array.isArray(value)) return value.flatMap((each) => [`--${name}`, each]); // --member, once per member
+    return typeof value === "string" ? [`--${name}`, value] : [];
+  });
 }
 
 /** Run one generation; returns the process exit code and writes its one JSON line with `print`. */
@@ -169,7 +160,6 @@ export async function runGenerationCli(
   }
   if ((config.population !== undefined) !== (values.member !== undefined)) throw new UsageError("a population config is played with --member for each member, and --member only with a population config");
   if (config.population !== undefined) {
-    if (values.shard !== undefined || values["game-processes"] !== undefined || values["policy-workers"] !== undefined) throw new UsageError("a population run plays in one process with one worker per member");
     if (values.profile === true || values["profile-dir"] !== undefined) throw new UsageError("--profile does not apply to a population run");
     let flags: MemberFlag[];
     try {
@@ -188,35 +178,53 @@ export async function runGenerationCli(
         throw error;
       }
     }
+    // The game processes and policy workers of a population run: as in a single lineage, with each member's workers started in each process that plays one of its games (#1333).
+    const refuse = (message: string): Error => new UsageError(message);
+    const workerCount = parallelCount(values["policy-workers"], "policy-workers", refuse);
+    const processes = parallelCount(values["game-processes"], "game-processes", refuse);
+    if (values["pool-file"] !== undefined && values.shard === undefined) throw new UsageError("--pool-file is for a further game process only");
+    const shard = ownShard(values.shard, processes, shardScript, refuse);
+    const load = combinedLoad(processes, workerCount, config.generation.n_parallel);
+    if (load.over && values.shard === undefined) console.error(`play-generation: ${processes} game processes x ${workerCount} workers x ${config.generation.n_parallel} games in flight is ${load.games} at once, over ${MAX_COMBINED_LOAD}: the machine may be oversubscribed`);
+    let features: ReturnType<typeof featureSetup>;
+    try {
+      features = featureSetup(engine, config, beliefWorlds, beliefFeatures);
+    } catch (error) {
+      if (!(error instanceof GenerationError)) throw error;
+      console.error(`play-generation: ${error.message}`);
+      return 1;
+    }
     return runPopulationCli(
-      { engine, config, generation, pool: poolSource(engine, config), members: flags, out: need("out"), run_dir: need("run-dir"), worker_python: need("worker-python"), engine_data: dataFile, engine_data_hash: dataHash, encoder_version: need("encoder-version"), belief_worlds: beliefWorlds, ...(past === undefined ? {} : { past }) },
+      {
+        engine, config, generation, members: flags, out: need("out"), run_dir: need("run-dir"), worker_python: need("worker-python"), engine_data: dataFile, engine_data_hash: dataHash, encoder_version: need("encoder-version"), belief_worlds: beliefWorlds,
+        load_pool: (share) => obtainPool(config, () => poolSource(engine, config), share).then((found) => found.pool),
+        features,
+        policy_workers: workerCount,
+        processes,
+        ...(shard === undefined ? {} : { shard }),
+        ...(values.shard === undefined ? {} : { further: true }),
+        ...(shardScript === undefined ? {} : { shard_script: shardScript }),
+        forward: forwardedFlags(values),
+        ...(values["episodes-dir"] === undefined ? {} : { episodes_dir: values["episodes-dir"] }),
+        ...(values["features-dir"] === undefined ? {} : { features_dir: values["features-dir"] }),
+        ...(values["pool-file"] === undefined ? {} : { pool_file: values["pool-file"] }),
+        ...(past === undefined ? {} : { past }),
+      },
       print,
     );
   }
   const { max_line_bytes, n_parallel, handshake_timeout_ms } = config.generation;
+  // Batched self-play inference (ADR-028 section 2 F2): the training clients below alone ask for it; absent is today's batch 1.
+  const divergence = new DivergenceRun(config.generation.inference);
   const preview = need("preview");
   const battle = need("battle");
-  const count = (name: "policy-workers" | "game-processes"): number => {
-    const text = values[name] ?? "1";
-    const value = /^\d+$/.test(text) ? Number(text) : Number.NaN;
-    if (!Number.isInteger(value) || value < 1 || value > MAX_PARALLEL) throw new UsageError(`--${name} must be an integer from 1 to ${MAX_PARALLEL}`);
-    return value;
-  };
+  const count = (name: "policy-workers" | "game-processes"): number => parallelCount(values[name], name, (message) => new UsageError(message));
   const workerCount = count("policy-workers");
   const processes = count("game-processes");
   if (values["pool-file"] !== undefined && values.shard === undefined) throw new UsageError("--pool-file is for a further game process only");
   const load = combinedLoad(processes, workerCount, n_parallel);
   if (load.over && values.shard === undefined) console.error(`play-generation: ${processes} game processes x ${workerCount} workers x ${n_parallel} games in flight is ${load.games} at once, over ${MAX_COMBINED_LOAD}: the machine may be oversubscribed`);
-  let own: Shard | undefined;
-  if (values.shard !== undefined) {
-    const match = /^(\d+)\/(\d+)$/.exec(values.shard);
-    if (match === null || processes !== 1) throw new UsageError("--shard is INDEX/COUNT, and only for a process of its own");
-    own = { index: Number(match[1]), of: Number(match[2]) };
-    if (own.of < 2 || own.of > MAX_PARALLEL || own.index >= own.of) throw new UsageError("--shard is INDEX/COUNT, and only for a process of its own");
-  } else if (processes > 1) {
-    own = { index: 0, of: processes };
-    if (shardScript === undefined) throw new UsageError("--game-processes needs the script to start again");
-  }
+  const own: Shard | undefined = ownShard(values.shard, processes, shardScript, (message) => new UsageError(message));
   // The candidate feature set the run's config names (none: nothing below changes). Built before any worker starts.
   let features: ReturnType<typeof featureSetup>;
   try {
@@ -254,17 +262,20 @@ export async function runGenerationCli(
   // The profile (#1191): on for --profile, and for a game process whose starter gave it the directory. Timers only read clocks.
   const profile = startProfile(values["profile-dir"], values.profile === true);
   const profileDir = profile?.dir;
-  const makeClient = (): PolicyWorkerClient => new PolicyWorkerClient({
+  // `batch1` is the control worker of the divergence measure: the same checkpoints, never batching, and no profile.
+  const makeClient = (batch1: boolean): PolicyWorkerClient => new PolicyWorkerClient({
     command: need("worker-python"),
     args: [
       "-I", "-m", "areneon_ml.worker", "--run-dir", need("run-dir"), "--preview", preview, "--battle", battle,
       "--engine-data", dataFile, "--max-line-bytes", String(max_line_bytes),
-      ...optionalFlag("--profile-dir", profileDir),
+      ...divergence.workerArgs(batch1),
+      ...(batch1 ? [] : optionalFlag("--profile-dir", profileDir)),
     ],
     env: {},
     max_line_bytes,
     n_parallel,
     handshake_timeout_ms,
+    ...divergence.clientOptions(batch1),
     ...(features === undefined ? {} : { features: features.statement }),
     ...sheetArgs.client,
     expect: {
@@ -276,7 +287,7 @@ export async function runGenerationCli(
       ],
     },
   });
-  const clients = Array.from({ length: workerCount }, makeClient);
+  const clients = Array.from({ length: workerCount }, () => makeClient(false));
   // The Episodes go to one directory as their games finish; a further game process writes into its starter's.
   const episodesDir = values["episodes-dir"] ?? join(need("out"), "episodes");
   mkdirSync(episodesDir, { recursive: true });
@@ -297,9 +308,7 @@ export async function runGenerationCli(
     if (scratch !== undefined) {
       for (let index = 1; index < processes; index++) {
         const out = join(scratch, String(index));
-        const rest = Object.entries(values).flatMap(([name, value]) =>
-          value === undefined || typeof value !== "string" || ["out", "game-processes", "shard", "episodes-dir", "features-dir", "labels-dir", "pool-file", "profile", "profile-dir"].includes(name) ? [] : [`--${name}`, value],
-        );
+        const rest = forwardedFlags(values);
         children.push(startShard(shardScript as string, [...rest, "--out", out, "--shard", `${index}/${processes}`, "--episodes-dir", episodesDir, ...optionalFlag("--pool-file", poolFile), ...optionalFlag("--features-dir", featuresDir), ...optionalFlag("--labels-dir", labelsDir), ...optionalFlag("--profile-dir", profileDir)], out, index));
       }
     }
@@ -312,9 +321,10 @@ export async function runGenerationCli(
     const [client, ...peers] = clients as [PolicyWorkerClient, ...PolicyWorkerClient[]];
     if (values.shard !== undefined) {
       // A further game process (it ends with the process that started it, see above). It plays the slice and leaves it for the process that started this one.
-      const entries = await playEntries({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, episodes_dir: episodesDir, belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, ...labelArgs, features_dir: featuresDir }, own);
+      const entries = await playEntries({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, episodes_dir: episodesDir, belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, ...labelArgs, ...divergence.observer, features_dir: featuresDir }, own);
       mkdirSync(need("out"), { recursive: true });
       writeShardFile(join(need("out"), SHARD_FILE), entries);
+      await divergence.leave(need("out"), client, makeClient);
       writeFileSync(join(need("out"), USAGE_FILE), `${jcs(usageOf(ownPeakRss(), largest(clients.map((worker) => worker.peakRssBytes()))) as unknown as Json)}\n`);
       leaveFigures(profile, (own as Shard).index, ownPeakRss());
       return 0;
@@ -323,7 +333,7 @@ export async function runGenerationCli(
     const others = Promise.all(children.map((child) => child.entries));
     // The stream goes straight to its file in chunks as the examples are made (#998).
     mkdirSync(need("out"), { recursive: true });
-    const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, stream_path: join(need("out"), "stream.jsonl"), episodes_dir: episodesDir, ...labelArgs, ...(labelling ? { labels_path: join(need("out"), "labels.jsonl") } : {}), belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, features_dir: featuresDir, ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()), live_children: () => children.filter((child) => child.alive()).length });
+    const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, ...divergence.observer, stream_path: join(need("out"), "stream.jsonl"), episodes_dir: episodesDir, ...labelArgs, ...(labelling ? { labels_path: join(need("out"), "labels.jsonl") } : {}), belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, features_dir: featuresDir, ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()), live_children: () => children.filter((child) => child.alive()).length });
     timed("merge", () => writeGeneration(need("out"), result));
     // The labelling counts of this generation (also in generation.json): a generation with no label is told from a broken labeller by them.
     if (result.labels !== undefined) process.stderr.write(`search labels: ${jcs(labelCounts(result.labels.totals) as unknown as Json)}\n`);
@@ -332,6 +342,8 @@ export async function runGenerationCli(
     // After the summary line, so a reader of the first line is unchanged: the peak memory of this process, its workers and the further game processes.
     const usage = combineUsage([usageOf(ownPeakRss(), largest(clients.map((worker) => worker.peakRssBytes()))), ...(await Promise.all(children.map((child) => child.usage)))]);
     if (Object.keys(usage).length > 0) print(jcs({ resource_usage: usage } as unknown as Json));
+    // The batched run's divergence from batch 1 on a sample of its decisions, this process's and the further game processes' (a diagnostic line; no file the manifest hashes).
+    await divergence.report(client, makeClient, scratch, processes, print);
     // The workers write their figures when they end, so they end now; the game processes have ended (their results were read above).
     await printProfile(profile, async () => {
       await Promise.all(clients.map((worker) => worker.close()));
@@ -351,105 +363,6 @@ export async function runGenerationCli(
     if (ownLabels !== undefined) rmSync(ownLabels, { recursive: true, force: true });
     stopProfile(profile);
   }
-}
-
-/** The directory the game processes leave feature rows in: the one this process was given, else a `features` directory of the shard scratch when there is one and the run reads a feature set (#1185). */
-export function featuresDirOf(given: string | undefined, scratch: string | undefined, hasFeatures: boolean): string | undefined {
-  return given ?? (scratch !== undefined && hasFeatures ? join(scratch, "features") : undefined);
-}
-
-/** `[name, value]` as arguments for a child process, or none when the value is absent. */
-export function optionalFlag(name: string, value: string | undefined): string[] {
-  return value === undefined ? [] : [name, value];
-}
-
-/** The team pool the starting process leaves in the shard scratch directory. */
-const POOL_FILE = "pool.json";
-
-/** The game process's result: one canonical JSON entry per line, so no string holds them all (#998). */
-const SHARD_FILE = "shard.jsonl";
-/** A game process's peak memory, beside its shard file. */
-const USAGE_FILE = "usage.json";
-
-/** Write a game process's entries, one line each, flushed to disk. */
-export function writeShardFile(path: string, entries: readonly PlayedEntry[]): void {
-  const writer = new ChunkedFileWriter(path);
-  try {
-    for (const entry of entries) writer.write(`${jcs(entry as unknown as Json)}\n`);
-    writer.finish();
-  } finally {
-    writer.close();
-  }
-}
-
-/** Read a shard file back, a line at a time. */
-export function readShardFile(path: string): PlayedEntry[] {
-  const entries: PlayedEntry[] = [];
-  for (const line of readFileLines(path)) entries.push(JSON.parse(line) as PlayedEntry);
-  return entries;
-}
-
-/** A further game process: the entries it will have played, and a way to end it. */
-export interface ShardProcess {
-  entries: Promise<PlayedEntry[]>;
-  /** Its peak memory once it has ended (empty when it left none). */
-  usage: Promise<ResourceUsage>;
-  /** Whether the process is still running. */
-  alive: () => boolean;
-  /** Send the process one line over the pipe it ends with (a closed pipe is no failure: the process is gone and reports it). */
-  tell: (line: string) => void;
-  stop: () => void;
-}
-
-/** How long a failed game process's stderr is awaited after it exits: a process that left a grandchild holding the pipe open must not delay the report (#1100). */
-const STDERR_GRACE_MS = 500;
-
-export function startShard(script: string, args: readonly string[], out: string, index: number, node: string = process.execPath): ShardProcess {
-  const child = spawn(node, [...process.execArgv, script, ...args], { stdio: ["pipe", "ignore", "pipe"] }); // stdin stays open: the child ends when this process does
-  let stderr = "";
-  child.stderr.on("data", (chunk: Buffer) => {
-    stderr = (stderr + chunk.toString("utf8")).slice(-2000);
-  });
-  let running = true;
-  const entries = new Promise<PlayedEntry[]>((resolve, reject) => {
-    const failed = (code: number | null, signal: NodeJS.Signals | null): void => reject(new GenerationError(`game process ${index} failed (${signal === null ? `exit ${code}` : `signal ${signal}`}): ${stderr.trim()}`));
-    child.once("error", (error) => {
-      running = false;
-      reject(new GenerationError(`game process ${index} did not start: ${error.message}`));
-    });
-    // `exit`, not `close`: `close` waits for every holder of the stderr pipe, so a game process that failed
-    // but left a grandchild behind was not reported until that one ended (#1100).
-    child.once("exit", (code, signal) => {
-      running = false;
-      if (code !== 0) {
-        const late = setTimeout(() => failed(code, signal), STDERR_GRACE_MS);
-        child.once("close", () => {
-          clearTimeout(late);
-          failed(code, signal);
-        });
-      }
-    });
-    child.once("close", (code) => {
-      running = false;
-      if (code !== 0) return; // reported by the `exit` handler
-      try {
-        resolve(readShardFile(join(out, SHARD_FILE)));
-      } catch (error) {
-        reject(new GenerationError(`game process ${index} left no readable result: ${(error as Error).message}`));
-      }
-    });
-  });
-  entries.catch(() => undefined); // reported where it is awaited
-  const usage = entries.then((): ResourceUsage => {
-    try {
-      return JSON.parse(readFileSync(join(out, USAGE_FILE), "utf8")) as ResourceUsage;
-    } catch {
-      return {}; // diagnostics only: a missing file is no failure
-    }
-  });
-  usage.catch(() => undefined);
-  child.stdin.on("error", () => undefined); // a child that has gone leaves a broken pipe; its exit is reported through `entries`
-  return { entries, usage, alive: () => running, tell: (line) => void child.stdin.write(line), stop: () => void child.kill("SIGKILL") };
 }
 
 /** `scripts/format-manifest.ts --format <id>`: print the version manifest of a supported format as one canonical JSON line. */

@@ -72,7 +72,10 @@ def make_run_dir(root: Path, model: ModelConfig = TINY_MODEL) -> tuple[Path, str
 
 
 def make_worker(
-    root: Path, max_line_bytes: int = MAX_LINE, model: ModelConfig = TINY_MODEL
+    root: Path,
+    max_line_bytes: int = MAX_LINE,
+    model: ModelConfig = TINY_MODEL,
+    inference_max_batch: int | None = None,
 ) -> Worker:
     run_dir, preview, battle = make_run_dir(root, model)
     store = CheckpointStore(run_dir)
@@ -88,6 +91,7 @@ def make_worker(
             {"role": "battle", "checkpoint_id": battle},
         ],
         max_line_bytes=max_line_bytes,
+        inference_max_batch=inference_max_batch,
     )
 
 

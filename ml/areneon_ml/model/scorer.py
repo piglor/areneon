@@ -8,14 +8,15 @@ depend on what was scored before or beside it.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import torch
 
 from areneon_ml import stopwatch
 from areneon_ml.model.batch import collate
-from areneon_ml.model.encoder import Encoder
+from areneon_ml.model.candidates import UnsupportedCandidate
+from areneon_ml.model.encoder import EncodedQuery, Encoder, EncodingError
 from areneon_ml.model.gamedata import GameData
 from areneon_ml.model.network import (
     ROLES,
@@ -24,6 +25,7 @@ from areneon_ml.model.network import (
     TrunkError,
     check_shared_trunk,
 )
+from areneon_ml.reducer import ReducerError
 
 # Temperature 1 in millionths (ADR-023 §1); the worker's sampler states the same constant.
 FULL_TEMPERATURE_PPM = 1_000_000
@@ -96,6 +98,50 @@ class NetworkScorer:
         with torch.inference_mode():
             output = self._networks[role].value_output(collate([encoded]))
         return float(output[0].item())
+
+    def score_batch(
+        self, items: Sequence[tuple[dict[str, Any], int | None]]
+    ) -> list[tuple[list[float], float] | Exception]:
+        """Score several queries in padded forward passes (ADR-028 section 2 F2, self-play).
+
+        Each item is ``(view, temperature_ppm)`` (``None`` or the default is temperature 1); the
+        result holds, in the items' order, the probabilities and the value head's output of each,
+        or the ``ReducerError`` / ``EncodingError`` / ``UnsupportedCandidate`` that refused that
+        query alone (any other error is a defect and propagates). Only the forward pass batches:
+        each query is reduced and encoded alone, and the queries of one role go through the
+        network together, padded by ``collate``. The result of a query is NOT bit-identical to its
+        batch-1 result (padding changes the matmul shapes); a batch of one is, and the worker uses
+        this method only for runs whose config says ``generation.inference`` (evaluation and
+        sealed paths score one query per pass).
+        """
+        results: list[tuple[list[float], float] | Exception | None] = [None] * len(items)
+        groups: dict[str, list[tuple[int, EncodedQuery, int | None]]] = {}
+        for index, (view, temperature_ppm) in enumerate(items):
+            role = view["observation"]["kind"]
+            mark = stopwatch.begin()
+            try:
+                encoded = self._encoders[role].encode(view)
+            except (ReducerError, EncodingError, UnsupportedCandidate) as exc:
+                results[index] = exc
+                continue
+            finally:
+                stopwatch.end("w_enc", mark)
+            groups.setdefault(role, []).append((index, encoded, temperature_ppm))
+        for role, members in groups.items():
+            mark = stopwatch.begin()
+            with torch.inference_mode():
+                output = self._networks[role](collate([encoded for _, encoded, _ in members]))
+                for row, (index, encoded, temperature_ppm) in enumerate(members):
+                    logits = output.logits[row, : encoded.pending.shape[0]]
+                    if temperature_ppm is not None and temperature_ppm != FULL_TEMPERATURE_PPM:
+                        logits = logits * (1_000_000 / temperature_ppm)
+                    probabilities = torch.softmax(logits, dim=-1)
+                    results[index] = (
+                        [float(p) for p in probabilities.tolist()],
+                        float(output.value[row].item()),
+                    )
+            stopwatch.end("w_fwd", mark)
+        return [found for found in results if found is not None]
 
     def _forward(
         self, view: dict[str, Any], temperature_ppm: int

@@ -1,0 +1,243 @@
+name: teams-publish
+
+# ADR-013 section 6: publish a PUBLIC synthetic team dataset snapshot, in the
+# shape of rules-publish (ADR-007 section 6). Manual only (workflow_dispatch):
+# nothing here runs on a push.
+#   build   the pipeline on two platforms (x86-64 and arm64) from the same
+#           dataset directory; each writes its snapshot and a report.
+#   check   the two-platform check (logical hashes must be equal), then the
+#           read-only plan (sha256 of every shard and of the manifest).
+#   publish protected environment `teams-public`, skipped until the owner sets
+#           the repository variable TEAMS_PUBLISH_ENABLED to `true` (after
+#           creating the bucket and the environment, docs/runbooks/teams-r2.md).
+#           Verifies the plan again, uploads the shards with If-None-Match: *,
+#           attests the manifest and only then creates the Release
+#           `teams-<snapshot_hash>`. Without the environment's R2 secrets or the
+#           bucket variable it FAILS with a message.
+on:
+  workflow_dispatch:
+    inputs:
+      dataset_dir:
+        description: Dataset directory in the repository (records files and manifest.json)
+        required: true
+        default: fixtures/teams/gen9championsvgc2026regmc/datasets/fixtures-v1
+      labels_file:
+        description: Label set file the dataset was generated with
+        required: true
+        default: config/teams/gen9championsvgc2026regmc/labels.json
+      snapshot_id:
+        description: Snapshot id (an id token)
+        required: true
+      shard_key:
+        description: Public shard key, 64 lowercase hex digits
+        required: true
+      splits:
+        description: Comma-separated splits to publish (never training for a sealed set)
+        required: true
+        default: dev,validation
+
+permissions: {}
+
+concurrency:
+  group: teams-publish-${{ github.sha }}-${{ inputs.snapshot_id }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-amd64
+            runner: ubuntu-24.04
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --version
+      - run: pnpm install --frozen-lockfile
+      - name: build pinned Showdown
+        run: make showdown
+      - name: pinned DuckDB command-line tool (shard writer; tooling only)
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          pin=packages/team-dataset/scripts/duckdb-pin.json
+          url=$(jq -r --arg p "$PLATFORM" '.assets[$p].url' "$pin")
+          zip_sha=$(jq -r --arg p "$PLATFORM" '.assets[$p].zip_sha256' "$pin")
+          bin_sha=$(jq -r --arg p "$PLATFORM" '.assets[$p].binary_sha256' "$pin")
+          dir="$RUNNER_TEMP/duckdb"
+          mkdir -p "$dir"
+          curl --fail --silent --show-error --location --output "$dir/duckdb.zip" "$url"
+          echo "$zip_sha  $dir/duckdb.zip" | sha256sum --check --strict
+          unzip -q "$dir/duckdb.zip" -d "$dir"
+          echo "$bin_sha  $dir/duckdb" | sha256sum --check --strict
+          echo "DUCKDB_BIN=$dir/duckdb" >> "$GITHUB_ENV"
+      - name: write the snapshot (Parquet shards and manifest)
+        env:
+          DATASET_DIR: ${{ inputs.dataset_dir }}
+          LABELS_FILE: ${{ inputs.labels_file }}
+          SNAPSHOT_ID: ${{ inputs.snapshot_id }}
+          SHARD_KEY: ${{ inputs.shard_key }}
+          SPLITS: ${{ inputs.splits }}
+        run: |
+          node packages/team-dataset/scripts/duckdb-writer.ts write \
+            --dataset "$DATASET_DIR" --labels "$LABELS_FILE" --out dist/snapshot \
+            --shard-key "$SHARD_KEY" --snapshot-id "$SNAPSHOT_ID" --splits "$SPLITS" --require-pinned
+      - name: read the shards back against the dataset, byte for byte
+        env:
+          DATASET_DIR: ${{ inputs.dataset_dir }}
+          LABELS_FILE: ${{ inputs.labels_file }}
+        run: |
+          node packages/team-dataset/scripts/duckdb-writer.ts verify \
+            --snapshot dist/snapshot/snapshot.json --shards dist/snapshot \
+            --dataset "$DATASET_DIR" --labels "$LABELS_FILE"
+      - name: this platform's report (logical hashes)
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          mkdir -p dist/report
+          node packages/team-dataset/scripts/teams-publish.ts report --snapshot dist/snapshot --platform "$PLATFORM" --out "dist/report/$PLATFORM.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: teams-report-${{ matrix.platform }}
+          path: dist/report/
+          if-no-files-found: error
+          retention-days: 30
+      # The files that are released come from the x86-64 build only.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: matrix.platform == 'linux-amd64'
+        with:
+          name: teams-snapshot
+          path: dist/snapshot/
+          if-no-files-found: error
+          retention-days: 90
+
+  check:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --version
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: teams-report-*
+          path: dist/reports
+          merge-multiple: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: teams-snapshot
+          path: dist/snapshot
+      - name: two-platform check
+        run: node packages/team-dataset/scripts/teams-publish.ts compare dist/reports/linux-amd64.json dist/reports/linux-arm64.json
+      - name: the released manifest carries the amd64 build's logical snapshot hash
+        run: |
+          a=$(jq -r .logical_snapshot_hash dist/reports/linux-amd64.json)
+          m=$(jq -r .logical_snapshot_hash dist/snapshot/snapshot.json)
+          if [ "$a" != "$m" ]; then
+            echo "::error::the amd64 report's logical_snapshot_hash differs from the teams-snapshot manifest's"
+            exit 1
+          fi
+      - name: plan (sha256 of every shard and of the manifest)
+        run: node packages/team-dataset/scripts/teams-publish.ts plan --snapshot dist/snapshot
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: teams-publish-plan
+          path: dist/snapshot/
+          if-no-files-found: error
+          # Longer than the 30-day environment approval timeout.
+          retention-days: 90
+
+  publish:
+    needs: check
+    if: github.ref == 'refs/heads/main' && vars.TEAMS_PUBLISH_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    environment: teams-public
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --version
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: teams-publish-plan
+          path: dist/snapshot
+      - name: verify the plan job's files against their plan
+        id: verify
+        run: |
+          node packages/team-dataset/scripts/teams-publish.ts verify --snapshot dist/snapshot
+          tag=teams-$(jq -r .snapshot_hash dist/snapshot/plan.json)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: require the R2 credentials and bucket
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.TEAMS_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TEAMS_R2_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL: ${{ secrets.TEAMS_R2_ENDPOINT_URL }}
+          TEAMS_R2_BUCKET: ${{ vars.TEAMS_R2_BUCKET }}
+        run: |
+          for v in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_ENDPOINT_URL TEAMS_R2_BUCKET; do
+            if [ -z "${!v}" ]; then
+              echo "::error::TEAMS_PUBLISH_ENABLED is true but the environment is incomplete: $v is empty (docs/runbooks/teams-r2.md section 5)."
+              exit 1
+            fi
+          done
+      - name: upload the shards and the manifest to R2 (conditional writes, never overwriting)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.TEAMS_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TEAMS_R2_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL: ${{ secrets.TEAMS_R2_ENDPOINT_URL }}
+          AWS_DEFAULT_REGION: auto
+          TEAMS_R2_BUCKET: ${{ vars.TEAMS_R2_BUCKET }}
+        run: node packages/team-dataset/scripts/teams-publish.ts upload --snapshot dist/snapshot --bucket "$TEAMS_R2_BUCKET"
+      - name: attest the manifest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/snapshot/release/*.json
+      # Last: a Release exists only for a snapshot whose objects are already in R2.
+      - name: release the manifest (idempotent per tag; an existing asset must match the plan)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.verify.outputs.tag }}
+        run: |
+          set -euo pipefail
+          want=$(jq -r .manifest_sha256 dist/snapshot/plan.json)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            mkdir -p dist/existing
+            gh release download "$TAG" --pattern "$TAG.json" --dir dist/existing --clobber
+            got=$(sha256sum "dist/existing/$TAG.json" | cut -d' ' -f1)
+            if [ "$got" != "$want" ]; then
+              echo "::error::Release $TAG exists with an asset whose SHA-256 differs from the plan's manifest_sha256."
+              exit 1
+            fi
+            echo "$TAG is already released with the planned manifest"
+          else
+            gh release create "$TAG" "dist/snapshot/release/$TAG.json" --target "$GITHUB_SHA" --title "$TAG" \
+              --notes "ADR-013 snapshot manifest, attested by teams-publish (build provenance)."
+          fi
