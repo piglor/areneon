@@ -178,6 +178,18 @@ two runs filled the swap and made workers miss their 30 s latency budget (a reco
 back. On a larger machine scale `S` with the cores (4 game processes on 28 cores were measured;
 the best ratio is not) and the memory with the rule above; a rented GPU needs no change beyond `device: "cuda"`.
 
+A population run (ADR-021) takes `--game-processes` and `--policy-workers` too (#1333) and its generation
+files are the same for any value (`training-loop-population-features.python.test.ts` compares one process
+with two game processes of two workers per member, with candidate features, a shared trunk and a Battle-only
+warm start). Each game process starts policy workers only for the members that hold a seat in its slice of
+the plan, `K` of them per member, plus one worker for each past-pool snapshot a wave uses; a member's
+workers are 0.43 GB each, so the rule of thumb above becomes `RAM = S x (0.6 + 0.43 x K x M)` GB for `M`
+members that all play in every slice (they do, in practice), and the ladder games of a snapshot add at most
+the snapshots in use at once. A run that names `candidate_features` builds its rows in every game
+process (the play-time sidecar and the post-game pass, as in a single lineage), which is what makes
+game processes worth having. `--profile` does not apply to a population run, and an opponent sheet
+and exploiter seats are still refused.
+
 The run's `metrics/g<NNNNNN>.json` has the resident-set peaks of the driver, the largest game
 process and the largest policy worker (`peak_rss_bytes`, Linux, optional) and the peak reserved
 accelerator memory (`peak_accelerator_reserved_bytes`, optional), so a run reports what it used.
