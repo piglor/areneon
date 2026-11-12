@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,7 +6,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { actorRule } from "../src/actor-rule.ts";
 import { checkLeagueRunRecord, loadEngine, readLeagueRunRecordV2 } from "../src/index.ts";
 import { GenerationError, trainingTeamPool, type TrainingPool } from "../src/league-generation.ts";
-import { checkPopulationConfig, memberDir, playPopulationGeneration, type PopulationMember, populationWaves, writePopulationGeneration, POPULATION_FEATURES_REFUSAL } from "../src/population-generation.ts";
+import { checkPopulationConfig, memberDir, membersPlaying, playPopulationEntries, playPopulationGeneration, type PopulationEntry, type PopulationMember, populationWaves, writePopulationGeneration, POPULATION_SHEET_REFUSAL } from "../src/population-generation.ts";
+import { readShardFile } from "../src/shard-process.ts";
+import type { ShardProcess } from "../src/shard-process.ts";
 import { parseMemberFlag, runPopulationCli } from "../src/population-cli.ts";
 import { planPopulation } from "../src/population-plan.ts";
 import { emptyPastPool } from "../src/past-pool.ts";
@@ -164,6 +166,138 @@ describe("a tiny population generation (M = 2, the stand-in worker)", () => {
   });
 });
 
+describe("game processes and policy workers (#1333)", () => {
+  const options = (dir: string, change: object = {}) => ({ engine, config, generation: 1, members: membersOf(), pool, out_dir: dir, ...change });
+  const single = async (name: string): Promise<Record<string, string>> => {
+    const dir = join(scratch, name);
+    writePopulationGeneration(dir, await playPopulationGeneration(options(dir)));
+    return treeBytes(dir);
+  };
+
+  it("gives the single process's files when a slice is played elsewhere and merged, whichever slices there are", async () => {
+    const expected = await single("whole");
+    for (const of of [2, 3]) {
+      const dir = join(scratch, `sharded-${of}`);
+      const others = (
+        await Promise.all(Array.from({ length: of - 1 }, (_, k) => playPopulationEntries(options(join(scratch, `elsewhere-${of}-${k}`), { shared_dir: dir }), { index: k + 1, of })))
+      ).flat();
+      const result = await playPopulationGeneration(options(dir, { shard: { index: 0, of }, others: Promise.resolve(others) }));
+      writePopulationGeneration(dir, result);
+      expect(treeBytes(dir)).toEqual(expected);
+    }
+  }, 300_000);
+
+  it("gives the same files with more workers per member, and every worker plays", async () => {
+    const expected = await single("whole-again");
+    const members = membersOf().map((entry) => ({ ...entry, peers: [actorClient(), actorClient()] }));
+    const dir = join(scratch, "peers");
+    writePopulationGeneration(dir, await playPopulationGeneration(options(dir, { members })));
+    expect(treeBytes(dir)).toEqual(expected);
+    for (const entry of members) expect(entry.peers.every((peer) => peer.asked > 0 && peer.begun > 0)).toBe(true);
+  }, 300_000);
+
+  it("refuses games that are missing, a failed other process, a slice it cannot place, and goes idle with no process left", async () => {
+    await expect(playPopulationGeneration(options(join(scratch, "short"), { shard: { index: 0, of: 2 }, others: Promise.resolve([]) }))).rejects.toThrow(/each once/);
+    await expect(playPopulationGeneration(options(join(scratch, "failed"), { shard: { index: 0, of: 2 }, others: Promise.reject(new GenerationError("game process 1 failed")) }))).rejects.toThrow(/game process 1 failed/);
+    await expect(playPopulationEntries(options(join(scratch, "slice")), { index: 2, of: 2 })).rejects.toThrow(RangeError);
+    const idle = playPopulationGeneration(options(join(scratch, "idle"), { shard: { index: 0, of: 2 }, others: new Promise<PopulationEntry[]>(() => undefined), live_children: () => 0, idle_grace_ms: 20 }));
+    await expect(idle).rejects.toThrow(/the generation is idle/);
+  }, 300_000);
+
+  it("ends this process's games when the signal it was given aborts while it plays", async () => {
+    const stop = new AbortController();
+    const members = membersOf();
+    const real = (members[0] as ReturnType<typeof membersOf>[number]).client.ask.bind((members[0] as ReturnType<typeof membersOf>[number]).client);
+    (members[0] as ReturnType<typeof membersOf>[number]).client.ask = (battle, query) => (stop.abort(), real(battle, query));
+    await expect(playPopulationGeneration(options(join(scratch, "aborted"), { members, signal: stop.signal }))).rejects.toThrow(/was stopped/);
+  }, 300_000);
+
+  it("names the members that hold a seat in a slice, and gives a member with peers more games a wave", () => {
+    const plan = planPopulation(config, 1, pool.teams.length);
+    expect([...membersPlaying(plan)].sort()).toEqual(["m0", "m1"]);
+    expect(membersPlaying(plan, { index: 99, of: 100 }).size).toBeLessThanOrEqual(2);
+    const wide = populationWaves(plan, 1, () => 3);
+    const narrow = populationWaves(plan, 1);
+    expect(wide.length).toBeLessThan(narrow.length);
+    expect(wide.flat().map((g) => g.game).sort((a, b) => a - b)).toEqual(plan.map((g) => g.game));
+  });
+
+  const input = (out: string, change: object = {}) => ({
+    engine, config, generation: 1, pool, out, run_dir: scratch, worker_python: "unused", engine_data: "unused", engine_data_hash: "e".repeat(64), encoder_version: "enc1:x",
+    members: POLICIES.map((policy_id, k) => ({ member: `m${k}`, preview: String(k).repeat(64), battle: String(k + 2).repeat(64), policy_id })),
+    make_client: () => Object.assign(actorClient(), { start: () => Promise.resolve(), close: () => Promise.resolve() }),
+    ...change,
+  });
+
+  it("starts further game processes with the flags they need, merges their slices and prints the single process's line", async () => {
+    const lines: string[] = [];
+    const out = join(scratch, "cli-whole");
+    expect(await runPopulationCli(input(out), (line) => lines.push(line))).toBe(0);
+    const started: { args: readonly string[]; stopped: boolean; told: string[] }[] = [];
+    const shared = join(scratch, "cli-two");
+    const start = (_script: string, args: readonly string[], _out: string, index: number): ShardProcess<PopulationEntry> => {
+      const record = { args, stopped: false, told: [] as string[] };
+      started.push(record);
+      return {
+        entries: playPopulationEntries(options(join(scratch, "cli-two-other"), { shared_dir: shared, members: membersOf() }), { index, of: 2 }),
+        usage: Promise.resolve({}),
+        alive: () => true,
+        tell: (line) => void record.told.push(line),
+        stop: () => void (record.stopped = true),
+      };
+    };
+    let written: string | undefined;
+    const printed: string[] = [];
+    const run = input(shared, { pool: undefined, processes: 2, shard: { index: 0, of: 2 }, shard_script: "play.ts", forward: ["--config", "c.json"], start_shard: start, load_pool: (got: { write?: string | undefined; vouch?: ((digest: string) => void) | undefined }) => ((written = got.write), got.vouch?.("f".repeat(64)), Promise.resolve(pool)) });
+    expect(await runPopulationCli(run, (line) => printed.push(line))).toBe(0);
+    expect(printed).toEqual(lines);
+    expect(treeBytes(shared)).toEqual(treeBytes(out));
+    expect(started).toHaveLength(1);
+    expect(started[0]?.args.slice(0, 2)).toEqual(["--config", "c.json"]);
+    expect(started[0]?.args).toEqual(expect.arrayContaining(["--shard", "1/2", "--episodes-dir", shared, "--pool-file"]));
+    expect(started[0]?.stopped).toBe(true);
+    expect(started[0]?.told).toEqual([`pool ${"f".repeat(64)}\n`]);
+    expect(written).toMatch(/pool\.json$/);
+    expect(existsSync(written as string)).toBe(false); // the scratch directory is removed
+  }, 300_000);
+
+  it("plays a further game process's slice into its starter's directory and leaves the entries for it", async () => {
+    const shared = join(scratch, "further-shared");
+    const out = join(scratch, "further-out");
+    const seen: { file: string | undefined; digest: string | undefined }[] = [];
+    const load = async (share: { read?: { file: string; digest: Promise<string> } }): Promise<TrainingPool> => {
+      seen.push({ file: share.read?.file, digest: await share.read?.digest });
+      return pool;
+    };
+    const run = input(out, { pool: undefined, further: true, shard: { index: 1, of: 2 }, episodes_dir: shared, pool_file: "pool.json", parent_link: () => Promise.resolve("a".repeat(64)), load_pool: load });
+    expect(await runPopulationCli(run, () => undefined)).toBe(0);
+    expect(seen).toEqual([{ file: "pool.json", digest: "a".repeat(64) }]);
+    const entries = readShardFile<PopulationEntry>(join(out, "shard.jsonl"));
+    expect(entries.length).toBeGreaterThan(0);
+    expect(entries.every((entry) => entry.game % 2 === 1)).toBe(true);
+    const files = readdirSync(join(shared, "members", "m0", "episodes")).length + readdirSync(join(shared, "members", "m1", "episodes")).length;
+    expect(files).toBe(entries.flatMap((entry) => entry.stored).length);
+    expect(entries).toEqual(await playPopulationEntries(options(join(scratch, "further-ref"), { shared_dir: join(scratch, "further-ref-shared") }), { index: 1, of: 2 }));
+  }, 300_000);
+
+  it("starts no worker for a member that holds no seat in its slice", async () => {
+    let made = 0;
+    const out = join(scratch, "idle-slice");
+    const run = input(out, { further: true, shard: { index: 99, of: 100 }, make_client: () => (made++, Object.assign(actorClient(), { start: () => Promise.resolve(), close: () => Promise.resolve() })), parent_link: () => Promise.resolve("a".repeat(64)) });
+    const played = membersPlaying(planPopulation(config, 1, pool.teams.length), { index: 99, of: 100 });
+    expect(await runPopulationCli(run, () => undefined)).toBe(0);
+    expect(made).toBe(played.size);
+  }, 300_000);
+
+  it("starts the policy workers of a member as many as it was asked for", async () => {
+    let made = 0;
+    const lines: string[] = [];
+    const run = input(join(scratch, "cli-workers"), { policy_workers: 3, make_client: () => (made++, Object.assign(actorClient(), { start: () => Promise.resolve(), close: () => Promise.resolve() })) });
+    expect(await runPopulationCli(run, (line) => lines.push(line))).toBe(0);
+    expect(made).toBe(6);
+  }, 300_000);
+});
+
 describe("populationWaves", () => {
   it("keeps every member's client within n_parallel games of a wave and covers each game once", () => {
     const plan = planPopulation(populationConfig(3, 6), 1, 50);
@@ -194,10 +328,10 @@ describe("refusals", () => {
     expect(members.every((m) => m.client.asked === 0)).toBe(true);
   });
 
-  it("refuses a population run that names candidate features, and a config without a population", async () => {
+  it("refuses a population run that names an opponent sheet, and a config without a population", async () => {
     const raw = JSON.parse(JSON.stringify(config)) as { model: { encoder: { options?: object } } };
     raw.model.encoder.options = { opponent_sheet: { feature_set: "opponent-sheet/1", feature_set_hash: "d".repeat(64) } };
-    await expect(playPopulationGeneration(options({ config: readTrainingRunConfig(raw) }))).rejects.toThrow(POPULATION_FEATURES_REFUSAL);
+    await expect(playPopulationGeneration(options({ config: readTrainingRunConfig(raw) }))).rejects.toThrow(POPULATION_SHEET_REFUSAL);
     const { population: _unused, ...single } = JSON.parse(JSON.stringify(config)) as Record<string, unknown>;
     await expect(playPopulationGeneration(options({ config: readTrainingRunConfig(single) }))).rejects.toThrow(/no population section/);
   });
