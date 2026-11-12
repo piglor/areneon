@@ -248,6 +248,22 @@ describe("the damage-aware@v4 teacher (#1329)", () => {
   }, 240_000);
 });
 
+describe("the damage-aware@v5 teacher (#1344)", () => {
+  it("names the teacher damage-aware@v5, reads the success-scaled record and its outcome record, and has its own identity", () => {
+    const settings5 = settings({ teacher_version: "v5", games: 1, random_games: 0 });
+    expect(teacherPolicyId(0, "v5")).toBe("damage-aware@v5");
+    expect(() => checkTeacherSettings(settings5)).not.toThrow();
+    const context = teacherContext(engine, settings5);
+    expect(context.policy_id).toBe("damage-aware@v5");
+    expect(context.config.success_scaling).toBe("engine");
+    const report = context.makeActor("p1", 1).report();
+    expect(report.policy_id).toBe("damage-aware@v5");
+    expect(report.success).toEqual({ parts_scaled: 0, parts_unread: 0, stall_unread: 0, dead_candidates: 0, chance_ties: 0 });
+    expect(report.identity.outcome_format).toBe(1);
+    expect(report.identity_hash).not.toBe(teacherContext(engine, settings({ teacher_version: "v4" })).makeActor("p1", 1).report().identity_hash);
+  });
+});
+
 describe("the damage-aware@v3 teacher (#1182)", () => {
   const v3 = (change: Partial<TeacherSettings> = {}): TeacherSettings => settings({ teacher_version: "v3", games: 1, random_games: 0, ...change });
   const cache: { run?: Awaited<ReturnType<typeof playTeacherRun>> } = {};
@@ -257,7 +273,7 @@ describe("the damage-aware@v3 teacher (#1182)", () => {
     expect(teacherPolicyId(0, "v3")).toBe("damage-aware@v3");
     expect(teacherPolicyId(50_000, "v3")).toBe("damage-aware@v3-eps50000");
     expect(teacherPolicyId(0)).toBe("damage-aware@v1");
-    expect(() => checkTeacherSettings({ ...settings(), teacher_version: "v2" as never })).toThrow(/v1, v3 or v4/);
+    expect(() => checkTeacherSettings({ ...settings(), teacher_version: "v2" as never })).toThrow(/v1, v3, v4 or v5/);
   });
 
   it("writes a learner-ready synthetic set of v3, with v3's baseline identity; v1 cannot load it", async () => {

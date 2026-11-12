@@ -39,6 +39,7 @@ export function readDamageAwareConfig(value: unknown, vocabulary: TeamVocabulary
   const config = structuredClone(value) as unknown as DamageAwareConfig;
   if (config.format_id !== vocabulary.format_id) throw new DamageAwareConfigError("format_id is not the vocabulary's format");
   if (config.situational !== undefined && config.target_convention !== "engine") throw new DamageAwareConfigError("a record with situational weights (damage-aware@v4) must select the engine's target convention");
+  if (config.success_scaling !== undefined && config.situational === undefined) throw new DamageAwareConfigError("a record with success scaling (damage-aware@v5) must carry the situational weights");
   const { item, nature, stat_points } = config.assumed_set;
   if (!vocabulary.natures.some((entry) => entry.id === nature)) throw new DamageAwareConfigError(`nature ${nature} is not in the team vocabulary`);
   if (item.kind === "fixed" && !vocabulary.items.includes(item.item)) throw new DamageAwareConfigError(`item ${item.item} is not in the team vocabulary`);
