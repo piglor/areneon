@@ -119,6 +119,9 @@ INVALID = sorted(p.name for p in (CONFIGS / "invalid").iterdir())
         ("warm-start-same-id.json", "one checkpoint for both roles"),
         ("value-warmup-no-warm-start.json", "needs warm_start"),
         ("anchor-no-warm-start.json", "ppo.anchor needs warm_start"),
+        ("anchor-threatened-features-1.json", "needs candidate_features of probe-damage/2"),
+        ("anchor-threatened-no-features.json", "needs candidate_features of probe-damage/2"),
+        ("anchor-zero-kl.json", "needs ppo.anchor.threatened"),
         ("play-temperature-default.json", "is the default"),
         ("inference-above-parallel.json", "cannot exceed generation.n_parallel"),
         ("inference-population.json", "cannot be combined with a population"),
@@ -148,7 +151,7 @@ def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> Non
 
 
 def test_every_reader_invalid_sample_is_checked_above() -> None:
-    assert len(READER_INVALID) == 35
+    assert len(READER_INVALID) == 38
 
 
 @pytest.mark.parametrize("name", INVALID)

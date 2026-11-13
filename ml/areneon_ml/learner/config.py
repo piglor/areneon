@@ -90,8 +90,8 @@ class LinearSchedule:
 
 
 @dataclass(frozen=True)
-class AnchorSettings:
-    """``ppo.anchor`` (ADR-019 section 4, ADR-010 erratum A2 item 3): the KL weight in millionths.
+class AnchorBeta:
+    """One KL weight in millionths and its schedule (ADR-019 section 4, ADR-010 erratum A2 item 3).
 
     ``beta_micro(t)`` is ``kl_micro`` for a constant schedule and, for a linear one,
     ``kl_micro + trunc((final - kl_micro) * min(t, generations) / generations)`` in exact integers
@@ -108,6 +108,14 @@ class AnchorSettings:
                 raise RunConfigError("a learner update index counts from 0")
             return self.kl_micro
         return self.schedule.rate_micro(t)
+
+
+@dataclass(frozen=True)
+class AnchorSettings(AnchorBeta):
+    """``ppo.anchor``: the weight on every decision, and with ``threatened`` (ADR-010 erratum
+    A11.2) a separate weight on Threatened decisions (``kl_micro`` may then be 0)."""
+
+    threatened: AnchorBeta | None = None
 
 
 @dataclass(frozen=True)
@@ -212,17 +220,51 @@ def _entropy_schedule(ppo: dict[str, Any]) -> LinearSchedule | None:
     return LinearSchedule(ppo["entropy_coef_micro"], found["final_micro"], found["generations"])
 
 
+def _anchor_beta(found: dict[str, Any]) -> tuple[int, LinearSchedule | None]:
+    schedule = found["schedule"]
+    if schedule["kind"] == "constant":
+        return found["kl_micro"], None
+    return found["kl_micro"], LinearSchedule(
+        found["kl_micro"], schedule["final_micro"], schedule["generations"]
+    )
+
+
 def _anchor(ppo: dict[str, Any]) -> AnchorSettings | None:
     found = ppo.get("anchor")
     if found is None:
         return None
-    schedule = found["schedule"]
-    if schedule["kind"] == "constant":
-        return AnchorSettings(found["kl_micro"], None)
+    threatened = found.get("threatened")
     return AnchorSettings(
-        found["kl_micro"],
-        LinearSchedule(found["kl_micro"], schedule["final_micro"], schedule["generations"]),
+        *_anchor_beta(found),
+        None if threatened is None else AnchorBeta(*_anchor_beta(threatened)),
     )
+
+
+#: Feature sets whose rows carry ``threats``, ``speeds`` and ``foe_priorities``, which the
+#: Threatened flag of ``ppo.anchor.threatened`` reads (ADR-010 erratum A11.2). Held equal to the
+#: TS reader's list by a test.
+THREAT_ROW_FEATURE_SETS = ("probe-damage/2", "probe-outcome/1")
+
+
+def _check_threatened_anchor(raw: dict[str, Any]) -> None:
+    """The rules of ``ppo.anchor.threatened`` the profile cannot say (TS twin:
+    ``checkThreatenedAnchor``)."""
+    anchor = raw["ppo"].get("anchor")
+    if anchor is None:
+        return
+    if "threatened" not in anchor:
+        if anchor["kl_micro"] < 1:
+            raise RunConfigError(
+                "training-run-config: ppo.anchor.kl_micro 0 means no anchor outside Threatened "
+                "decisions: it needs ppo.anchor.threatened"
+            )
+        return
+    features = raw["model"].get("encoder", {}).get("options", {}).get("candidate_features", {})
+    if features.get("feature_set") not in THREAT_ROW_FEATURE_SETS:
+        raise RunConfigError(
+            "training-run-config: ppo.anchor.threatened reads the threats, speeds and "
+            "foe_priorities rows: it needs candidate_features of probe-damage/2 or probe-outcome/1"
+        )
 
 
 #: Feature sets whose value head reads no candidate row (ADR-026 E2 decision 7): ``/2`` and ``/3``
@@ -429,6 +471,7 @@ def read_run_config(raw: object) -> RunConfig:
         raise RunConfigError(
             "training-run-config: ppo.anchor needs warm_start (the anchor is the warm-start pair)"
         )
+    _check_threatened_anchor(raw)
     if "population" in raw:
         if warm is not None and "preview" in warm:
             raise RunConfigError(
