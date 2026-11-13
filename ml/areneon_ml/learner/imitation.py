@@ -2,7 +2,7 @@
 
 ``ppo.imitation`` mixes a supervised term on the fixed states of a scripted teacher's
 ``TrainingSet`` into the Battle update. This module holds the two things the term needs that are
-not the loss: reading the teacher stream (``read_teacher``, which refuses everything the erratum
+not the loss: reading the teacher stream (``open_teacher``, which refuses everything the erratum
 lists) and the draw of one update's teacher steps (``DrawStream``, a generator of its own, so the
 learner's main generator, and with it every run without the block and the Preview role's orders,
 is untouched).
@@ -11,16 +11,19 @@ is untouched).
 from __future__ import annotations
 
 import hashlib
+import json
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import torch
 from areneon_contracts.contracts import jcs, sha256_hex
+from areneon_contracts.training import TrainingStreamError, check_stream_file
 
-from areneon_ml.learner.data import LearnerDataError, Step, trajectories
-from areneon_ml.model.encoder import Encoder, EncodingError
+from areneon_ml.learner.data import LearnerDataError, Step, _Collector
+from areneon_ml.model.encoder import EncodedQuery, Encoder, EncodingError
+from areneon_ml.worker.view import IncrementalView
 
 #: The purpose string of the draw's seed (A11.3).
 PURPOSE = "imitation/1"
@@ -54,28 +57,88 @@ def check_teacher_manifest(manifest: Mapping[str, Any], expected_hash: str | Non
     return found
 
 
-def read_teacher(
+class TeacherSource(Protocol):
+    """What the trainer needs of the teacher's Battle steps: how many there are and, for the
+    indices an update drew, their encoded steps (held only for that update)."""
+
+    def __len__(self) -> int: ...
+
+    def fetch(self, indices: Sequence[int]) -> tuple[Step, ...]: ...
+
+
+class TeacherSet:
+    """The teacher stream's Battle examples as a light index: their byte offsets in the stream
+    file, in stream order. Nothing encoded is kept: ``fetch`` reads and encodes only the examples
+    asked for, so memory is bounded by the draw (K), not by the set's size (A11.3, #1367)."""
+
+    def __init__(self, stream: Path, offsets: Sequence[int], encoder: Encoder) -> None:
+        self._stream = stream
+        self._offsets = tuple(offsets)
+        self._encoder = encoder
+
+    def __len__(self) -> int:
+        return len(self._offsets)
+
+    def fetch(self, indices: Sequence[int]) -> tuple[Step, ...]:
+        out = []
+        with self._stream.open("rb") as handle:
+            for i in indices:
+                handle.seek(self._offsets[i])
+                example = json.loads(handle.readline())
+                chosen = [c["choice"] for c in example["candidates"]].index(example["choice"])
+                out.append(Step(_encode(self._encoder, example), chosen))
+        return tuple(out)
+
+
+def _encode(encoder: Encoder, example: dict[str, Any]) -> EncodedQuery:
+    """One example's tensors, equal to what the incremental reader gives it inside its Episode
+    (the encoder session's documented property: it restarts on a log that does not extend)."""
+    return encoder.session().encode(
+        IncrementalView().encoder_input(
+            {
+                "observation": example["observation"],
+                "candidates": example["candidates"],
+                **{k: example[k] for k in ("candidate_features", "opponent_sheet") if k in example},
+            }
+        )
+    )
+
+
+def open_teacher(
     stream: Path,
     manifest: Mapping[str, Any],
     expected_hash: str,
     encoders: dict[str, Encoder],
-    processes: int = 1,
-) -> tuple[Step, ...]:
-    """The teacher's Battle steps in stream order, encoded under the run's encoder.
+) -> TeacherSet:
+    """The teacher's Battle examples as a ``TeacherSet``, after every refusal of A11.3.
 
-    The stream goes through ``trajectories`` (the PPO path's reader: ``check_stream_file`` with the
-    manifest, so the digest, the line count and every line are checked, by path and streamed). The
-    teacher's Team Preview examples are skipped. Any refusal is a ``LearnerDataError``, the
-    encoder's own (a feature set the run does not read, rows missing) included.
+    The manifest checks and ``check_stream_file`` (digest, line count, every line) run once here,
+    and every example, Previews included, is encoded once and dropped at once so a stream the
+    run's encoder refuses fails at the first update (a ``LearnerDataError``, the encoder's own
+    message wrapped). Only the Battle examples' byte offsets are kept.
     """
     check_teacher_manifest(manifest, expected_hash)
+    if "search_labels" in manifest:
+        raise LearnerDataError("the teacher TrainingSet must not carry search_labels")
     try:
-        found = trajectories(
-            stream, dict(manifest), encoders, str(manifest["behaviour_policy_id"]), processes
-        )
+        check_stream_file(stream, dict(manifest), False)
+    except TrainingStreamError as exc:
+        raise LearnerDataError(str(exc)) from exc
+    collector = _Collector(encoders)
+    offsets: list[int] = []
+    position = 0
+    try:
+        with stream.open("rb") as handle:
+            for raw in handle:
+                example = json.loads(raw)
+                if example["observation"]["kind"] == "battle":
+                    offsets.append(position)
+                collector.add(example)
+                collector.steps.clear()  # encoded to check it, kept for nobody
+                position += len(raw)
     except EncodingError as exc:
         raise LearnerDataError(f"the teacher TrainingSet does not encode: {exc}") from exc
-    return tuple(step for t in found if t.role == "battle" for step in t.steps)
+    return TeacherSet(stream, offsets, encoders["battle"])
 
 
 class DrawStream:

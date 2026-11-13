@@ -15,11 +15,12 @@ import pytest
 import torch
 from areneon_contracts.contracts import jcs, sha256_hex
 from areneon_ml.learner.config import ImitationSettings, RunConfig, RunConfigError, read_run_config
-from areneon_ml.learner.data import LearnerDataError, Step
+from areneon_ml.learner.data import LearnerDataError, Step, trajectories
 from areneon_ml.learner.imitation import (
     DrawStream,
+    TeacherSet,
     check_teacher_manifest,
-    read_teacher,
+    open_teacher,
 )
 from areneon_ml.learner.ppo import policy_terms
 from areneon_ml.learner.state import LearnerStateError, pack_state, restore_state, state_hash
@@ -75,12 +76,12 @@ def imitating(  # noqa: PLR0913
     return edited_config(edit)
 
 
-def teacher_steps(config: RunConfig, tmp_path: Path) -> tuple[Step, ...]:
+def teacher_steps(config: RunConfig, tmp_path: Path) -> TeacherSet:
     text, manifest, digest = teacher_stream()
     path = tmp_path / "stream.jsonl"
     path.write_text(text)
     encoders = {role: Encoder(game(), config.model.encoder) for role in ROLES}
-    return read_teacher(path, manifest, digest, encoders)
+    return open_teacher(path, manifest, digest, encoders)
 
 
 # -- the config ---------------------------------------------------------------------------------
@@ -129,7 +130,7 @@ def test_the_teacher_stream_is_read_into_battle_steps_only(tmp_path: Path) -> No
     config = imitating()
     steps = teacher_steps(config, tmp_path)
     assert len(steps) == 55  # the 55 battle decisions of the default stream; Previews are skipped
-    assert all(isinstance(s, Step) for s in steps)
+    assert all(isinstance(s, Step) for s in steps.fetch(range(55)))
 
 
 @pytest.mark.parametrize(
@@ -153,13 +154,13 @@ def test_the_stream_refusals(tmp_path: Path) -> None:
     path.write_text(text)
     encoders = {role: Encoder(game(), config.model.encoder) for role in ROLES}
     with pytest.raises(LearnerDataError, match="does not hash"):
-        read_teacher(path, manifest, "0" * 64, encoders)
+        open_teacher(path, manifest, "0" * 64, encoders)
     broken = {**manifest, "stream_sha256": "0" * 64}
     with pytest.raises(LearnerDataError):  # the digest no longer matches the stream
-        read_teacher(path, broken, sha256_hex(jcs(broken)), encoders)
+        open_teacher(path, broken, sha256_hex(jcs(broken)), encoders)
     learned = {**manifest, "behaviour_policy_id": POLICY}
     with pytest.raises(LearnerDataError, match="scripted teacher"):
-        read_teacher(path, learned, sha256_hex(jcs(learned)), encoders)
+        open_teacher(path, learned, sha256_hex(jcs(learned)), encoders)
     assert digest
 
 
@@ -180,7 +181,7 @@ def test_an_example_the_encoder_refuses_is_a_data_error(tmp_path: Path) -> None:
     path.write_text(refused)
     encoders = {role: Encoder(game(), config.model.encoder) for role in ROLES}
     with pytest.raises(LearnerDataError):
-        read_teacher(path, refused_manifest, sha256_hex(jcs(refused_manifest)), encoders)
+        open_teacher(path, refused_manifest, sha256_hex(jcs(refused_manifest)), encoders)
     assert manifest
 
 
@@ -247,7 +248,7 @@ def test_the_learners_evaluation_equals_the_hand_formula(tau: int | None, tmp_pa
             config["generation"]["play"] = {"temperature_ppm": tau}
 
     config = edited_config(edit)
-    steps = teacher_steps(config, tmp_path)[:6]
+    steps = teacher_steps(config, tmp_path).fetch(range(6))
     student = learner(config)
 
     class Stub:
@@ -457,3 +458,59 @@ def test_a_sidecar_with_another_coefficient_is_refused(tmp_path: Path) -> None:
 
 def test_the_coefficient_rule_without_a_block() -> None:
     assert learner(tiny_config()).imitation_coef_micro(3) is None
+
+
+def test_a_fetched_step_has_the_tensors_the_whole_stream_read_gives_it(tmp_path: Path) -> None:
+    config = imitating()
+    source = teacher_steps(config, tmp_path)
+    text, manifest, _ = teacher_stream()
+    encoders = {role: Encoder(game(), config.model.encoder) for role in ROLES}
+    whole = [
+        s
+        for t in trajectories(text, manifest, encoders, TEACHER_ID)
+        if t.role == "battle"
+        for s in t.steps
+    ]
+    assert len(whole) == len(source)
+    picked = [54, 0, 17, 17]  # any order, a repeat too
+    for got, index in zip(source.fetch(picked), picked, strict=True):
+        assert got.chosen == whole[index].chosen
+        assert got.query.tensors().keys() == whole[index].query.tensors().keys()
+        for name, tensor in got.query.tensors().items():
+            assert torch.equal(tensor, whole[index].query.tensors()[name]), name
+
+
+def test_encoded_steps_are_not_retained_across_updates(tmp_path: Path) -> None:
+    import gc  # noqa: PLC0415
+    import weakref  # noqa: PLC0415
+
+    config = imitating(share=1_000_000)
+    inner = teacher_steps(config, tmp_path)
+    seen: list[Any] = []
+
+    class Watching:
+        def __len__(self) -> int:
+            return len(inner)
+
+        def fetch(self, indices: Any) -> tuple[Step, ...]:
+            steps = inner.fetch(indices)
+            seen.extend(weakref.ref(s.query) for s in steps)
+            return steps
+
+    student = learner(config)
+    student.train(trajs(config), None, Watching())
+    gc.collect()
+    assert len(seen) == 55
+    assert all(ref() is None for ref in seen)
+    assert not any(isinstance(v, Step) for v in vars(inner).values())
+
+
+def test_a_teacher_set_with_search_labels_is_refused(tmp_path: Path) -> None:
+    config = imitating()
+    text, manifest, _ = teacher_stream()
+    labelled = {**manifest, "search_labels": {"search_identity_hash": "c" * 64, "labelled": 1}}
+    path = tmp_path / "stream.jsonl"
+    path.write_text(text)
+    encoders = {role: Encoder(game(), config.model.encoder) for role in ROLES}
+    with pytest.raises(LearnerDataError, match="search_labels"):
+        open_teacher(path, labelled, sha256_hex(jcs(labelled)), encoders)

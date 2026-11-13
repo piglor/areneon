@@ -26,7 +26,7 @@ import torch
 from areneon_ml.learner.config import MICRO, RunConfig
 from areneon_ml.learner.data import LearnerDataError, Step, Trajectory
 from areneon_ml.learner.diagnostics import CalibrationBin, calibration, explained_variance
-from areneon_ml.learner.imitation import DrawStream
+from areneon_ml.learner.imitation import DrawStream, TeacherSource
 from areneon_ml.learner.labels import LabelStep
 from areneon_ml.learner.ppo import (
     LossWeights,
@@ -358,15 +358,15 @@ class Learner:
         self,
         trajectories: Sequence[Trajectory],
         labels: Sequence[LabelStep] | None = None,
-        teacher: Sequence[Step] | None = None,
+        teacher: TeacherSource | None = None,
     ) -> TrainReport:
         """Run the configured PPO epochs on the generation's trajectories, then count it.
 
         ``labels`` are the usable search labels of the aggregated label streams
         (``ppo.search_distill``); they are given exactly when the config has the block (an empty
         sequence before the first label stream) and only the Battle update reads them.
-        ``teacher`` are the teacher's Battle steps (``ppo.imitation``), given exactly when the
-        config has the block; each update draws its share of them.
+        ``teacher`` is the teacher's Battle steps (``ppo.imitation``), given exactly when the
+        config has the block; each update draws its share of them and encodes only those.
         """
         if (labels is None) != (self.config.ppo.search_distill is None):
             raise LearnerError("labels are given exactly when the config has ppo.search_distill")
@@ -404,7 +404,7 @@ class Learner:
                         role in self.anchors and not warm,
                         frozen,
                         tuple(labels or ()) if role == "battle" and not warm else (),
-                        tuple(teacher or ()) if role == "battle" and not warm else (),
+                        teacher if role == "battle" and not warm else None,
                     ),
                     warm,
                 )
@@ -484,7 +484,7 @@ class Learner:
         anchor: bool = False,
         frozen: _FrozenBattle | None = None,
         labels: tuple[LabelStep, ...] = (),
-        teacher: tuple[Step, ...] = (),
+        teacher: TeacherSource | None = None,
     ) -> _Table:
         ppo = self.config.ppo
         steps = [s for t in trajectories for s in t.steps]
@@ -544,17 +544,17 @@ class Learner:
         )
 
     def _draw_teacher(
-        self, role: str, battle_steps: int, teacher: tuple[Step, ...]
+        self, role: str, battle_steps: int, teacher: TeacherSource | None
     ) -> tuple[tuple[Step, ...], DrawStream | None, float | None]:
         """This update's teacher steps (``ppo.imitation``): K = floor(share * N_battle / 10^6)
         drawn without replacement by the update's own stream, and their cross-entropy at the
         frozen weights. Nothing is drawn, and the stream is not built, without the block."""
         settings = self.config.ppo.imitation
-        if role != "battle" or settings is None:
+        if role != "battle" or settings is None or teacher is None:
             return (), None, None
         stream = DrawStream(self.config.learner_seed, self.generation)
         picked = stream.draw(len(teacher), settings.steps(battle_steps, len(teacher)))
-        drawn = tuple(teacher[i] for i in picked)
+        drawn = teacher.fetch(picked)  # encoded now, held for this update only
         return drawn, stream, self._imitation_eval(drawn)[0]
 
     def _imitation_eval(self, steps: Sequence[Step]) -> tuple[float, int]:

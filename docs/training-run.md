@@ -767,10 +767,12 @@ of the teacher manifest's JCS bytes (the same hash a clone config names); `coef_
   `ppo.imitation.training_set_hash` (once `R/run-config.json` exists), never replaces a file with
   other bytes and does nothing when run again. The run holds the directory lock, so import before
   starting the run.
-- **Read:** at every update the learner uses that stream through the stream reader with its
-  manifest (the encoded steps are kept for the process, the files being immutable). Any refusal
-  above, and any example the run's encoder refuses (a feature set the run does not read, rows
-  missing), is a `LearnerDataError` (exit 3). The teacher's Team Preview examples are not used.
+- **Read:** on first use the learner checks the stream through the stream reader with its
+  manifest and encodes every example once (dropping the tensors), so any refusal above, and any
+  example the run's encoder refuses (a feature set the run does not read, rows missing), is a
+  `LearnerDataError` (exit 3) at the first update. Only the byte offsets of the Battle examples
+  are kept; each update encodes just the K examples it draws and drops them, so memory is bounded
+  by K, not by the set's size. The teacher's Team Preview examples are not used.
 - **Loss:** `lambda_im(t) * mean(-log pi_theta(teacher choice))` over the minibatch's teacher
   steps, the softmax over each example's real candidates at the run's play temperature, no clip and
   no value term. K = floor(`share_ppm` * N_battle / 10^6) steps per update (capped at the set's

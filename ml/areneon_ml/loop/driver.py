@@ -37,8 +37,8 @@ from areneon_ml.checkpoint.files import checkpoint_bytes, checkpoint_id, write_c
 from areneon_ml.checkpoint.provenance import ProvenanceGraph
 from areneon_ml.checkpoint.record import CheckpointRecord, read_record
 from areneon_ml.learner.config import RunConfig
-from areneon_ml.learner.data import LearnerDataError, Step, trajectories
-from areneon_ml.learner.imitation import read_teacher
+from areneon_ml.learner.data import LearnerDataError, trajectories
+from areneon_ml.learner.imitation import TeacherSet, open_teacher
 from areneon_ml.learner.labels import LabelReader, LabelStep
 from areneon_ml.learner.parallel import load_workers
 from areneon_ml.learner.state import pack_state, restore_state
@@ -235,7 +235,7 @@ class Loop:
         self._encoders = {role: Encoder(game, config.model.encoder) for role in ROLES}
         self._learner: Learner | None = None
         self._frozen: Frozen | None = None
-        self._teacher: tuple[Step, ...] | None = None
+        self._teacher: TeacherSet | None = None
 
     # -- the run directory ---------------------------------------------------
 
@@ -503,14 +503,15 @@ class Loop:
 
     def _load_teacher(
         self, label_sets: tuple[str, ...]
-    ) -> tuple[tuple[Step, ...] | None, tuple[str, ...]]:
+    ) -> tuple[TeacherSet | None, tuple[str, ...]]:
         """The teacher's Battle steps (``ppo.imitation``, ADR-010 erratum A11.3) and the hash list
         a record names: the label sets plus the teacher set (an outside source in the registry).
 
         ``None`` without the block. The stream is the one ``import-teacher`` copied into the run
-        directory; it is read through the stream reader with its manifest (every refusal of the
-        erratum is a ``LearnerDataError``). The encoded steps are kept for the process, since the
-        files are immutable and a second read gives the same tensors; a resumed run reads again.
+        directory; it is checked once through the stream reader with its manifest and the encoder
+        (every refusal of the erratum is a ``LearnerDataError``), and only a light index of the
+        Battle examples (byte offsets) is kept for the process: each update encodes just the
+        examples it draws. A resumed run indexes again.
         """
         settings = self.config.ppo.imitation
         if settings is None:
@@ -522,12 +523,11 @@ class Loop:
                     "the teacher stream is not in the run directory: "
                     "run `python -m areneon_ml.loop import-teacher` first"
                 )
-            self._teacher = read_teacher(
+            self._teacher = open_teacher(
                 stream,
                 layout.read_json(manifest_path),
                 settings.training_set_hash,
                 self._encoders,
-                load_workers(self.load_processes, self.load_auto, self.load_memory_mb),
             )
         return self._teacher, tuple(sorted({*label_sets, settings.training_set_hash}))
 
