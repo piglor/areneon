@@ -154,7 +154,7 @@ def test_the_belief_set_is_a_registered_set_read_like_the_first_and_labelled_as_
 def with_rows(threat_ohko: int, relation: str, priority: int) -> dict[str, Any]:
     """The sample with own slot 0 reached by foe 1's thunderbolt (``threat_ohko`` rolls), the
     speed relation of that pair and the foe move's priority set as given."""
-    example = json.loads(json.dumps(EXAMPLE))
+    example: dict[str, Any] = json.loads(json.dumps(EXAMPLE))
     rows = example["candidate_features"]
     for row in rows["threats"]:
         if (row["own"], row["foe"], row["move"]) == (0, 1, "thunderbolt"):
