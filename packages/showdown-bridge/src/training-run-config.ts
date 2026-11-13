@@ -48,6 +48,7 @@ export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
   if (config.ppo.anchor !== undefined && config.warm_start === undefined) {
     throw new TrainingRunConfigError("ppo.anchor needs warm_start: the anchor is the warm-start pair");
   }
+  checkThreatenedAnchor(config);
   if (generation.play?.temperature_ppm === 1_000_000) {
     throw new TrainingRunConfigError("generation.play.temperature_ppm 1000000 is the default: omit generation.play (one rule, one encoding)");
   }
@@ -84,6 +85,27 @@ function checkSheetRegimes(config: TrainingRunConfig): void {
   if (config.population !== undefined) fail("cannot be combined with a population (its records are version 2)");
   if (config.generation.search_labels !== undefined) fail("cannot be combined with generation.search_labels (the search plays the closed format)");
   if (config.model.encoder.options?.opponent_sheet !== undefined) fail("cannot be combined with the opponent_sheet encoder option yet (the open regime's engine-sheet source is a later slice)");
+}
+
+/** Feature sets whose rows carry `threats`, `speeds` and `foe_priorities`, which the Threatened flag of `ppo.anchor.threatened` reads (ADR-010 erratum A11.2). */
+const THREAT_ROW_FEATURE_SETS: readonly string[] = ["probe-damage/2", "probe-outcome/1"];
+
+/**
+ * The rules of `ppo.anchor.threatened` the profile cannot say (ADR-010 erratum A11.2, #1366): `ppo.anchor.kl_micro` may be 0 only together with
+ * `threatened` (no anchor outside Threatened decisions), and `threatened` needs a candidate feature set whose rows carry the threat,
+ * speed and foe-priority arrays.
+ */
+function checkThreatenedAnchor(config: TrainingRunConfig): void {
+  const anchor = config.ppo.anchor;
+  if (anchor === undefined) return;
+  if (anchor.threatened === undefined) {
+    if (anchor.kl_micro < 1) throw new TrainingRunConfigError("ppo.anchor.kl_micro 0 means no anchor outside Threatened decisions: it needs ppo.anchor.threatened");
+    return;
+  }
+  const features = config.model.encoder.options?.candidate_features?.feature_set;
+  if (features === undefined || !THREAT_ROW_FEATURE_SETS.includes(features)) {
+    throw new TrainingRunConfigError("ppo.anchor.threatened reads the threats, speeds and foe_priorities rows: it needs candidate_features of probe-damage/2 or probe-outcome/1");
+  }
 }
 
 /** Feature sets whose value head reads no candidate row (ADR-026 E2 decision 7): `/2` and `/3` pool the rows into the tokens. */

@@ -761,6 +761,15 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const leagueRunWith = (change: (r: Record<string, unknown>) => void) => mutated(leagueRun, change);
   const runConfigWith = (change: (c: Record<string, unknown>) => void) => mutated(runConfig, change);
   const runSection = (c: Record<string, unknown>, name: string) => c[name] as Record<string, unknown>;
+  // ADR-010 erratum A11.2 (#1366): a Battle-only warm start with a KL anchor, the probe-damage/2 feature set that carries the threat rows, and `change` on the anchor.
+  const threatening = (change: (anchor: Record<string, unknown>, c: Record<string, unknown>) => void) =>
+    runConfigWith((c) => {
+      c.warm_start = { battle: hexOf("b") };
+      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/2", feature_set_hash: hexOf("c") } };
+      const anchor: Record<string, unknown> = { kl_micro: 100000, schedule: { kind: "constant" } };
+      runSection(c, "ppo").anchor = anchor;
+      change(anchor, c);
+    });
   // ADR-027 section 5 (#1153): a mixed-format run's config, and the records it writes. The open format differs from the
   // closed manifest in its format id and its rules hash; the manifests are listed in the order of their JCS bytes.
   const sheetRegimes = { open_format: "gen9championsvgc2026regmcbo3", closed_share_ppm: 500000, open_only_generations: 10, closed_sheet_source: "revealed-only/1" };
@@ -955,6 +964,14 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
       runSection(c, "ppo").value_warmup = { generations: 2 };
       runSection(c, "ppo").anchor = { kl_micro: 100000, schedule: { kind: "linear", final_micro: 0, generations: 10 } };
+    }),
+    "training-run-config/anchor-threatened": threatening((a) => (a.threatened = { kl_micro: 1000000, schedule: { kind: "constant" } })),
+    "training-run-config/anchor-threatened-only": threatening((a, c) => {
+      runSection(c, "ppo").value_warmup = { generations: 2 };
+      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-outcome/1", feature_set_hash: hexOf("c") } };
+      a.kl_micro = 0;
+      a.schedule = { kind: "constant" };
+      a.threatened = { kl_micro: 1000000, schedule: { kind: "linear", final_micro: 0, generations: 10 } };
     }),
     "training-run-config/population": populated(() => {}),
     "training-run-config/population-single": populated((p) => {
@@ -1235,6 +1252,18 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/search-distill-no-team-dataset": distilling((c) => delete c.team_dataset),
     "training-run-config/value-warmup-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").value_warmup = { generations: 2 })),
     "training-run-config/anchor-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").anchor = { kl_micro: 100000, schedule: { kind: "constant" } })),
+    "training-run-config/anchor-zero-kl": runConfigWith((c) => {
+      c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
+      runSection(c, "ppo").anchor = { kl_micro: 0, schedule: { kind: "constant" } };
+    }),
+    "training-run-config/anchor-threatened-no-features": threatening((a, c) => {
+      a.threatened = { kl_micro: 1000000, schedule: { kind: "constant" } };
+      delete runSection(runSection(c, "model"), "encoder").options;
+    }),
+    "training-run-config/anchor-threatened-features-1": threatening((a, c) => {
+      a.threatened = { kl_micro: 1000000, schedule: { kind: "constant" } };
+      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: hexOf("c") } };
+    }),
     "training-run-config/population-warm-start-both": populated((_p, c) => (c.warm_start = { preview: hexOf("a"), battle: hexOf("b") })),
     "training-run-config/population-shares-sum": populated((p) => (p.shares = { ladder_ppm: 500000, self_play_ppm: 250000, past_pool_ppm: 200000 })),
     "training-run-config/population-roots-exceed-members": populated((p) => ((p.selection as Record<string, unknown>).min_roots = 5)),
@@ -1641,10 +1670,13 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
       runSection(c, "ppo").value_warmup = { generations: 1.5 };
     }),
-    "training-run-config/anchor-zero-kl": runConfigWith((c) => {
+    "training-run-config/anchor-negative-kl": runConfigWith((c) => {
       c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
-      runSection(c, "ppo").anchor = { kl_micro: 0, schedule: { kind: "constant" } };
+      runSection(c, "ppo").anchor = { kl_micro: -1, schedule: { kind: "constant" } };
     }),
+    "training-run-config/anchor-threatened-zero-kl": threatening((a) => (a.threatened = { kl_micro: 0, schedule: { kind: "constant" } })),
+    "training-run-config/anchor-threatened-no-schedule": threatening((a) => (a.threatened = { kl_micro: 1000000 })),
+    "training-run-config/anchor-threatened-extra-field": threatening((a) => (a.threatened = { kl_micro: 1000000, schedule: { kind: "constant" }, role: "battle" })),
     "training-run-config/anchor-no-schedule": runConfigWith((c) => {
       c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
       runSection(c, "ppo").anchor = { kl_micro: 100000 };
