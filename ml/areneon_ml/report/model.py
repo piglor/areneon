@@ -94,6 +94,8 @@ OPTIONAL_INTEGER_KEYS = (
 )
 #: Battle role only, and only under ppo.search_distill (ADR-026 erratum E2, ADR-010 A10).
 SEARCH_KEYS = ("search_labels", "search_kl_before", "search_kl_after")
+#: Battle role only, and only under ppo.shaping (ADR-010 erratum A11.1).
+SHAPING_KEYS = ("shaping_coef_micro", "shaping_mean_abs_micro")
 VALUE_KEYS = ("explained_variance", "value_calibration")  # value-head diagnostics (ADR-010 A4)
 CALIBRATION_BINS = 10
 CALIBRATION_KEYS = (frozenset({"count", "mean_value", "mean_score"}), frozenset[str]())
@@ -108,6 +110,7 @@ TRAIN_ROLE_KEYS = (
             PREVIEW_BOOTSTRAP_KEY,
             TEMPERATURE_KEY,
             *SEARCH_KEYS,
+            *SHAPING_KEYS,
             *THREATENED_KEYS,
             *VALUE_KEYS,
         }
@@ -342,6 +345,16 @@ def _check_search_keys(values: dict[str, Any], role: str) -> None:
             raise ReportError(f"{role} {key} is a KL divergence and cannot be negative")
 
 
+def _check_shaping_keys(values: dict[str, Any], role: str) -> None:
+    """The shaping keys come together, on the Battle role, as non-negative integers."""
+    if not set(SHAPING_KEYS) & set(values):
+        return
+    if set(SHAPING_KEYS) - set(values) or role != "battle":
+        raise ReportError(f"{role} shaping keys come together (Battle)")
+    for key in SHAPING_KEYS:
+        integer(values[key], f"{role} {key}")
+
+
 def _check_threatened_keys(values: dict[str, Any], role: str) -> None:
     if not set(THREATENED_KEYS) & set(values):
         return
@@ -378,6 +391,7 @@ def read_train_report(raw: object) -> TrainFacts:
             if key in values:
                 integer(values[key], f"{role} {key}", minimum)
         _check_search_keys(values, role)
+        _check_shaping_keys(values, role)
         _check_threatened_keys(values, role)
         if set(VALUE_KEYS) & set(values):
             if set(VALUE_KEYS) - set(values):

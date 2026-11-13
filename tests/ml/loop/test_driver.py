@@ -256,9 +256,11 @@ def test_auto_load_workers_are_sized_at_each_load_phase_not_at_start(
     used: list[int] = []
     real = parallel.parallel_trajectories
 
-    def spy(stream: Any, manifest: Any, encoders: Any, processes: int, *rest: Any) -> Any:
+    def spy(
+        stream: Any, manifest: Any, encoders: Any, processes: int, *rest: Any, **kwargs: Any
+    ) -> Any:
         used.append(processes)
-        return real(stream, manifest, encoders, processes, *rest)
+        return real(stream, manifest, encoders, processes, *rest, **kwargs)
 
     monkeypatch.setattr(parallel, "auto_processes", auto)
     monkeypatch.setattr(parallel, "parallel_trajectories", spy)

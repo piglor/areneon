@@ -60,6 +60,9 @@ export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
     if (generation.search_labels !== undefined) throw new TrainingRunConfigError("generation.inference cannot be combined with generation.search_labels (labels are training targets and stay batch-1 functions of the Episode)");
   }
   checkSearchDistillation(config);
+  if (config.ppo.shaping !== undefined && config.ppo.search_distill !== undefined) {
+    throw new TrainingRunConfigError("ppo.shaping cannot be combined with ppo.search_distill: the search labels read the value head as a score");
+  }
   checkSheetRegimes(config);
   if (config.population !== undefined && config.warm_start?.preview !== undefined) {
     throw new TrainingRunConfigError("population: a warm_start that names the preview role would give every member the same pair (use a Battle-only warm start; each member's Preview is seeded from its own member-init draw)");

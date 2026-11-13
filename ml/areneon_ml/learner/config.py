@@ -129,6 +129,13 @@ class SearchDistillSettings:
 
 
 @dataclass(frozen=True)
+class ShapingSettings:
+    """``ppo.shaping`` (ADR-010 erratum A11.1, #1365): the potential's weight in millionths."""
+
+    coef_micro: int  # w, in millionths
+
+
+@dataclass(frozen=True)
 class PPOSettings:
     epochs: int
     minibatch_size: int
@@ -160,6 +167,8 @@ class PPOSettings:
     preview_bootstrap_micro: int | None = None
     # ``ppo.search_distill`` (ADR-026 erratum E2): None when absent (no distillation term).
     search_distill: SearchDistillSettings | None = None
+    # ``ppo.shaping`` (ADR-010 erratum A11.1): None when absent (the score is the only reward).
+    shaping: ShapingSettings | None = None
 
 
 @dataclass(frozen=True)
@@ -282,6 +291,11 @@ def _search_distill(ppo: dict[str, Any]) -> SearchDistillSettings | None:
         found["min_spread_ppm"],
         found["aggregate_generations"],
     )
+
+
+def _shaping(ppo: dict[str, Any]) -> ShapingSettings | None:
+    found = ppo.get("shaping")
+    return None if found is None else ShapingSettings(found["coef_micro"])
 
 
 def _check_search_distillation(raw: dict[str, Any]) -> None:
@@ -481,6 +495,11 @@ def read_run_config(raw: object) -> RunConfig:
             )
         _check_population(raw)
     _check_search_distillation(raw)
+    if "shaping" in raw["ppo"] and "search_distill" in raw["ppo"]:
+        raise RunConfigError(
+            "training-run-config: ppo.shaping cannot be combined with ppo.search_distill: "
+            "the search labels read the value head as a score"
+        )
     _check_inference(raw)
     sheet_regimes = _sheet_regimes(raw)
     gen, ppo, seeds = raw["generation"], raw["ppo"], raw["seeds"]
@@ -537,6 +556,7 @@ def read_run_config(raw: object) -> RunConfig:
             entropy_schedule=_entropy_schedule(ppo),
             preview_bootstrap_micro=ppo.get("preview_bootstrap_micro"),
             search_distill=_search_distill(ppo),
+            shaping=_shaping(ppo),
         ),
         device=raw["learner"]["device"],
         threads=raw["learner"]["threads"],

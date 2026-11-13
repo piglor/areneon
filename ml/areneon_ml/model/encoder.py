@@ -1691,6 +1691,16 @@ class EncoderSession:
         self._fed: list[str] = []
         self._last_request: str | None = None
 
+    @property
+    def state(self) -> BattleState | None:
+        """The reduced state after the last ``encode`` (``None`` before one, or after a refusal)."""
+        return None if self._reducer is None else self._reducer.state
+
+    @property
+    def last_request(self) -> str | None:
+        """The last ``|request|`` line fed (``None`` before one)."""
+        return self._last_request
+
     def encode(self, query: Mapping[str, Any], value_only: bool = False) -> EncodedQuery:
         observation = query["observation"]
         log = observation["log"]

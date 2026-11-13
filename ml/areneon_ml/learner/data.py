@@ -30,6 +30,7 @@ from areneon_contracts.training import (
 
 from areneon_ml import stopwatch
 from areneon_ml.learner.ppo import GAME_SCORE
+from areneon_ml.learner.shaping import ShapingError, differential
 from areneon_ml.learner.situation import threatened_flag
 from areneon_ml.model.encoder import EncodedQuery, Encoder, EncoderSession
 from areneon_ml.model.network import ROLES
@@ -46,6 +47,9 @@ class Step:
 
     query: EncodedQuery
     chosen: int
+    #: ``d(o)`` of the decision's observation (ppm, ``shaping.differential``): set only on a Battle
+    #: step read under ``ppo.shaping`` (ADR-010 erratum A11.1), ``None`` otherwise.
+    potential_d: int | None = None
     #: Whether the decision is Threatened (ADR-010 erratum A11.2, ``learner/situation.py``), a
     #: pure function of the example; ``None`` for a Preview step and for a Battle example whose
     #: ``candidate_features`` lack the threat rows (the flag cannot be read there).
@@ -66,8 +70,9 @@ class Trajectory:
 class _Collector:
     """The steps of a run of stream lines, grouped by Episode and role, in first-seen order."""
 
-    def __init__(self, encoders: dict[str, Encoder]) -> None:
+    def __init__(self, encoders: dict[str, Encoder], shaping: bool = False) -> None:
         self._encoders = encoders
+        self._shaping = shaping
         self.order: list[str] = []
         self.steps: dict[tuple[str, str], list[Step]] = {}
         self.scores: dict[str, float] = {}
@@ -107,9 +112,20 @@ class _Collector:
         )
         stopwatch.end("reduce", mark)  # the view's rqid clean is part of reading the channel
         query = session.encode(encoder_input)
+        potential = None
+        if self._shaping and role == "battle":
+            state = session.state
+            if state is None:  # pragma: no cover - encode just fed the reducer
+                raise LearnerDataError("no reduced state to read the shaping potential from")
+            try:
+                potential = differential(state, session.last_request)
+            except ShapingError as error:
+                raise LearnerDataError(f"Episode {episode}: {error}") from error
         features = example.get("candidate_features")
         threatened = threatened_flag(observation["log"], features) if role == "battle" else None
-        self.steps.setdefault((episode, role), []).append(Step(query, chosen, threatened))
+        self.steps.setdefault((episode, role), []).append(
+            Step(query, chosen, potential, threatened)
+        )
 
     def collected(self) -> Collected:
         """What was seen, without the encoders and sessions (it is sent between processes)."""
@@ -168,6 +184,7 @@ def trajectories(  # noqa: PLR0913
     processes: int = 1,
     *,
     private_pool: bool = False,
+    shaping: bool = False,
 ) -> list[Trajectory]:
     """The trajectories of a learner-ready stream played by ``behaviour_policy_id``.
 
@@ -181,12 +198,17 @@ def trajectories(  # noqa: PLR0913
     the config field belongs to the private run driver, which passes it): False, the default,
     refuses a private set; True accepts a private set only and refuses a synthetic one. The
     manifest has no run key, so a set of another run cannot be told here yet (the driver adds that).
+
+    ``shaping`` (``ppo.shaping``, ADR-010 erratum A11.1) reads the potential differential of each
+    Battle step from the reduced state of its observation (``Step.potential_d``).
     """
     _ready(manifest, behaviour_policy_id)
     if processes > 1 and isinstance(stream, Path):
         from areneon_ml.learner.parallel import parallel_trajectories  # noqa: PLC0415
 
-        found = parallel_trajectories(stream, manifest, encoders, processes, private_pool)
+        found = parallel_trajectories(
+            stream, manifest, encoders, processes, private_pool=private_pool, shaping=shaping
+        )
         if found is not None:
             return found
     mark = stopwatch.begin()
@@ -198,7 +220,7 @@ def trajectories(  # noqa: PLR0913
     except TrainingStreamError as exc:
         raise LearnerDataError(str(exc)) from exc
     stopwatch.end("validate", mark)
-    collector = _Collector(encoders)
+    collector = _Collector(encoders, shaping)
     lines: Iterator[str] = (
         stream_lines(stream) if isinstance(stream, Path) else iter(stream.split("\n")[:-1])
     )

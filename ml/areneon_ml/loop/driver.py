@@ -458,6 +458,7 @@ class Loop:
                     self._encoders,
                     pair,
                     load_workers(self.load_processes, self.load_auto, self.load_memory_mb),
+                    shaping=self.config.ppo.shaping is not None,
                 )
                 labels, label_sets = self._load_labels(generation, work, summary, pair)
             if self.profile:

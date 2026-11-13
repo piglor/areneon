@@ -997,6 +997,7 @@ class PopulationLoop:
                 self._encoders,
                 pair,
                 load_workers(self.load_processes, self.load_auto, self.load_memory_mb),
+                shaping=self.config.ppo.shaping is not None,
             )
         bring_up(learner, self.device)
         guard = health.Guard(learner)
