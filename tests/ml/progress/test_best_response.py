@@ -322,6 +322,19 @@ def patched(
     return req, fake, config
 
 
+def test_a_run_with_shaping_is_refused_the_value_head_is_not_a_score(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    req, fake, config = patched(monkeypatch, tmp_path)
+    raw = copy.deepcopy(config.raw)
+    raw["ppo"]["shaping"] = {"coef_micro": 1_000_000}
+    shaped = read_run_config(raw)
+    monkeypatch.setattr(best_response, "_read_config", lambda run_dir: shaped)
+    with pytest.raises(ProgressError, match="reads the value head as a score"):
+        run_best_response(req, repo=REPO)
+    assert fake.calls == []
+
+
 def test_it_runs_logs_the_look_and_commits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     req, fake, _ = patched(monkeypatch, tmp_path)
     result = run_best_response(req, repo=REPO)

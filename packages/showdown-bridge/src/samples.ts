@@ -876,6 +876,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     ),
     "training-run-config/preview-bootstrap": runConfigWith((c) => (runSection(c, "ppo").preview_bootstrap_micro = 500000)),
     "training-run-config/preview-bootstrap-zero": runConfigWith((c) => (runSection(c, "ppo").preview_bootstrap_micro = 0)),
+    "training-run-config/potential": runConfigWith((c) => (runSection(c, "ppo").shaping = { coef_micro: 1000000 })),
     "training-run-config/entropy-constant": runConfigWith((c) => (runSection(c, "ppo").entropy_schedule = { kind: "constant" })),
     "training-run-config/constant-schedule": runConfigWith((c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "constant" })),
     "training-run-config/play-temperature": runConfigWith((c) => (runSection(c, "generation").play = { temperature_ppm: 500000 })),
@@ -1214,6 +1215,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       runSection(c, "model").options = { shared_trunk: true };
       c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
     }),
+    "training-run-config/potential-search-distill": distilling((c) => (runSection(c, "ppo").shaping = { coef_micro: 1000000 })),
     "training-run-config/search-distill-labels-only": distilling((c) => delete runSection(c, "ppo").search_distill),
     "training-run-config/search-distill-config-only": distilling((c) => delete runSection(c, "generation").search_labels),
     "training-run-config/search-distill-no-warm-start": distilling((c) => {
@@ -1557,6 +1559,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     ),
     "training-run-config/preview-bootstrap-above-one": runConfigWith((c) => (runSection(c, "ppo").preview_bootstrap_micro = 1000001)),
     "training-run-config/preview-bootstrap-fractional": runConfigWith((c) => (runSection(c, "ppo").preview_bootstrap_micro = 0.5)),
+    "training-run-config/potential-zero": runConfigWith((c) => (runSection(c, "ppo").shaping = { coef_micro: 0 })),
+    "training-run-config/potential-fractional": runConfigWith((c) => (runSection(c, "ppo").shaping = { coef_micro: 0.5 })),
+    "training-run-config/potential-extra-field": runConfigWith((c) => (runSection(c, "ppo").shaping = { coef_micro: 1000000, schedule: { kind: "constant" } })),
     "training-run-config/entropy-unknown-kind": runConfigWith((c) => (runSection(c, "ppo").entropy_schedule = { kind: "cosine" })),
     "training-run-config/schedule-unknown-kind": runConfigWith((c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "cosine" })),
     "training-run-config/unknown-model-option": runConfigWith((c) => (runSection(c, "model").options = { wide: 1 })),

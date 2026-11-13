@@ -157,7 +157,7 @@ def _check_lines(piece: tuple[int, int, int]) -> _Piece:
     start, end, first = piece
     torch.set_num_threads(1)
     checker = StreamChecker(_SHARED["manifest"], _SHARED.get("private_pool", False))
-    collector = _Collector(_SHARED["encoders"])
+    collector = _Collector(_SHARED["encoders"], _SHARED.get("shaping", False))
     result = _Piece(collector.collected(), checker.seen, checker.classes)
     with Path(_SHARED["path"]).open("rb") as handle:
         handle.seek(start)
@@ -222,7 +222,7 @@ def pack_piece(piece: _Piece) -> bytes:
                 else v
                 for f in dataclasses.fields(step.query)
             }
-            coded.append([step.chosen, fields])
+            coded.append([step.chosen, fields, step.potential_d])
         steps.append([episode, role, coded])
     header = json.dumps(
         {
@@ -260,8 +260,9 @@ def unpack_piece(blob: bytes) -> _Piece:
             Step(
                 EncodedQuery(**_decoded(fields, tensor)),
                 chosen,
+                potential,
             )
-            for chosen, fields in coded
+            for chosen, fields, potential in coded
         ]
     return _Piece(
         Collected(header["order"], header["scores"], steps),
@@ -293,12 +294,14 @@ def _raised(kind: str, message: str) -> Exception:
     return LearnerDataError(message)
 
 
-def parallel_trajectories(
+def parallel_trajectories(  # noqa: PLR0913
     path: Path,
     manifest: dict[str, Any],
     encoders: dict[str, Encoder],
     processes: int,
+    *,
     private_pool: bool = False,
+    shaping: bool = False,
 ) -> list[Trajectory] | None:
     """The trajectories of a stream file read by ``processes`` workers; None if it cannot be cut.
 
@@ -318,7 +321,13 @@ def parallel_trajectories(
         raise LearnerDataError(str(exc)) from exc
     stopwatch.end("validate", mark)
     pieces = [(points[i], points[i + 1], marks[i] + 1) for i in range(len(points) - 1)]
-    _SHARED.update(manifest=manifest, encoders=encoders, path=str(path), private_pool=private_pool)
+    _SHARED.update(
+        manifest=manifest,
+        encoders=encoders,
+        path=str(path),
+        private_pool=private_pool,
+        shaping=shaping,
+    )
     try:
         context = multiprocessing.get_context("fork")
         # An executor, not a Pool: a worker the operating system kills (the out-of-memory

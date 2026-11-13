@@ -281,6 +281,15 @@ export interface TrainingRunConfig {
        */
       aggregate_generations: number;
     };
+    /**
+     * Optional (a minor change within v1, ADR-010 erratum A11.1, #1365): potential-based reward shaping on the Battle role. With w = coef_micro / 10^6 and Phi(o) = w * d(o) / 10^6, where d(o) is the centred HP and knock-out differential of ADR-026's non-learned leaf (hpKoDifferential minus 500,000) read from the reduced state of the Battle decision's observation (own exact hit points and standing from the last request, the opponent's shown share, every brought opponent Pokemon not yet seen counted full and standing), each Battle trajectory's reward is r'_t = r_t + gamma * Phi(o_{t+1}) - Phi(o_t) with Phi of the state after the last decision 0 and gamma the GAE discount (ppo.discount_micro). GAE and the value target use r'. The value head then estimates the shaped return (the score minus Phi at gamma 1): the Preview bootstrap reads V + Phi and the calibration bins compare V + Phi with the score. The Preview role is untouched. Refused with ppo.search_distill. Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.
+     */
+    shaping?: {
+      /**
+       * w in millionths.
+       */
+      coef_micro: number;
+    };
   };
   /**
    * Optional (a minor change within v1): the generated team dataset the generation loop draws its teams from. Absent means the interim pool of committed fixture teams. The directory is read by the dataset reader, which trusts nothing; the pool takes the dev and training splits, never validation. The dataset hash pins the manifest and every record: a directory that hashes differently is refused.

@@ -477,6 +477,26 @@ def max_pairs(config: RunConfig, eval_dataset: EvalDataset | None = None) -> int
         raise ProgressError(str(exc)) from exc
 
 
+def refuse_shaped_value(config: RunConfig, consumer: str) -> None:
+    """A pair from a run with ``ppo.shaping`` has a value head that estimates the shaped return
+    (the score minus Phi), not the score: the consumers that read it as a score refuse it (ADR-010
+    erratum A11.1)."""
+    if config.ppo.shaping is not None:
+        raise ProgressError(
+            f"{consumer} reads the value head as a score: the run config names ppo.shaping"
+        )
+
+
+def refuse_shaped_pair(
+    config: RunConfig, search_mode: str | None, preview_solve: str | None
+) -> None:
+    """The search candidate and the Team Preview solver read the value head as a score."""
+    if search_mode is not None:
+        refuse_shaped_value(config, "the search candidate")
+    if preview_solve is not None:
+        refuse_shaped_value(config, "the Team Preview solver")
+
+
 def _read_config(run_dir: Path) -> RunConfig:
     stored = layout.read_json(run_dir / layout.CONFIG)
     config = read_run_config(stored)
@@ -1646,6 +1666,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
             "--previous-matches, --preview-ablation, --versus-run-dir, --search-mode "
             "or --preview-solve"
         )
+    refuse_shaped_pair(config, search_mode, preview_solve)
     if preview_solve is not None and sheet_set(config.model.encoder.options) is not None:
         raise ProgressError(
             "the Team Preview solver is not played for a pair that reads the opponent sheet: "
