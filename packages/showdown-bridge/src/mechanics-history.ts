@@ -338,10 +338,22 @@ function declareFacts(battle: HBattle, mon: HMon, facts: CombatantFacts, stall: 
     }
   }
   for (const volatile of facts.volatiles ?? []) {
-    need(battle.dex.conditions.get(volatile.id).exists, "the declared volatile is not an engine condition");
+    need(battle.dex.conditions.get(volatile.id).exists, `the declared volatile is not an engine condition: ${volatile.id}`);
     // A stacking volatile (Stockpile) restarts once per start; each start is the engine's own handler.
     for (let start = 0; start < (volatile.starts ?? 1); start += 1) withStartDraws(battle, draws, onDraw, () => addVolatileAt(battle, mon, volatile.id, volatile.moved_before ?? true));
-    need(mon.volatiles[volatile.id] !== undefined, "the engine refused the declared volatile");
+    // A volatile whose start handler needs the Pokemon that started it (Attract: an opposite-gender Pokemon in play) is refused without one. The channel
+    // does not say which Pokemon it was and the move path only needs one that is in play, so the engine's own start handler is offered each active
+    // Pokemon of the other side, then the ally, in order, until it takes the volatile (a volatile that took without a source is never retried).
+    if (mon.volatiles[volatile.id] === undefined) {
+      const index = battle.sides.indexOf(mon.side);
+      const others = [...((battle.sides[1 - index]?.active ?? []) as (HMon | null | undefined)[]), ...((mon.side.active ?? []) as (HMon | null | undefined)[])];
+      for (const source of others) {
+        if (source === undefined || source === null || source === mon || source.fainted) continue;
+        for (let start = 0; start < (volatile.starts ?? 1); start += 1) withStartDraws(battle, draws, onDraw, () => addVolatileAt(battle, mon, volatile.id, volatile.moved_before ?? true, source));
+        if (mon.volatiles[volatile.id] !== undefined) break;
+      }
+    }
+    need(mon.volatiles[volatile.id] !== undefined, `the engine refused the declared volatile: ${volatile.id}`);
     if (turn !== undefined) {
       const remaining = remainingTurns(mon.volatiles[volatile.id], volatile, turn);
       need(remaining === null || remaining >= 1, "the declared volatile has run out");

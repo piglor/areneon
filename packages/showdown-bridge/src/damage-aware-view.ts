@@ -112,7 +112,7 @@ type Combatant = Extract<MechanicsQuery["query"], { kind: "damage" }>["attacker"
 type BattleHistory = NonNullable<Extract<MechanicsQuery["query"], { kind: "damage" }>["history"]>;
 
 /** Histories a declarer marked unknown (a Pokemon that is unsettled and could be under any condition the move path reads): every answer of a query that holds one is `history_unknown`. */
-const UNKNOWN_HISTORIES = new WeakSet<object>();
+export const UNKNOWN_HISTORIES = new WeakSet<object>();
 
 /** The query with the declared facts that name engine ids removed (volatiles, used moves, last items, slot conditions, the last move): the rest of the history, for the identity of the answer. */
 export function withoutVolatiles(value: MechanicsQuery): MechanicsQuery {
@@ -163,6 +163,8 @@ export interface ProbeCounts {
   unsupported_queries: number;
   /** Refusals a feature builder turned into `unsupported` rows (`noteRefused`; the baselines do not use it). */
   probe_refusals?: number;
+  /** A view that declares history only (`probe-outcome/1`, #1353): probe runs that ended in a refusal or `history_unknown`, by cause (a closed word, or the refusal's words up to their first digit). */
+  causes?: Record<string, number>;
 }
 
 export interface DamageViewOptions {
@@ -232,8 +234,17 @@ export function damageView(options: DamageViewOptions) {
     const key = mechanicsQueryHash(query) + (marked ? ":unknown" : "");
     counts.queries += 1;
     let result = memo.get(key);
+    let noted = false;
+    const note = (cause: string): void => {
+      noted = true;
+      if (options.history !== undefined) {
+        const table = (counts.causes ??= {});
+        table[cause] = (table[cause] ?? 0) + 1;
+      }
+    };
     if (result === undefined) {
       counts.probe_runs += 1;
+      if (marked) note("history_unknown:marked");
       try {
         // A marked query is asked without the facts that name engine ids and answered `history_unknown`: the question cannot be settled.
         result = marked ? unknownVolatiles(probe({ engine, config: mechanics, snapshot }, readMechanicsQuery(withoutVolatiles(value))).result) : probe({ engine, config: mechanics, snapshot }, query).result;
@@ -244,15 +255,18 @@ export function damageView(options: DamageViewOptions) {
         else if (options.history !== undefined && error.code === DECLARED_FACT) {
           // A declared volatile the engine will not take in this scenario (a start handler that needs a battle's worth of state): its fact is
           // unknown, not dropped, so the answer is `history_unknown` (ADR-022 E-22.5.3); the rest of the request is unaffected.
+          note(`history_unknown:declared_fact_refused:${error.message.slice(0, 100) ?? ""}`);
           try {
             result = unknownVolatiles(probe({ engine, config: mechanics, snapshot }, readMechanicsQuery(withoutVolatiles(value))).result);
           } catch (again) {
             if (!(again instanceof MechanicsProbeError)) throw again;
+            note(`refused:${/^[^0-9:]*/.exec(again.message)?.[0].trim().slice(0, 70) ?? ""}`);
             memo.set(key, { refused: again.message });
             throw new ProbeRefusal(again.message);
           }
         } else {
           // Any other refusal of a state the caller declared: this request falls back.
+          note(`refused:${/^[^0-9:]*/.exec(error.message)?.[0].trim().slice(0, 70) ?? ""}`);
           memo.set(key, { refused: error.message });
           throw new ProbeRefusal(error.message);
         }
@@ -262,11 +276,15 @@ export function damageView(options: DamageViewOptions) {
       if (options.history !== undefined && "kind" in result && result.kind === "unsupported" && result.reason === "random_effect" && declaresIds(value)) {
         try {
           const stripped = probe({ engine, config: mechanics, snapshot }, readMechanicsQuery(withoutVolatiles(value))).result;
-          if (stripped.kind === "computed") result = unknownVolatiles(stripped);
+          if (stripped.kind === "computed") {
+            result = unknownVolatiles(stripped);
+            note("history_unknown:declared_draw");
+          }
         } catch (again) {
           if (!(again instanceof MechanicsProbeError)) throw again;
         }
       }
+      if (!marked && "kind" in result && result.kind === "unsupported" && result.reason === "history_unknown" && !noted) note("history_unknown:ends_differ");
       memo.set(key, result);
     }
     if ("limit" in result) {

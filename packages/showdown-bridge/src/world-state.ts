@@ -340,11 +340,11 @@ export function writeSide(side: WSide, facts: { total_fainted: number; fainted_l
  * handlers read the queue (Taunt lasts a turn longer on a target that has already moved), so a target that had
  * not moved when the log started the volatile gets a pending move action in the queue for the call only.
  */
-export function addVolatileAt(battle: WBattle, mon: WMon, id: string, movedBefore: boolean): void {
+export function addVolatileAt(battle: WBattle, mon: WMon, id: string, movedBefore: boolean, source: WMon | null = null): void {
   const pending = { choice: "move", pokemon: mon };
   if (!movedBefore) battle.queue.list.push(pending);
   try {
-    mon.addVolatile(id);
+    mon.addVolatile(id, source);
   } finally {
     if (!movedBefore) battle.queue.list.splice(battle.queue.list.indexOf(pending), 1);
   }

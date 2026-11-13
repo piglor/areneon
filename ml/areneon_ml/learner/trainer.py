@@ -152,6 +152,15 @@ class RoleReport:
     imitation_ce_after: float | None = None
     imitation_top1_ppm: int | None = None
 
+    # Set only on the Battle role under ``ppo.anchor.threatened`` (ADR-010 erratum A11.2): the
+    # Threatened steps of the update's table, the mean KL(pi_theta || pi_anchor) over the
+    # Threatened decisions of its minibatches (measured before each step, as ``anchor_kl``; 0.0
+    # on a value warm-up update) and the Threatened beta (millionths) the update used. Left out
+    # of the stored report otherwise.
+    anchor_threatened_steps: int | None = None
+    anchor_kl_threatened: float | None = None
+    anchor_threatened_beta_micro: int | None = None
+
 
 @dataclass(frozen=True)
 class TrainReport:
@@ -282,6 +291,11 @@ class Learner:
         # Beta (millionths) of the newest update; set only with ``ppo.anchor`` (stored in the
         # sidecar then, and nowhere otherwise).
         self.last_anchor_beta_micro: int | None = None
+        # The Threatened beta (millionths) of the newest update; set only with
+        # ``ppo.anchor.threatened`` (stored in the sidecar then, and nowhere otherwise), and the
+        # running (KL sum, Threatened decisions) of the role's minibatches in the update.
+        self.last_anchor_threatened_beta_micro: int | None = None
+        self._threatened_kl: dict[str, list[float]] = {}
         # Entropy weight (millionths) of the newest update; set only under a linear
         # ``ppo.entropy_schedule`` (stored in the sidecar then, and nowhere otherwise).
         self.last_entropy_coef_micro: int | None = None
@@ -352,6 +366,17 @@ class Learner:
         warmup = self.config.ppo.value_warmup or 0
         return 0 if update < warmup else settings.coef_micro_at(update - warmup)
 
+    def anchor_threatened_beta_micro(self, update: int) -> int | None:
+        """Threatened beta of learner update ``update`` (from 0), or ``None`` without
+        ``ppo.anchor.threatened``: the anchor's rule, with its own ``kl_micro`` and schedule and
+        the same update index (counting from the first POLICY update, 0 while the policy is
+        frozen by a value warm-up)."""
+        anchor = self.config.ppo.anchor
+        if anchor is None or anchor.threatened is None:
+            return None
+        warmup = self.config.ppo.value_warmup or 0
+        return 0 if update < warmup else anchor.threatened.beta_micro(update - warmup)
+
     # -- one generation ------------------------------------------------------
 
     def train(
@@ -383,6 +408,8 @@ class Learner:
                     group["lr"] = schedule.rate(self.generation)
         warmup = value_warmup_active(self.config, self.generation) or self.value_only
         self.last_anchor_beta_micro = self.anchor_beta_micro(self.generation)
+        self.last_anchor_threatened_beta_micro = self.anchor_threatened_beta_micro(self.generation)
+        self._threatened_kl = {}
         self.last_entropy_coef_micro = self.entropy_coef_micro(self.generation)
         self.last_imitation_coef_micro = self.imitation_coef_micro(self.generation)
         # Under ``ppo.preview_bootstrap_micro`` (> 0) both roles' targets are fixed from the
@@ -488,6 +515,13 @@ class Learner:
     ) -> _Table:
         ppo = self.config.ppo
         steps = [s for t in trajectories for s in t.steps]
+        if role == "battle" and role in self.anchors and self._threatened_beta() is not None:
+            for step in steps:
+                if step.threatened is None:
+                    raise LearnerDataError(
+                        "ppo.anchor.threatened needs the threats, speeds and foe_priorities rows "
+                        "of every Battle example: a decision has none"
+                    )
         if role == "battle" and frozen is not None and frozen.values is not None:
             # The same frozen pass the Preview returns were read from (no second forward pass).
             assert frozen.log_probs is not None
@@ -629,6 +663,10 @@ class Learner:
             for parameter in frozen:
                 parameter.requires_grad_(True)
 
+    def _threatened_beta(self) -> int | None:
+        """The Threatened beta of the update in progress, or ``None`` without the block."""
+        return self.last_anchor_threatened_beta_micro
+
     def _weights(self) -> LossWeights:
         ppo = self.config.ppo
         entropy_micro = self.last_entropy_coef_micro
@@ -667,8 +705,20 @@ class Learner:
             dense = torch.zeros(batch.cand_mask.shape, device=self.device)
             for row, i in enumerate(index):
                 dense[row, batch.cand_mask[row]] = table.anchor_log_probs[i]
-            kl = anchor_kl(out.logits, batch.cand_mask, dense, tau).mean()
-            total = total + beta * kl
+            kl_rows = anchor_kl(out.logits, batch.cand_mask, dense, tau)
+            kl = kl_rows.mean()
+            threatened = self._threatened_beta() if role == "battle" else None
+            if threatened is None:
+                total = total + beta * kl
+            else:
+                # ADR-010 erratum A11.2: beta(d) per decision, not renormalised.
+                flags = [bool(table.steps[i].threatened) for i in index]
+                hot = torch.tensor(flags, device=self.device)
+                betas = torch.where(hot, threatened / MICRO, beta)
+                total = total + (betas * kl_rows).mean()
+                tally = self._threatened_kl.setdefault(role, [0.0, 0.0])
+                tally[0] += float(kl_rows.detach()[hot].sum().cpu())
+                tally[1] += float(hot.sum().cpu())
         settings = self.config.ppo.search_distill
         if settings is not None and label_index and not warm:
             # ADR-026 erratum E2: lambda * mean KL(pi' || pi_theta) over this minibatch's labels,
@@ -746,6 +796,7 @@ class Learner:
             self.config.ppo.preview_bootstrap_micro if role == "preview" else None,
             *self._search_report(role, table),
             *self._imitation_report(role, table),
+            *self._threatened_report(role, table),
         )
 
     def _imitation_report(self, role: str, table: _Table) -> tuple[Any, Any, Any, Any, Any]:
@@ -759,6 +810,16 @@ class Learner:
             table.imitation_ce_before or 0.0,
             after,
             hits * MICRO // size if size else 0,
+        )
+
+    def _threatened_report(self, role: str, table: _Table) -> tuple[Any, Any, Any]:
+        if role != "battle" or self.last_anchor_threatened_beta_micro is None:
+            return None, None, None
+        kl_sum, count = self._threatened_kl.get(role, [0.0, 0.0])
+        return (
+            sum(1 for step in table.steps if step.threatened),
+            kl_sum / count if count else 0.0,
+            self.last_anchor_threatened_beta_micro,
         )
 
     def _search_report(self, role: str, table: _Table) -> tuple[Any, Any, Any]:
