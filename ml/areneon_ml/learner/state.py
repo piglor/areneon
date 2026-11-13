@@ -116,6 +116,8 @@ def pack_state(learner: Learner) -> PackedState:
         sidecar["learning_rate_micro"] = learner.last_rate_micro
     if learner.last_anchor_beta_micro is not None:  # ppo.anchor only: otherwise the key is omitted
         sidecar["anchor_beta_micro"] = learner.last_anchor_beta_micro
+    if learner.last_anchor_threatened_beta_micro is not None:  # ppo.anchor.threatened only
+        sidecar["anchor_threatened_beta_micro"] = learner.last_anchor_threatened_beta_micro
     if learner.last_entropy_coef_micro is not None:  # linear entropy_schedule only
         sidecar["entropy_coef_micro"] = learner.last_entropy_coef_micro
     if learner.population_settings is not None:  # population runs only (ADR-021 section 8)
@@ -202,6 +204,13 @@ def _check_sidecar(described: Mapping[str, Any], learner: Learner) -> int:
         expected_beta is None and "anchor_beta_micro" in described
     ):
         raise LearnerStateError("the sidecar's anchor weight is not the schedule's beta")
+    expected_threatened = (
+        None if generation == 0 else learner.anchor_threatened_beta_micro(generation - 1)
+    )
+    if described.get("anchor_threatened_beta_micro") != expected_threatened or (
+        expected_threatened is None and "anchor_threatened_beta_micro" in described
+    ):
+        raise LearnerStateError("the sidecar's Threatened anchor weight is not the schedule's beta")
     expected_entropy = None if generation == 0 else learner.entropy_coef_micro(generation - 1)
     if described.get("entropy_coef_micro") != expected_entropy or (
         expected_entropy is None and "entropy_coef_micro" in described
@@ -214,6 +223,11 @@ def _apply_schedule(learner: Learner) -> None:
     """After a restore: the rate and beta of the update just done, as an uninterrupted run holds."""
     learner.last_anchor_beta_micro = (
         None if learner.generation == 0 else learner.anchor_beta_micro(learner.generation - 1)
+    )
+    learner.last_anchor_threatened_beta_micro = (
+        None
+        if learner.generation == 0
+        else learner.anchor_threatened_beta_micro(learner.generation - 1)
     )
     learner.last_entropy_coef_micro = (
         None if learner.generation == 0 else learner.entropy_coef_micro(learner.generation - 1)

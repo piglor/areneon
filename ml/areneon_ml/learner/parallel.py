@@ -222,7 +222,15 @@ def pack_piece(piece: _Piece) -> bytes:
                 else v
                 for f in dataclasses.fields(step.query)
             }
-            coded.append([step.chosen, fields, step.potential_d])
+            # potential_d and the Threatened flag (None, 0 or 1) travel as entries 3 and 4.
+            coded.append(
+                [
+                    step.chosen,
+                    fields,
+                    step.potential_d,
+                    None if step.threatened is None else int(step.threatened),
+                ]
+            )
         steps.append([episode, role, coded])
     header = json.dumps(
         {
@@ -261,8 +269,9 @@ def unpack_piece(blob: bytes) -> _Piece:
                 EncodedQuery(**_decoded(fields, tensor)),
                 chosen,
                 potential,
+                None if threatened is None else bool(threatened),
             )
-            for chosen, fields, potential in coded
+            for chosen, fields, potential, threatened in coded
         ]
     return _Piece(
         Collected(header["order"], header["scores"], steps),

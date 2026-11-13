@@ -255,10 +255,20 @@ export interface TrainingRunConfig {
      */
     anchor?: {
       /**
-       * beta at anchor update 0, in millionths.
+       * beta at anchor update 0, in millionths, on every decision that is not Threatened. 0 is allowed only together with `threatened` (no anchor outside Threatened decisions; a reader rule keeps it at least 1 otherwise).
        */
       kl_micro: number;
       schedule: AnchorSchedule;
+      /**
+       * Optional (a minor change within v1, ADR-010 erratum A11.2, #1366): a separate anchor weight on Threatened decisions. The anchor term of a minibatch becomes (1/|B|) * sum over its decisions d of beta(d) * KL(pi_theta || pi_anchor)(d), with beta(d) = beta_threatened(t) for a Threatened decision and beta_other(t) (the anchor's own kl_micro and schedule) otherwise, each on the integer rule above with the anchor update index t; not renormalised. A Battle decision is Threatened when some living own active slot of its move request is Threatened under the one definition of packages/showdown-bridge/src/situation.ts (classifySlot), read from the TrainingExample's own candidate_features arrays threats, speeds and foe_priorities (a reader rule requires model.encoder.options.candidate_features of probe-damage/2 or probe-outcome/1); a Preview decision and a request that is not a move request are never Threatened. Absent keeps every byte, hash and report; a config that carries it is a new run.
+       */
+      threatened?: {
+        /**
+         * beta_threatened at anchor update 0, in millionths.
+         */
+        kl_micro: number;
+        schedule: AnchorSchedule;
+      };
     };
     /**
      * Optional (a minor change within v1, ADR-026 erratum E2 decisions 5 and 8, ADR-010 erratum A10, #1291): the Battle role's loss gains lambda * mean over the labelled decisions of a minibatch of KL(pi' || pi_theta), both over every real candidate (pending included, padding masked) at the run's play temperature tau (generation.play, else 1). The target is a function of the stored label alone: z(c) = ln(max(prior_ppm(c), 1) / 10^6); q_hat(c) = q(c) for a searched candidate and, for every other one, the prior-weighted mean of the searched q (weights prior_ppm); x(c) = (q_hat(c) - q_min) / (q_max - q_min) over the searched set; a label whose q_max - q_min is below min_spread_ppm is not used; pi' = softmax(z / tau + c_scale * x). Play-time truncation is ignored. lambda = coef_micro / 10^6 and c_scale = c_scale_micro / 10^6. The learner reads the label streams of the current and the previous aggregate_generations - 1 generations. Battle role only; under shared_trunk the gradient reaches the trunk. Comes with generation.search_labels (both or neither). Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.

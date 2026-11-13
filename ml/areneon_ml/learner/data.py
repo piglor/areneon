@@ -31,6 +31,7 @@ from areneon_contracts.training import (
 from areneon_ml import stopwatch
 from areneon_ml.learner.ppo import GAME_SCORE
 from areneon_ml.learner.shaping import ShapingError, differential
+from areneon_ml.learner.situation import threatened_flag
 from areneon_ml.model.encoder import EncodedQuery, Encoder, EncoderSession
 from areneon_ml.model.network import ROLES
 from areneon_ml.worker.view import IncrementalView
@@ -49,6 +50,10 @@ class Step:
     #: ``d(o)`` of the decision's observation (ppm, ``shaping.differential``): set only on a Battle
     #: step read under ``ppo.shaping`` (ADR-010 erratum A11.1), ``None`` otherwise.
     potential_d: int | None = None
+    #: Whether the decision is Threatened (ADR-010 erratum A11.2, ``learner/situation.py``), a
+    #: pure function of the example; ``None`` for a Preview step and for a Battle example whose
+    #: ``candidate_features`` lack the threat rows (the flag cannot be read there).
+    threatened: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -116,7 +121,11 @@ class _Collector:
                 potential = differential(state, session.last_request)
             except ShapingError as error:
                 raise LearnerDataError(f"Episode {episode}: {error}") from error
-        self.steps.setdefault((episode, role), []).append(Step(query, chosen, potential))
+        features = example.get("candidate_features")
+        threatened = threatened_flag(observation["log"], features) if role == "battle" else None
+        self.steps.setdefault((episode, role), []).append(
+            Step(query, chosen, potential, threatened)
+        )
 
     def collected(self) -> Collected:
         """What was seen, without the encoders and sessions (it is sent between processes)."""

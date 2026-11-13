@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { historyProblems, historyVariants, resolveHistory } from "../src/mechanics-history.ts";
+import { declareHistory, type HBattle, historyProblems, historyVariants, type ResolvedHistory, resolveHistory } from "../src/mechanics-history.ts";
 import type { MechanicsQuery } from "../src/mechanics-query.ts";
 
 // ADR-022 erratum E-22.5.3, slice H2: the declared history of a query and the two ends rule, without an engine.
@@ -124,5 +124,38 @@ describe("what the profile cannot say of a history", () => {
     // a damage query has one declared Pokemon a side
     const damage = { kind: "damage", attacker: combatant({ attacked_by: known([{ side: 1, position: 0, damage: 5 }]) }), defender: combatant({ attacked_by: known([{ side: 0, position: 1, damage: 5 }]) }), move: "tackle", state: field } as unknown as MechanicsQuery["query"];
     expect(historyProblems(damage)).toHaveLength(1);
+  });
+});
+
+describe("a volatile that needs a source Pokemon (#1353, stand-in battle)", () => {
+  type Stub = { fainted: boolean; volatiles: Record<string, unknown>; side: unknown; sources: unknown[]; addVolatile(id: string, source?: unknown): void };
+  /** A volatile that the stand-in engine takes only from a source named `ok`; `tried` lists the sources it was offered. */
+  const build = (foeActive: unknown[], allyActive: unknown[] = []) => {
+    const tried: unknown[] = [];
+    const make = (name: string, fainted = false): Stub & { name: string } => ({ name, fainted, volatiles: {}, side: null, sources: [], addVolatile(this: Stub & { name: string }, id: string, source?: unknown) { tried.push(source ?? null); if ((source as { name?: string } | null)?.name === "ok") this.volatiles[id] = {}; } });
+    const mon = make("mon");
+    const sides = [{ active: [mon, ...allyActive], pokemon: [mon], totalFainted: 0, slotConditions: [] }, { active: foeActive, pokemon: [], totalFainted: 0, slotConditions: [] }];
+    (mon as { side: unknown }).side = sides[0];
+    const battle = { sides, turn: 0, dex: { conditions: { get: () => ({ exists: true }) }, moves: { get: () => ({ exists: true }) } }, queue: { list: [] }, prng: {}, lastMove: null } as unknown as HBattle;
+    const resolved = { sides: [{}, {}], combatants: [{ side: 0, position: 0, place: 0, facts: { volatiles: [{ id: "attract", started_turn: 0, after_residual: false }] } }] } as unknown as ResolvedHistory;
+    return { battle, resolved, mon, tried, make };
+  };
+  it("offers each active Pokemon of the other side and then the ally, skipping empty slots, fainted Pokemon and the Pokemon itself", () => {
+    const { battle, resolved, tried, make, mon } = build([null, undefined, { name: "x", fainted: true, addVolatile: () => undefined }], [null]);
+    (battle.sides[1] as unknown as { active: unknown[] }).active.push(make("late"));
+    (battle.sides[0] as unknown as { active: unknown[] }).active.push(mon);
+    expect(() => declareHistory(battle, resolved, { stall: "stall", at: () => undefined })).toThrow(/refused the declared volatile: attract/);
+    expect(tried.map((each) => (each as { name?: string } | null)?.name ?? null)).toEqual([null, "late"]);
+  });
+  it("takes the volatile from the first source the engine accepts and stops offering", () => {
+    const { battle, resolved, tried, make, mon } = build([]);
+    (battle.sides[1] as unknown as { active: unknown[] }).active.push(make("ok"), make("never"));
+    declareHistory(battle, resolved, { stall: "stall", at: () => undefined });
+    expect(Object.keys((mon as unknown as Stub).volatiles)).toEqual(["attract"]);
+    expect(tried.map((each) => (each as { name?: string } | null)?.name ?? null)).toEqual([null, "ok"]);
+  });
+  it("refuses with no source in play at all", () => {
+    const { battle, resolved } = build([]);
+    expect(() => declareHistory(battle, resolved, { stall: "stall", at: () => undefined })).toThrow(/refused the declared volatile/);
   });
 });

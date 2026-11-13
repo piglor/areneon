@@ -986,6 +986,21 @@ class AnchorSchedule(RootModel[ConstantSchedule | AnchorLinearSchedule]):
     ]
 
 
+class Threatened(BaseModel):
+    """
+    Optional (a minor change within v1, ADR-010 erratum A11.2, #1366): a separate anchor weight on Threatened decisions. The anchor term of a minibatch becomes (1/|B|) * sum over its decisions d of beta(d) * KL(pi_theta || pi_anchor)(d), with beta(d) = beta_threatened(t) for a Threatened decision and beta_other(t) (the anchor's own kl_micro and schedule) otherwise, each on the integer rule above with the anchor update index t; not renormalised. A Battle decision is Threatened when some living own active slot of its move request is Threatened under the one definition of packages/showdown-bridge/src/situation.ts (classifySlot), read from the TrainingExample's own candidate_features arrays threats, speeds and foe_priorities (a reader rule requires model.encoder.options.candidate_features of probe-damage/2 or probe-outcome/1); a Preview decision and a request that is not a move request are never Threatened. Absent keeps every byte, hash and report; a config that carries it is a new run.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kl_micro: Annotated[StrictInt, Field(ge=1, le=100000000)]
+    """
+    beta_threatened at anchor update 0, in millionths.
+    """
+    schedule: AnchorSchedule
+
+
 class Anchor(BaseModel):
     """
     Optional (a minor change within v1, ADR-019 section 4, ADR-010 erratum A2 item 3, #968): for a run that declares warm_start, a KL anchor to the warm-start pair. Per decision, beta * KL(pi_theta || pi_anchor) is added to the loss, with both policies the softmax over the real candidates and pi_anchor the frozen warm-start pair (the declared checkpoints of both roles), computed once per generation from its frozen weights with no gradient. beta, in millionths, is kl_micro for a constant schedule; for a linear one, with t the anchor update index from 0, beta(t) = kl_micro + trunc((final_micro - kl_micro) * min(t, generations) / generations) in exact integers, truncating toward zero (the rule of learning_rate_schedule). Both roles alike. With ppo.value_warmup the anchor is inactive (beta 0) while the policy is frozen and t counts from the first policy update, the update after the warm-up. Absent means no anchor. A config that carries it is a new run.
@@ -994,11 +1009,15 @@ class Anchor(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    kl_micro: Annotated[StrictInt, Field(ge=1, le=100000000)]
+    kl_micro: Annotated[StrictInt, Field(ge=0, le=100000000)]
     """
-    beta at anchor update 0, in millionths.
+    beta at anchor update 0, in millionths, on every decision that is not Threatened. 0 is allowed only together with `threatened` (no anchor outside Threatened decisions; a reader rule keeps it at least 1 otherwise).
     """
     schedule: AnchorSchedule
+    threatened: Threatened | MISSING = MISSING
+    """
+    Optional (a minor change within v1, ADR-010 erratum A11.2, #1366): a separate anchor weight on Threatened decisions. The anchor term of a minibatch becomes (1/|B|) * sum over its decisions d of beta(d) * KL(pi_theta || pi_anchor)(d), with beta(d) = beta_threatened(t) for a Threatened decision and beta_other(t) (the anchor's own kl_micro and schedule) otherwise, each on the integer rule above with the anchor update index t; not renormalised. A Battle decision is Threatened when some living own active slot of its move request is Threatened under the one definition of packages/showdown-bridge/src/situation.ts (classifySlot), read from the TrainingExample's own candidate_features arrays threats, speeds and foe_priorities (a reader rule requires model.encoder.options.candidate_features of probe-damage/2 or probe-outcome/1); a Preview decision and a request that is not a move request are never Threatened. Absent keeps every byte, hash and report; a config that carries it is a new run.
+    """
 
 
 class Ppo(BaseModel):
