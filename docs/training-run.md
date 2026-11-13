@@ -745,6 +745,14 @@ experiment's job, not this document's.
   is a new `run_key`.
 - **Resume:** nothing is stored beyond the counter; the anchor pair is loaded from the store again
   at every start, so a run killed anywhere reaches the same learner-state hashes.
+- **Threatened decisions (ADR-010 erratum A11.2):** `ppo.anchor.threatened {kl_micro, schedule}`
+  gives the decisions that are Threatened their own beta (the anchor's own `kl_micro`, which may
+  then be 0, weighs every other decision). A Battle decision is Threatened when some living own
+  active slot of its request is Threatened under the diagnostic's definition (`situation.ts`),
+  read from the example's `threats`, `speeds` and `foe_priorities` rows, so the run needs
+  `candidate_features` of `probe-damage/2` or `probe-outcome/1`. The report gains
+  `anchor_threatened_steps`, `anchor_kl_threatened` and `anchor_threatened_beta_micro` (Battle
+  role), the sidecar `anchor_threatened_beta_micro`.
 - **Play temperature (ADR-023):** the amendment that computes the KL between the tempered trained
   and tempered anchor policies applies to a run that declares `generation.play`; that field is not
   in the run config yet, so this slice uses temperature 1 throughout, and the run that adds it

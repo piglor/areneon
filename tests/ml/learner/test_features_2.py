@@ -146,3 +146,64 @@ def test_the_belief_set_is_a_registered_set_read_like_the_first_and_labelled_as_
 
     assert family_label(edited_config(edit)) == FEATURES_BELIEF_FAMILY
     assert "sampled opponent worlds" in FEATURES_BELIEF_FAMILY
+
+
+# -- the Threatened flag through the real loader (ADR-010 erratum A11.2, #1366) -----------------
+
+
+def with_rows(threat_ohko: int, relation: str, priority: int) -> dict[str, Any]:
+    """The sample with own slot 0 reached by foe 1's thunderbolt (``threat_ohko`` rolls), the
+    speed relation of that pair and the foe move's priority set as given."""
+    example: dict[str, Any] = json.loads(json.dumps(EXAMPLE))
+    rows = example["candidate_features"]
+    for row in rows["threats"]:
+        if (row["own"], row["foe"], row["move"]) == (0, 1, "thunderbolt"):
+            row["ohko_rolls"] = threat_ohko
+    for row in rows["speeds"]:
+        if (row["own"], row["foe"]) == (0, 1):
+            row["relation"] = relation
+    for row in rows["foe_priorities"]:
+        if (row["foe"], row["move"]) == (1, "thunderbolt"):
+            row["priority"] = priority
+    return example
+
+
+CASES = [
+    (0, "foe_first", 0, False),  # no roll reaches the HP
+    (5, "foe_first", 0, True),  # reaches, and the foe is faster at priority 0
+    (5, "own_first", 0, False),  # reaches but acts after
+    (5, "tie", 0, False),
+    (5, "own_first", 1, True),  # priority above 0 acts first whatever the speed
+    (5, "foe_first", -1, False),  # priority below 0 acts last
+]
+
+
+def test_the_loader_flags_a_step_exactly_as_classify_slot_says() -> None:
+    from areneon_ml.learner.situation import classify_slot  # noqa: PLC0415
+
+    for ohko, relation, priority, expected in CASES:
+        example = with_rows(ohko, relation, priority)
+        assert (classify_slot(example["candidate_features"], 0) == "threatened") is expected
+        text, manifest = stream_of([example])
+        trajs = trajectories(text, manifest, encoders(ON), POLICY)
+        (battle,) = [t for t in trajs if t.role == "battle"]
+        assert [s.threatened for s in battle.steps] == [expected], (ohko, relation, priority)
+        # the worker transport keeps the flag
+        collector = _Collector(encoders(ON))
+        collector.add(json.loads(json.dumps(example)))
+        sent = parallel._Piece(collector.collected(), set(), set())
+        back = parallel.unpack_piece(parallel.pack_piece(sent))
+        flags = [
+            s.threatened for k, v in back.collected.steps.items() if k[1] == "battle" for s in v
+        ]
+        assert flags == [expected]
+
+
+def test_a_stream_without_the_arrays_has_no_flag() -> None:
+    plain = json.loads(json.dumps(EXAMPLE))
+    del plain["candidate_features"]
+    text, manifest = stream_of([plain])
+    trajs = trajectories(text, manifest, encoders(TINY_ENCODER), POLICY)
+    assert [s.threatened for t in trajs for s in t.steps] == [None] * sum(
+        len(t.steps) for t in trajs
+    )

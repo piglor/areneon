@@ -410,13 +410,33 @@
           ],
           "properties": {
             "kl_micro": {
-              "description": "beta at anchor update 0, in millionths.",
+              "description": "beta at anchor update 0, in millionths, on every decision that is not Threatened. 0 is allowed only together with `threatened` (no anchor outside Threatened decisions; a reader rule keeps it at least 1 otherwise).",
               "type": "integer",
-              "minimum": 1,
+              "minimum": 0,
               "maximum": 100000000
             },
             "schedule": {
               "$ref": "#/$defs/AnchorSchedule"
+            },
+            "threatened": {
+              "description": "Optional (a minor change within v1, ADR-010 erratum A11.2, #1366): a separate anchor weight on Threatened decisions. The anchor term of a minibatch becomes (1/|B|) * sum over its decisions d of beta(d) * KL(pi_theta || pi_anchor)(d), with beta(d) = beta_threatened(t) for a Threatened decision and beta_other(t) (the anchor's own kl_micro and schedule) otherwise, each on the integer rule above with the anchor update index t; not renormalised. A Battle decision is Threatened when some living own active slot of its move request is Threatened under the one definition of packages/showdown-bridge/src/situation.ts (classifySlot), read from the TrainingExample's own candidate_features arrays threats, speeds and foe_priorities (a reader rule requires model.encoder.options.candidate_features of probe-damage/2 or probe-outcome/1); a Preview decision and a request that is not a move request are never Threatened. Absent keeps every byte, hash and report; a config that carries it is a new run.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kl_micro",
+                "schedule"
+              ],
+              "properties": {
+                "kl_micro": {
+                  "description": "beta_threatened at anchor update 0, in millionths.",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100000000
+                },
+                "schedule": {
+                  "$ref": "#/$defs/AnchorSchedule"
+                }
+              }
             }
           }
         },

@@ -89,10 +89,25 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     expect(await runConfigHash(constant)).not.toBe(await runConfigHash(readTrainingRunConfig(sample("warm-start"))));
     const tiny = sample("tiny") as { ppo: Record<string, unknown> };
     expect(() => readTrainingRunConfig({ ...tiny, ppo: { ...tiny.ppo, anchor: { kl_micro: 1, schedule: { kind: "constant" } } } })).toThrow(/needs warm_start/);
-    for (const name of ["zero-kl", "no-schedule", "linear-zero-generations", "extra-field"]) {
+    for (const name of ["negative-kl", "no-schedule", "linear-zero-generations", "extra-field", "threatened-zero-kl", "threatened-no-schedule", "threatened-extra-field"]) {
       const raw = JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/training-run-config/invalid/anchor-${name}.json`), "utf8"));
       expect(() => readTrainingRunConfig(raw)).toThrow(TrainingRunConfigError);
     }
+  });
+
+  it("reads a threat-targeted anchor with its own rules (ADR-010 erratum A11.2)", async () => {
+    const both = readTrainingRunConfig(sample("anchor-threatened"));
+    expect(both.ppo.anchor).toEqual({ kl_micro: 100000, schedule: { kind: "constant" }, threatened: { kl_micro: 1000000, schedule: { kind: "constant" } } });
+    const only = readTrainingRunConfig(sample("anchor-threatened-only"));
+    expect(only.ppo.anchor?.kl_micro).toBe(0);
+    expect(await runConfigHash(both)).not.toBe(await runConfigHash(only));
+    const reject = (name: string, message: RegExp): void => {
+      const raw = JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/training-run-config/reader-invalid/${name}.json`), "utf8"));
+      expect(() => readTrainingRunConfig(raw), name).toThrow(message);
+    };
+    reject("anchor-zero-kl", /needs ppo.anchor.threatened/);
+    reject("anchor-threatened-no-features", /probe-damage\/2 or probe-outcome\/1/);
+    reject("anchor-threatened-features-1", /probe-damage\/2 or probe-outcome\/1/);
   });
 
   it("reads damage-aware as a scripted baseline and refuses a fourth entry (ADR-018 section 7)", () => {

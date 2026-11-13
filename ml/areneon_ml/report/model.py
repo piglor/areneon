@@ -77,6 +77,12 @@ STEPS_KEYS = ("steps", "optimiser_steps")
 KL_STOP_KEYS = ("epochs_run", "kl_stopped")  # only when ppo.target_kl_micro is set (ADR-010 A1)
 VALUE_WARMUP_KEY = "value_warmup"  # only on a value warm-up update (ADR-019 section 4)
 ANCHOR_KEYS = ("anchor_kl", "anchor_beta_micro")  # only when ppo.anchor is set (ADR-019 section 4)
+#: Battle role only, and only under ppo.anchor.threatened (ADR-010 erratum A11.2).
+THREATENED_KEYS = (
+    "anchor_threatened_steps",
+    "anchor_kl_threatened",
+    "anchor_threatened_beta_micro",
+)
 ENTROPY_SCHEDULE_KEY = "entropy_coef_micro"  # only under a linear ppo.entropy_schedule (ADR-023)
 PREVIEW_BOOTSTRAP_KEY = "preview_bootstrap_micro"  # Preview only, when set (A4)
 TEMPERATURE_KEY = "temperature_ppm"  # only for a run that declares generation.play (ADR-023)
@@ -102,6 +108,7 @@ TRAIN_ROLE_KEYS = (
             PREVIEW_BOOTSTRAP_KEY,
             TEMPERATURE_KEY,
             *SEARCH_KEYS,
+            *THREATENED_KEYS,
             *VALUE_KEYS,
         }
     ),
@@ -335,6 +342,19 @@ def _check_search_keys(values: dict[str, Any], role: str) -> None:
             raise ReportError(f"{role} {key} is a KL divergence and cannot be negative")
 
 
+def _check_threatened_keys(values: dict[str, Any], role: str) -> None:
+    if not set(THREATENED_KEYS) & set(values):
+        return
+    if set(THREATENED_KEYS) - set(values) or role != "battle" or "anchor_kl" not in values:
+        raise ReportError(
+            f"{role} the Threatened anchor keys come together, with the anchor (Battle)"
+        )
+    integer(values["anchor_threatened_steps"], f"{role} anchor_threatened_steps")
+    integer(values["anchor_threatened_beta_micro"], f"{role} anchor_threatened_beta_micro")
+    if _number(values["anchor_kl_threatened"], f"{role} anchor_kl_threatened") < 0:
+        raise ReportError(f"{role} anchor_kl_threatened is a KL divergence and cannot be negative")
+
+
 def read_train_report(raw: object) -> TrainFacts:
     """``train-report.json`` with closed key sets: both roles, each with exactly the known keys."""
     body = closed(raw, TRAIN_KEYS, "train-report.json")
@@ -358,6 +378,7 @@ def read_train_report(raw: object) -> TrainFacts:
             if key in values:
                 integer(values[key], f"{role} {key}", minimum)
         _check_search_keys(values, role)
+        _check_threatened_keys(values, role)
         if set(VALUE_KEYS) & set(values):
             if set(VALUE_KEYS) - set(values):
                 raise ReportError(f"{role} explained_variance and value_calibration come together")

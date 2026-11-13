@@ -30,6 +30,7 @@ from areneon_contracts.training import (
 
 from areneon_ml import stopwatch
 from areneon_ml.learner.ppo import GAME_SCORE
+from areneon_ml.learner.situation import threatened_flag
 from areneon_ml.model.encoder import EncodedQuery, Encoder, EncoderSession
 from areneon_ml.model.network import ROLES
 from areneon_ml.worker.view import IncrementalView
@@ -45,6 +46,10 @@ class Step:
 
     query: EncodedQuery
     chosen: int
+    #: Whether the decision is Threatened (ADR-010 erratum A11.2, ``learner/situation.py``), a
+    #: pure function of the example; ``None`` for a Preview step and for a Battle example whose
+    #: ``candidate_features`` lack the threat rows (the flag cannot be read there).
+    threatened: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -102,7 +107,9 @@ class _Collector:
         )
         stopwatch.end("reduce", mark)  # the view's rqid clean is part of reading the channel
         query = session.encode(encoder_input)
-        self.steps.setdefault((episode, role), []).append(Step(query, chosen))
+        features = example.get("candidate_features")
+        threatened = threatened_flag(observation["log"], features) if role == "battle" else None
+        self.steps.setdefault((episode, role), []).append(Step(query, chosen, threatened))
 
     def collected(self) -> Collected:
         """What was seen, without the encoders and sessions (it is sent between processes)."""
