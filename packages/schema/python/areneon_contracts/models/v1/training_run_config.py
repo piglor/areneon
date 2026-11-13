@@ -987,6 +987,29 @@ class Anchor(BaseModel):
     schedule: AnchorSchedule
 
 
+class Imitation(BaseModel):
+    """
+    Optional (a minor change within v1, ADR-010 erratum A11.3, #1367): the Battle role's loss gains lambda_im(t) * the mean over the teacher steps of a minibatch of -log pi_theta(teacher choice | example), the softmax over the example's real candidates at the run's play temperature (generation.play, else 1), padding masked: a supervised term on the fixed states of a scripted teacher's TrainingSet (the set the warm start was cloned from), mixed into PPO. No clip and no value term. The set is copied into the run directory by `python -m areneon_ml.loop import-teacher` (nothing is fetched) and read at the start of every update through the stream reader with its manifest; it must hash to training_set_hash (the SHA-256 of the manifest's JCS bytes, as CloneRunConfig.teacher.training_set_hash), be synthetic and learner_ready and be played by a scripted teacher (`<name>@<version>`, never a learned `policy:` id). The teacher's Team Preview examples are not used. Per update K = floor(share_ppm * N_battle / 10^6) teacher steps (N_battle the update's Battle steps, at most the set's size) are drawn without replacement by a generator seeded from the learner seed, the update index and the purpose `imitation/1`, shuffled per epoch and spread over the Battle minibatches; the learner's own generator is untouched. lambda_im(t) = coef_micro / 10^6 for a constant schedule; for a linear one, with t the policy update index from 0, coef_micro + trunc((final_micro - coef_micro) * min(t, generations) / generations) in exact integers (the anchor's rule). Off during ppo.value_warmup (t counts from the first policy update, as the anchor's does); under shared_trunk its gradient reaches the shared trunk. Needs warm_start with a battle checkpoint. Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    training_set_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+    """
+    SHA-256 of the teacher TrainingSet manifest's JCS bytes.
+    """
+    coef_micro: Annotated[StrictInt, Field(ge=1, le=100000000)]
+    """
+    lambda_im at policy update 0, in millionths.
+    """
+    share_ppm: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    The teacher steps of an update as a share of its Battle steps, in parts per million.
+    """
+    schedule: AnchorSchedule
+
+
 class Ppo(BaseModel):
     """
     PPO with GAE (ADR-010 section 1). Real-valued settings are integers in millionths (_micro) or billionths (_nano), because contracts carry no floating-point numbers.
@@ -1078,6 +1101,10 @@ class Ppo(BaseModel):
     search_distill: SearchDistill | MISSING = MISSING
     """
     Optional (a minor change within v1, ADR-026 erratum E2 decisions 5 and 8, ADR-010 erratum A10, #1291): the Battle role's loss gains lambda * mean over the labelled decisions of a minibatch of KL(pi' || pi_theta), both over every real candidate (pending included, padding masked) at the run's play temperature tau (generation.play, else 1). The target is a function of the stored label alone: z(c) = ln(max(prior_ppm(c), 1) / 10^6); q_hat(c) = q(c) for a searched candidate and, for every other one, the prior-weighted mean of the searched q (weights prior_ppm); x(c) = (q_hat(c) - q_min) / (q_max - q_min) over the searched set; a label whose q_max - q_min is below min_spread_ppm is not used; pi' = softmax(z / tau + c_scale * x). Play-time truncation is ignored. lambda = coef_micro / 10^6 and c_scale = c_scale_micro / 10^6. The learner reads the label streams of the current and the previous aggregate_generations - 1 generations. Battle role only; under shared_trunk the gradient reaches the trunk. Comes with generation.search_labels (both or neither). Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.
+    """
+    imitation: Imitation | MISSING = MISSING
+    """
+    Optional (a minor change within v1, ADR-010 erratum A11.3, #1367): the Battle role's loss gains lambda_im(t) * the mean over the teacher steps of a minibatch of -log pi_theta(teacher choice | example), the softmax over the example's real candidates at the run's play temperature (generation.play, else 1), padding masked: a supervised term on the fixed states of a scripted teacher's TrainingSet (the set the warm start was cloned from), mixed into PPO. No clip and no value term. The set is copied into the run directory by `python -m areneon_ml.loop import-teacher` (nothing is fetched) and read at the start of every update through the stream reader with its manifest; it must hash to training_set_hash (the SHA-256 of the manifest's JCS bytes, as CloneRunConfig.teacher.training_set_hash), be synthetic and learner_ready and be played by a scripted teacher (`<name>@<version>`, never a learned `policy:` id). The teacher's Team Preview examples are not used. Per update K = floor(share_ppm * N_battle / 10^6) teacher steps (N_battle the update's Battle steps, at most the set's size) are drawn without replacement by a generator seeded from the learner seed, the update index and the purpose `imitation/1`, shuffled per epoch and spread over the Battle minibatches; the learner's own generator is untouched. lambda_im(t) = coef_micro / 10^6 for a constant schedule; for a linear one, with t the policy update index from 0, coef_micro + trunc((final_micro - coef_micro) * min(t, generations) / generations) in exact integers (the anchor's rule). Off during ppo.value_warmup (t counts from the first policy update, as the anchor's does); under shared_trunk its gradient reaches the shared trunk. Needs warm_start with a battle checkpoint. Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.
     """
 
 

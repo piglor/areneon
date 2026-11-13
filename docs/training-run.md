@@ -750,6 +750,47 @@ experiment's job, not this document's.
   in the run config yet, so this slice uses temperature 1 throughout, and the run that adds it
   carries the combination.
 
+### Mixing the teacher into PPO: `ppo.imitation`
+
+A Battle-only warm run may add a supervised term on the fixed states of the scripted teacher's
+`TrainingSet` (ADR-010 erratum A11.3, #1367): `"ppo": {..., "imitation": {"training_set_hash":
+"<64 hex>", "coef_micro": 100000, "share_ppm": 250000, "schedule": {"kind": "constant"}}}`. The
+reader refuses it without `warm_start` and with a `population`. `training_set_hash` is the SHA-256
+of the teacher manifest's JCS bytes (the same hash a clone config names); `coef_micro` is lambda_im
+(1 to 100,000,000), `share_ppm` the teacher steps of an update as a share of its Battle steps, and
+`schedule` is the anchor's (`constant` or `linear` to a final that may be 0).
+
+- **Import first (nothing is fetched):** `python -m areneon_ml.loop import-teacher --stream-dir D
+  --run-dir R` copies `D/stream.jsonl` and `D/training-set.json` into `R/teacher/<hash>/`. It
+  checks the stream against the manifest, refuses a manifest that is not synthetic, not
+  `learner_ready` or played by a learned `policy:` id, refuses a hash other than the run config's
+  `ppo.imitation.training_set_hash` (once `R/run-config.json` exists), never replaces a file with
+  other bytes and does nothing when run again. The run holds the directory lock, so import before
+  starting the run.
+- **Read:** at every update the learner uses that stream through the stream reader with its
+  manifest (the encoded steps are kept for the process, the files being immutable). Any refusal
+  above, and any example the run's encoder refuses (a feature set the run does not read, rows
+  missing), is a `LearnerDataError` (exit 3). The teacher's Team Preview examples are not used.
+- **Loss:** `lambda_im(t) * mean(-log pi_theta(teacher choice))` over the minibatch's teacher
+  steps, the softmax over each example's real candidates at the run's play temperature, no clip and
+  no value term. K = floor(`share_ppm` * N_battle / 10^6) steps per update (capped at the set's
+  size) are drawn without replacement by a generator of their own, seeded from the learner seed,
+  the update index and the purpose `imitation/1`, shuffled per epoch and spread over the Battle
+  minibatches; the learner's main generator is untouched, so a run without the block and the
+  Preview role keep their orders. Off during `ppo.value_warmup` (the policy is frozen); `t`
+  counts from the first policy update, as the anchor's does. Under `shared_trunk` its gradient
+  reaches the shared trunk.
+- **Records:** `train-report.json`, Battle role, only with the block: `imitation_steps`,
+  `imitation_coef_micro` (0 on a warm-up update), `imitation_ce_before` and `imitation_ce_after`
+  (mean cross-entropy over the drawn steps at the frozen weights and after the epochs) and
+  `imitation_top1_ppm` (agreement with the teacher after the epochs). The sidecar records
+  `imitation_coef_micro` for a linear schedule only; a restore refuses one that is not the
+  schedule's.
+- **Provenance (C6):** from generation 1 each checkpoint record lists the teacher set in
+  `training_set_hashes` (with the PPO set), and the sources registry maps it to `[]`, an outside
+  behaviour-cloning source, exactly as a warm start's teacher set. Two runs that read one teacher
+  set are therefore not independent; `L2` must use its own teacher run.
+
 ## 6. Your own teams as a test set: the private test (owner only)
 
 The private test (ADR-015 erratum E1, item 2) measures one frozen pair on your own teams, from

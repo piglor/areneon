@@ -95,6 +95,23 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     }
   });
 
+  it("reads the teacher imitation mix only with a warm start and refuses a population (ADR-010 erratum A11.3)", async () => {
+    const constant = readTrainingRunConfig(sample("imitation-constant"));
+    expect(constant.ppo.imitation).toMatchObject({ coef_micro: 100000, share_ppm: 250000, schedule: { kind: "constant" } });
+    const linear = readTrainingRunConfig(sample("imitation-linear"));
+    expect(linear.ppo.imitation?.schedule).toEqual({ kind: "linear", final_micro: 0, generations: 10 });
+    expect(readTrainingRunConfig(sample("warm-start-battle-only")).ppo).not.toHaveProperty("imitation");
+    expect(await runConfigHash(constant)).not.toBe(await runConfigHash(readTrainingRunConfig(sample("warm-start-battle-only"))));
+    for (const [name, message] of [["no-warm-start", /needs warm_start/], ["population", /cannot be combined with a population/]] as const) {
+      const raw = JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/training-run-config/reader-invalid/imitation-${name}.json`), "utf8"));
+      expect(() => readTrainingRunConfig(raw)).toThrow(message);
+    }
+    for (const name of ["zero-share", "short-hash", "extra-field"]) {
+      const raw = JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/training-run-config/invalid/imitation-${name}.json`), "utf8"));
+      expect(() => readTrainingRunConfig(raw)).toThrow(TrainingRunConfigError);
+    }
+  });
+
   it("reads damage-aware as a scripted baseline and refuses a fourth entry (ADR-018 section 7)", () => {
     const config = readTrainingRunConfig(sample("damage-aware"));
     expect(config.generation.baseline_games.map((b) => b.actor)).toEqual(["random-legal", "actor-rule", "damage-aware"]);

@@ -37,7 +37,8 @@ from areneon_ml.checkpoint.files import checkpoint_bytes, checkpoint_id, write_c
 from areneon_ml.checkpoint.provenance import ProvenanceGraph
 from areneon_ml.checkpoint.record import CheckpointRecord, read_record
 from areneon_ml.learner.config import RunConfig
-from areneon_ml.learner.data import trajectories
+from areneon_ml.learner.data import LearnerDataError, Step, trajectories
+from areneon_ml.learner.imitation import read_teacher
 from areneon_ml.learner.labels import LabelReader, LabelStep
 from areneon_ml.learner.parallel import load_workers
 from areneon_ml.learner.state import pack_state, restore_state
@@ -75,6 +76,7 @@ from areneon_ml.loop.records import (
     team_set_manifest,
 )
 from areneon_ml.loop.sheet_regimes import manifests_problem
+from areneon_ml.loop.teacher import TEACHER_DIR, teacher_paths
 from areneon_ml.loop.warm_start import WarmPair, WarmStartError, load_warm_start
 from areneon_ml.model.encoder import Encoder, encoder_version
 from areneon_ml.model.gamedata import GameData
@@ -233,6 +235,7 @@ class Loop:
         self._encoders = {role: Encoder(game, config.model.encoder) for role in ROLES}
         self._learner: Learner | None = None
         self._frozen: Frozen | None = None
+        self._teacher: tuple[Step, ...] | None = None
 
     # -- the run directory ---------------------------------------------------
 
@@ -460,6 +463,7 @@ class Loop:
                     load_workers(self.load_processes, self.load_auto, self.load_memory_mb),
                 )
                 labels, label_sets = self._load_labels(generation, work, summary, pair)
+                teacher, label_sets = self._load_teacher(label_sets)
             if self.profile:
                 timing.profile = profile_record(
                     dict(getattr(self.player, "last_profile", None) or {}), stopwatch.take()
@@ -470,7 +474,7 @@ class Loop:
         if self.device.type == "cuda":
             torch.cuda.reset_peak_memory_stats(self.device)
         with timing.phase("train"):
-            report = learner.train(found, labels)
+            report = learner.train(found, labels, teacher)
         if self.device.type == "cuda":
             timing.peak_memory = int(torch.cuda.max_memory_allocated(self.device))
             timing.peak_reserved = int(torch.cuda.max_memory_reserved(self.device))
@@ -496,6 +500,36 @@ class Loop:
             game_manifests=game_manifests,
         )
         return self._seal(generation, work, sealing, timing)
+
+    def _load_teacher(
+        self, label_sets: tuple[str, ...]
+    ) -> tuple[tuple[Step, ...] | None, tuple[str, ...]]:
+        """The teacher's Battle steps (``ppo.imitation``, ADR-010 erratum A11.3) and the hash list
+        a record names: the label sets plus the teacher set (an outside source in the registry).
+
+        ``None`` without the block. The stream is the one ``import-teacher`` copied into the run
+        directory; it is read through the stream reader with its manifest (every refusal of the
+        erratum is a ``LearnerDataError``). The encoded steps are kept for the process, since the
+        files are immutable and a second read gives the same tensors; a resumed run reads again.
+        """
+        settings = self.config.ppo.imitation
+        if settings is None:
+            return None, label_sets
+        if self._teacher is None:
+            stream, manifest_path = teacher_paths(self.run_dir, settings.training_set_hash)
+            if not stream.is_file() or not manifest_path.is_file():
+                raise LearnerDataError(
+                    "the teacher stream is not in the run directory: "
+                    "run `python -m areneon_ml.loop import-teacher` first"
+                )
+            self._teacher = read_teacher(
+                stream,
+                layout.read_json(manifest_path),
+                settings.training_set_hash,
+                self._encoders,
+                load_workers(self.load_processes, self.load_auto, self.load_memory_mb),
+            )
+        return self._teacher, tuple(sorted({*label_sets, settings.training_set_hash}))
 
     def _load_labels(
         self, generation: int, work: Path, summary: dict[str, Any], pair: str
@@ -740,6 +774,10 @@ def sources_registry(run_dir: Path) -> dict[str, list[str]]:
                 previous.values()
             )
         previous = dict(facts["checkpoints"])
+    # A teacher stream imported for ``ppo.imitation`` (ADR-010 erratum A11.3) is an outside
+    # behaviour-cloning source, like a warm start's teacher set: it maps to no checkpoint.
+    for manifest in sorted((run_dir / TEACHER_DIR).glob("*/training-set.json")):
+        registry[sha256_hex(jcs(layout.read_json(manifest)))] = []
     return registry
 
 

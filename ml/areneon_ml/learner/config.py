@@ -121,6 +121,31 @@ class SearchDistillSettings:
 
 
 @dataclass(frozen=True)
+class ImitationSettings:
+    """``ppo.imitation`` (ADR-010 erratum A11.3, #1367): the teacher imitation mix.
+
+    ``coef_micro_at(t)`` is lambda_im in millionths at policy update ``t`` (the anchor's rule:
+    ``coef_micro`` for a constant schedule, else the linear one in exact integers).
+    """
+
+    training_set_hash: str
+    coef_micro: int
+    share_ppm: int
+    schedule: LinearSchedule | None
+
+    def coef_micro_at(self, t: int) -> int:
+        if self.schedule is None:
+            if t < 0:
+                raise RunConfigError("a learner update index counts from 0")
+            return self.coef_micro
+        return self.schedule.rate_micro(t)
+
+    def steps(self, battle_steps: int, available: int) -> int:
+        """K = floor(share_ppm * N_battle / 10^6), at most the teacher set's size."""
+        return min(self.share_ppm * battle_steps // MICRO, available)
+
+
+@dataclass(frozen=True)
 class PPOSettings:
     epochs: int
     minibatch_size: int
@@ -152,6 +177,8 @@ class PPOSettings:
     preview_bootstrap_micro: int | None = None
     # ``ppo.search_distill`` (ADR-026 erratum E2): None when absent (no distillation term).
     search_distill: SearchDistillSettings | None = None
+    # ``ppo.imitation`` (ADR-010 erratum A11.3): None when absent (no imitation term).
+    imitation: ImitationSettings | None = None
 
 
 @dataclass(frozen=True)
@@ -240,6 +267,37 @@ def _search_distill(ppo: dict[str, Any]) -> SearchDistillSettings | None:
         found["min_spread_ppm"],
         found["aggregate_generations"],
     )
+
+
+def _imitation(ppo: dict[str, Any]) -> ImitationSettings | None:
+    found = ppo.get("imitation")
+    if found is None:
+        return None
+    schedule = found["schedule"]
+    return ImitationSettings(
+        found["training_set_hash"],
+        found["coef_micro"],
+        found["share_ppm"],
+        None
+        if schedule["kind"] == "constant"
+        else LinearSchedule(found["coef_micro"], schedule["final_micro"], schedule["generations"]),
+    )
+
+
+def _check_imitation(raw: dict[str, Any]) -> None:
+    """The rules of ``ppo.imitation`` the profile cannot say (TS ``readTrainingRunConfig``)."""
+    if "imitation" not in raw["ppo"]:
+        return
+    if "warm_start" not in raw:
+        raise RunConfigError(
+            "training-run-config: ppo.imitation needs warm_start with a battle checkpoint: "
+            "the term pulls toward the source the clone came from"
+        )
+    if "population" in raw:
+        raise RunConfigError(
+            "training-run-config: ppo.imitation cannot be combined with a population "
+            "(no per-member teacher stream)"
+        )
 
 
 def _check_search_distillation(raw: dict[str, Any]) -> None:
@@ -429,6 +487,7 @@ def read_run_config(raw: object) -> RunConfig:
         raise RunConfigError(
             "training-run-config: ppo.anchor needs warm_start (the anchor is the warm-start pair)"
         )
+    _check_imitation(raw)
     if "population" in raw:
         if warm is not None and "preview" in warm:
             raise RunConfigError(
@@ -494,6 +553,7 @@ def read_run_config(raw: object) -> RunConfig:
             entropy_schedule=_entropy_schedule(ppo),
             preview_bootstrap_micro=ppo.get("preview_bootstrap_micro"),
             search_distill=_search_distill(ppo),
+            imitation=_imitation(ppo),
         ),
         device=raw["learner"]["device"],
         threads=raw["learner"]["threads"],

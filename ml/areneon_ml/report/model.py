@@ -88,6 +88,14 @@ OPTIONAL_INTEGER_KEYS = (
 )
 #: Battle role only, and only under ppo.search_distill (ADR-026 erratum E2, ADR-010 A10).
 SEARCH_KEYS = ("search_labels", "search_kl_before", "search_kl_after")
+#: Battle role only, and only under ppo.imitation (ADR-010 erratum A11.3).
+IMITATION_KEYS = (
+    "imitation_steps",
+    "imitation_coef_micro",
+    "imitation_ce_before",
+    "imitation_ce_after",
+    "imitation_top1_ppm",
+)
 VALUE_KEYS = ("explained_variance", "value_calibration")  # value-head diagnostics (ADR-010 A4)
 CALIBRATION_BINS = 10
 CALIBRATION_KEYS = (frozenset({"count", "mean_value", "mean_score"}), frozenset[str]())
@@ -102,6 +110,7 @@ TRAIN_ROLE_KEYS = (
             PREVIEW_BOOTSTRAP_KEY,
             TEMPERATURE_KEY,
             *SEARCH_KEYS,
+            *IMITATION_KEYS,
             *VALUE_KEYS,
         }
     ),
@@ -335,6 +344,20 @@ def _check_search_keys(values: dict[str, Any], role: str) -> None:
             raise ReportError(f"{role} {key} is a KL divergence and cannot be negative")
 
 
+def _check_imitation_keys(values: dict[str, Any], role: str) -> None:
+    """The imitation keys come together, on the Battle role, with sane values."""
+    if not set(IMITATION_KEYS) & set(values):
+        return
+    if set(IMITATION_KEYS) - set(values) or role != "battle":
+        raise ReportError(f"{role} imitation keys come together (Battle)")
+    integer(values["imitation_steps"], f"{role} imitation_steps")
+    integer(values["imitation_coef_micro"], f"{role} imitation_coef_micro")
+    integer(values["imitation_top1_ppm"], f"{role} imitation_top1_ppm")
+    for key in ("imitation_ce_before", "imitation_ce_after"):
+        if _number(values[key], f"{role} {key}") < 0:
+            raise ReportError(f"{role} {key} is a cross-entropy and cannot be negative")
+
+
 def read_train_report(raw: object) -> TrainFacts:
     """``train-report.json`` with closed key sets: both roles, each with exactly the known keys."""
     body = closed(raw, TRAIN_KEYS, "train-report.json")
@@ -358,6 +381,7 @@ def read_train_report(raw: object) -> TrainFacts:
             if key in values:
                 integer(values[key], f"{role} {key}", minimum)
         _check_search_keys(values, role)
+        _check_imitation_keys(values, role)
         if set(VALUE_KEYS) & set(values):
             if set(VALUE_KEYS) - set(values):
                 raise ReportError(f"{role} explained_variance and value_calibration come together")

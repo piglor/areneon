@@ -455,7 +455,22 @@ def test_the_search_distillation_keys_are_read_together_on_the_battle_role() -> 
     read_train_report(raw)
 
 
+def test_the_imitation_keys_are_read_together_on_the_battle_role() -> None:
+    raw = json.loads(json.dumps(TRAIN_REPORT))
+    raw["battle"].update(IMITATION)
+    read_train_report(raw)
+    raw["battle"].update(imitation_steps=0, imitation_coef_micro=0, imitation_top1_ppm=0)
+    read_train_report(raw)
+
+
 SEARCH_KLS = {"search_kl_before": 0.25, "search_kl_after": 0.125}
+IMITATION = {
+    "imitation_steps": 13,
+    "imitation_coef_micro": 100_000,
+    "imitation_ce_before": 1.5,
+    "imitation_ce_after": 1.25,
+    "imitation_top1_ppm": 400_000,
+}
 
 
 @pytest.mark.parametrize(
@@ -492,6 +507,10 @@ SEARCH_KLS = {"search_kl_before": 0.25, "search_kl_after": 0.125}
             "finite",
         ),
         (lambda r: r["preview"].update(search_labels=1, **SEARCH_KLS), "come together"),
+        (lambda r: r["battle"].update(imitation_steps=3), "come together"),
+        (lambda r: r["preview"].update(IMITATION), "come together"),
+        (lambda r: r["battle"].update({**IMITATION, "imitation_steps": -1}), "integer"),
+        (lambda r: r["battle"].update({**IMITATION, "imitation_ce_after": -0.5}), "negative"),
     ],
 )
 def test_the_train_report_is_read_strictly(change: Any, message: str) -> None:
