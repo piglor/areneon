@@ -39,6 +39,9 @@ describe("statistics", () => {
     expect(s.probe.probe_refusals).toBe(0);
     expect(statsOf([result(1, [], { queries: 2, probe_runs: 2, unsupported_queries: 0, probe_refusals: 3 })]).probe.probe_refusals).toBe(3);
     expect(statsOf([]).probe.memo_hit_ppm).toBe(0);
+    const counted = (skipped: number, causes: Record<string, number>) => ({ ...result(1, []), outcome_counts: { skipped, folded: 2, asked_all: 1, causes } });
+    expect(statsOf([counted(1, { a: 1 }), counted(2, { a: 2, b: 1 })]).outcome).toEqual({ skipped: 3, folded: 4, asked_all: 2, causes: { a: 3, b: 1 } });
+    expect(statsOf([result(1, [])]).outcome).toBeUndefined();
     expect(statsOf([]).rows.per_decision_mean_x100).toBe(0);
   });
   it("counts the arrays of probe-damage/2 and sums the cost of its parts", () => {

@@ -22,7 +22,40 @@ import { startScenario } from "./mechanics-scenario.ts";
 import { declare, evolve, type Mon, type ProbeBattle, type Queued, resolveActions, restoreStagesAndItems, retireCopies, teams } from "./mechanics-speed.ts";
 
 /** Bumped when the probe computes an outcome differently for the same query (named by the `probe-outcome/1` feature set's identity). */
-export const OUTCOME_FORMAT = 1;
+export const OUTCOME_FORMAT = 2;
+
+/**
+ * What a `move_outcome` answer observed of the engine's own run (ADR-022 erratum E-22.5.10, #1353). `queue_read` is true when any run of the
+ * query touched the action queue (a before-move or move-step handler such as `willMove` or `willAct` read it, or the engine's own code did)
+ * after the branch's other actions were queued. When it is false the answer cannot depend on which later actions the branch queued: the same
+ * query with other opposing actions would run the very same code path. It is a property of the answer object (`observationOf`), never of the contract.
+ */
+export interface OutcomeObservation {
+  queue_read: boolean;
+}
+const observations = new WeakMap<object, OutcomeObservation>();
+/** The observation made when `result` was computed, or undefined (an answer built another way, or not from a completed run). */
+export const observationOf = (result: object): OutcomeObservation | undefined => observations.get(result);
+
+interface Watch {
+  queue_read: boolean;
+  /** Some run ended before the queue was installed (a tie, a refusal): its reads are unknown, so no observation is made. */
+  partial: boolean;
+}
+let watching: Watch | null = null;
+/** Run `body` (one `probeMechanics` call for a `move_outcome` query) with its queue reads watched; the answer's observation is registered when every run got as far as the queue. */
+export function observeOutcome<T extends { result: object }>(body: () => T): T {
+  const watch: Watch = { queue_read: false, partial: false };
+  const outer = watching;
+  watching = watch;
+  try {
+    const out = body();
+    if (!watch.partial) observations.set(out.result, { queue_read: watch.queue_read });
+    return out;
+  } finally {
+    watching = outer;
+  }
+}
 
 type MoveOutcomeQuery = Extract<MechanicsQuery["query"], { kind: "move_outcome" }>;
 
@@ -186,6 +219,7 @@ function attempt(engine: Engine, scenarioId: string, query: MoveOutcomeQuery, se
     }
   };
   let at = 0;
+  let installed = false;
   const setAt = (place: number): void => {
     at = place;
   };
@@ -215,6 +249,18 @@ function attempt(engine: Engine, scenarioId: string, query: MoveOutcomeQuery, se
       if (order > 0) queued.push(item.own);
     }
     battle.queue.list.push(...queued);
+    // From here on every touch of the queue is noted (`OutcomeObservation`); the methods run on the real queue.
+    if (watching !== null) {
+      const watch = watching;
+      battle.queue = new Proxy(battle.queue, {
+        get(target, key) {
+          watch.queue_read = true;
+          const value = Reflect.get(target, key, target) as unknown;
+          return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+        },
+      });
+    }
+    installed = true;
     const user = (asked as { pokemon: Mon }).pokemon as OutcomeMon;
     const moveId = (asked as { own: Queued & { moveid?: string } }).own.moveid as string;
 
@@ -286,6 +332,8 @@ function attempt(engine: Engine, scenarioId: string, query: MoveOutcomeQuery, se
   } catch (error) {
     if (error instanceof RandomDraw) return { kind: "unsupported", outcome: { kind: "unsupported", reason: "random_effect", position: at } };
     throw error;
+  } finally {
+    if (!installed && watching !== null) watching.partial = true;
   }
 }
 

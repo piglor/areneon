@@ -172,6 +172,8 @@ export interface RunStats {
   parts?: Record<string, { queries: number; probe_runs: number; ms: number }>;
   /** `probe-damage-belief/1` only: the world counts summed over the decisions (fallbacks by cause). */
   belief?: { decisions: number; worlds_sampled: number; redraws: number; contradicted_worlds: number; fallbacks: Record<string, number> };
+  /** `probe-outcome/1` only (#1353): rows skipped (proved by data) or folded into the `switch` answer, parts asked in full, and probe runs that refused or were `history_unknown`, by cause. */
+  outcome?: { skipped: number; folded: number; asked_all: number; causes: Record<string, number> };
   total_builder_ms: number;
   /** SHA-256 of the JSON of every outcome in decision order: equal for equal rows. */
   rows_digest: string;
@@ -191,6 +193,7 @@ export function statsOf(results: readonly FeatureResult[]): RunStats {
   let refusals = 0;
   const arrays: NonNullable<RunStats["arrays"]> = {};
   let belief: RunStats["belief"];
+  let outcome: RunStats["outcome"];
   const parts: NonNullable<RunStats["parts"]> = {};
   for (const r of results) {
     for (const [name, cost] of Object.entries(r.parts ?? {})) {
@@ -206,6 +209,13 @@ export function statsOf(results: readonly FeatureResult[]): RunStats {
       belief.redraws += r.belief.redraws;
       belief.contradicted_worlds += r.belief.contradicted_worlds;
       for (const [cause, count] of Object.entries(r.belief.fallbacks)) belief.fallbacks[cause] = (belief.fallbacks[cause] ?? 0) + count;
+    }
+    if (r.outcome_counts !== undefined) {
+      outcome ??= { skipped: 0, folded: 0, asked_all: 0, causes: {} };
+      outcome.skipped += r.outcome_counts.skipped;
+      outcome.folded += r.outcome_counts.folded;
+      outcome.asked_all += r.outcome_counts.asked_all;
+      for (const [cause, count] of Object.entries(r.outcome_counts.causes)) outcome.causes[cause] = (outcome.causes[cause] ?? 0) + count;
     }
     queries += r.counts.queries;
     runs += r.counts.probe_runs;
@@ -241,6 +251,7 @@ export function statsOf(results: readonly FeatureResult[]): RunStats {
     ...(Object.keys(arrays).length === 0 ? {} : { arrays }),
     ...(Object.keys(parts).length === 0 ? {} : { parts: Object.fromEntries(Object.entries(parts).map(([name, sum]) => [name, { ...sum, ms: Math.round(sum.ms) }])) }),
     ...(belief === undefined ? {} : { belief }),
+    ...(outcome === undefined ? {} : { outcome }),
     total_builder_ms: Math.round(results.reduce((a, r) => a + r.ms, 0)),
     rows_digest: sha256Hex(JSON.stringify(results.map((r) => r.outcome))),
   };

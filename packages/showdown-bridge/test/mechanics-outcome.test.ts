@@ -7,7 +7,7 @@ import type { Engine, PokemonSet } from "../src/engine.ts";
 import { GOLDEN_FORMAT, TEAMS_DIR } from "../src/golden.ts";
 import { loadEngine } from "../src/index.ts";
 import { loadMechanicsConfig, type MechanicsConfig, withMoveOutcome } from "../src/mechanics-config.ts";
-import { declaredOutcomeScenario, OUTCOME_FORMAT } from "../src/mechanics-outcome.ts";
+import { declaredOutcomeScenario, observationOf, OUTCOME_FORMAT } from "../src/mechanics-outcome.ts";
 import { MechanicsProbeError, probeMechanics } from "../src/mechanics-probe.ts";
 import { type MechanicsQuery, readMechanicsQuery } from "../src/mechanics-query.ts";
 import { MECHANICS_ADAPTER_FORMAT, readMechanicsResult } from "../src/mechanics-result.ts";
@@ -86,7 +86,7 @@ describe("the contract of the kind", () => {
   it("answers with the adapter format that did not move, the config's identity and no gap row", () => {
     const { result } = run({ actions: [move(0, "protect"), tackle], target: { side: 0, position: 0 } });
     expect(MECHANICS_ADAPTER_FORMAT).toBe(2);
-    expect(OUTCOME_FORMAT).toBe(1);
+    expect(OUTCOME_FORMAT).toBe(2);
     expect(result).toMatchObject({ kind: "computed", adapter_format: 2, gap_ids: [] });
   });
 
@@ -284,5 +284,31 @@ describe("the declared history is in the engine's fields", () => {
   it("changes nothing when the history declares nothing", () => {
     const base = answer({ actions: [move(0, "protect"), tackle], target: { side: 0, position: 0 } });
     expect(answer({ actions: [move(0, "protect"), tackle], target: { side: 0, position: 0 }, history: {} })).toEqual(base);
+  });
+});
+
+describe("what the run observed of the action queue (#1353)", () => {
+  it("notes no queue read for a move whose path ignores the queue, whatever the foe queued, and a read for Sucker Punch", () => {
+    const quiet = run({ actions: [move(0, "tackle"), tackle] }).result;
+    expect(observationOf(quiet)).toEqual({ queue_read: false });
+    expect(answer({ actions: [move(0, "tackle"), move(1, null)] })).toEqual(answer({ actions: [move(0, "tackle"), tackle] }));
+    expect(observationOf(run({ actions: [move(0, "suckerpunch"), tackle] }).result)).toEqual({ queue_read: true });
+    expect(observationOf(run({ actions: [move(0, "suckerpunch"), move(1, null)] }).result)).toEqual({ queue_read: true });
+  });
+  it("makes no note for a run that ended before the queue (a tie), and none for another kind", () => {
+    const tied = run({ actions: [move(0, "tackle"), tackle], own: VENUSAUR(), foe: VENUSAUR() }).result;
+    expect(tied.kind === "unsupported" ? observationOf(tied) : undefined).toBeUndefined();
+  });
+});
+
+describe("a declared volatile that needs the Pokemon that started it (#1353)", () => {
+  it("takes Attract from an opposite-gender Pokemon in play and answers the engine's one-in-two infatuation", () => {
+    const female = (paste: string): string => paste.replace(/^Venusaur/, "Venusaur (F)");
+    const male = (paste: string): string => paste.replace(/^Tyranitar/, "Tyranitar (M)");
+    const attract = known([{ id: "attract", started_turn: 1, after_residual: false }]);
+    const asked = answer({ own: female(VENUSAUR()), foe: male(TYRANITAR()), actions: [move(0, "tackle"), move(1, null)], own_history: { volatiles: attract }, history: { turn: 2 } });
+    expect(asked).toEqual({ precondition: "chance", precondition_ppm: 500_000, hit_ppm: 1_000_000 });
+    // two of the same gender: the engine refuses the volatile whoever the source is
+    expect(() => run({ own: female(VENUSAUR()), foe: TYRANITAR().replace(/^Tyranitar/, "Tyranitar (F)"), actions: [move(0, "tackle"), move(1, null)], own_history: { volatiles: attract }, history: { turn: 2 } })).toThrow(MechanicsProbeError);
   });
 });

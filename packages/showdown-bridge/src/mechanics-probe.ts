@@ -8,7 +8,7 @@ import { resolveFormat } from "./formats.ts";
 import { type DamagePath, DamageStateError, probeDamage } from "./mechanics-damage.ts";
 import { MechanicsProbeError } from "./mechanics-error.ts";
 import { type HistoryDeclaration, historyVariants, type ResolvedHistory } from "./mechanics-history.ts";
-import { probeMoveOutcome } from "./mechanics-outcome.ts";
+import { observeOutcome, probeMoveOutcome } from "./mechanics-outcome.ts";
 import { checkScenario, ScenarioError, scenarioPokemon, startScenario } from "./mechanics-scenario.ts";
 import { type MechanicsConfig, mechanicsConfigHash } from "./mechanics-config.ts";
 import { declaredSets, mechanicsQueryHash, type ParsedMechanicsQuery } from "./mechanics-query.ts";
@@ -138,6 +138,11 @@ function gapIds(config: MechanicsConfig, query: ParsedMechanicsQuery): string[] 
  * or a config of another format, throws too, as there is no manifest to name.
  */
 export function probeMechanics(context: MechanicsContext, query: ParsedMechanicsQuery): ProbeOutcome {
+  // A move outcome also leaves a note of what the engine's run touched (`observationOf` of its answer), for the feature builders that fold branches.
+  return query.query.kind === "move_outcome" ? observeOutcome(() => probeOnce(context, query)) : probeOnce(context, query);
+}
+
+function probeOnce(context: MechanicsContext, query: ParsedMechanicsQuery): ProbeOutcome {
   const { engine, config } = context;
   if (config.format_id !== query.format_id) throw new MechanicsProbeError("the mechanics config is for another format");
   const entry = prepare(engine, config, query.format_id, context.snapshot ?? loadRulesSnapshot(engine.commit));
