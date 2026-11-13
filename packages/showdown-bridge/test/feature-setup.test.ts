@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { actorRule } from "../src/actor-rule.ts";
 import { type Json, jcs } from "../src/canonical-json.ts";
 import { loadEngine } from "../src/engine.ts";
-import { BELIEF_THREATS_PER_FOE, FEATURE_SET_3, FEATURE_SET_BELIEF, featureSetHash, featureSetIdentity } from "../src/candidate-features.ts";
+import { BELIEF_THREATS_PER_FOE, FEATURE_SET_3, FEATURE_SET_BELIEF, FEATURE_SET_OUTCOME, featureSetHash, featureSetIdentity } from "../src/candidate-features.ts";
 import type { BeliefWorldsFactory } from "../src/damage-aware-worlds.ts";
 import { configV2, fakePort } from "./damage-aware-world-support.ts";
 import { beliefRowCounts, featureSetup, GenerationError, sheetSetup, playGeneration, trainingTeamPool } from "../src/league-generation.ts";
@@ -31,9 +31,9 @@ const plain = readTrainingRunConfig(tiny);
 const POLICY = `policy:${"c".repeat(64)}`;
 
 /** This checkout's feature set hash, as the refusal of a wrong one states it. */
-const hashOf = (): string => {
+const hashOf = (set = "probe-damage/1"): string => {
   try {
-    featureSetup(engine, withFeatures("0".repeat(64)));
+    featureSetup(engine, withFeatures("0".repeat(64), set));
   } catch (error) {
     return /computes as ([0-9a-f]{64})/.exec((error as Error).message)?.[1] ?? "";
   }
@@ -112,6 +112,26 @@ describe("featureSetup", () => {
     expect(() => featureSetup(engine, withFeatures(hash, FEATURE_SET_3), undefined, bare)).toThrow(/no move inclusions/);
     // the pair-level wrapper passes the factory through and makes the refusal a usage error
     expect(pairFeatureSetup(engine, withFeatures(hash, FEATURE_SET_3), undefined, factory)?.statement.feature_set).toBe(FEATURE_SET_3);
+  });
+
+  it("builds probe-outcome/1 from the reviewed outcome record and the move_outcome scope, and the statement names its own hash (E-22.5)", () => {
+    const attempt = (): string => {
+      try {
+        featureSetup(engine, withFeatures("0".repeat(64), FEATURE_SET_OUTCOME));
+      } catch (error) {
+        return /computes as ([0-9a-f]{64})/.exec((error as Error).message)?.[1] ?? "";
+      }
+      return "";
+    };
+    const hash = attempt();
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    const setup = featureSetup(engine, withFeatures(hash, FEATURE_SET_OUTCOME)) as NonNullable<ReturnType<typeof featureSetup>>;
+    expect(setup.statement).toEqual({ feature_set: FEATURE_SET_OUTCOME, feature_set_hash: hash });
+    expect(setup.configs.outcome?.config.max_branches).toBe(5);
+    expect(setup.configs.mechanics.scope.query_kinds.some((entry) => entry.kind === "move_outcome")).toBe(true);
+    expect(featureSetHash(featureSetIdentity(engine, setup.configs, FEATURE_SET_OUTCOME))).toBe(hash);
+    expect(hash).not.toBe(hashOf());
+    expect(hash).not.toBe(hashOf("probe-damage/2"));
   });
 
   it("refuses a format whose vocabulary it does not hold", () => {

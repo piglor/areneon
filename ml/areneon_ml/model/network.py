@@ -39,11 +39,18 @@ from areneon_ml.model.encoder import (
 )
 from areneon_ml.model.features import (
     BELIEF_REFUSAL_CATEGORIES,
+    BRANCH_KIND_CATEGORIES,
     KIND_CATEGORIES,
+    KIND_CATEGORIES_OUTCOME,
+    OUTCOME_KIND_CATEGORIES,
+    OUTCOME_PRE_CATEGORIES,
     PROBE_KIND_CATEGORIES,
+    PROBE_KIND_CATEGORIES_OUTCOME,
     SPEED_CATEGORIES,
+    SPEED_CATEGORIES_OUTCOME,
 )
 from areneon_ml.model.gamedata import RESERVED, GameData
+from areneon_ml.model.history import STATE_CATEGORIES
 from areneon_ml.model.options import (
     CANDIDATE_MATCHUP,
     FACTORED_PREVIEW,
@@ -314,12 +321,23 @@ class PolicyNetwork(nn.Module):
             sizes["same_type"] = RESERVED + 2
         numbers = len(self.layout.cand_num) if role == "battle" else 0
         targeted = role == "battle" and len(self.layout.cand_tok) > BASE_CAND_TOKENS
+        outcome = self.layout.outcome  # probe-outcome/1 has one more reason in every kind
         if numbers:
-            sizes["feature_kind"] = KIND_CATEGORIES
+            sizes["feature_kind"] = KIND_CATEGORIES_OUTCOME if outcome else KIND_CATEGORIES
+            if outcome:
+                sizes["outcome_kind"] = OUTCOME_KIND_CATEGORIES
+                sizes["outcome_pre"] = OUTCOME_PRE_CATEGORIES
+                sizes["outcome_branch_kind"] = BRANCH_KIND_CATEGORIES
         if self.layout.thr_num:  # probe-damage/2: every token has speed columns, the Battle rest
-            sizes["speed_relation"] = SPEED_CATEGORIES
+            sizes["speed_relation"] = SPEED_CATEGORIES_OUTCOME if outcome else SPEED_CATEGORIES
             if role == "battle":
-                sizes["probe_kind"] = PROBE_KIND_CATEGORIES
+                sizes["probe_kind"] = (
+                    PROBE_KIND_CATEGORIES_OUTCOME if outcome else PROBE_KIND_CATEGORIES
+                )
+        if any(
+            kind == "history_state" for _, kind in (*self.layout.mon_cat, *self.layout.field_cat)
+        ):
+            sizes["history_state"] = STATE_CATEGORIES  # history_facts
         if any(kind == "belief_refusal" for _, kind in self.layout.field_cat):
             sizes["belief_refusal"] = BELIEF_REFUSAL_CATEGORIES
         self.targeted = targeted

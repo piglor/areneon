@@ -66,6 +66,7 @@ def test_only_the_registered_options_exist() -> None:
         "opponent_sheet",
         "candidate_target",
         "recent_history",
+        "history_facts",
         "exact_volatiles",
     }
     assert set(REGISTRY["network"]) == {

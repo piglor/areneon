@@ -931,6 +931,15 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/candidate-features-belief": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage-belief/1", feature_set_hash: hexOf("c") } };
     }),
+    "training-run-config/candidate-features-outcome": runConfigWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-outcome/1", feature_set_hash: hexOf("c") } };
+    }),
+    "training-run-config/history-facts": runConfigWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { history_facts: true };
+    }),
+    "training-run-config/history-facts-outcome": runConfigWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { history_facts: true, candidate_features: { feature_set: "probe-outcome/1", feature_set_hash: hexOf("c") } };
+    }),
     "training-run-config/team-dataset": runConfigWith((c) => (c.team_dataset = { path: ".tmp/datasets/train-v1", dataset_hash: hexOf("5") })),
     "training-run-config/warm-start": runConfigWith((c) => (c.warm_start = { preview: hexOf("a"), battle: hexOf("b") })),
     "training-run-config/search-distill": distilling(),
@@ -1011,6 +1020,15 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "clone-run-config/candidate-features-belief": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage-belief/1", feature_set_hash: hexOf("c") } };
+    }),
+    "clone-run-config/candidate-features-outcome": cloneWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-outcome/1", feature_set_hash: hexOf("c") } };
+    }),
+    "clone-run-config/history-facts": cloneWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { history_facts: true };
+    }),
+    "clone-run-config/history-facts-outcome": cloneWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { history_facts: true, candidate_features: { feature_set: "probe-outcome/1", feature_set_hash: hexOf("c") } };
     }),
     "clone-run-config/no-holdout": cloneWith((c) => (runSection(c, "clone").holdout = { key: "d".repeat(64), ppm: 0 })),
     "run-metrics/cpu": runMetrics,
@@ -1508,6 +1526,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "clone-run-config/exact-volatiles-false": cloneWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { exact_volatiles: false }),
     ),
+    "clone-run-config/history-facts-false": cloneWith(
+      (c) => (runSection(runSection(c, "model"), "encoder").options = { history_facts: false }),
+    ),
     "clone-run-config/candidate-features-unknown-set": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/4", feature_set_hash: hexOf("c") } };
     }),
@@ -1563,6 +1584,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     ),
     "training-run-config/exact-volatiles-false": runConfigWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { exact_volatiles: false }),
+    ),
+    "training-run-config/history-facts-false": runConfigWith(
+      (c) => (runSection(runSection(c, "model"), "encoder").options = { history_facts: false }),
     ),
     "training-run-config/candidate-features-true": runConfigWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_features: true }),
