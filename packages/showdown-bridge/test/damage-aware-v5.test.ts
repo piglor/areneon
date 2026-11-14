@@ -300,6 +300,8 @@ describe("choosing with the engine's success chance (a stand-in probe with known
     expect(actor.report().success).toMatchObject({ dead_candidates: 0 });
     expect((actor.report().success?.parts_scaled ?? 0) + (actor.report().success?.parts_unread ?? 0)).toBeGreaterThan(0);
     expect(actor.report().situational).toEqual({ protect_no_facts: 0 });
+    // The view's `causes` table is a diagnostic: the closed baseline records never see it (#1379).
+    expect(actor.report().counts).not.toHaveProperty("causes");
     expect(run(c, sceneFor(c, foeMoves), v4).actor.report()).not.toHaveProperty("success");
   });
 });
