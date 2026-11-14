@@ -69,6 +69,10 @@ class Options(BaseModel):
     """
     ADR-010 erratum A4 item 7. The scorer's last layer(s) start at this many millionths of their default initial weights (10000 is 1/100), so the initial policy is near uniform. Initial weights only: no tensor name changes, but it is part of the config and the checkpoint format. 1,000,000 is the default and is not a value (leave the key out).
     """
+    aux_move_head: Literal[True] | MISSING = MISSING
+    """
+    ADR-010 erratum A12.2. The Battle network gains a training-only move-reveal head (aux_moves.*: Linear, GELU, Linear over the move vocabulary on each opponent token's final trunk output), built last so every other seeded weight and logit equals the network's without it. forward never computes it and the worker never reads it; the learner trains it under ppo.aux_moves. The Preview network ignores it. Only true is a value (leave the key out for none). Layout changing: it adds tensors and changes the checkpoint format.
+    """
 
 
 class ExcludedAbility(RootModel[StrictStr]):
@@ -177,6 +181,20 @@ class Shaping(BaseModel):
     coef_micro: Annotated[StrictInt, Field(ge=1, le=10000000)]
     """
     w in millionths.
+    """
+
+
+class AuxMoves(BaseModel):
+    """
+    Optional (a minor change within v1, ADR-010 erratum A12.2, #1384): the Battle role's loss gains coef * the mean cross-entropy of the auxiliary move-reveal head (model.options.aux_move_head) over the unmasked (decision, opponent entry) targets of a minibatch: a softmax over the move vocabulary with the entry's already revealed moves masked, against the uniform distribution over the moves it first reveals at the next later decision where it reveals any. The labels come from the player's own later channel; an entry never revealing a move later, a Transformed one and Struggle are masked, never a negative. coef = coef_micro / 10^6. During ppo.value_warmup the term trains the head alone (the trunk is frozen). Needs model.options.aux_move_head, and the head needs this term (both readers). Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    coef_micro: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    coef in millionths.
     """
 
 
@@ -1142,6 +1160,10 @@ class Ppo(BaseModel):
     imitation: Imitation | MISSING = MISSING
     """
     Optional (a minor change within v1, ADR-010 erratum A11.3, #1367): the Battle role's loss gains lambda_im(t) * the mean over the teacher steps of a minibatch of -log pi_theta(teacher choice | example), the softmax over the example's real candidates at the run's play temperature (generation.play, else 1), padding masked: a supervised term on the fixed states of a scripted teacher's TrainingSet (the set the warm start was cloned from), mixed into PPO. No clip and no value term. The set is copied into the run directory by `python -m areneon_ml.loop import-teacher` (nothing is fetched) and read at the start of every update through the stream reader with its manifest; it must hash to training_set_hash (the SHA-256 of the manifest's JCS bytes, as CloneRunConfig.teacher.training_set_hash), be synthetic and learner_ready and be played by a scripted teacher (`<name>@<version>`, never a learned `policy:` id). The teacher's Team Preview examples are not used. Per update K = floor(share_ppm * N_battle / 10^6) teacher steps (N_battle the update's Battle steps, at most the set's size) are drawn without replacement by a generator seeded from the learner seed, the update index and the purpose `imitation/1`, shuffled per epoch and spread over the Battle minibatches; the learner's own generator is untouched. lambda_im(t) = coef_micro / 10^6 for a constant schedule; for a linear one, with t the policy update index from 0, coef_micro + trunc((final_micro - coef_micro) * min(t, generations) / generations) in exact integers (the anchor's rule). Off during ppo.value_warmup (t counts from the first policy update, as the anchor's does); under shared_trunk its gradient reaches the shared trunk. Needs warm_start with a battle checkpoint. Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.
+    """
+    aux_moves: AuxMoves | MISSING = MISSING
+    """
+    Optional (a minor change within v1, ADR-010 erratum A12.2, #1384): the Battle role's loss gains coef * the mean cross-entropy of the auxiliary move-reveal head (model.options.aux_move_head) over the unmasked (decision, opponent entry) targets of a minibatch: a softmax over the move vocabulary with the entry's already revealed moves masked, against the uniform distribution over the moves it first reveals at the next later decision where it reveals any. The labels come from the player's own later channel; an entry never revealing a move later, a Transformed one and Struggle are masked, never a negative. coef = coef_micro / 10^6. During ppo.value_warmup the term trains the head alone (the trunk is frozen). Needs model.options.aux_move_head, and the head needs this term (both readers). Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.
     """
 
 

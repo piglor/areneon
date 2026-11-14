@@ -609,6 +609,8 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/training-run-config/reader-invalid/anchor-threatened-features-1.json",
       "v1/training-run-config/reader-invalid/anchor-threatened-no-features.json",
       "v1/training-run-config/reader-invalid/anchor-zero-kl.json",
+      "v1/training-run-config/reader-invalid/aux-move-head-no-term.json",
+      "v1/training-run-config/reader-invalid/aux-moves-no-head.json",
       "v1/training-run-config/reader-invalid/duplicate-baseline.json",
       "v1/training-run-config/reader-invalid/heads-do-not-divide-width.json",
       "v1/training-run-config/reader-invalid/imitation-no-warm-start.json",

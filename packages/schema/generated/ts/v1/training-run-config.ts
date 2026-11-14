@@ -99,6 +99,10 @@ export interface TrainingRunConfig {
        * ADR-010 erratum A4 item 7. The scorer's last layer(s) start at this many millionths of their default initial weights (10000 is 1/100), so the initial policy is near uniform. Initial weights only: no tensor name changes, but it is part of the config and the checkpoint format. 1,000,000 is the default and is not a value (leave the key out).
        */
       policy_output_scale_ppm?: number;
+      /**
+       * ADR-010 erratum A12.2. The Battle network gains a training-only move-reveal head (aux_moves.*: Linear, GELU, Linear over the move vocabulary on each opponent token's final trunk output), built last so every other seeded weight and logit equals the network's without it. forward never computes it and the worker never reads it; the learner trains it under ppo.aux_moves. The Preview network ignores it. Only true is a value (leave the key out for none). Layout changing: it adds tensors and changes the checkpoint format.
+       */
+      aux_move_head?: true;
     };
   };
   /**
@@ -317,6 +321,15 @@ export interface TrainingRunConfig {
        */
       share_ppm: number;
       schedule: AnchorSchedule;
+    };
+    /**
+     * Optional (a minor change within v1, ADR-010 erratum A12.2, #1384): the Battle role's loss gains coef * the mean cross-entropy of the auxiliary move-reveal head (model.options.aux_move_head) over the unmasked (decision, opponent entry) targets of a minibatch: a softmax over the move vocabulary with the entry's already revealed moves masked, against the uniform distribution over the moves it first reveals at the next later decision where it reveals any. The labels come from the player's own later channel; an entry never revealing a move later, a Transformed one and Struggle are masked, never a negative. coef = coef_micro / 10^6. During ppo.value_warmup the term trains the head alone (the trunk is frozen). Needs model.options.aux_move_head, and the head needs this term (both readers). Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.
+     */
+    aux_moves?: {
+      /**
+       * coef in millionths.
+       */
+      coef_micro: number;
     };
   };
   /**

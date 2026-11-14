@@ -592,3 +592,40 @@ def test_a_clone_with_the_value_options_runs_an_epoch_and_loads_under_them(
         "battle",
     }
     assert report["checkpoints"]
+
+
+def test_a_clone_with_the_move_head_has_the_policy_tensors_of_a_clone_without_it(
+    stream: tuple[str, dict[str, Any]], tmp_path: Path
+) -> None:
+    """ADR-010 erratum A12.2: the clone trains no head (no term), so the head stays at its seeded
+    init and every other tensor of the two clones is equal byte for byte."""
+    text, manifest = stream
+    base = copy.deepcopy(config_for(manifest, epochs=1).raw)
+    with_head = copy.deepcopy(base)
+    with_head["model"]["options"] = {"aux_move_head": True}
+    plain_config, head_config = read_clone_config(base), read_clone_config(with_head)
+    outs = {}
+    for name, config in (("plain", plain_config), ("head", head_config)):
+        cloned = clone(config, game(), text, manifest)
+        write_clone(tmp_path / name, config, game(), cloned, VERSION)
+        outs[name] = {
+            record.role: load_checkpoint(
+                (
+                    tmp_path / name / "checkpoints" / f"{record.checkpoint_id}.safetensors"
+                ).read_bytes(),
+                game(),
+                record.checkpoint_id,
+                record.role,
+                configured=config.model,
+            )
+            for record in records(tmp_path / name)
+        }
+    for role in ROLES:
+        plain_state, head_state = outs["plain"][role].state_dict(), outs["head"][role].state_dict()
+        assert set(head_state) - set(plain_state) == (
+            {n for n in head_state if n.startswith("aux_moves.")} if role == "battle" else set()
+        )
+        for name, tensor in plain_state.items():
+            assert torch.equal(tensor, head_state[name]), (role, name)
+    battle = outs["head"]["battle"].state_dict()
+    assert any(n.startswith("aux_moves.") for n in battle)

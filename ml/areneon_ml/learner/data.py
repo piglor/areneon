@@ -15,6 +15,7 @@ steps, a refused pending choice among them, have zero immediate reward.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -29,6 +30,7 @@ from areneon_contracts.training import (
 )
 
 from areneon_ml import stopwatch
+from areneon_ml.learner import aux_moves as aux_labels
 from areneon_ml.learner.ppo import GAME_SCORE
 from areneon_ml.learner.shaping import ShapingError, differential
 from areneon_ml.learner.situation import threatened_flag
@@ -54,6 +56,13 @@ class Step:
     #: pure function of the example; ``None`` for a Preview step and for a Battle example whose
     #: ``candidate_features`` lack the threat rows (the flag cannot be read there).
     threatened: bool | None = None
+    #: The unmasked move-reveal targets of the decision (ADR-010 erratum A12.2, ``aux_moves.py``):
+    #: set on a Battle step read under ``ppo.aux_moves``, ``None`` otherwise. A pure function of
+    #: the player's own channel; never an input.
+    aux: tuple[aux_labels.AuxTarget, ...] | None = None
+    #: The opponent entries of the decision that have no label (no later reveal, Transformed or
+    #: shrunk list): beside ``aux`` so a run can read the masked share. ``None`` with ``aux``.
+    aux_masked: int | None = None
 
 
 @dataclass(frozen=True)
@@ -70,9 +79,15 @@ class Trajectory:
 class _Collector:
     """The steps of a run of stream lines, grouped by Episode and role, in first-seen order."""
 
-    def __init__(self, encoders: dict[str, Encoder], shaping: bool = False) -> None:
+    def __init__(
+        self, encoders: dict[str, Encoder], shaping: bool = False, aux: bool = False
+    ) -> None:
         self._encoders = encoders
         self._shaping = shaping
+        self._aux = aux
+        # Per Battle trajectory, the opponent entries at each decision (labels need later steps).
+        self._seen: dict[str, list[tuple[aux_labels.Seen, ...]]] = {}
+        self._finished = False
         self.order: list[str] = []
         self.steps: dict[tuple[str, str], list[Step]] = {}
         self.scores: dict[str, float] = {}
@@ -121,17 +136,42 @@ class _Collector:
                 potential = differential(state, session.last_request)
             except ShapingError as error:
                 raise LearnerDataError(f"Episode {episode}: {error}") from error
+        if self._aux and role == "battle":
+            state = session.state
+            if state is None:  # pragma: no cover - encode just fed the reducer
+                raise LearnerDataError("no reduced state to read the move-reveal labels from")
+            self._seen.setdefault(episode, []).append(aux_labels.snapshot(state, query.n_own))
         features = example.get("candidate_features")
         threatened = threatened_flag(observation["log"], features) if role == "battle" else None
         self.steps.setdefault((episode, role), []).append(
             Step(query, chosen, potential, threatened)
         )
 
+    def finish(self) -> None:
+        """Put the move-reveal labels on the Battle steps (``ppo.aux_moves``), in place and once.
+
+        A label needs the LATER decisions of its Episode, so it is made when every line is in;
+        ``collected()`` shares these dicts, so what it returned earlier holds the labels too."""
+        if self._finished:
+            return
+        self._finished = True
+        if not self._aux:
+            return
+        for episode, seen in self._seen.items():
+            steps = self.steps[(episode, "battle")]
+            lookup = self._encoders["battle"].game.moves.lookup
+            made = aux_labels.labels(seen, lookup)
+            self.steps[(episode, "battle")] = [
+                dataclasses.replace(step, aux=aux, aux_masked=len(entries) - len(aux))
+                for step, aux, entries in zip(steps, made, seen, strict=True)
+            ]
+
     def collected(self) -> Collected:
         """What was seen, without the encoders and sessions (it is sent between processes)."""
         return Collected(self.order, self.scores, self.steps)
 
     def trajectories(self) -> list[Trajectory]:
+        self.finish()
         return self.collected().trajectories()
 
 
@@ -185,6 +225,7 @@ def trajectories(  # noqa: PLR0913
     *,
     private_pool: bool = False,
     shaping: bool = False,
+    aux_moves: bool = False,
 ) -> list[Trajectory]:
     """The trajectories of a learner-ready stream played by ``behaviour_policy_id``.
 
@@ -201,13 +242,22 @@ def trajectories(  # noqa: PLR0913
 
     ``shaping`` (``ppo.shaping``, ADR-010 erratum A11.1) reads the potential differential of each
     Battle step from the reduced state of its observation (``Step.potential_d``).
+
+    ``aux_moves`` (``ppo.aux_moves``, ADR-010 erratum A12.2) reads each Battle step's move-reveal
+    targets from the player's own later channel (``Step.aux``).
     """
     _ready(manifest, behaviour_policy_id)
     if processes > 1 and isinstance(stream, Path):
         from areneon_ml.learner.parallel import parallel_trajectories  # noqa: PLC0415
 
         found = parallel_trajectories(
-            stream, manifest, encoders, processes, private_pool=private_pool, shaping=shaping
+            stream,
+            manifest,
+            encoders,
+            processes,
+            private_pool=private_pool,
+            shaping=shaping,
+            aux_moves=aux_moves,
         )
         if found is not None:
             return found
@@ -220,7 +270,7 @@ def trajectories(  # noqa: PLR0913
     except TrainingStreamError as exc:
         raise LearnerDataError(str(exc)) from exc
     stopwatch.end("validate", mark)
-    collector = _Collector(encoders, shaping)
+    collector = _Collector(encoders, shaping, aux_moves)
     lines: Iterator[str] = (
         stream_lines(stream) if isinstance(stream, Path) else iter(stream.split("\n")[:-1])
     )

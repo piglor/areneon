@@ -115,6 +115,7 @@ def benchmark(
         encoders,
         manifest["behaviour_policy_id"],
         shaping=config.ppo.shaping is not None,
+        aux_moves=config.ppo.aux_moves is not None,
     )
     seeds = {"preview": config.init_preview, "battle": config.init_battle}
     networks = {role: init_network(role, game, config.model, seeds[role]) for role in ROLES}

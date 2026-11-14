@@ -55,6 +55,20 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     }
   });
 
+  it("reads ppo.aux_moves with its head, hashes it apart from none and refuses either alone (ADR-010 erratum A12.2)", async () => {
+    const aux = readTrainingRunConfig(sample("aux-moves"));
+    expect(aux.ppo.aux_moves).toEqual({ coef_micro: 50000 });
+    expect(aux.model.options).toEqual({ aux_move_head: true });
+    expect(readTrainingRunConfig(sample("aux-moves-warm-start")).ppo.value_warmup).toEqual({ generations: 2 });
+    expect(await runConfigHash(aux)).not.toBe(await runConfigHash(readTrainingRunConfig(sample("tiny"))));
+    const read = (dir: string, name: string) => JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/training-run-config/${dir}/${name}.json`), "utf8"));
+    expect(() => readTrainingRunConfig(read("reader-invalid", "aux-moves-no-head"))).toThrow("ppo.aux_moves needs model.options.aux_move_head");
+    expect(() => readTrainingRunConfig(read("reader-invalid", "aux-move-head-no-term"))).toThrow("head nothing trains");
+    for (const name of ["aux-moves-zero", "aux-moves-extra-field", "aux-move-head-false"]) {
+      expect(() => readTrainingRunConfig(read("invalid", name))).toThrow(TrainingRunConfigError);
+    }
+  });
+
   it("reads a warm start, hashes it apart from none and refuses the same checkpoint for both roles (ADR-010 erratum A2)", async () => {
     const warm = readTrainingRunConfig(sample("warm-start"));
     expect(warm.warm_start).toEqual({ preview: "a".repeat(64), battle: "b".repeat(64) });
