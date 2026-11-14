@@ -120,6 +120,13 @@ def pack_state(learner: Learner) -> PackedState:
         sidecar["anchor_threatened_beta_micro"] = learner.last_anchor_threatened_beta_micro
     if learner.last_entropy_coef_micro is not None:  # linear entropy_schedule only
         sidecar["entropy_coef_micro"] = learner.last_entropy_coef_micro
+    imitation = learner.config.ppo.imitation
+    if (
+        imitation is not None
+        and imitation.schedule is not None
+        and learner.last_imitation_coef_micro is not None
+    ):  # a linear ppo.imitation schedule only (a constant one is in the run config hash)
+        sidecar["imitation_coef_micro"] = learner.last_imitation_coef_micro
     if learner.population_settings is not None:  # population runs only (ADR-021 section 8)
         sidecar["population_settings"] = learner.population_settings
     data = pack_safetensors(tensors)
@@ -199,23 +206,34 @@ def _check_sidecar(described: Mapping[str, Any], learner: Learner) -> int:
         expected_rate is None and "learning_rate_micro" in described
     ):
         raise LearnerStateError("the sidecar's learning rate is not the schedule's rate")
-    expected_beta = None if generation == 0 else learner.anchor_beta_micro(generation - 1)
-    if described.get("anchor_beta_micro") != expected_beta or (
-        expected_beta is None and "anchor_beta_micro" in described
+    imitation = learner.config.ppo.imitation
+    linear = imitation is not None and imitation.schedule is not None
+    previous = generation - 1
+    for key, expected, message in (
+        (
+            "anchor_beta_micro",
+            learner.anchor_beta_micro,
+            "anchor weight is not the schedule's beta",
+        ),
+        (
+            "anchor_threatened_beta_micro",
+            learner.anchor_threatened_beta_micro,
+            "Threatened anchor weight is not the schedule's beta",
+        ),
+        (
+            "entropy_coef_micro",
+            learner.entropy_coef_micro,
+            "entropy weight is not the schedule's weight",
+        ),
+        (
+            "imitation_coef_micro",
+            learner.imitation_coef_micro if linear else (lambda _update: None),
+            "imitation weight is not the schedule's weight",
+        ),
     ):
-        raise LearnerStateError("the sidecar's anchor weight is not the schedule's beta")
-    expected_threatened = (
-        None if generation == 0 else learner.anchor_threatened_beta_micro(generation - 1)
-    )
-    if described.get("anchor_threatened_beta_micro") != expected_threatened or (
-        expected_threatened is None and "anchor_threatened_beta_micro" in described
-    ):
-        raise LearnerStateError("the sidecar's Threatened anchor weight is not the schedule's beta")
-    expected_entropy = None if generation == 0 else learner.entropy_coef_micro(generation - 1)
-    if described.get("entropy_coef_micro") != expected_entropy or (
-        expected_entropy is None and "entropy_coef_micro" in described
-    ):
-        raise LearnerStateError("the sidecar's entropy weight is not the schedule's weight")
+        wanted = None if generation == 0 else expected(previous)
+        if described.get(key) != wanted or (wanted is None and key in described):
+            raise LearnerStateError(f"the sidecar's {message}")
     return generation
 
 
@@ -231,6 +249,9 @@ def _apply_schedule(learner: Learner) -> None:
     )
     learner.last_entropy_coef_micro = (
         None if learner.generation == 0 else learner.entropy_coef_micro(learner.generation - 1)
+    )
+    learner.last_imitation_coef_micro = (
+        None if learner.generation == 0 else learner.imitation_coef_micro(learner.generation - 1)
     )
     schedule = learner.config.ppo.schedule
     if schedule is None or learner.generation == 0:

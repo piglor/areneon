@@ -26,6 +26,7 @@ import torch
 from areneon_ml.learner.config import MICRO, RunConfig
 from areneon_ml.learner.data import LearnerDataError, Step, Trajectory
 from areneon_ml.learner.diagnostics import CalibrationBin, calibration, explained_variance
+from areneon_ml.learner.imitation import DrawStream, TeacherSource
 from areneon_ml.learner.labels import LabelStep
 from areneon_ml.learner.ppo import (
     LossWeights,
@@ -141,6 +142,16 @@ class RoleReport:
     search_labels: int | None = None
     search_kl_before: float | None = None
     search_kl_after: float | None = None
+    # Set only on the Battle role under ``ppo.imitation`` (ADR-010 erratum A11.3): the teacher
+    # steps the update drew, lambda_im (millionths) it used, the mean cross-entropy over them at
+    # the frozen weights and after the epochs, and the agreement (ppm) with the teacher's choice
+    # after the epochs. All five are left out of the stored report otherwise; a value warm-up
+    # update (the term is off) reports 0 steps, coefficient 0 and 0.0 / 0.
+    imitation_steps: int | None = None
+    imitation_coef_micro: int | None = None
+    imitation_ce_before: float | None = None
+    imitation_ce_after: float | None = None
+    imitation_top1_ppm: int | None = None
     # Set only on the Battle role under ``ppo.shaping`` (ADR-010 erratum A11.1): the potential's
     # weight (millionths) and the mean |gamma * Phi(o_{t+1}) - Phi(o_t)| over the role's steps
     # (millionths, truncated). Left out of the stored report otherwise.
@@ -185,6 +196,12 @@ class _Table:
     labels: tuple[LabelStep, ...] = ()
     #: Mean distillation KL over ``labels`` at the frozen weights; ``None`` without the block.
     search_kl_before: float | None = None
+    #: The teacher steps drawn for this update (``ppo.imitation``), their draw stream (shuffles
+    #: per epoch) and the mean cross-entropy over them at the frozen weights; empty / ``None``
+    #: otherwise.
+    teacher: tuple[Step, ...] = ()
+    teacher_stream: DrawStream | None = None
+    imitation_ce_before: float | None = None
     #: Mean |gamma * Phi(o_{t+1}) - Phi(o_t)| in millionths (``ppo.shaping``, Battle only).
     shaping_mean_abs_micro: int | None = None
 
@@ -289,6 +306,9 @@ class Learner:
         # Entropy weight (millionths) of the newest update; set only under a linear
         # ``ppo.entropy_schedule`` (stored in the sidecar then, and nowhere otherwise).
         self.last_entropy_coef_micro: int | None = None
+        # lambda_im (millionths) of the newest update; set only with ``ppo.imitation`` (0 on a
+        # value warm-up update). Stored in the sidecar for a linear schedule only.
+        self.last_imitation_coef_micro: int | None = None
         # The member's effective PPO settings (ADR-021 section 8); set only by a population run,
         # which stores them in the learner-state sidecar. ``None`` keeps a single lineage's bytes.
         self.population_settings: dict[str, int] | None = None
@@ -341,6 +361,18 @@ class Learner:
         warmup = self.config.ppo.value_warmup or 0
         return 0 if update < warmup else anchor.beta_micro(update - warmup)
 
+    def imitation_coef_micro(self, update: int) -> int | None:
+        """lambda_im of learner update ``update`` (from 0), or ``None`` without ``ppo.imitation``.
+
+        The term is off during the value warm-up (0: the policy is frozen) and the schedule's
+        index counts from the first policy update, as the anchor's does.
+        """
+        settings = self.config.ppo.imitation
+        if settings is None:
+            return None
+        warmup = self.config.ppo.value_warmup or 0
+        return 0 if update < warmup else settings.coef_micro_at(update - warmup)
+
     def anchor_threatened_beta_micro(self, update: int) -> int | None:
         """Threatened beta of learner update ``update`` (from 0), or ``None`` without
         ``ppo.anchor.threatened``: the anchor's rule, with its own ``kl_micro`` and schedule and
@@ -355,16 +387,23 @@ class Learner:
     # -- one generation ------------------------------------------------------
 
     def train(
-        self, trajectories: Sequence[Trajectory], labels: Sequence[LabelStep] | None = None
+        self,
+        trajectories: Sequence[Trajectory],
+        labels: Sequence[LabelStep] | None = None,
+        teacher: TeacherSource | None = None,
     ) -> TrainReport:
         """Run the configured PPO epochs on the generation's trajectories, then count it.
 
         ``labels`` are the usable search labels of the aggregated label streams
         (``ppo.search_distill``); they are given exactly when the config has the block (an empty
         sequence before the first label stream) and only the Battle update reads them.
+        ``teacher`` is the teacher's Battle steps (``ppo.imitation``), given exactly when the
+        config has the block; each update draws its share of them and encodes only those.
         """
         if (labels is None) != (self.config.ppo.search_distill is None):
             raise LearnerError("labels are given exactly when the config has ppo.search_distill")
+        if (teacher is None) != (self.config.ppo.imitation is None):
+            raise LearnerError("teacher steps are given exactly when the config has ppo.imitation")
         roles = {}
         schedule = self.config.ppo.schedule
         if schedule is not None:
@@ -379,6 +418,7 @@ class Learner:
         self.last_anchor_threatened_beta_micro = self.anchor_threatened_beta_micro(self.generation)
         self._threatened_kl = {}
         self.last_entropy_coef_micro = self.entropy_coef_micro(self.generation)
+        self.last_imitation_coef_micro = self.imitation_coef_micro(self.generation)
         # Under ``ppo.preview_bootstrap_micro`` (> 0) both roles' targets are fixed from the
         # frozen (pre-update) weights BEFORE either role is updated: the Battle network is trained
         # first, so its values are read here, once, and the Preview return is built from them.
@@ -398,6 +438,7 @@ class Learner:
                         role in self.anchors and not warm,
                         frozen,
                         tuple(labels or ()) if role == "battle" and not warm else (),
+                        teacher if role == "battle" and not warm else None,
                     ),
                     warm,
                 )
@@ -480,13 +521,14 @@ class Learner:
                 out.extend(log_probs[i][batch.cand_mask[i]] for i in range(log_probs.shape[0]))
         return out
 
-    def _table(
+    def _table(  # noqa: PLR0913, PLR0917
         self,
         role: str,
         trajectories: Sequence[Trajectory],
         anchor: bool = False,
         frozen: _FrozenBattle | None = None,
         labels: tuple[LabelStep, ...] = (),
+        teacher: TeacherSource | None = None,
     ) -> _Table:
         ppo = self.config.ppo
         steps = [s for t in trajectories for s in t.steps]
@@ -540,6 +582,7 @@ class Learner:
         all_returns = torch.cat(returns)
         # float32 tensors widened exactly to float64 for the diagnostics.
         value_list = values.double().tolist()
+        drawn, stream, ce_before = self._draw_teacher(role, len(steps), teacher)
         # Under ppo.shaping the head estimates the shaped return (score - Phi at gamma 1), so the
         # calibration compares V + Phi with the final score; explained variance stays against the
         # returns the learner trains on.
@@ -558,8 +601,47 @@ class Learner:
             self._label_kl(labels)
             if role == "battle" and self.config.ppo.search_distill is not None
             else None,
+            drawn,
+            stream,
+            ce_before,
             int(shaped_abs / len(steps) * MICRO) if shaping and steps else (0 if shaping else None),
         )
+
+    def _draw_teacher(
+        self, role: str, battle_steps: int, teacher: TeacherSource | None
+    ) -> tuple[tuple[Step, ...], DrawStream | None, float | None]:
+        """This update's teacher steps (``ppo.imitation``): K = floor(share * N_battle / 10^6)
+        drawn without replacement by the update's own stream, and their cross-entropy at the
+        frozen weights. Nothing is drawn, and the stream is not built, without the block."""
+        settings = self.config.ppo.imitation
+        if role != "battle" or settings is None or teacher is None:
+            return (), None, None
+        stream = DrawStream(self.config.learner_seed, self.generation)
+        picked = stream.draw(len(teacher), settings.steps(battle_steps, len(teacher)))
+        drawn = teacher.fetch(picked)  # encoded now, held for this update only
+        return drawn, stream, self._imitation_eval(drawn)[0]
+
+    def _imitation_eval(self, steps: Sequence[Step]) -> tuple[float, int]:
+        """Mean cross-entropy (at the play temperature) of the Battle network over ``steps``, and
+        how many of them it ranks the teacher's choice first (0.0 and 0 if none); no gradient."""
+        if not steps:
+            return 0.0, 0
+        network = self.networks["battle"]
+        size = self.config.ppo.minibatch_size
+        tau = self.config.generation.temperature_ppm
+        total = torch.zeros(())
+        hits = 0
+        network.eval()
+        with torch.no_grad():
+            for start in range(0, len(steps), size):
+                chunk = steps[start : start + size]
+                batch = to_device(collate([s.query for s in chunk]), self.device)
+                logits = network(batch).logits
+                chosen = torch.tensor([s.chosen for s in chunk], device=self.device)
+                total += (-policy_terms(logits, batch.cand_mask, chosen, tau).log_prob).sum().cpu()
+                top = logits.masked_fill(~batch.cand_mask, torch.finfo(logits.dtype).min).argmax(-1)
+                hits += int((top == chosen).sum())
+        return float(total) / len(steps), hits
 
     def _label_dense(self, labels: Sequence[LabelStep], batch: Batch) -> torch.Tensor:
         """``ln pi'`` of ``labels`` as [B, C] (zero at padded places), on the batch's device."""
@@ -629,6 +711,7 @@ class Learner:
         index: list[int],
         weights: LossWeights,
         label_index: list[int] | None = None,
+        teacher_index: list[int] | None = None,
     ) -> tuple[torch.Tensor, Any, torch.Tensor | None]:
         """One minibatch of one role: the tensor to backpropagate, the loss terms and, with an
         anchor, the (detached-by-the-caller) mean KL to the anchor."""
@@ -680,6 +763,20 @@ class Learner:
                 tau,
             ).mean()
             total = total + settings.coef_micro / MICRO * label_kl
+        imitation = self.config.ppo.imitation
+        if imitation is not None and teacher_index and not warm:
+            # ADR-010 erratum A11.3: lambda_im * the mean cross-entropy toward the teacher's choice
+            # over this minibatch's teacher steps, at the play temperature over the real
+            # candidates: a second forward pass of the Battle network on the teacher's fixed
+            # states, with no clip and no value term. The gradient reaches the shared trunk under
+            # shared_trunk, as the anchor's does.
+            steps = [table.teacher[i] for i in teacher_index]
+            teacher_batch = to_device(collate([s.query for s in steps]), self.device)
+            picked = torch.tensor([s.chosen for s in steps], device=self.device)
+            terms = policy_terms(
+                self.networks[role](teacher_batch).logits, teacher_batch.cand_mask, picked, tau
+            )
+            total = total + (self.last_imitation_coef_micro or 0) / MICRO * (-terms.log_prob).mean()
         return (loss.value if warm else total), loss, kl
 
     @staticmethod
@@ -728,8 +825,22 @@ class Learner:
             table.value_calibration,
             self.config.ppo.preview_bootstrap_micro if role == "preview" else None,
             *self._search_report(role, table),
+            *self._imitation_report(role, table),
             *self._shaping_report(role, table),
             *self._threatened_report(role, table),
+        )
+
+    def _imitation_report(self, role: str, table: _Table) -> tuple[Any, Any, Any, Any, Any]:
+        if role != "battle" or self.config.ppo.imitation is None:
+            return None, None, None, None, None
+        after, hits = self._imitation_eval(table.teacher)
+        size = len(table.teacher)
+        return (
+            size,
+            self.last_imitation_coef_micro,
+            table.imitation_ce_before or 0.0,
+            after,
+            hits * MICRO // size if size else 0,
         )
 
     def _threatened_report(self, role: str, table: _Table) -> tuple[Any, Any, Any]:
@@ -766,11 +877,19 @@ class Learner:
             epoch_kl = 0.0
             minibatches = 0
             order = torch.randperm(len(table.steps), generator=self.generator).tolist()
-            label_chunks = self._label_chunks(table, -(-len(order) // ppo.minibatch_size), epoch)
+            parts = -(-len(order) // ppo.minibatch_size)
+            label_chunks = self._label_chunks(table, parts, epoch)
+            teacher_chunks = self._teacher_chunks(table, parts)
             for k, start in enumerate(range(0, len(order), ppo.minibatch_size)):
                 index = order[start : start + ppo.minibatch_size]
                 backward, loss, kl = self._minibatch_loss(
-                    role, table, warm, index, weights, label_chunks[k] if label_chunks else None
+                    role,
+                    table,
+                    warm,
+                    index,
+                    weights,
+                    label_chunks[k] if label_chunks else None,
+                    teacher_chunks[k] if teacher_chunks else None,
                 )
                 if kl is not None:
                     kl_sum += kl.detach().cpu()
@@ -809,6 +928,14 @@ class Learner:
         own = torch.Generator(device="cpu")
         own.manual_seed(seed)
         return self._spread(torch.randperm(len(table.labels), generator=own).tolist(), parts)
+
+    def _teacher_chunks(self, table: _Table, parts: int) -> list[list[int]] | None:
+        """The update's teacher steps shuffled (by the update's own draw stream, which also drew
+        them) and spread over ``parts`` Battle minibatches, as the labels are; ``None`` without
+        teacher steps. The learner's main generator is never touched."""
+        if not table.teacher or table.teacher_stream is None:
+            return None
+        return self._spread(table.teacher_stream.shuffle(list(range(len(table.teacher)))), parts)
 
     # -- the joint step of shared_trunk -----------------------------------------------------------
 
@@ -877,6 +1004,11 @@ class Learner:
                     if "battle" in tables
                     else None
                 )
+                teacher_chunks = (
+                    self._teacher_chunks(tables["battle"][0], len(chunks[leader]))
+                    if "battle" in tables
+                    else None
+                )
                 epoch_kl = dict.fromkeys(tables, 0.0)
                 epoch_n = dict.fromkeys(tables, 0)
                 for k in range(len(chunks[leader])):
@@ -892,6 +1024,7 @@ class Learner:
                             index,
                             weights,
                             label_chunks[k] if role == "battle" and label_chunks else None,
+                            teacher_chunks[k] if role == "battle" and teacher_chunks else None,
                         )
                         if kl is not None:
                             kl_sums[role] += kl.detach().cpu()

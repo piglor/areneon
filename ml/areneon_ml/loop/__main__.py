@@ -11,6 +11,9 @@
   run directory, so a run config with ``warm_start`` can start generation 0 from them (ADR-010
   erratum A2). Never fetched: the clone directory is a local path. Prints the ids by role.
   ``--roles battle`` imports the Battle checkpoint and record alone (a Battle-only warm start).
+* ``import-teacher``: copy a teacher TrainingSet's ``stream.jsonl`` and ``training-set.json`` into
+  ``<run dir>/teacher/<hash>/``, so a run config with ``ppo.imitation`` can read them (ADR-010
+  erratum A11.3). Never fetched; checked against the manifest and the config; a rerun is a no-op.
 * ``provenance``: write the run's CheckpointRecords and its sources registry into a
   directory, ready for ``python -m areneon_ml.checkpoint classify|independent``.
 * ``report``: write the run dashboard (training curves and, with a progress root, the progress
@@ -59,6 +62,7 @@ from areneon_ml.loop.metrics import MetricsError
 from areneon_ml.loop.play import NodePlayer, PlayError
 from areneon_ml.loop.population import PopulationLoop
 from areneon_ml.loop.share import run_loop_share
+from areneon_ml.loop.teacher import import_teacher
 from areneon_ml.loop.warm_start import WarmStartError, import_clone
 from areneon_ml.model.encoder import encoder_version
 from areneon_ml.model.gamedata import GameData
@@ -340,6 +344,13 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="`battle` imports only the Battle checkpoint and record, for a Battle-only "
         "warm_start (default: both)",
     )
+    teacher = commands.add_parser(
+        "import-teacher",
+        help="copy a teacher TrainingSet's stream and manifest into a run directory "
+        "(for ppo.imitation)",
+    )
+    teacher.add_argument("--stream-dir", type=Path, required=True, help="a `teacher-run` output")
+    teacher.add_argument("--run-dir", type=Path, required=True)
     inspect = commands.add_parser(
         "inspect", help="write the training-data inspector's static pages"
     )
@@ -813,6 +824,8 @@ def _private_test(args: argparse.Namespace) -> int:
 
 def _records(args: argparse.Namespace) -> dict[str, object]:
     """``import-clone`` and ``provenance``: the commands that move records, not battles."""
+    if args.command == "import-teacher":
+        return dict(import_teacher(args.stream_dir, args.run_dir))
     if args.command == "import-clone":
         return {
             "checkpoints": import_clone(

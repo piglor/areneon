@@ -966,6 +966,15 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       runSection(c, "ppo").value_warmup = { generations: 2 };
       runSection(c, "ppo").anchor = { kl_micro: 100000, schedule: { kind: "linear", final_micro: 0, generations: 10 } };
     }),
+    "training-run-config/imitation-constant": runConfigWith((c) => {
+      c.warm_start = { battle: hexOf("b") };
+      runSection(c, "ppo").imitation = { training_set_hash: hexOf("e"), coef_micro: 100000, share_ppm: 250000, schedule: { kind: "constant" } };
+    }),
+    "training-run-config/imitation-linear": runConfigWith((c) => {
+      c.warm_start = { battle: hexOf("b") };
+      runSection(c, "ppo").value_warmup = { generations: 2 };
+      runSection(c, "ppo").imitation = { training_set_hash: hexOf("e"), coef_micro: 100000, share_ppm: 250000, schedule: { kind: "linear", final_micro: 0, generations: 10 } };
+    }),
     "training-run-config/anchor-threatened": threatening((a) => (a.threatened = { kl_micro: 1000000, schedule: { kind: "constant" } })),
     "training-run-config/anchor-threatened-only": threatening((a, c) => {
       runSection(c, "ppo").value_warmup = { generations: 2 };
@@ -1254,6 +1263,11 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/search-distill-no-team-dataset": distilling((c) => delete c.team_dataset),
     "training-run-config/value-warmup-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").value_warmup = { generations: 2 })),
     "training-run-config/anchor-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").anchor = { kl_micro: 100000, schedule: { kind: "constant" } })),
+    "training-run-config/imitation-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").imitation = { training_set_hash: hexOf("e"), coef_micro: 100000, share_ppm: 250000, schedule: { kind: "constant" } })),
+    "training-run-config/imitation-population": populated((_p, c) => {
+      c.warm_start = { battle: hexOf("b") };
+      runSection(c, "ppo").imitation = { training_set_hash: hexOf("e"), coef_micro: 100000, share_ppm: 250000, schedule: { kind: "constant" } };
+    }),
     "training-run-config/anchor-zero-kl": runConfigWith((c) => {
       c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
       runSection(c, "ppo").anchor = { kl_micro: 0, schedule: { kind: "constant" } };
@@ -1678,6 +1692,18 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/anchor-negative-kl": runConfigWith((c) => {
       c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
       runSection(c, "ppo").anchor = { kl_micro: -1, schedule: { kind: "constant" } };
+    }),
+    "training-run-config/imitation-zero-share": runConfigWith((c) => {
+      c.warm_start = { battle: hexOf("b") };
+      runSection(c, "ppo").imitation = { training_set_hash: hexOf("e"), coef_micro: 100000, share_ppm: 0, schedule: { kind: "constant" } };
+    }),
+    "training-run-config/imitation-short-hash": runConfigWith((c) => {
+      c.warm_start = { battle: hexOf("b") };
+      runSection(c, "ppo").imitation = { training_set_hash: "abc", coef_micro: 100000, share_ppm: 250000, schedule: { kind: "constant" } };
+    }),
+    "training-run-config/imitation-extra-field": runConfigWith((c) => {
+      c.warm_start = { battle: hexOf("b") };
+      runSection(c, "ppo").imitation = { training_set_hash: hexOf("e"), coef_micro: 100000, share_ppm: 250000, schedule: { kind: "constant" }, anneal: 1 };
     }),
     "training-run-config/anchor-threatened-zero-kl": threatening((a) => (a.threatened = { kl_micro: 0, schedule: { kind: "constant" } })),
     "training-run-config/anchor-threatened-no-schedule": threatening((a) => (a.threatened = { kl_micro: 1000000 })),

@@ -48,6 +48,10 @@ export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
   if (config.ppo.anchor !== undefined && config.warm_start === undefined) {
     throw new TrainingRunConfigError("ppo.anchor needs warm_start: the anchor is the warm-start pair");
   }
+  if (config.ppo.imitation !== undefined) {
+    if (config.warm_start === undefined) throw new TrainingRunConfigError("ppo.imitation needs warm_start with a battle checkpoint: the term pulls toward the source the clone came from");
+    if (config.population !== undefined) throw new TrainingRunConfigError("ppo.imitation cannot be combined with a population (no per-member teacher stream)");
+  }
   checkThreatenedAnchor(config);
   if (generation.play?.temperature_ppm === 1_000_000) {
     throw new TrainingRunConfigError("generation.play.temperature_ppm 1000000 is the default: omit generation.play (one rule, one encoding)");
