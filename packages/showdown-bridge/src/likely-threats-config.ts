@@ -35,6 +35,8 @@ export const PER_FOE_MAX = 8;
 export const RANK_MAX_LIMIT = 64;
 /** The engine's `damage_taken` codes (0 normal, 1 super effective, 2 resisted, 3 immune): the length of `effectiveness_ppm`. */
 export const DAMAGE_TAKEN_CODES = 4;
+/** The largest mass x slots a table may hold, so that 10^6 x mass x slots stays an exact binary64 integer (9 x 10^15 < 2^53; `inclusionsOf`). */
+export const MAX_MASS_TIMES_SLOTS = 9_000_000_000;
 
 export type LikelySource = { kind: "generator-matched"; prior_hash: string } | { kind: "usage-table"; usage_table_hash: string; slots: number };
 
@@ -141,12 +143,29 @@ export function handlersInUse(dex: DexLike, names: readonly string[]): Set<strin
   return used;
 }
 
+/** The event handler names that can run on the damage path of a move (power, stat and damage modifiers, the callbacks): the names `hp_key_handlers` is checked against. */
+export const DAMAGE_PATH_HANDLER = /^(basePowerCallback|damageCallback|on(Any|Source|Foe|Ally)?(BasePower|ModifyDamage|ModifyAtk|ModifyDef|ModifySpA|ModifySpD|ModifyMove|ModifyType))$/;
+
+/** The damage-path handlers of the engine's moves, abilities and items whose source reads `hp` or `maxhp`: each must be in the record's `hp_key_handlers`. */
+export function hpReadingHandlers(dex: DexLike): string[] {
+  const found = new Set<string>();
+  for (const table of [dex.data.Moves, dex.data.Abilities, dex.data.Items]) {
+    for (const entry of Object.values(table ?? {})) {
+      for (const [name, value] of Object.entries(entry as Record<string, unknown>)) {
+        if (typeof value === "function" && DAMAGE_PATH_HANDLER.test(name) && /\b(hp|maxhp)\b/.test(String(value))) found.add(name);
+      }
+    }
+  }
+  return [...found].sort();
+}
+
 /** Problems of the record against the pinned engine's data and the golden vocabulary (none means ok). */
 export function checkLikelyConfig(config: LikelyConfig, dex: DexLike, engineDataHash: string): string[] {
   const problems: string[] = [];
   if (config.engine_data_hash !== engineDataHash) problems.push("engine_data_hash is not the hash of the pinned engine-data table");
   const used = handlersInUse(dex, config.hp_key_handlers);
   for (const name of config.hp_key_handlers) if (!used.has(name)) problems.push(`hp_key_handlers names ${name}, which no move, ability or item of the engine defines`);
+  for (const name of hpReadingHandlers(dex)) if (!config.hp_key_handlers.includes(name)) problems.push(`the engine's ${name} reads hit points on the damage path and is not in hp_key_handlers`);
   return problems;
 }
 
@@ -194,6 +213,9 @@ export function loadMoveTable(source: LikelySource, formatId: string, dir: strin
     }
   } else {
     for (const species of (value as UsageFile).species) table.set(species.id, { slots: source.slots, total: MILLION, masses: new Map(species.moves.entries.map((entry) => [entry.id, entry.ppm])) });
+  }
+  for (const list of table.values()) {
+    for (const mass of list.masses.values()) if (!Number.isInteger(mass) || mass < 0 || mass * list.slots > MAX_MASS_TIMES_SLOTS || mass > list.total) fail("a move mass of the source file is out of the range the integer arithmetic holds exact");
   }
   tables.set(path, { hash: wanted, table });
   return table;

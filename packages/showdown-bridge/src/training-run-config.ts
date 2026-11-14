@@ -95,7 +95,7 @@ function checkSheetRegimes(config: TrainingRunConfig): void {
 }
 
 /** Feature sets whose rows carry `threats`, `speeds` and `foe_priorities`, which the Threatened flag of `ppo.anchor.threatened` reads (ADR-010 erratum A11.2). */
-const THREAT_ROW_FEATURE_SETS: readonly string[] = ["probe-damage/2", "probe-outcome/1"];
+const THREAT_ROW_FEATURE_SETS: readonly string[] = ["probe-damage/2", "probe-outcome/1", "probe-outcome-likely/1"];
 
 /**
  * The rules of `ppo.anchor.threatened` the profile cannot say (ADR-010 erratum A11.2, #1366): `ppo.anchor.kl_micro` may be 0 only together with
@@ -111,7 +111,7 @@ function checkThreatenedAnchor(config: TrainingRunConfig): void {
   }
   const features = config.model.encoder.options?.candidate_features?.feature_set;
   if (features === undefined || !THREAT_ROW_FEATURE_SETS.includes(features)) {
-    throw new TrainingRunConfigError("ppo.anchor.threatened reads the threats, speeds and foe_priorities rows: it needs candidate_features of probe-damage/2 or probe-outcome/1");
+    throw new TrainingRunConfigError("ppo.anchor.threatened reads the threats, speeds and foe_priorities rows: it needs candidate_features of probe-damage/2, probe-outcome/1 or probe-outcome-likely/1");
   }
 }
 

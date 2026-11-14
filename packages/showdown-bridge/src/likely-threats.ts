@@ -30,12 +30,13 @@ import { assumedWithMove } from "./damage-aware-assumed-set.ts";
 import { rollsValue } from "./damage-aware-score.ts";
 import { DamageAwareError, type DamageView, type Fighter, type Foe, foeTargetKind, ProbeRefusal } from "./damage-aware-view.ts";
 import type { Engine } from "./engine.ts";
-import { type LikelyConfig, type LikelySetup, type MoveList, readsHitPoints } from "./likely-threats-config.ts";
+import { type LikelyConfig, type LikelyScreen, type LikelySetup, type MoveList, readsHitPoints } from "./likely-threats-config.ts";
 import type { MechanicsQuery } from "./mechanics-query.ts";
 import type { PlainReason } from "./mechanics-result.ts";
 
 const MILLION = 1_000_000;
-const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+/** Order of two distinct ids (a duplicate is never compared). */
+const compare = (a: string, b: string): number => (a < b ? -1 : 1);
 
 /** What a likely threat row holds: the damage values of a `/3` row and the table's inclusion of the move. */
 export type LikelyRow = { own: number; mega: boolean; foe: number; move: string; inclusion_ppm: number } & DamageValues;
@@ -90,6 +91,9 @@ export function inclusionsOf(list: MoveList, revealed: ReadonlySet<string>, reve
   const out: { id: string; inclusion_ppm: number }[] = [];
   for (const [id, mass] of list.masses) {
     if (revealed.has(id)) continue;
+    // Exact in binary64: the numerator is at most 10^6 x mass x slots, and `loadMoveTable` refuses a table with a mass x slots above
+    // `MAX_MASS_TIMES_SLOTS` (9 x 10^9), so it stays below 9 x 10^15 < 2^53; a quotient of two exact integers is then correctly rounded
+    // and its floor cannot cross an integer (an exact multiple is exactly representable).
     const inclusion = Math.min(MILLION, Math.floor((MILLION * mass * slotsLeft) / massLeft));
     if (inclusion > 0) out.push({ id, inclusion_ppm: inclusion });
   }
@@ -221,15 +225,14 @@ function fullRolls(run: Run, attacker: Fighter, defender: Fighter, move: string,
 
 /** The static score of a candidate against one defender: inclusion x base power x type chart x same-type x spread, in exact integers. */
 function staticScore(run: Run, config: LikelyConfig, foe: Foe, move: string, inclusion: number, defender: Fighter): bigint {
-  const screen = config.screen;
-  if (screen === undefined) return 0n;
+  const screen = config.screen as LikelyScreen; // a record with a pre-screen always has its factors (the reader requires both)
   const data = run.dex.moves.get(move) as { basePower: number; type: string; target: string };
-  const types = (paste: string): string[] => run.dex.species.get(importSets(run.engine)(paste)[0]?.species ?? "").types;
+  const types = (paste: string): string[] => run.dex.species.get((importSets(run.engine)(paste)[0] as { species: string }).species).types;
   const power = data.basePower > 0 ? data.basePower : screen.variable_power;
   let score = BigInt(inclusion) * BigInt(power);
   for (const type of types(defender.paste)) {
-    const code = run.dex.types.get(type).damageTaken[data.type] ?? 0;
-    score = (score * BigInt(screen.effectiveness_ppm[code] ?? MILLION)) / BigInt(MILLION);
+    const code = run.dex.types.get(type).damageTaken[data.type] as number;
+    score = (score * BigInt(screen.effectiveness_ppm[code] as number)) / BigInt(MILLION);
   }
   if (types(foe.fighter.paste).includes(data.type)) score = (score * BigInt(screen.same_type_ppm)) / BigInt(MILLION);
   if (foeTargetKind(data.target) === "every") score = (score * BigInt(screen.spread_ppm)) / BigInt(MILLION);

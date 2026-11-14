@@ -991,6 +991,13 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       a.schedule = { kind: "constant" };
       a.threatened = { kl_micro: 1000000, schedule: { kind: "linear", final_micro: 0, generations: 10 } };
     }),
+    "training-run-config/anchor-threatened-likely": threatening((a, c) => {
+      runSection(c, "ppo").value_warmup = { generations: 2 };
+      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-outcome-likely/1", feature_set_hash: hexOf("c") } };
+      a.kl_micro = 0;
+      a.schedule = { kind: "constant" };
+      a.threatened = { kl_micro: 1000000, schedule: { kind: "linear", final_micro: 0, generations: 10 } };
+    }),
     "training-run-config/population": populated(() => {}),
     "training-run-config/population-single": populated((p) => {
       p.members = 1;

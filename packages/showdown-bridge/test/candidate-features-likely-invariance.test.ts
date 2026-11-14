@@ -220,11 +220,12 @@ describe("hidden-information invariance of the probe-outcome-likely/1 features (
       }
     }
     expect(seen.pairs).toBeGreaterThanOrEqual(2);
-    expect(seen.refused, JSON.stringify(seen)).toBeLessThanOrEqual(seen.total / 4);
-    expect(seen.total).toBeGreaterThanOrEqual(12);
+    // the committed battles give 18 featured requests and no refusal (measured): a margin of one refusal, never the quarter the older sets tolerate
+    expect(seen.refused, JSON.stringify(seen)).toBeLessThanOrEqual(1);
+    expect(seen.total).toBeGreaterThanOrEqual(16);
     // not vacuous: likely rows are really there, before and after a move reveal
-    expect(seen.likely, JSON.stringify(seen)).toBeGreaterThanOrEqual(10);
-    expect(seen.afterMoveReveal).toBeGreaterThanOrEqual(5);
+    expect(seen.likely, JSON.stringify(seen)).toBeGreaterThanOrEqual(16);
+    expect(seen.afterMoveReveal).toBeGreaterThanOrEqual(12);
   }, 900_000);
 
   it("is a function of the foe's species and revealed moves: a likely row is never a revealed move, and a foe's rows exist even though it has revealed nothing", async () => {

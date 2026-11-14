@@ -359,6 +359,79 @@ describe("refusals", () => {
   });
 });
 
+describe("the edges of a decision", () => {
+  const withLines = (c: Captured, edit: (lines: string[]) => void): PlayerChannel => {
+    const lines = [...c.context.channel];
+    edit(lines);
+    return playerChannel({ schema_version: 1, data_class: "synthetic", player: c.context.player, lines });
+  };
+  const run = (c: Captured, channel: PlayerChannel, change: Partial<FeatureConfigs> = {}, memo = createFeatureMemo()) => candidateFeaturesLikely(engine, configs(change), channel, teamOf(c), candidatesOf(c), memo);
+
+  it("propagates a defect of the probe and refuses an answer that is no damage", () => {
+    const c = moveRequests().find((r) => foesOf(r).length > 0) as Captured;
+    const broken = (fail: "throw" | "wrong") => (context: MechanicsContext, query: ParsedMechanicsQuery) => {
+      if (query.query.kind === "damage" && query.query.attacker.hp === null && query.query.move !== undefined && fail === "throw") throw new Error("probe defect");
+      if (query.query.kind === "damage" && fail === "wrong") {
+        const identity = { data_class: query.data_class, query_hash: mechanicsQueryHash(query), manifest, mechanics_config_hash: mechanicsConfigHash(withOutcome), gap_ids: [] };
+        return { result: buildResult(identity, answerOutcome), diagnostics: [] };
+      }
+      return probe()(context, query);
+    };
+    expect(() => run(c, channelOf(c), { probe: broken("throw") })).toThrow();
+    expect(() => run(c, channelOf(c), { probe: broken("wrong") })).toThrow(/no damage answer/);
+  });
+
+  it("leaves out a move the validator will not place on the foe's set", () => {
+    const c = moveRequests().find((r) => foesOf(r).length > 0) as Captured;
+    const memo = createFeatureMemo();
+    const table = new Map<string, MoveList>();
+    for (const mon of stateOf(c).opponent.roster) {
+      const own = poolOf(mon);
+      const foreign = damagingPool("tyranitar").find((m) => !own.includes(m) && !damagingPool(toId(mon.species ?? mon.base_species)).includes(m)) as string;
+      table.set(toId(mon.species ?? mon.base_species), { slots: 4, total: 1_000_000, masses: new Map([[foreign, 250_000], [own[0] as string, 250_000]]) });
+    }
+    const features = candidateFeaturesLikely(engine, configs({}, { config: base.config, table }), channelOf(c), teamOf(c), candidatesOf(c), memo);
+    const asked = new Set(features.belief_threats.map((r) => r.move));
+    for (const mon of stateOf(c).opponent.roster) for (const move of table.get(toId(mon.species ?? mon.base_species))?.masses.keys() ?? []) if (!poolOf(mon).includes(move)) expect(asked.has(move) && foesOf(c).some((f) => f === mon)).toBe(false);
+    expect([...(memo.likely?.placed.values() ?? [])].some((placed) => placed === null)).toBe(true);
+  });
+
+  it("refuses with reader_flagged for the rest of a game once the reader has flagged a line", () => {
+    const c = moveRequests().find((r) => r.context.channel.filter((l) => l.startsWith("|request|")).length >= 3) as Captured;
+    // the flagged line sits between the first two requests, so it is older than the previous request and the build itself does not refuse
+    const channel = withLines(c, (lines) => {
+      const firstAt = lines.findIndex((l) => l.startsWith("|request|"));
+      const second = lines.findIndex((l, i) => i > firstAt && l.startsWith("|request|"));
+      lines.splice(second, 0, "|nosuchlinekind|x");
+    });
+    const memo = createFeatureMemo();
+    const features = run(c, channel, {}, memo);
+    expect(features.belief_threats).toEqual([]);
+    expect(features.belief_threats_refused).toBe("reader_flagged");
+    expect(memo.belief?.fallbacks).toEqual({ reader_flagged: 1 });
+  });
+
+  it("gives a foe a revealed Choice item has locked no likely rows, and prices a forced switch's benched Pokemon", () => {
+    const c = moveRequests().find((r) => foesOf(r).length > 0 && foesOf(r)[0]?.name !== null && foesOf(r)[0]?.name !== undefined) as Captured;
+    const foe = foesOf(c)[0] as PublicMon;
+    const player = stateOf(c).opponent.player;
+    const letter = Object.keys(stateOf(c).opponent.slots).sort()[0] as string;
+    const loc = 1;
+    const channel = withLines(c, (lines) => {
+      const at = lines.length - 1;
+      lines.splice(at, 0, `|-item|${player}${letter}: ${foe.name}|Choice Scarf`, `|move|${player}${letter}: ${foe.name}|Tackle|p1a: x`);
+    });
+    const features = run(c, channel);
+    expect(features.belief_threats.filter((r) => r.foe === loc)).toEqual([]);
+    const forced = captured.find((r) => r.request.phase === "forceSwitch" && foesOf(r).length > 0);
+    if (forced !== undefined) {
+      const built = build(forced);
+      expect(built.belief_threats_refused).toBeUndefined();
+      expect(built.belief_threats.every((r) => r.own >= 0)).toBe(true);
+    }
+  });
+});
+
 describe("the record reader", () => {
   const good = JSON.parse(JSON.stringify(base.config)) as Record<string, unknown>;
   it("refuses unknown keys, bad words and values out of range", async () => {
@@ -405,6 +478,35 @@ describe("the record reader", () => {
     expect(() => loadMoveTable({ kind: "generator-matched", prior_hash: "0".repeat(64) }, GOLDEN_FORMAT)).toThrow(/another hash/);
     expect(() => loadMoveTable({ kind: "usage-table", usage_table_hash: "0".repeat(64), slots: 4 }, GOLDEN_FORMAT)).toThrow(/no committed usage weight table/);
     expect(() => loadLikelySetup("gen9nothing", "x.json")).toThrow();
+  });
+
+  it("lists every damage-path handler of the engine that reads hit points, and flags a record that lacks one", async () => {
+    const { checkLikelyConfig, hpReadingHandlers } = await import("../src/likely-threats-config.ts");
+    const raw = engine.sim.Dex.mod("champions") as unknown as Parameters<typeof checkLikelyConfig>[1];
+    const reading = hpReadingHandlers(raw);
+    // the move power callbacks, Brine, the low-HP type boosts and the full-HP damage reduction are what the engine's source says
+    for (const name of ["basePowerCallback", "onBasePower", "onModifyAtk", "onModifySpA", "onSourceModifyDamage"]) expect(reading).toContain(name);
+    for (const name of reading) expect(base.config.hp_key_handlers, name).toContain(name);
+    const lacking = { ...base.config, hp_key_handlers: base.config.hp_key_handlers.filter((name) => name !== "onSourceModifyDamage") };
+    expect(checkLikelyConfig(lacking, raw, base.config.engine_data_hash).join(" ")).toMatch(/onSourceModifyDamage reads hit points/);
+  });
+
+  it("refuses a source file whose masses the integer arithmetic cannot hold exact", async () => {
+    const { loadMoveTable, MAX_MASS_TIMES_SLOTS } = await import("../src/likely-threats-config.ts");
+    const { sha256Hex } = await import("../src/rules.ts");
+    const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const dir = mkdtempSync(join(tmpdir(), "likely-"));
+    mkdirSync(join(dir, "opponent-model", GOLDEN_FORMAT), { recursive: true });
+    const write = (inclusion: number) => {
+      const prior = { species: [{ id: "x", formes: [{ id: "x", moves: { slots: 4, denominator: 10, entries: [{ id: "tackle", inclusion }] } }] }] };
+      writeFileSync(join(dir, "opponent-model", GOLDEN_FORMAT, "generator-matched.uniform-v1.json"), JSON.stringify(prior));
+      return sha256Hex(jcs(prior as unknown as Json));
+    };
+    const ok = loadMoveTable({ kind: "generator-matched", prior_hash: write(7) }, GOLDEN_FORMAT, dir);
+    expect(ok.get("x")?.masses.get("tackle")).toBe(7);
+    for (const bad of [Math.floor(MAX_MASS_TIMES_SLOTS / 4) + 1, 41, -1, 1.5]) expect(() => loadMoveTable({ kind: "generator-matched", prior_hash: write(bad) }, GOLDEN_FORMAT, dir)).toThrow(/integer arithmetic/);
   });
 
   it("reads the committed usage weight table as a second source (slots x ppm)", async () => {
