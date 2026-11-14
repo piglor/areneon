@@ -173,6 +173,17 @@ describe("Protect streak", () => {
   });
 });
 
+describe("an instructed stall move (#1377)", () => {
+  // The engine prints no `-singleturn` for a stall move Instruct re-runs in the turn it already succeeded (its own
+  // volatile is still up). This module is part of the probe-outcome/1 identity (its file hash), so it is NOT changed:
+  // it refuses the channel (`stall_unresolved`: every world fact is then unknown). The Python reducer accepts it; a
+  // follow-up aligns this module with the engine together with the other identity-moving reader fixes.
+  it("is refused as an unresolved stall move (a known gap to the engine)", () => {
+    const lines = [...HEAD, "|turn|1", "|move|p1a: Alpha|Protect|p1a: Alpha", "|-singleturn|p1a: Alpha|Protect", "|move|p2a: Gamma|Instruct|p1a: Alpha", "|-singleturn|p1a: Alpha|move: Instruct|[of] p2a: Gamma", "|move|p1a: Alpha|Protect|p1a: Alpha", "|move|p2b: Delta|Tackle|p1a: Alpha", "|upkeep"];
+    expect(code(() => run("p1", lines))).toBe("stall_unresolved");
+  });
+});
+
 describe("a second side guard prints nothing (#1281)", () => {
   const first = ["|move|p1b: Beta|Wide Guard|p1b: Beta", "|-singleturn|p1b: Beta|Wide Guard"];
   const second = ["|move|p1a: Alpha|Wide Guard|p1a: Alpha"];

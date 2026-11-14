@@ -209,6 +209,11 @@ describe("the stall counter", () => {
     expect(mon(other, "own", "a").stall_counter).toBe(3);
   });
 
+  it("refuses an instructed stall move, which prints nothing (#1377; a known gap to the engine, kept so the file hash stays)", () => {
+    const lines = [...HEAD, ...TURN(1), "|move|p1a: Alpha|Protect|p1a: Alpha", "|-singleturn|p1a: Alpha|Protect", "|move|p2a: Gamma|Instruct|p1a: Alpha", "|-singleturn|p1a: Alpha|move: Instruct|[of] p2a: Gamma", "|move|p1a: Alpha|Protect|p1a: Alpha", "|move|p2b: Delta|Tackle|p1b: Beta", ...END];
+    expect(code(() => run(lines))).toBe("stall_unresolved");
+  });
+
   it("a side-condition stall move whose condition is already up prints nothing and still succeeds", () => {
     const facts = run([
       ...HEAD,

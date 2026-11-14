@@ -817,3 +817,20 @@ def test_only_the_modules_own_refusals_are_kept_an_unexpected_exception_propagat
     monkeypatch.setattr(tracker, "_line", broken)
     with pytest.raises(KeyError):
         tracker.feed("|turn|1")
+
+
+def test_an_instructed_stall_move_is_refused_like_the_ts_module() -> None:
+    """#1377: the engine prints nothing for it; the TS module (part of the probe-outcome/1 identity,
+    so unchanged) refuses `stall_unresolved`, and this twin must give the same."""
+    lines = [
+        *HEAD,
+        *turn(1),
+        "|move|p1a: Alpha|Protect|p1a: Alpha",
+        "|-singleturn|p1a: Alpha|Protect",
+        "|move|p2a: Gamma|Instruct|p1a: Alpha",
+        "|-singleturn|p1a: Alpha|move: Instruct|[of] p2a: Gamma",
+        "|move|p1a: Alpha|Protect|p1a: Alpha",
+        "|move|p2b: Delta|Tackle|p1b: Beta",
+        *END,
+    ]
+    assert facts(lines) == {"refused": "stall_unresolved"}
