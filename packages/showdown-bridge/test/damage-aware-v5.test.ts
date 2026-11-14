@@ -287,6 +287,20 @@ describe("choosing with the engine's success chance (a stand-in probe with known
     expect(differs).toBeGreaterThan(0);
   });
 
+  it("keeps the view's `causes` table out of the counts a report hands to the closed baseline records (#1379)", () => {
+    const { c } = scenes()[0] as ReturnType<typeof scenes>[number];
+    // A refused outcome query is noted by cause in the view's counts (history is declared for v5) ...
+    const inner = sceneProbe(sceneFor(c, []));
+    const noted = damageAwareActor(options(v5, { probe: (context, query) => {
+      if (query.query.kind === "move_outcome") throw new MechanicsProbeError("declared state refused");
+      return inner(context, query);
+    } }));
+    noted(c.request, c.context);
+    expect(noted.report().counts.probe_refusals).toBeGreaterThan(0);
+    // ... and the report carries the nine counts (and probe_refusals) only.
+    expect(Object.keys(noted.report().counts).sort()).toEqual(["assumed_set_fallbacks", "decisions", "epsilon_plays", "preview_decisions", "probe_refusals", "probe_runs", "queries", "reader_fallbacks", "scored_decisions", "unsupported_queries"]);
+  });
+
   it("answers a request the outcome reading cannot be built for by the actor-rule candidate and counts it by cause", () => {
     const { c } = scenes()[0] as ReturnType<typeof scenes>[number];
     const refused = damageAwareActor(options(v5, { probe: stubProbe({ throwOn: { stats: new MechanicsProbeError("declared state refused") } }) }));
@@ -300,8 +314,6 @@ describe("choosing with the engine's success chance (a stand-in probe with known
     expect(actor.report().success).toMatchObject({ dead_candidates: 0 });
     expect((actor.report().success?.parts_scaled ?? 0) + (actor.report().success?.parts_unread ?? 0)).toBeGreaterThan(0);
     expect(actor.report().situational).toEqual({ protect_no_facts: 0 });
-    // The view's `causes` table is a diagnostic: the closed baseline records never see it (#1379).
-    expect(actor.report().counts).not.toHaveProperty("causes");
     expect(run(c, sceneFor(c, foeMoves), v4).actor.report()).not.toHaveProperty("success");
   });
 });
