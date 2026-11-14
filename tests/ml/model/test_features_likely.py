@@ -16,7 +16,14 @@ from typing import Any
 
 import pytest
 import torch
-from areneon_ml.checkpoint.files import FORMAT_OPTIONS
+from areneon_ml.checkpoint.files import (
+    FORMAT_OPTIONS,
+    CheckpointOptionsError,
+    checkpoint_bytes,
+    checkpoint_id,
+    load_checkpoint,
+    read_header,
+)
 from areneon_ml.loop.records import (
     FEATURES_LIKELY_FAMILY,
     FEATURES_OUTCOME_FAMILY,
@@ -172,3 +179,31 @@ def test_the_worker_reader_and_the_run_label() -> None:
     assert coverage_problem(SAMPLE, features, damaging_moves(game())) is None
     assert FEATURES_LIKELY_FAMILY != FEATURES_OUTCOME_FAMILY
     assert "likely to hold" in FEATURES_LIKELY_FAMILY
+
+
+def test_the_a1_and_a2_forms_with_the_same_arrays_get_identical_logits() -> None:
+    a2 = sample("policy-query/valid/battle-a2.json")
+    a2["candidate_features"] = copy.deepcopy(SAMPLE["candidate_features"])
+    model = net()
+    a1 = ENCODE.encode(SAMPLE)
+    b = ENCODE.encode(a2)
+    assert all(torch.equal(v, b.tensors()[k]) for k, v in a1.tensors().items())
+    assert torch.equal(model(collate([a1])).logits, model(collate([b])).logits)
+
+
+def test_an_incremental_session_gives_the_tensors_of_a_fresh_encode() -> None:
+    fresh = ENCODE.encode(SAMPLE)
+    session = ENCODE.session().encode(SAMPLE)
+    for name, tensor in fresh.tensors().items():
+        assert torch.equal(session.tensors()[name], tensor), name
+
+
+def test_the_checkpoint_is_format_two_and_loads_only_under_the_likely_set() -> None:
+    network = net(seed=3)
+    data = checkpoint_bytes(network, game())
+    assert read_header(data)["__metadata__"]["areneon.format"] == FORMAT_OPTIONS
+    loaded = load_checkpoint(data, game(), checkpoint_id(data), "battle", configured=ON_MODEL)
+    assert loaded.layout.outcome
+    other = replace(TINY_MODEL, encoder=config_for(OUTCOME))
+    with pytest.raises(CheckpointOptionsError):
+        load_checkpoint(data, game(), checkpoint_id(data), "battle", configured=other)
