@@ -109,6 +109,16 @@ export interface DamageAwareReport {
   success?: SuccessCounts;
 }
 
+/**
+ * The counts a report hands to the closed records (`BaselineCounts`): the view's `causes` table (`probe-outcome/1` runs that ended in a
+ * refusal or `history_unknown`, by cause, #1353) is a diagnostic of the feature builder like `success`, not a stored count, so it stays out (#1379).
+ */
+function storedCounts(counts: DamageAwareCounts): DamageAwareCounts {
+  const copy: DamageAwareCounts & { causes?: unknown } = { ...counts };
+  delete copy.causes;
+  return copy;
+}
+
 /** What `damage-aware@v5` reports beside the nine counts. Integers. */
 export interface SuccessCounts {
   /** Move parts scaled by a computed success chance. */
@@ -618,7 +628,7 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
       policy_id,
       identity,
       identity_hash,
-      counts: { ...counts },
+      counts: storedCounts(counts),
       ...(belief === null ? {} : { belief: { ...belief, refusals: { ...belief.refusals } } }),
       ...(situational === null ? {} : { situational: { ...situationalCounts } }),
       ...(scaling ? { success: { ...successCounts } } : {}),
