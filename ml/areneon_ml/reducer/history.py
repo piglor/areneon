@@ -357,10 +357,12 @@ class HistoryTracker:
             else:
                 self._stall_succeeded(occupant)
         elif line.kind in _BOUNDARY:
-            if (
-                occupant is not None
-                and move in self._ally_side
-                and f"{side}:{move}" in self._guards
+            # A silent success: a side guard whose condition is up (#1281), or a repeat in the turn
+            # the Pokemon's stalling use already succeeded (Instruct re-runs the move; its own
+            # volatile is still up, so it prints no `-singleturn`; #1377).
+            if occupant is not None and (
+                occupant.stall_turn == self._turn
+                or (move in self._ally_side and f"{side}:{move}" in self._guards)
             ):
                 self._pending = None
                 self._stall_succeeded(occupant)

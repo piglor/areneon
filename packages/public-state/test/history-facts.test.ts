@@ -209,6 +209,17 @@ describe("the stall counter", () => {
     expect(mon(other, "own", "a").stall_counter).toBe(3);
   });
 
+  it("an instructed stall move prints nothing and counts as one more use (#1377)", () => {
+    const first = ["|move|p1a: Alpha|Protect|p1a: Alpha", "|-singleturn|p1a: Alpha|Protect"];
+    const instruct = ["|move|p2a: Gamma|Instruct|p1a: Alpha", "|-singleturn|p1a: Alpha|move: Instruct|[of] p2a: Gamma"];
+    const repeat = "|move|p1a: Alpha|Protect|p1a: Alpha";
+    const facts = run([...HEAD, ...TURN(1), ...first, ...instruct, repeat, "|move|p2b: Delta|Tackle|p1b: Beta", ...END]);
+    expect(mon(facts, "own", "a").stall_counter).toBe(9);
+    const failed = run([...HEAD, ...TURN(1), ...first, ...instruct, repeat, "|-fail|p1a: Alpha", ...END]);
+    expect(mon(failed, "own", "a").stall_counter).toBeNull();
+    expect(code(() => run([...HEAD, ...TURN(1), ...instruct, repeat, ...END]))).toBe("stall_unresolved");
+  });
+
   it("a side-condition stall move whose condition is already up prints nothing and still succeeds", () => {
     const facts = run([
       ...HEAD,

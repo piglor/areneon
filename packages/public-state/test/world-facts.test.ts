@@ -173,6 +173,23 @@ describe("Protect streak", () => {
   });
 });
 
+describe("an instructed stall move prints nothing (#1377)", () => {
+  const protect = ["|move|p1a: Alpha|Protect|p1a: Alpha", "|-singleturn|p1a: Alpha|Protect"];
+  const instruct = ["|move|p2a: Gamma|Instruct|p1a: Alpha", "|-singleturn|p1a: Alpha|move: Instruct|[of] p2a: Gamma"];
+  const repeat = "|move|p1a: Alpha|Protect|p1a: Alpha";
+
+  it("counts the repeat in the turn of a success as one more use, and a failed roll as a failure", () => {
+    const f = run("p1", [...HEAD, "|turn|1", ...protect, ...instruct, repeat, "|move|p2b: Delta|Tackle|p1a: Alpha", "|upkeep", "|turn|2"]);
+    expect(f.own.active.a?.protect_streak).toBe(2);
+    const failed = run("p1", [...HEAD, "|turn|1", ...protect, ...instruct, repeat, "|-fail|p1a: Alpha", "|upkeep", "|turn|2"]);
+    expect(failed.own.active.a?.protect_streak).toBe(0);
+  });
+
+  it("still refuses a silent stall move with no earlier success this turn", () => {
+    expect(code(() => run("p1", [...HEAD, "|turn|1", ...instruct, repeat, "|upkeep"]))).toBe("stall_unresolved");
+  });
+});
+
 describe("a second side guard prints nothing (#1281)", () => {
   const first = ["|move|p1b: Beta|Wide Guard|p1b: Beta", "|-singleturn|p1b: Beta|Wide Guard"];
   const second = ["|move|p1a: Alpha|Wide Guard|p1a: Alpha"];

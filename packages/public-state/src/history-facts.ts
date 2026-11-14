@@ -459,7 +459,8 @@ export class HistoryFactsReader {
         occupant.stall_turn = -1;
       } else this.#stallSucceeded(occupant);
     } else if (BOUNDARY.has(line.kind)) {
-      if (occupant && this.#allySide.has(pending.move) && this.#guards.has(`${pending.side}:${pending.move}`)) {
+      // Instruct (#1377) re-runs the user's last move in the turn it already ran: `onHit` restarts the `stall` volatile (its counter triples) but the move's own volatile is still up, so `addVolatile` returns false and `onStart` prints no `-singleturn`. A repeat in the turn the Pokemon's stalling use already succeeded is a silent success (a failed stall roll still prints `-fail`); it counts as one more use, as the counter triples per use.
+      if (occupant && (occupant.stall_turn === this.#turn || (this.#allySide.has(pending.move) && this.#guards.has(`${pending.side}:${pending.move}`)))) {
         this.#pending = null;
         this.#stallSucceeded(occupant);
       } else throw new HistoryFactsError("stall_unresolved", this.#index);

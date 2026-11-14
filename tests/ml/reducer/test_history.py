@@ -817,3 +817,20 @@ def test_only_the_modules_own_refusals_are_kept_an_unexpected_exception_propagat
     monkeypatch.setattr(tracker, "_line", broken)
     with pytest.raises(KeyError):
         tracker.feed("|turn|1")
+
+
+def test_an_instructed_stall_move_prints_nothing_and_counts_as_one_more_use() -> None:
+    """#1377: Instruct re-runs the move; its own volatile is still up, so no `-singleturn`."""
+    first = ["|move|p1a: Alpha|Protect|p1a: Alpha", "|-singleturn|p1a: Alpha|Protect"]
+    instruct = [
+        "|move|p2a: Gamma|Instruct|p1a: Alpha",
+        "|-singleturn|p1a: Alpha|move: Instruct|[of] p2a: Gamma",
+    ]
+    repeat = "|move|p1a: Alpha|Protect|p1a: Alpha"
+    both = facts(
+        [*HEAD, *turn(1), *first, *instruct, repeat, "|move|p2b: Delta|Tackle|p1b: Beta", *END]
+    )
+    assert mon(both, "own", "a")["stall_counter"] == 9
+    failed = facts([*HEAD, *turn(1), *first, *instruct, repeat, "|-fail|p1a: Alpha", *END])
+    assert mon(failed, "own", "a")["stall_counter"] is None
+    assert facts([*HEAD, *turn(1), *instruct, repeat, *END]) == {"refused": "stall_unresolved"}

@@ -216,6 +216,30 @@ def test_a_second_side_guard_on_one_side_prints_nothing_and_still_counts() -> No
     assert own(ended, "Venusaur").recent.protect_streak == 1
 
 
+def test_an_instructed_stalling_move_prints_nothing_and_counts_as_a_use() -> None:
+    """#1377: Instruct re-runs the user's last move in the turn it already ran. The move's own
+    volatile is still up, so `addVolatile` returns false and `onStart` prints no `-singleturn`,
+    while `onHit` restarts the `stall` volatile (teacher game, 2 of 6,999 Episodes)."""
+    instruct = [
+        "|move|p2a: Venusaur|Instruct|p1a: Venusaur",
+        "|-singleturn|p1a: Venusaur|move: Instruct|[of] p2a: Venusaur",
+    ]
+    repeat = "|move|p1a: Venusaur|Protect|p1a: Venusaur"
+    state = run(
+        *_protect("Venusaur"), *instruct, repeat, "|move|p2a: Venusaur|Recover|p2a: Venusaur"
+    )
+    assert own(state, "Venusaur").recent.protect_streak == 2
+    # A silent use at the end of the turn, then the streak goes on the next turn.
+    again = run(*_protect("Venusaur"), *instruct, repeat, "|turn|2", *_protect("Venusaur"))
+    assert own(again, "Venusaur").recent.protect_streak == 3
+    # A repeat whose stall roll fails still prints `-fail`.
+    failed = run(*_protect("Venusaur"), *instruct, repeat, "|-fail|p1a: Venusaur", "|turn|2")
+    assert own(failed, "Venusaur").recent.protect_streak == 0
+    # The same repeat with no earlier success this turn is still unexplained silence.
+    with pytest.raises(MalformedLineError, match="stalling move"):
+        run(*instruct, repeat, "|turn|2")
+
+
 @pytest.mark.parametrize(
     "lines",
     [

@@ -675,11 +675,20 @@ class _Reducer:
         returns false without a message while the move's `onHitSide` still adds the user's
         `stall` volatile and the move does not fail. Such a use is a success for the stall
         counter. It is accepted only when an earlier `-singleturn` of the same move on the same
-        side this turn shows the condition was up; any other silence still raises."""
+        side this turn shows the condition was up; any other silence still raises.
+        Instruct (#1377) is the other silent case: it queues the user's last move again in the
+        turn it already ran. The engine runs it as a normal action: `onPrepareHit` (Protect,
+        Endure) passes while another action is queued and `onHit` restarts the user's `stall`
+        volatile (its counter triples), but the move's own volatile is still up from the first
+        use, so `addVolatile` returns false (no `onRestart`) and `onStart` prints no
+        `-singleturn`. A stalling move by a Pokemon whose stalling use already succeeded THIS
+        turn is therefore a silent success (a Pokemon acts once a turn but for Instruct; a
+        failed stall roll still prints `-fail`, which `_observe` still takes). It counts as one
+        more use for the streak, as the engine's counter triples per use."""
         mon = self._stalling
         if mon is None:
             return
-        if (
+        if mon.recent.stall_turn == self.state.turn or (
             self._stalling_move in self.vocab.ally_side_moves
             and (self._stalling_player, self._stalling_move) in self._guards
         ):
