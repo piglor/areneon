@@ -675,6 +675,75 @@ def test_history_unknown_is_this_sets_reason_on_any_array() -> None:
     assert rows_problem({**mine, "threats": [threat]}) is None
 
 
+# ---- probe-outcome-likely/1 (ADR-022 erratum E-22.7)
+
+LIKELY_ARRAYS = (*ARRAYS, "belief_threats", "outcomes")
+
+
+def test_the_valid_probe_outcome_likely_samples_are_accepted_under_their_set() -> None:
+    query = sample("policy-query/valid/battle-features-likely.json")
+    assert all(query["candidate_features"][name] for name in LIKELY_ARRAYS)
+    assert read_query(query, support(query)) == query
+    preview = sample("policy-query/valid/preview-features-likely.json")
+    assert read_query(preview, support(preview))["candidate_features"]["belief_threats"] == []
+    refused = sample("policy-query/valid/battle-features-likely-refused.json")
+    assert read_query(refused, support(refused))["candidate_features"][
+        "belief_threats_refused"
+    ] == ("species_not_in_prior")
+    check("policy-handshake", sample("policy-handshake/valid/ready-features-likely.json"))
+    check("training-example", sample("training-example/valid/battle-features-likely.json"))
+    check("training-example", sample("training-example/valid/battle-features-likely-refused.json"))
+
+
+@pytest.mark.parametrize(
+    ("name", "message"),
+    [
+        ("missing-belief-threats", "and with both under probe-outcome-likely/1"),
+        ("belief-under-outcome", "and with both under probe-outcome-likely/1"),
+        (
+            "refused-with-rows",
+            "belief_threats_refused is a probe-damage/3 or probe-outcome-likely/1",
+        ),
+        ("refused-under-outcome", "probe-damage/3 or probe-outcome-likely/1 field"),
+        ("belief-unsorted", "belief_threats must be sorted and unique"),
+        ("belief-repeats-revealed", "belief_threats row repeats a move"),
+    ],
+)
+def test_probe_outcome_likely_structure_is_a_reader_rule(name: str, message: str) -> None:
+    query = sample(f"policy-query/reader-invalid/features-likely-{name}.json")
+    check("policy-query", query)  # schema-valid
+    assert rows_problem(query["candidate_features"]) is not None
+    with pytest.raises(QueryError, match=message):
+        read_query(query, support(query))
+
+
+def test_the_training_stream_reader_holds_the_likely_set_to_its_arrays() -> None:
+    good = sample("training-example/valid/battle-features-likely.json")
+    checker_for(good).line(1, stream_line(good))
+    refused = sample("training-example/valid/battle-features-likely-refused.json")
+    checker_for(refused).line(1, stream_line(refused))
+    for name, message in (
+        ("missing-belief-threats", "and with both under probe-outcome-likely/1"),
+        ("belief-under-outcome", "and with both under probe-outcome-likely/1"),
+        ("refused-with-rows", "probe-outcome-likely/1 field"),
+        ("belief-unsorted", "belief_threats must be sorted and unique"),
+    ):
+        bad = sample(f"training-example/reader-invalid/features-likely-{name}.json")
+        with pytest.raises(TrainingStreamError, match=message):
+            checker_for(bad).line(1, stream_line(bad))
+    under_outcome = copy.deepcopy(good)
+    under_outcome["candidate_features"]["feature_set"] = "probe-outcome/1"
+    del under_outcome["candidate_features"]["belief_threats"]
+    checker_for(under_outcome).line(1, stream_line(under_outcome))
+
+
+def test_history_unknown_is_also_a_probe_outcome_likely_reason() -> None:
+    mine = sample("policy-query/valid/battle-features-likely.json")["candidate_features"]
+    unknown = {"kind": "unsupported", "reason": "history_unknown"}
+    threat = {**unknown, "own": 0, "mega": False, "foe": 1, "move": "protect"}
+    assert rows_problem({**mine, "threats": [threat]}) is None
+
+
 def request_for(moves: list[dict[str, str]], conditions: list[str]) -> dict[str, Any]:
     return {
         "active": [{"moves": moves}, {"moves": moves}],

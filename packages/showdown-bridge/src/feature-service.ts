@@ -5,8 +5,11 @@
 // Nothing here reads an opponent team, a verdict or a seed: a task holds the same inputs `candidateFeatures` takes.
 // The worker-thread pool (`feature-pool.ts`) runs one service per thread.
 import { type CandidateFeatures3, candidateFeatures3 } from "./candidate-features-3.ts";
-import { type BeliefThreatsSetup, type BeliefFeatureCounts, type BeliefFeatureSetup, type CandidateFeatures, candidateFeatures, createFeatureMemo, emptyBeliefCounts, type FeatureBuildCode, FeatureBuildError, type FeatureConfigs, type FeatureMemo, FEATURE_SET_3, FEATURE_SET_BELIEF, FEATURE_SET_OUTCOME } from "./candidate-features.ts";
+import { type BeliefThreatsSetup, type BeliefFeatureCounts, type BeliefFeatureSetup, type CandidateFeatures, candidateFeatures, createFeatureMemo, emptyBeliefCounts, type FeatureBuildCode, FeatureBuildError, type FeatureConfigs, type FeatureMemo, FEATURE_SET_3, FEATURE_SET_BELIEF, FEATURE_SET_OUTCOME, FEATURE_SET_LIKELY } from "./candidate-features.ts";
 import { candidateFeaturesBelief, type CandidateFeaturesBelief } from "./candidate-features-belief.ts";
+import { candidateFeaturesLikely, type CandidateFeaturesLikely } from "./candidate-features-likely.ts";
+import { likelyConfigFiles, loadLikelySetup } from "./likely-threats-config.ts";
+import { emptyLikelyCounts, type LikelyCounts } from "./likely-threats.ts";
 import { candidateFeaturesOutcome, type CandidateFeaturesOutcome } from "./candidate-features-outcome.ts";
 import { type CandidateFeatures2, candidateFeatures2, type CostTrace, emptyTrace } from "./candidate-features-2.ts";
 import type { Candidate } from "./choices.ts";
@@ -26,7 +29,9 @@ export interface FeatureServiceSpec {
   format_id: string;
   data_class: "synthetic" | "private";
   /** The feature set the service builds; default `probe-damage/1`. */
-  feature_set?: "probe-damage/1" | "probe-damage/2" | typeof FEATURE_SET_3 | typeof FEATURE_SET_BELIEF | typeof FEATURE_SET_OUTCOME;
+  feature_set?: "probe-damage/1" | "probe-damage/2" | typeof FEATURE_SET_3 | typeof FEATURE_SET_BELIEF | typeof FEATURE_SET_OUTCOME | typeof FEATURE_SET_LIKELY;
+  /** The likelihood record file of `probe-outcome-likely/1` (a name in `config/features/<format>/`); default the first committed one. */
+  likely_record?: string;
   /** Another built checkout than the default (the engine loader's argument). */
   showdown_dir?: string;
 }
@@ -42,7 +47,7 @@ export interface FeatureTask {
   final?: boolean;
 }
 
-export type FeatureOutcome = { kind: "features"; features: CandidateFeatures | CandidateFeatures2 | CandidateFeatures3 | CandidateFeaturesBelief | CandidateFeaturesOutcome } | { kind: "error"; code: FeatureBuildCode };
+export type FeatureOutcome = { kind: "features"; features: CandidateFeatures | CandidateFeatures2 | CandidateFeatures3 | CandidateFeaturesBelief | CandidateFeaturesOutcome | CandidateFeaturesLikely } | { kind: "error"; code: FeatureBuildCode };
 
 export interface FeatureResult {
   outcome: FeatureOutcome;
@@ -56,6 +61,8 @@ export interface FeatureResult {
   belief?: BeliefFeatureCounts;
   /** `probe-outcome/1` only (#1353): outcome rows skipped or folded, parts asked in full, and the probe runs that refused or were `history_unknown`, by cause. */
   outcome_counts?: { skipped: number; folded: number; asked_all: number; causes: Record<string, number> };
+  /** `probe-outcome-likely/1` only (#1387): the likely threats' cache and ranking counts this task added. */
+  likely_counts?: LikelyCounts;
 }
 
 export interface FeatureService {
@@ -75,11 +82,13 @@ export function createFeatureService(spec: FeatureServiceSpec, engineOverride?: 
   if (spec.format_id !== GOLDEN_FORMAT) throw new Error(`the feature builder has a vocabulary for ${GOLDEN_FORMAT} only, not ${spec.format_id}`);
   const engine = engineOverride ?? loadEngine(spec.showdown_dir);
   const vocabulary = goldenTeamVocabulary();
+  const outcomeBased = spec.feature_set === FEATURE_SET_OUTCOME || spec.feature_set === FEATURE_SET_LIKELY;
   const configs: FeatureConfigs = {
     vocabulary,
     config: loadDamageAwareConfig("v1", vocabulary),
-    mechanics: spec.feature_set === FEATURE_SET_OUTCOME ? withMoveOutcome(loadMechanicsConfig(spec.format_id)) : loadMechanicsConfig(spec.format_id),
-    ...(spec.feature_set === FEATURE_SET_OUTCOME ? { outcome: { config: loadOutcomeConfig(spec.format_id) } } : {}),
+    mechanics: outcomeBased ? withMoveOutcome(loadMechanicsConfig(spec.format_id)) : loadMechanicsConfig(spec.format_id),
+    ...(outcomeBased ? { outcome: { config: loadOutcomeConfig(spec.format_id) } } : {}),
+    ...(spec.feature_set === FEATURE_SET_LIKELY ? { likely: loadLikelySetup(spec.format_id, spec.likely_record ?? (likelyConfigFiles(spec.format_id)[0] as string)) } : {}),
     snapshot: loadRulesSnapshot(engine.commit),
     data_class: spec.data_class,
     ...(extras.belief === undefined ? {} : { belief: extras.belief }),
@@ -93,14 +102,16 @@ export function createFeatureService(spec: FeatureServiceSpec, engineOverride?: 
       const before = { ...memo.counts };
       const beforeBelief = structuredClone(memo.belief ?? emptyBeliefCounts());
       const beforeOutcome = { skipped: memo.outcome?.skipped ?? 0, folded: memo.outcome?.folded ?? 0, asked_all: memo.outcome?.asked_all ?? 0 };
+      const beforeLikely = { ...(memo.likely?.counts ?? emptyLikelyCounts()) };
       const beforeCauses = { ...(memo.counts.causes ?? {}) };
       const started = performance.now();
       let outcome: FeatureOutcome;
-      const parts = spec.feature_set === "probe-damage/2" || spec.feature_set === FEATURE_SET_3 || spec.feature_set === FEATURE_SET_OUTCOME ? emptyTrace() : undefined;
+      const parts = spec.feature_set === "probe-damage/2" || spec.feature_set === FEATURE_SET_3 || outcomeBased ? emptyTrace() : undefined;
       try {
         const channel = playerChannel({ schema_version: 1, data_class: spec.data_class, player: task.player, lines: task.lines }, sheetRegimeOf(engine.commit, spec.format_id));
         const features =
           spec.feature_set === FEATURE_SET_BELIEF ? candidateFeaturesBelief(engine, configs, channel, task.team, task.candidates, memo)
+          : spec.feature_set === FEATURE_SET_LIKELY ? candidateFeaturesLikely(engine, configs, channel, task.team, task.candidates, memo, parts)
           : spec.feature_set === FEATURE_SET_OUTCOME ? candidateFeaturesOutcome(engine, configs, channel, task.team, task.candidates, memo, parts)
           : spec.feature_set === FEATURE_SET_3 ? candidateFeatures3(engine, configs, channel, task.team, task.candidates, memo, parts)
           : parts === undefined ? candidateFeatures(engine, configs, channel, task.team, task.candidates, memo)
@@ -114,9 +125,11 @@ export function createFeatureService(spec: FeatureServiceSpec, engineOverride?: 
       if (task.final === true) memos.delete(task.game);
       const counts = { queries: memo.counts.queries - before.queries, probe_runs: memo.counts.probe_runs - before.probe_runs, unsupported_queries: memo.counts.unsupported_queries - before.unsupported_queries, probe_refusals: memo.counts.probe_refusals - before.probe_refusals };
       const outcomeNow = memo.outcome;
-      const outcomeCounts = spec.feature_set === FEATURE_SET_OUTCOME && outcomeNow !== undefined ? { skipped: outcomeNow.skipped - beforeOutcome.skipped, folded: outcomeNow.folded - beforeOutcome.folded, asked_all: outcomeNow.asked_all - beforeOutcome.asked_all, causes: causesDelta(beforeCauses, memo.counts.causes ?? {}) } : undefined;
+      const outcomeCounts = outcomeBased && outcomeNow !== undefined ? { skipped: outcomeNow.skipped - beforeOutcome.skipped, folded: outcomeNow.folded - beforeOutcome.folded, asked_all: outcomeNow.asked_all - beforeOutcome.asked_all, causes: causesDelta(beforeCauses, memo.counts.causes ?? {}) } : undefined;
       const belief = memo.belief === undefined ? undefined : beliefDelta(beforeBelief, memo.belief);
-      return { outcome, ms, counts, ...(parts === undefined ? {} : { parts }), ...(belief === undefined ? {} : { belief }), ...(outcomeCounts === undefined ? {} : { outcome_counts: outcomeCounts }) };
+      const likelyNow = memo.likely?.counts;
+      const likelyCounts = spec.feature_set === FEATURE_SET_LIKELY && likelyNow !== undefined ? (Object.fromEntries((Object.keys(likelyNow) as (keyof LikelyCounts)[]).map((key) => [key, likelyNow[key] - beforeLikely[key]])) as unknown as LikelyCounts) : undefined;
+      return { outcome, ms, counts, ...(parts === undefined ? {} : { parts }), ...(belief === undefined ? {} : { belief }), ...(outcomeCounts === undefined ? {} : { outcome_counts: outcomeCounts }), ...(likelyCounts === undefined ? {} : { likely_counts: likelyCounts }) };
     },
   };
 }

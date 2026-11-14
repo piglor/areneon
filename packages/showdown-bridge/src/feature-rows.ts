@@ -58,13 +58,16 @@ export const FEATURE_SET_WITH_ARRAYS = "probe-damage/2";
 export const FEATURE_SET_WITH_BELIEF_THREATS = "probe-damage/3";
 /** The feature set that carries the four and `outcomes` (`history_unknown` reasons are its alone). */
 export const FEATURE_SET_WITH_OUTCOMES = "probe-outcome/1";
+/** The feature set that carries the four, `outcomes` and `belief_threats` (likely moves from a frequency table, ADR-022 erratum E-22.7). */
+export const FEATURE_SET_WITH_LIKELY = "probe-outcome-likely/1";
 const ARRAYS = ["threats", "speeds", "own_priorities", "foe_priorities"] as const;
 const BELIEF_ARRAYS = [...ARRAYS, "belief_threats"] as const;
 const OUTCOME_ARRAYS = [...ARRAYS, "outcomes"] as const;
 const EVERY_ARRAY = [...ARRAYS, "belief_threats", "outcomes"] as const;
+const LIKELY_ARRAYS = [...ARRAYS, "belief_threats", "outcomes"] as const;
 /** The arrays a set carries: none, the four of `/2`, those and `belief_threats` of `/3`, or those and `outcomes` of `probe-outcome/1`. */
 const arraysOf = (featureSet: string): readonly (typeof EVERY_ARRAY)[number][] =>
-  featureSet === FEATURE_SET_WITH_BELIEF_THREATS ? BELIEF_ARRAYS : featureSet === FEATURE_SET_WITH_ARRAYS ? ARRAYS : featureSet === FEATURE_SET_WITH_OUTCOMES ? OUTCOME_ARRAYS : [];
+  featureSet === FEATURE_SET_WITH_BELIEF_THREATS ? BELIEF_ARRAYS : featureSet === FEATURE_SET_WITH_ARRAYS ? ARRAYS : featureSet === FEATURE_SET_WITH_OUTCOMES ? OUTCOME_ARRAYS : featureSet === FEATURE_SET_WITH_LIKELY ? LIKELY_ARRAYS : [];
 /** The most branches one own move part has in the `outcomes` (the switch branch and the targeted foe's moves): the reviewed record's own ceiling. */
 export const MAX_OUTCOME_BRANCHES = 5;
 const MILLION = 1_000_000;
@@ -105,7 +108,7 @@ export function featureRowsProblem(features: WireFeatureRows): string | null {
   const wanted = arraysOf(features.feature_set);
   const present = EVERY_ARRAY.filter((name) => features[name] !== undefined);
   if (present.length !== wanted.length || !wanted.every((name) => present.includes(name))) {
-    return `the candidate_features arrays ${ARRAYS.join(", ")} are present exactly under ${FEATURE_SET_WITH_ARRAYS}, and with belief_threats under ${FEATURE_SET_WITH_BELIEF_THREATS}, and with outcomes under ${FEATURE_SET_WITH_OUTCOMES}`;
+    return `the candidate_features arrays ${ARRAYS.join(", ")} are present exactly under ${FEATURE_SET_WITH_ARRAYS}, and with belief_threats under ${FEATURE_SET_WITH_BELIEF_THREATS}, and with outcomes under ${FEATURE_SET_WITH_OUTCOMES}, and with both under ${FEATURE_SET_WITH_LIKELY}`;
   }
   const orders: [string, Key[]][] = [
     ["threats", (features.threats ?? []).map((r) => [r.own, Number(r.mega), r.foe, r.move])],
@@ -116,13 +119,13 @@ export function featureRowsProblem(features: WireFeatureRows): string | null {
     ["outcomes", (features.outcomes ?? []).map((r) => [...partKey(r), Number(r.action !== "switch"), r.foe_move ?? ""])],
   ];
   for (const [name, keys] of orders) if (!ascending(keys)) return `the candidate_features ${name} must be sorted and unique by their key`;
-  if (features.belief_threats_refused !== undefined && (features.feature_set !== FEATURE_SET_WITH_BELIEF_THREATS || (features.belief_threats ?? []).length > 0)) {
-    return "a candidate_features belief_threats_refused is a probe-damage/3 field and means the belief_threats are empty";
+  if (features.belief_threats_refused !== undefined && ((features.feature_set !== FEATURE_SET_WITH_BELIEF_THREATS && features.feature_set !== FEATURE_SET_WITH_LIKELY) || (features.belief_threats ?? []).length > 0)) {
+    return "a candidate_features belief_threats_refused is a probe-damage/3 or probe-outcome-likely/1 field and means the belief_threats are empty";
   }
   // A belief threat is a move the channel has not shown: never one that is already a revealed threat of that foe.
   const revealed = new Set((features.threats ?? []).map((r) => `${r.foe}/${r.move}`));
   if ((features.belief_threats ?? []).some((r) => revealed.has(`${r.foe}/${r.move}`))) return "a candidate_features belief_threats row repeats a move already in threats for that foe";
-  if (features.feature_set !== FEATURE_SET_WITH_OUTCOMES && [features.rows, ...ARRAYS.map((name) => features[name] ?? [])].some((list) => list.some((r) => r.reason === HISTORY_UNKNOWN))) {
+  if (features.feature_set !== FEATURE_SET_WITH_OUTCOMES && features.feature_set !== FEATURE_SET_WITH_LIKELY && [features.rows, ...ARRAYS.map((name) => features[name] ?? [])].some((list) => list.some((r) => r.reason === HISTORY_UNKNOWN))) {
     return `a candidate_features reason ${HISTORY_UNKNOWN} is a ${FEATURE_SET_WITH_OUTCOMES} value`;
   }
   return outcomesProblem(features.outcomes ?? []);

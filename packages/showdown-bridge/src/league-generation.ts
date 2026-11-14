@@ -15,7 +15,7 @@ import { join } from "node:path";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { jcs, type Json } from "./canonical-json.ts";
 import { type DamageAwareActor, type DamageAwareOptions, damageAwareActor } from "./damage-aware-actor.ts";
-import { type BeliefFeatureCounts, type BeliefFeatureSetup, createFeatureMemo, BELIEF_THREATS_PER_FOE, type BeliefThreatsSetup, type FeatureConfigs, type FeatureMemo, FEATURE_SET_3, FEATURE_SET_BELIEF, FEATURE_SET_OUTCOME } from "./candidate-features.ts";
+import { type BeliefFeatureCounts, type BeliefFeatureSetup, createFeatureMemo, BELIEF_THREATS_PER_FOE, type BeliefThreatsSetup, type FeatureConfigs, type FeatureMemo, FEATURE_SET_3, FEATURE_SET_BELIEF, FEATURE_SET_OUTCOME, FEATURE_SET_LIKELY } from "./candidate-features.ts";
 import { configuredSetHash } from "./feature-build.ts";
 import { BELIEF_EVIDENCE_MODES, type BeliefEvidenceMode, type BeliefFeaturesFactory, type BeliefFeaturesPort, createSheetBuilder, type SheetSetup, sheetStatement } from "./belief-features.ts";
 import { type SheetCounts, sumSheetCounts } from "./sheet-counts.ts";
@@ -26,6 +26,7 @@ import { damageAwarePolicyId } from "./damage-aware-identity.ts";
 import { type BaselineGameReport, buildLeagueRunRecord, type LeagueRunRecord } from "./league-run-record.ts";
 import { loadMechanicsConfig, withMoveOutcome } from "./mechanics-config.ts";
 import { loadOutcomeConfig } from "./outcome-config.ts";
+import { likelyConfigFiles, loadLikelySetup } from "./likely-threats-config.ts";
 import { loadRulesSnapshot } from "./rules-load.ts";
 import { leagueGameStreams, privateTeamSource } from "./league-seed.ts";
 import { checkPlanRegimes, planFormats, regimeCounts, resolveRegimes } from "./sheet-regimes.ts";
@@ -186,12 +187,14 @@ export function featureSetup(engine: Engine, config: TrainingRunConfig, beliefWo
   if (named === undefined) return undefined;
   if (config.format_id !== GOLDEN_FORMAT) throw new GenerationError(`the candidate features have a vocabulary for ${GOLDEN_FORMAT} only, not ${config.format_id}`);
   const vocabulary = goldenTeamVocabulary();
-  const build = (evidence?: BeliefEvidenceMode): FeatureConfigs => ({
+  const outcomeBased = named.feature_set === FEATURE_SET_OUTCOME || named.feature_set === FEATURE_SET_LIKELY;
+  const build = (evidence?: BeliefEvidenceMode, likelyFile?: string): FeatureConfigs => ({
     vocabulary,
     config: loadDamageAwareConfig("v1", vocabulary),
     // `probe-outcome/1` also asks the probe's move_outcome kind (the set's identity names it) and reads its reviewed record (E-22.5).
-    mechanics: named.feature_set === FEATURE_SET_OUTCOME ? withMoveOutcome(loadMechanicsConfig(config.format_id)) : loadMechanicsConfig(config.format_id),
-    ...(named.feature_set === FEATURE_SET_OUTCOME ? { outcome: { config: loadOutcomeConfig(config.format_id) } } : {}),
+    mechanics: outcomeBased ? withMoveOutcome(loadMechanicsConfig(config.format_id)) : loadMechanicsConfig(config.format_id),
+    ...(outcomeBased ? { outcome: { config: loadOutcomeConfig(config.format_id) } } : {}),
+    ...(likelyFile === undefined ? {} : { likely: loadLikelySetup(config.format_id, likelyFile) }),
     snapshot: loadRulesSnapshot(engine.commit),
     data_class: "synthetic",
     feature_set: named.feature_set,
@@ -199,13 +202,22 @@ export function featureSetup(engine: Engine, config: TrainingRunConfig, beliefWo
     ...(named.feature_set === FEATURE_SET_3 ? { belief_threats: beliefThreatsSetup(engine, vocabulary, config.format_id, beliefFeatures, evidence) } : {}),
   });
   // Only `probe-damage/3` has a belief mode to choose; the named hash selects it (the informative belief first, else the prior alone, #1309).
+  // `probe-outcome-likely/1` has the committed likelihood records to choose from (E-22.7: all candidates, or the pre-screened one): the named hash selects the record.
+  const likelyFiles = named.feature_set === FEATURE_SET_LIKELY ? likelyConfigFiles(config.format_id) : [];
+  if (named.feature_set === FEATURE_SET_LIKELY && likelyFiles.length === 0) throw new GenerationError(`the candidate feature set ${FEATURE_SET_LIKELY} has no likelihood record for ${config.format_id}`);
   const modes = named.feature_set === FEATURE_SET_3 ? BELIEF_EVIDENCE_MODES : [undefined];
-  let configs = build();
+  let configs = build(undefined, likelyFiles[0]);
   let found = configuredSetHash(engine, configs);
   const tried = [found];
   for (const evidence of modes.slice(1)) {
     if (found === named.feature_set_hash) break;
     configs = build(evidence);
+    found = configuredSetHash(engine, configs);
+    tried.push(found);
+  }
+  for (const file of likelyFiles.slice(1)) {
+    if (found === named.feature_set_hash) break;
+    configs = build(undefined, file);
     found = configuredSetHash(engine, configs);
     tried.push(found);
   }

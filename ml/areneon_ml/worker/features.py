@@ -55,6 +55,9 @@ FEATURE_SET_WITH_BELIEF_THREATS = "probe-damage/3"
 #: ``probe-outcome/1`` carries the four arrays and ``outcomes``; its reason alone is
 #: ``history_unknown``.
 FEATURE_SET_WITH_OUTCOMES = "probe-outcome/1"
+#: ``probe-outcome-likely/1`` (ADR-022 erratum E-22.7) carries the four arrays, ``outcomes`` and
+#: ``belief_threats`` (the damage of moves a foe is likely to hold, from a frequency table).
+FEATURE_SET_WITH_LIKELY = "probe-outcome-likely/1"
 HISTORY_UNKNOWN = "history_unknown"
 #: The most branches one own move part has in the ``outcomes`` (the reviewed record's ceiling).
 MAX_OUTCOME_BRANCHES = 5
@@ -87,6 +90,8 @@ def _wanted_arrays(feature_set: Any) -> tuple[str, ...]:
         return _BELIEF_ARRAYS
     if feature_set == FEATURE_SET_WITH_OUTCOMES:
         return _OUTCOME_ARRAYS
+    if feature_set == FEATURE_SET_WITH_LIKELY:
+        return _EVERY_ARRAY
     return _ARRAYS if feature_set == FEATURE_SET_WITH_ARRAYS else ()
 
 
@@ -161,26 +166,30 @@ def rows_problem(features: dict[str, Any]) -> str | None:  # noqa: PLR0911
             f"the candidate_features arrays {', '.join(_ARRAYS)} "
             f"are present exactly under {FEATURE_SET_WITH_ARRAYS}, and with belief_threats "
             f"under {FEATURE_SET_WITH_BELIEF_THREATS}, and with outcomes "
-            f"under {FEATURE_SET_WITH_OUTCOMES}"
+            f"under {FEATURE_SET_WITH_OUTCOMES}, and with both under {FEATURE_SET_WITH_LIKELY}"
         )
     for name in present:
         for before, now in itertools.pairwise(features[name]):
             if not _ARRAY_KEYS[name](before) < _ARRAY_KEYS[name](now):
                 return f"the candidate_features {name} must be sorted and unique by their key"
     if "belief_threats_refused" in features and (
-        features.get("feature_set") != FEATURE_SET_WITH_BELIEF_THREATS
+        features.get("feature_set")
+        not in (FEATURE_SET_WITH_BELIEF_THREATS, FEATURE_SET_WITH_LIKELY)
         or features.get("belief_threats")
     ):
         return (
-            "a candidate_features belief_threats_refused is a probe-damage/3 field and means "
-            "the belief_threats are empty"
+            "a candidate_features belief_threats_refused is a probe-damage/3 or "
+            "probe-outcome-likely/1 field and means the belief_threats are empty"
         )
     revealed = {(r["foe"], r["move"]) for r in features.get("threats", [])}
     if any((r["foe"], r["move"]) in revealed for r in features.get("belief_threats", [])):
         return (
             "a candidate_features belief_threats row repeats a move already in threats for that foe"
         )
-    if features.get("feature_set") != FEATURE_SET_WITH_OUTCOMES and any(
+    if features.get("feature_set") not in (
+        FEATURE_SET_WITH_OUTCOMES,
+        FEATURE_SET_WITH_LIKELY,
+    ) and any(
         r.get("reason") == HISTORY_UNKNOWN
         for rows in (features["rows"], *(features.get(name, []) for name in _ARRAYS))
         for r in rows

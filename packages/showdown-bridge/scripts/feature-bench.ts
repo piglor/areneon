@@ -2,7 +2,7 @@
 // Episode and progress-game files for reading and writes only the JSON report to --out (or stdout).
 //
 //   node packages/showdown-bridge/scripts/feature-bench.ts --run-dir RUN --generation 50 [--episodes 40] [--progress-dir P --progress-games 20]
-//     [--pools 4,8] [--feature-set probe-damage/1|probe-damage/2|probe-outcome/1] [--out FILE]
+//     [--pools 4,8] [--feature-set probe-damage/1|probe-damage/2|probe-outcome/1|probe-outcome-likely/1] [--likely-record FILE] [--out FILE]
 //
 // The report is aggregate counts and milliseconds only. The machine (model, load, cores) and the engine pin are
 // recorded with the figures; a loaded machine makes them pessimistic.
@@ -34,9 +34,11 @@ const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
 const skipped: Skipped = { not_move: 0, unreplayable_games: 0 };
 const skippedProgress: Skipped = { not_move: 0, unreplayable_games: 0 };
 const featureArg = arg("feature-set") ?? "probe-damage/1";
-if (featureArg !== "probe-damage/1" && featureArg !== "probe-damage/2" && featureArg !== "probe-outcome/1") throw new Error("--feature-set is probe-damage/1, probe-damage/2 or probe-outcome/1");
-const featureSet: "probe-damage/1" | "probe-damage/2" | "probe-outcome/1" = featureArg;
-const spec = { format_id: GOLDEN_FORMAT, data_class: "synthetic" as const, feature_set: featureSet, ...(process.env.SHOWDOWN_DIR ? { showdown_dir: process.env.SHOWDOWN_DIR } : {}) };
+if (featureArg !== "probe-damage/1" && featureArg !== "probe-damage/2" && featureArg !== "probe-outcome/1" && featureArg !== "probe-outcome-likely/1") throw new Error("--feature-set is probe-damage/1, probe-damage/2, probe-outcome/1 or probe-outcome-likely/1");
+const featureSet: "probe-damage/1" | "probe-damage/2" | "probe-outcome/1" | "probe-outcome-likely/1" = featureArg;
+const likelyRecord = arg("likely-record");
+if (likelyRecord !== undefined && featureSet !== "probe-outcome-likely/1") throw new Error("--likely-record goes with --feature-set probe-outcome-likely/1");
+const spec = { format_id: GOLDEN_FORMAT, data_class: "synthetic" as const, feature_set: featureSet, ...(likelyRecord === undefined ? {} : { likely_record: likelyRecord }), ...(process.env.SHOWDOWN_DIR ? { showdown_dir: process.env.SHOWDOWN_DIR } : {}) };
 
 // Episodes: an evenly spaced sample of the generation's files, in name order.
 const episodeDir = join(runDir, "generations", gen, "episodes");

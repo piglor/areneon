@@ -32,6 +32,7 @@ import type { HistoryDeclarer } from "./candidate-history.ts";
 import type { HistoryFactsData, WorldFactsData } from "@areneon/public-state";
 import { type OutcomeConfig, outcomeConfigHash } from "./outcome-config.ts";
 import { OUTCOME_FORMAT } from "./mechanics-outcome.ts";
+import { type LikelySetup, likelyConfigHash } from "./likely-threats-config.ts";
 import { array, DamageAwareError, type DamageView, damageView, type Foe, foesHit, object, type OwnSlot, ProbeRefusal, type ProbeMemo, type ProbeCounts, ReaderGap, text } from "./damage-aware-view.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import type { Candidate } from "./choices.ts";
@@ -49,7 +50,14 @@ import type { TeamVocabulary } from "./team-vocabulary.ts";
 /** The feature set this module builds (ADR-022 section 3). A change of what a row holds is a new id. */
 export const FEATURE_SET = "probe-damage/1";
 /** The ids a feature set identity can carry: `probe-damage/2` is built by `candidate-features-2.ts`. */
-export type FeatureSetId = typeof FEATURE_SET | "probe-damage/2" | typeof FEATURE_SET_3 | typeof FEATURE_SET_BELIEF | typeof FEATURE_SET_OUTCOME;
+export type FeatureSetId = typeof FEATURE_SET | "probe-damage/2" | typeof FEATURE_SET_3 | typeof FEATURE_SET_BELIEF | typeof FEATURE_SET_OUTCOME | typeof FEATURE_SET_LIKELY;
+/**
+ * `probe-outcome-likely/1` (ADR-022 erratum E-22.7, `candidate-features-likely.ts`): `probe-outcome/1` byte for byte plus `belief_threats`
+ * in `/3`'s row shape, filled from a committed move-frequency table by expected threat instead of from the opponent belief.
+ */
+export const FEATURE_SET_LIKELY = "probe-outcome-likely/1";
+/** Bumped when `probe-outcome-likely/1` chooses, ranks, cuts or values its likely threats differently for the same input: part of its identity. */
+export const LIKELY_THREATS_FORMAT = 1;
 /**
  * `probe-outcome/1` (ADR-022 erratum E-22.5, `candidate-features-outcome.ts`): `probe-damage/2`'s five arrays recomputed with the
  * history facts of the player's own channel declared, plus `outcomes`, the engine's answer to "does this move work now" per
@@ -92,6 +100,8 @@ export interface OutcomeSetup {
   /** Test seam (#1353): false asks every opposing branch, even when the `switch` branch's run never read the queue. Default true. */
   fold?: boolean;
 }
+
+export type { LikelySetup };
 
 /** What the belief set counts about its worlds, per game (a service reports the delta of a task). All integers. */
 export interface BeliefFeatureCounts {
@@ -144,6 +154,8 @@ export interface FeatureConfigs {
   belief_threats?: BeliefThreatsSetup;
   /** The record `probe-outcome/1` reads; required by that set. Its `mechanics` must list `speed_order` and `move_outcome` (`withMoveOutcome`). */
   outcome?: OutcomeSetup;
+  /** The record `probe-outcome-likely/1` reads (and its move table); required by that set, which also needs `outcome`. */
+  likely?: LikelySetup;
   /** Test seam: the probe (default `probeMechanics`). */
   probe?: (context: MechanicsContext, query: ParsedMechanicsQuery) => ProbeOutcome;
   /** Test seam (the negative control of the invariance test): the assumed opponent set of a public Pokemon (default `buildAssumedSet`). */
@@ -170,6 +182,8 @@ export interface FeatureMemo {
   /** `probe-damage-belief/1` only: this game's world counts (created by the first belief build). */
   belief?: BeliefFeatureCounts;
   /** `probe-outcome/1` only: outcome rows made without a query because the engine's data proves them (`skipped`) or folded into a sibling branch's answer (`folded`). */
+  /** `probe-outcome-likely/1` only: the likely threats' damage-roll cache of this game and its counts (`likely-threats.ts`). */
+  likely?: import("./likely-threats.ts").LikelyCache;
   outcome?: { skipped: number; folded: number; /** Parts whose `switch` branch read the queue, so every branch was asked. */ asked_all: number };
 }
 export const createFeatureMemo = (): FeatureMemo => ({ results: new Map(), counts: { queries: 0, probe_runs: 0, unsupported_queries: 0, probe_refusals: 0 } });
@@ -197,17 +211,21 @@ export interface FeatureSetIdentity {
   world_facts_format?: string;
   world_facts_sha256?: string;
   outcome_config_hash?: string;
+  /** `probe-outcome-likely/1` only (likewise absent from the other sets' preimages; the `outcome_*` keys above are its too): the reviewed likelihood record and the builder format. */
+  likely_threats_record_hash?: string;
+  likely_threats_format?: number;
 }
 
-export function featureSetIdentity(engine: Engine, configs: Pick<FeatureConfigs, "config" | "mechanics" | "snapshot" | "belief" | "belief_threats" | "outcome">, featureSet: FeatureSetId = FEATURE_SET): FeatureSetIdentity {
+export function featureSetIdentity(engine: Engine, configs: Pick<FeatureConfigs, "config" | "mechanics" | "snapshot" | "belief" | "belief_threats" | "outcome" | "likely">, featureSet: FeatureSetId = FEATURE_SET): FeatureSetIdentity {
   if (featureSet === FEATURE_SET_BELIEF && configs.belief === undefined) throw new DamageAwareError("probe-damage-belief/1 needs the belief port");
   // `probe-damage/2` asks speed orders (ADR-022 erratum E-22.3.1): a config that does not list the kind would answer every such row `query_kind`.
   if (featureSet === FEATURE_SET_3 && configs.belief_threats === undefined) throw new DamageAwareError("probe-damage/3 needs the belief threats port");
-  if (featureSet === FEATURE_SET_OUTCOME) {
+  if (featureSet === FEATURE_SET_LIKELY && configs.likely === undefined) throw new DamageAwareError("probe-outcome-likely/1 needs its likelihood record");
+  if (featureSet === FEATURE_SET_OUTCOME || featureSet === FEATURE_SET_LIKELY) {
     if (configs.outcome === undefined) throw new DamageAwareError("probe-outcome/1 needs its reviewed record");
     if (!configs.mechanics.scope.query_kinds.some((entry) => entry.kind === "move_outcome")) throw new DamageAwareError("the mechanics config does not list move_outcome in scope");
   }
-  if ((featureSet === "probe-damage/2" || featureSet === FEATURE_SET_3 || featureSet === FEATURE_SET_OUTCOME) && !configs.mechanics.scope.query_kinds.some((entry) => entry.kind === "speed_order")) throw new DamageAwareError("the mechanics config does not list speed_order in scope");
+  if ((featureSet === "probe-damage/2" || featureSet === FEATURE_SET_3 || featureSet === FEATURE_SET_OUTCOME || featureSet === FEATURE_SET_LIKELY) && !configs.mechanics.scope.query_kinds.some((entry) => entry.kind === "speed_order")) throw new DamageAwareError("the mechanics config does not list speed_order in scope");
   const snapshot = configs.snapshot ?? loadRulesSnapshot(engine.commit);
   return {
     feature_set: featureSet,
@@ -220,9 +238,10 @@ export function featureSetIdentity(engine: Engine, configs: Pick<FeatureConfigs,
     ...(featureSet === FEATURE_SET_3 && configs.belief_threats !== undefined
       ? { belief_threats_identity_hash: configs.belief_threats.port.identity_hash, belief_threats_per_foe: configs.belief_threats.per_foe, belief_threats_format: BELIEF_THREATS_FORMAT }
       : {}),
-    ...(featureSet === FEATURE_SET_OUTCOME && configs.outcome !== undefined
+    ...((featureSet === FEATURE_SET_OUTCOME || featureSet === FEATURE_SET_LIKELY) && configs.outcome !== undefined
       ? { outcome_format: OUTCOME_FORMAT, history_facts_format: HISTORY_FACTS_FORMAT, history_facts_sha256: historyFactsSha256(), world_facts_format: WORLD_FACTS_FORMAT, world_facts_sha256: worldFactsSha256(), outcome_config_hash: outcomeConfigHash(configs.outcome.config) }
       : {}),
+    ...(featureSet === FEATURE_SET_LIKELY && configs.likely !== undefined ? { likely_threats_record_hash: likelyConfigHash(configs.likely.config), likely_threats_format: LIKELY_THREATS_FORMAT } : {}),
   };
 }
 
@@ -238,7 +257,7 @@ const requestBefore = (lines: readonly string[], end: number): number => {
 };
 
 /** Parts per million of `value` out of `hp`, floored. */
-const share = (value: number, hp: number): number => Math.floor((value * PPM) / hp);
+export const share = (value: number, hp: number): number => Math.floor((value * PPM) / hp);
 
 /** The body of the `|request|` the channel ends in. Throws `no_request` when it does not end in one. */
 export function lastRequest(channel: PlayerChannel): Record<string, unknown> {

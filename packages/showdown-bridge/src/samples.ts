@@ -301,6 +301,11 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   })();
   const withOutcome = (query: Record<string, unknown>, parts: Record<string, unknown> = {}): unknown => ({ ...query, candidate_features: { ...featureOutcomeRef, rows: featureRows, ...arrays2, outcomes: outcomeRows, ...parts } });
   const exampleOutcome = (parts: Record<string, unknown> = {}): unknown => ({ ...exampleOf("battle"), candidate_features: { ...featureOutcomeRef, rows: featureRows, ...arrays2, outcomes: outcomeRows, ...parts } });
+  // ADR-022 erratum E-22.7.1: `probe-outcome-likely/1` holds everything `probe-outcome/1` holds plus `belief_threats` in `/3`'s row shape (moves a
+  // foe is likely to hold, from a frequency table, with the table's inclusion). A shape sample: the moves and numbers are invented.
+  const featureLikelyRef = { feature_set: "probe-outcome-likely/1", feature_set_hash: createHash("sha256").update("probe-outcome-likely/1 sample").digest("hex") };
+  const withLikely = (query: Record<string, unknown>, parts: Record<string, unknown> = {}): unknown => ({ ...query, candidate_features: { ...featureLikelyRef, rows: featureRows, ...arrays2, outcomes: outcomeRows, belief_threats: beliefThreats, ...parts } });
+  const exampleLikely = (parts: Record<string, unknown> = {}): unknown => ({ ...exampleOf("battle"), candidate_features: { ...featureLikelyRef, rows: featureRows, ...arrays2, outcomes: outcomeRows, belief_threats: beliefThreats, ...parts } });
   const outcomeRow = (index: number, change: Record<string, unknown>): Record<string, unknown> => ({ ...(outcomeRows[index] as Record<string, unknown>), ...change });
   const unsupportedOutcome = (index: number, reason: string): Record<string, unknown> => {
     const { slot, move, target, mega, action, foe_move, assumed } = outcomeRows[index] as Record<string, unknown>;
@@ -944,6 +949,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/candidate-features-outcome": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-outcome/1", feature_set_hash: hexOf("c") } };
     }),
+    "training-run-config/candidate-features-likely": runConfigWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-outcome-likely/1", feature_set_hash: hexOf("c") } };
+    }),
     "training-run-config/history-facts": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { history_facts: true };
     }),
@@ -1051,6 +1059,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "clone-run-config/candidate-features-outcome": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-outcome/1", feature_set_hash: hexOf("c") } };
     }),
+    "clone-run-config/candidate-features-likely": cloneWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-outcome-likely/1", feature_set_hash: hexOf("c") } };
+    }),
     "clone-run-config/history-facts": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { history_facts: true };
     }),
@@ -1138,6 +1149,11 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-query/battle-features-3-refused": with3(battleQuery, { belief_threats: [], belief_threats_refused: "evidence_has_no_support" }),
     "training-example/battle-features-3-refused": example3({ belief_threats: [], belief_threats_refused: "reader_flagged" }),
     // ADR-022 erratum E-22.5.3: probe-outcome/1 adds outcomes to the four arrays; the reason history_unknown is its alone.
+    "policy-query/battle-features-likely": withLikely(battleQuery),
+    "policy-query/preview-features-likely": { ...previewQuery, candidate_features: { ...featureLikelyRef, rows: [], threats: [], speeds: [], own_priorities: [], foe_priorities: [], outcomes: [], belief_threats: [] } },
+    "policy-query/battle-features-likely-refused": withLikely(battleQuery, { belief_threats: [], belief_threats_refused: "species_not_in_prior" }),
+    "training-example/battle-features-likely": exampleLikely(),
+    "training-example/battle-features-likely-refused": exampleLikely({ belief_threats: [], belief_threats_refused: "reader_flagged" }),
     "policy-query/battle-features-outcome": withOutcome(battleQuery),
     "policy-query/preview-features-outcome": { ...previewQuery, candidate_features: { ...featureOutcomeRef, rows: [], threats: [], speeds: [], own_priorities: [], foe_priorities: [], outcomes: [] } },
     "training-example/battle-features-outcome": exampleOutcome(),
@@ -1170,6 +1186,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-handshake/ready-features-2": readyWith((m) => (m.feature_set = feature2Ref)),
     "policy-handshake/ready-features-3": readyWith((m) => (m.feature_set = feature3Ref)),
     "policy-handshake/ready-features-outcome": readyWith((m) => (m.feature_set = featureOutcomeRef)),
+    "policy-handshake/ready-features-likely": readyWith((m) => (m.feature_set = featureLikelyRef)),
     "policy-handshake/ready-sheet": readyWith((m) => (m.opponent_sheet = sheetSetRef)),
     "policy-handshake/ready-value-query": readyWith((m) => (m.value_query = true)),
     "policy-handshake/hello-inference": helloWith((m) => (m.inference = { kind: "batched", max_batch: 2 })),
@@ -1372,6 +1389,16 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-example/features-3-belief-under-2": example2({ belief_threats: beliefThreats }),
     "training-example/features-3-belief-unsorted": example3({ belief_threats: reversed(beliefThreats) }),
     // probe-outcome/1 (erratum E-22.5.3): the arrays present exactly then, outcomes sorted, with its branches and values consistent, covering the request.
+    "policy-query/features-likely-missing-belief-threats": dropArray(withLikely(battleQuery) as never, "belief_threats" as never),
+    "policy-query/features-likely-belief-under-outcome": withOutcome(battleQuery, { belief_threats: beliefThreats }),
+    "policy-query/features-likely-refused-with-rows": withLikely(battleQuery, { belief_threats_refused: "species_not_in_prior" }),
+    "policy-query/features-likely-refused-under-outcome": withOutcome(battleQuery, { belief_threats_refused: "species_not_in_prior" }),
+    "policy-query/features-likely-belief-unsorted": withLikely(battleQuery, { belief_threats: reversed(beliefThreats) }),
+    "policy-query/features-likely-belief-repeats-revealed": withLikely(battleQuery, { belief_threats: sortedBelief([...beliefThreats, beliefRow({ move: "thunderbolt", foe: 1 })]) }),
+    "training-example/features-likely-missing-belief-threats": mutated(exampleLikely() as Record<string, unknown>, (v) => delete (v.candidate_features as Record<string, unknown>).belief_threats),
+    "training-example/features-likely-belief-under-outcome": exampleOutcome({ belief_threats: beliefThreats }),
+    "training-example/features-likely-refused-with-rows": exampleLikely({ belief_threats_refused: "species_not_in_prior" }),
+    "training-example/features-likely-belief-unsorted": exampleLikely({ belief_threats: reversed(beliefThreats) }),
     "policy-query/features-outcome-under-2": with2(battleQuery, { outcomes: outcomeRows }),
     "policy-query/features-outcome-missing-array": dropArray(withOutcome(battleQuery) as never, "outcomes" as never),
     "policy-query/features-outcome-missing-speeds": dropArray(withOutcome(battleQuery) as never, "speeds"),
@@ -1836,6 +1863,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-query/features-3-belief-zero-inclusion": with3(battleQuery, { belief_threats: [beliefRow({ inclusion_ppm: 0 }), ...beliefThreats.slice(1)] }),
     "policy-query/features-3-belief-limit-reason": with3(battleQuery, { belief_threats: [beliefRow({ kind: "unsupported", reason: "unqueueable" }), ...beliefThreats.slice(1)] }),
     // probe-outcome/1: the outcomes are closed and integer-only, their enums closed.
+    "policy-query/features-likely-refused-unknown-code": withLikely(battleQuery, { belief_threats: [], belief_threats_refused: "no_idea" }),
     "policy-query/features-outcome-unknown-precondition": withOutcome(battleQuery, { outcomes: [outcomeRow(0, { precondition: "maybe" }), ...outcomeRows.slice(1)] }),
     "policy-query/features-outcome-unknown-reason": withOutcome(battleQuery, { outcomes: [unsupportedOutcome(0, "guess"), ...outcomeRows.slice(1)] }),
     "policy-query/features-outcome-unknown-action": withOutcome(battleQuery, { outcomes: [outcomeRow(0, { action: "pass" }), ...outcomeRows.slice(1)] }),

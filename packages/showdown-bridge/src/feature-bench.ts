@@ -8,6 +8,7 @@
 // `enumerateCandidates` on the request, as `policyActor` makes them) and a stored progress game (the omniscient
 // record is never read for a channel: the battle is replayed through the runner from its seed, teams and
 // choices, and each seat's own channel is the replay's).
+import { emptyLikelyCounts, type LikelyCounts } from "./likely-threats.ts";
 import { type CandidateFeatures, type FeatureRow } from "./candidate-features.ts";
 import { type Candidate, enumerateCandidates } from "./choices.ts";
 import { parseJointChoice } from "./damage-aware-choice.ts";
@@ -174,13 +175,15 @@ export interface RunStats {
   belief?: { decisions: number; worlds_sampled: number; redraws: number; contradicted_worlds: number; fallbacks: Record<string, number> };
   /** `probe-outcome/1` only (#1353): rows skipped (proved by data) or folded into the `switch` answer, parts asked in full, and probe runs that refused or were `history_unknown`, by cause. */
   outcome?: { skipped: number; folded: number; asked_all: number; causes: Record<string, number> };
+  /** `probe-outcome-likely/1` only (#1387): the likely threats' counts summed over the decisions (cache lookups and hits by key level, candidates, rankings, pre-screens, rows). */
+  likely?: LikelyCounts;
   total_builder_ms: number;
   /** SHA-256 of the JSON of every outcome in decision order: equal for equal rows. */
   rows_digest: string;
 }
 
 /** The arrays `probe-damage/2` adds to `rows` (and `probe-outcome/1`'s `outcomes`). */
-const ARRAYS_2 = ["threats", "speeds", "own_priorities", "foe_priorities", "outcomes"] as const;
+const ARRAYS_2 = ["threats", "speeds", "own_priorities", "foe_priorities", "outcomes", "belief_threats"] as const;
 
 export function statsOf(results: readonly FeatureResult[]): RunStats {
   const errors: Record<string, number> = {};
@@ -194,6 +197,7 @@ export function statsOf(results: readonly FeatureResult[]): RunStats {
   const arrays: NonNullable<RunStats["arrays"]> = {};
   let belief: RunStats["belief"];
   let outcome: RunStats["outcome"];
+  let likely: RunStats["likely"];
   const parts: NonNullable<RunStats["parts"]> = {};
   for (const r of results) {
     for (const [name, cost] of Object.entries(r.parts ?? {})) {
@@ -216,6 +220,10 @@ export function statsOf(results: readonly FeatureResult[]): RunStats {
       outcome.folded += r.outcome_counts.folded;
       outcome.asked_all += r.outcome_counts.asked_all;
       for (const [cause, count] of Object.entries(r.outcome_counts.causes)) outcome.causes[cause] = (outcome.causes[cause] ?? 0) + count;
+    }
+    if (r.likely_counts !== undefined) {
+      likely ??= emptyLikelyCounts();
+      for (const key of Object.keys(likely) as (keyof LikelyCounts)[]) likely[key] += r.likely_counts[key];
     }
     queries += r.counts.queries;
     runs += r.counts.probe_runs;
@@ -249,6 +257,7 @@ export function statsOf(results: readonly FeatureResult[]): RunStats {
     rows: { total: rows, per_decision_mean_x100: featured === 0 ? 0 : Math.round((rows * 100) / featured), unsupported, computed },
     probe: { queries, probe_runs: runs, memo_hit_ppm: queries === 0 ? 0 : Math.floor(((queries - runs) * 1_000_000) / queries), probe_refusals: refusals },
     ...(Object.keys(arrays).length === 0 ? {} : { arrays }),
+    ...(likely === undefined ? {} : { likely }),
     ...(Object.keys(parts).length === 0 ? {} : { parts: Object.fromEntries(Object.entries(parts).map(([name, sum]) => [name, { ...sum, ms: Math.round(sum.ms) }])) }),
     ...(belief === undefined ? {} : { belief }),
     ...(outcome === undefined ? {} : { outcome }),

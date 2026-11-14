@@ -72,6 +72,8 @@ export interface PartCost {
 export type CostTrace = Record<"setup" | "rows" | "threats" | "speeds" | "priorities", PartCost> & {
   /** `probe-outcome/1` only: the `outcomes` array (absent for the other sets, so their traces keep their keys). */
   outcomes?: PartCost;
+  /** `probe-outcome-likely/1` only: the likely-move threat rows (ranking and pricing). */
+  likely?: PartCost;
 };
 export const emptyTrace = (): CostTrace => ({ setup: emptyCost(), rows: emptyCost(), threats: emptyCost(), speeds: emptyCost(), priorities: emptyCost() });
 const emptyCost = (): PartCost => ({ queries: 0, probe_runs: 0, ms: 0 });
@@ -138,7 +140,7 @@ export function candidateFeatures2(
  * The shared builder of the sets that carry `/2`'s four arrays: `set` names the identity, `extra` the arrays a set adds (none
  * for `/2`). `extra` is not called for a request with nothing to score; the caller supplies its empty value through `empty`.
  */
-export function buildArrays<S extends typeof FEATURE_SET_2 | "probe-damage/3" | typeof FEATURE_SET_OUTCOME, X extends object>(
+export function buildArrays<S extends typeof FEATURE_SET_2 | "probe-damage/3" | typeof FEATURE_SET_OUTCOME | "probe-outcome-likely/1", X extends object>(
   engine: Engine,
   configs: FeatureConfigs,
   channel: PlayerChannel,
