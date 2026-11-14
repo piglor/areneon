@@ -279,7 +279,7 @@ def _anchor(ppo: dict[str, Any]) -> AnchorSettings | None:
 #: Feature sets whose rows carry ``threats``, ``speeds`` and ``foe_priorities``, which the
 #: Threatened flag of ``ppo.anchor.threatened`` reads (ADR-010 erratum A11.2). Held equal to the
 #: TS reader's list by a test.
-THREAT_ROW_FEATURE_SETS = ("probe-damage/2", "probe-outcome/1")
+THREAT_ROW_FEATURE_SETS = ("probe-damage/2", "probe-outcome/1", "probe-outcome-likely/1")
 
 
 def _check_threatened_anchor(raw: dict[str, Any]) -> None:
@@ -299,7 +299,8 @@ def _check_threatened_anchor(raw: dict[str, Any]) -> None:
     if features.get("feature_set") not in THREAT_ROW_FEATURE_SETS:
         raise RunConfigError(
             "training-run-config: ppo.anchor.threatened reads the threats, speeds and "
-            "foe_priorities rows: it needs candidate_features of probe-damage/2 or probe-outcome/1"
+            "foe_priorities rows: it needs candidate_features of probe-damage/2, "
+            "probe-outcome/1 or probe-outcome-likely/1"
         )
 
 

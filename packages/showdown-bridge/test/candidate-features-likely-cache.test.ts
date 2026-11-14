@@ -45,7 +45,7 @@ beforeAll(async () => {
   const fidelity = loadRandomCorpus(FIDELITY_DIR);
   const battles = [...corpus.slice(0, RANDOM_BATTLES), ...fidelity.filter((_, i) => i % FIDELITY_STEP === 0)];
   for (const battle of battles) for (const player of ["p1", "p2"] as const) games.push(await capture(battle, player, MAX_TURNS));
-}, 600_000);
+}, FULL ? 7_200_000 : 600_000);
 
 describe("the roll cache equals a direct probe query", () => {
   it("at every move request of the sampled corpora, with the cache kept across a game's requests", () => {
@@ -79,7 +79,7 @@ describe("the roll cache equals a direct probe query", () => {
     // not vacuous: rows really came from the cache, a ranking was needed, and some rows reach the KO
     expect(total.hits, JSON.stringify(total)).toBeGreaterThan(0);
     expect(total.ranked, JSON.stringify(total)).toBeGreaterThan(0);
-  }, 1_800_000);
+  }, FULL ? 14_400_000 : 1_800_000);
 
   it("is the bytes of a cold cache and of a fresh memo", () => {
     const warm = createFeatureMemo();
