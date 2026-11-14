@@ -10,7 +10,7 @@ import { type SituationRows } from "../src/situation.ts";
 import { resolveFormat } from "../src/formats.ts";
 import { firstLegal, GOLDEN_FORMAT } from "../src/golden.ts";
 import { withMoveOutcome } from "../src/mechanics-config.ts";
-import { type MechanicsContext, type ProbeOutcome, probeMechanics } from "../src/mechanics-probe.ts";
+import { type MechanicsContext, MechanicsProbeError, type ProbeOutcome, probeMechanics } from "../src/mechanics-probe.ts";
 import { type ParsedMechanicsQuery } from "../src/mechanics-query.ts";
 import { loadOutcomeConfig } from "../src/outcome-config.ts";
 import { runBattle } from "../src/runner.ts";
@@ -265,6 +265,22 @@ describe("choosing with the failure charge (a stand-in probe with known answers)
       checked++;
     }
     expect(checked).toBeGreaterThan(0);
+  });
+
+  it("the counts a v6 report hands to the closed baseline records carry neither `causes` nor `stall_charged` (#1379)", () => {
+    const { c, foeMoves } = scenes()[0] as ReturnType<typeof scenes>[number];
+    const inner = sceneProbe(sceneFor(c, foeMoves));
+    const noted = damageAwareActor(options(v6, { probe: (context, query) => {
+      if (query.query.kind === "move_outcome") throw new MechanicsProbeError("declared state refused");
+      return inner(context, query);
+    } }));
+    noted(c.request, c.context);
+    const report = noted.report();
+    expect(report.counts.probe_refusals).toBeGreaterThan(0);
+    expect(Object.keys(report.counts).sort()).toEqual(["assumed_set_fallbacks", "decisions", "epsilon_plays", "preview_decisions", "probe_refusals", "probe_runs", "queries", "reader_fallbacks", "scored_decisions", "unsupported_queries"]);
+    // the charged count is a diagnostic of the success report only
+    expect(report.success).toHaveProperty("stall_charged");
+    expect(report.counts).not.toHaveProperty("stall_charged");
   });
 
   it("reports the charged count beside v5's counts, only for v6", () => {
