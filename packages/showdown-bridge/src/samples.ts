@@ -917,6 +917,16 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/separate-value": runConfigWith((c) => {
       runSection(c, "model").options = { separate_value: "network" };
     }),
+    "training-run-config/aux-moves": runConfigWith((c) => {
+      runSection(c, "model").options = { aux_move_head: true };
+      runSection(c, "ppo").aux_moves = { coef_micro: 50000 };
+    }),
+    "training-run-config/aux-moves-warm-start": runConfigWith((c) => {
+      runSection(c, "model").options = { aux_move_head: true };
+      runSection(c, "ppo").aux_moves = { coef_micro: 50000 };
+      runSection(c, "ppo").value_warmup = { generations: 2 };
+      c.warm_start = { battle: hexOf("b") };
+    }),
     "training-run-config/policy-output-scale": runConfigWith((c) => {
       runSection(c, "model").options = { policy_output_scale_ppm: 10000 };
     }),
@@ -1023,6 +1033,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "clone-run-config/separate-value": cloneWith((c) => {
       runSection(c, "model").options = { separate_value: "network" };
+    }),
+    "clone-run-config/aux-move-head": cloneWith((c) => {
+      runSection(c, "model").options = { aux_move_head: true };
     }),
     "clone-run-config/policy-output-scale": cloneWith((c) => {
       runSection(c, "model").options = { policy_output_scale_ppm: 10000 };
@@ -1240,6 +1253,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/shared-trunk-warm-start": runConfigWith((c) => {
       runSection(c, "model").options = { shared_trunk: true };
       c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
+    }),
+    "training-run-config/aux-moves-no-head": runConfigWith((c) => {
+      runSection(c, "ppo").aux_moves = { coef_micro: 50000 };
+    }),
+    "training-run-config/aux-move-head-no-term": runConfigWith((c) => {
+      runSection(c, "model").options = { aux_move_head: true };
     }),
     "training-run-config/potential-search-distill": distilling((c) => (runSection(c, "ppo").shaping = { coef_micro: 1000000 })),
     "training-run-config/search-distill-labels-only": distilling((c) => delete runSection(c, "ppo").search_distill),
@@ -1614,6 +1633,20 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     ),
     "training-run-config/factored-preview-false": runConfigWith(
       (c) => (runSection(c, "model").options = { factored_preview: false }),
+    ),
+    "training-run-config/aux-moves-zero": runConfigWith((c) => {
+      runSection(c, "model").options = { aux_move_head: true };
+      runSection(c, "ppo").aux_moves = { coef_micro: 0 };
+    }),
+    "training-run-config/aux-moves-extra-field": runConfigWith((c) => {
+      runSection(c, "model").options = { aux_move_head: true };
+      runSection(c, "ppo").aux_moves = { coef_micro: 50000, schedule: { kind: "constant" } };
+    }),
+    "training-run-config/aux-move-head-false": runConfigWith(
+      (c) => (runSection(c, "model").options = { aux_move_head: false }),
+    ),
+    "clone-run-config/aux-move-head-false": cloneWith(
+      (c) => (runSection(c, "model").options = { aux_move_head: false }),
     ),
     "training-run-config/shared-trunk-false": runConfigWith(
       (c) => (runSection(c, "model").options = { shared_trunk: false }),

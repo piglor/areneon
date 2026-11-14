@@ -52,6 +52,7 @@ from areneon_ml.model.features import (
 from areneon_ml.model.gamedata import RESERVED, GameData
 from areneon_ml.model.history import STATE_CATEGORIES
 from areneon_ml.model.options import (
+    AUX_MOVE_HEAD,
     CANDIDATE_MATCHUP,
     FACTORED_PREVIEW,
     POLICY_OUTPUT_SCALE_PPM,
@@ -439,6 +440,14 @@ class PolicyNetwork(nn.Module):
             with torch.no_grad():
                 for head in heads:
                     cast(nn.Linear, head[-1]).weight.mul_(scale / PPM)
+        # aux_move_head (ADR-010 erratum A12.2): built LAST (after every other module, the separate
+        # value network included), so the seeded weights of everything else, and with them the
+        # logits and the value, are those of the network without it. The Battle network only.
+        self.aux_moves: nn.Sequential | None = None
+        if role == "battle" and not value_only and is_set(config.options, AUX_MOVE_HEAD):
+            self.aux_moves = nn.Sequential(
+                nn.Linear(d, d), nn.GELU(), nn.Linear(d, len(game.moves))
+            )
 
     # -- shared trunk --------------------------------------------------------
 
@@ -692,7 +701,33 @@ class PolicyNetwork(nn.Module):
         return self._value(batch, self._trunk(batch)[2])
 
     def forward(self, batch: Batch) -> PolicyOutput:
-        x, mask, state, mons, mega = self._trunk(batch)
+        return self._policy(batch, self._trunk(batch))
+
+    def forward_aux(self, batch: Batch) -> tuple[PolicyOutput, torch.Tensor]:
+        """``forward`` and ``aux_logits`` from ONE trunk pass (the learner's call; ADR-010 A12.2).
+
+        The policy output equals ``forward(batch)`` bit for bit; the auxiliary logits are
+        [B, M, |moves|] over every token row (the learner reads the rows it has labels for).
+        """
+        trunk = self._trunk(batch)
+        return self._policy(batch, trunk), self._aux(trunk[3])
+
+    def aux_logits(self, batch: Batch) -> torch.Tensor:
+        """The move-reveal head's logits [B, M, |moves|] (``aux_move_head``); learner only."""
+        return self._aux(self._trunk(batch)[3])
+
+    def _aux(self, mons: torch.Tensor) -> torch.Tensor:
+        if self.aux_moves is None:
+            raise ValueError("this network was built without aux_move_head")
+        out: torch.Tensor = self.aux_moves(mons)
+        return out
+
+    def _policy(
+        self,
+        batch: Batch,
+        trunk: tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None],
+    ) -> PolicyOutput:
+        x, mask, state, mons, mega = trunk
         value = self._value(batch, state)
         if self.factored:
             logits = self._factored_logits(batch, mons)

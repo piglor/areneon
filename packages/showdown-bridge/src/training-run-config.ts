@@ -53,6 +53,10 @@ export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
     if (config.population !== undefined) throw new TrainingRunConfigError("ppo.imitation cannot be combined with a population (no per-member teacher stream)");
   }
   checkThreatenedAnchor(config);
+  const auxHead = config.model.options?.aux_move_head !== undefined;
+  const auxTerm = config.ppo.aux_moves !== undefined;
+  if (auxTerm && !auxHead) throw new TrainingRunConfigError("ppo.aux_moves needs model.options.aux_move_head: the term trains the head");
+  if (auxHead && !auxTerm) throw new TrainingRunConfigError("model.options.aux_move_head needs ppo.aux_moves: a head nothing trains is refused");
   if (generation.play?.temperature_ppm === 1_000_000) {
     throw new TrainingRunConfigError("generation.play.temperature_ppm 1000000 is the default: omit generation.play (one rule, one encoding)");
   }
