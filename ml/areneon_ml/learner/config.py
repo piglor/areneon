@@ -23,7 +23,7 @@ from typing import Any
 from areneon_contracts.contracts import ContractError, jcs, sha256_hex, validate
 
 from areneon_ml.model.network import ConfigError, ModelConfig
-from areneon_ml.model.options import SHARED_TRUNK, is_set
+from areneon_ml.model.options import AUX_MOVE_HEAD, SHARED_TRUNK, is_set
 
 MICRO = 1_000_000
 NANO = 1_000_000_000
@@ -161,6 +161,13 @@ class ShapingSettings:
 
 
 @dataclass(frozen=True)
+class AuxMovesSettings:
+    """``ppo.aux_moves`` (ADR-010 erratum A12.2, #1384): the move-reveal term's weight."""
+
+    coef_micro: int  # coef, in millionths
+
+
+@dataclass(frozen=True)
 class PPOSettings:
     epochs: int
     minibatch_size: int
@@ -196,6 +203,8 @@ class PPOSettings:
     imitation: ImitationSettings | None = None
     # ``ppo.shaping`` (ADR-010 erratum A11.1): None when absent (the score is the only reward).
     shaping: ShapingSettings | None = None
+    # ``ppo.aux_moves`` (ADR-010 erratum A12.2): None when absent (no move-reveal term).
+    aux_moves: AuxMovesSettings | None = None
 
 
 @dataclass(frozen=True)
@@ -354,6 +363,27 @@ def _check_imitation(raw: dict[str, Any]) -> None:
 def _shaping(ppo: dict[str, Any]) -> ShapingSettings | None:
     found = ppo.get("shaping")
     return None if found is None else ShapingSettings(found["coef_micro"])
+
+
+def _aux_moves(ppo: dict[str, Any]) -> AuxMovesSettings | None:
+    found = ppo.get("aux_moves")
+    return None if found is None else AuxMovesSettings(found["coef_micro"])
+
+
+def _check_aux_moves(raw: dict[str, Any], model: ModelConfig) -> None:
+    """``ppo.aux_moves`` needs the head, and a head needs the term (ADR-010 erratum A12.2)."""
+    head = is_set(model.options, AUX_MOVE_HEAD)
+    term = "aux_moves" in raw["ppo"]
+    if term and not head:
+        raise RunConfigError(
+            "training-run-config: ppo.aux_moves needs model.options.aux_move_head "
+            "(the term trains the head)"
+        )
+    if head and not term:
+        raise RunConfigError(
+            "training-run-config: model.options.aux_move_head needs ppo.aux_moves "
+            "(a head nothing trains is refused)"
+        )
 
 
 def _check_search_distillation(raw: dict[str, Any]) -> None:
@@ -545,6 +575,7 @@ def read_run_config(raw: object) -> RunConfig:
         )
     _check_imitation(raw)
     _check_threatened_anchor(raw)
+    _check_aux_moves(raw, model)
     if "population" in raw:
         if warm is not None and "preview" in warm:
             raise RunConfigError(
@@ -617,6 +648,7 @@ def read_run_config(raw: object) -> RunConfig:
             search_distill=_search_distill(ppo),
             imitation=_imitation(ppo),
             shaping=_shaping(ppo),
+            aux_moves=_aux_moves(ppo),
         ),
         device=raw["learner"]["device"],
         threads=raw["learner"]["threads"],

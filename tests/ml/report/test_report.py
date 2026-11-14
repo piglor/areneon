@@ -469,6 +469,14 @@ def test_the_shaping_keys_are_read_together_on_the_battle_role() -> None:
     read_train_report(raw)
 
 
+def test_the_aux_moves_keys_are_read_together_on_the_battle_role() -> None:
+    raw = json.loads(json.dumps(TRAIN_REPORT))
+    raw["battle"].update(aux_moves_steps=12, aux_moves_loss=4.5, aux_moves_top1=0.25)
+    read_train_report(raw)
+    raw["battle"].update(aux_moves_steps=0, aux_moves_loss=0.0, aux_moves_top1=0.0)
+    read_train_report(raw)
+
+
 SEARCH_KLS = {"search_kl_before": 0.25, "search_kl_after": 0.125}
 IMITATION = {
     "imitation_steps": 13,
@@ -500,6 +508,29 @@ IMITATION = {
         (lambda r: r["battle"].update(anchor_kl=0.1, anchor_beta_micro=-5), "integer"),
         (lambda r: r["battle"].update(search_labels=3), "come together"),
         (lambda r: r["battle"].update(shaping_coef_micro=5), "shaping keys come together"),
+        (lambda r: r["battle"].update(aux_moves_steps=5), "aux_moves keys come together"),
+        (
+            lambda r: r["preview"].update(
+                aux_moves_steps=5, aux_moves_loss=1.0, aux_moves_top1=0.5
+            ),
+            "aux_moves keys come together",
+        ),
+        (
+            lambda r: r["battle"].update(
+                aux_moves_steps=-1, aux_moves_loss=1.0, aux_moves_top1=0.5
+            ),
+            "integer",
+        ),
+        (
+            lambda r: r["battle"].update(
+                aux_moves_steps=1, aux_moves_loss=-1.0, aux_moves_top1=0.5
+            ),
+            "cannot be negative",
+        ),
+        (
+            lambda r: r["battle"].update(aux_moves_steps=1, aux_moves_loss=1.0, aux_moves_top1=1.5),
+            "between 0 and 1",
+        ),
         (
             lambda r: r["preview"].update(shaping_coef_micro=5, shaping_mean_abs_micro=1),
             "shaping keys come together",

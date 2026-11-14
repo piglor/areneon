@@ -801,6 +801,38 @@ of the teacher manifest's JCS bytes (the same hash a clone config names); `coef_
   behaviour-cloning source, exactly as a warm start's teacher set. Two runs that read one teacher
   set are therefore not independent; `L2` must use its own teacher run.
 
+### Predicting the foe's next move: `aux_move_head` and `ppo.aux_moves`
+
+A training-only head that shapes the Battle trunk toward the threats an opponent can still show
+(ADR-010 erratum A12.2, #1384): `"model": {"options": {"aux_move_head": true}}` and `"ppo":
+{..., "aux_moves": {"coef_micro": 50000}}`. The two come together: the reader refuses the term
+without the head and the head without the term in a run config (a clone config may hold the head
+alone; a clone trains no head). It is a new run from generation 0; checkpoints carry format `"2"`.
+
+- **Head:** `aux_moves.*` (Linear d to d, GELU, Linear d to the move vocabulary) on each opponent
+  token's final trunk output, built last, so a seeded network's other weights, logits and value are
+  those of the network without it (a clone with the head has the clone's policy tensors byte for
+  byte). `forward` never computes it; the learner calls `forward_aux`. The worker, the scorer and
+  `encoder_version` are untouched: no play-time cost.
+- **Labels (`learner/aux_moves.py`)** come from the player's own channel only. At each Battle step
+  the reduced state lists each opponent entry's revealed moves; the label of (step, entry) is the
+  set of moves it first reveals at the first later step where that set grew. Masked, never a
+  negative: no later reveal (moves shown only after the last decision included), the entry
+  Transformed at the step or before the reveal (or its list shrank in between: Transform or
+  Illusion ended), Struggle, and phantom entries.
+- **Loss:** `coef * mean` over the minibatch's unmasked targets of the cross-entropy of a softmax
+  over the move vocabulary (already revealed moves and the two reserved indices masked) against
+  the uniform distribution over the label set. The gradient reaches the shared trunk. During
+  `ppo.value_warmup` the trunk is frozen and the head trains with the value head.
+- **Records:** `train-report.json`, Battle role, only with the block: `aux_moves_steps`
+  (unmasked targets of the update's table), `aux_moves_loss` and `aux_moves_top1` (mean
+  cross-entropy and the share whose best unmasked move is in the label, over the minibatches'
+  targets, measured before each step). The sidecar needs no key (the `ppo` block and the model
+  options are in it).
+- **Cost:** one small MLP on at most six tokens a step. Measured on the tiny test network
+  (CPU, one thread, shared machine): about +9% learner time per generation; at a real size the
+  trunk dominates and the erratum expects under 5%.
+
 ## 6. Your own teams as a test set: the private test (owner only)
 
 The private test (ADR-015 erratum E1, item 2) measures one frozen pair on your own teams, from

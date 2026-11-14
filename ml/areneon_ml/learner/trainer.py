@@ -23,6 +23,7 @@ from typing import Any, Protocol
 
 import torch
 
+from areneon_ml.learner.aux_moves import aux_terms, targets_tensors
 from areneon_ml.learner.config import MICRO, RunConfig
 from areneon_ml.learner.data import LearnerDataError, Step, Trajectory
 from areneon_ml.learner.diagnostics import CalibrationBin, calibration, explained_variance
@@ -165,6 +166,13 @@ class RoleReport:
     anchor_threatened_steps: int | None = None
     anchor_kl_threatened: float | None = None
     anchor_threatened_beta_micro: int | None = None
+    # Set only on the Battle role under ``ppo.aux_moves`` (ADR-010 erratum A12.2): the unmasked
+    # move-reveal targets of the update's table, the mean cross-entropy over the targets of its
+    # minibatches (measured before each step, 0.0 with none) and the share whose highest-scored
+    # unmasked move is in the label. Left out of the stored report otherwise.
+    aux_moves_steps: int | None = None
+    aux_moves_loss: float | None = None
+    aux_moves_top1: float | None = None
 
 
 @dataclass(frozen=True)
@@ -216,6 +224,8 @@ class _FrozenBattle:
 
 
 VALUE_PREFIXES = ("value.", "value_net.")  # the head, or the separate value network
+#: What a value warm-up update still trains: the value head and the move-reveal head (A12.2).
+WARMUP_PREFIXES = (*VALUE_PREFIXES, "aux_moves.")
 
 
 def value_warmup_active(config: RunConfig, generation: int) -> bool:
@@ -303,6 +313,9 @@ class Learner:
         # running (KL sum, Threatened decisions) of the role's minibatches in the update.
         self.last_anchor_threatened_beta_micro: int | None = None
         self._threatened_kl: dict[str, list[float]] = {}
+        # The running (CE sum, targets, top-1 hits) of the Battle minibatches in the update
+        # (``ppo.aux_moves``).
+        self._aux_tally = [0.0, 0.0, 0.0]
         # Entropy weight (millionths) of the newest update; set only under a linear
         # ``ppo.entropy_schedule`` (stored in the sidecar then, and nowhere otherwise).
         self.last_entropy_coef_micro: int | None = None
@@ -417,6 +430,7 @@ class Learner:
         self.last_anchor_beta_micro = self.anchor_beta_micro(self.generation)
         self.last_anchor_threatened_beta_micro = self.anchor_threatened_beta_micro(self.generation)
         self._threatened_kl = {}
+        self._aux_tally = [0.0, 0.0, 0.0]
         self.last_entropy_coef_micro = self.entropy_coef_micro(self.generation)
         self.last_imitation_coef_micro = self.imitation_coef_micro(self.generation)
         # Under ``ppo.preview_bootstrap_micro`` (> 0) both roles' targets are fixed from the
@@ -538,6 +552,12 @@ class Learner:
                     raise LearnerDataError(
                         "ppo.anchor.threatened needs the threats, speeds and foe_priorities rows "
                         "of every Battle example: a decision has none"
+                    )
+        if role == "battle" and ppo.aux_moves is not None:
+            for step in steps:
+                if step.aux is None:
+                    raise LearnerDataError(
+                        "ppo.aux_moves needs the Battle steps read with their move-reveal labels"
                     )
         if role == "battle" and frozen is not None and frozen.values is not None:
             # The same frozen pass the Preview returns were read from (no second forward pass).
@@ -683,7 +703,7 @@ class Learner:
         # gradient) leaves their moments absent. The loss is the value error alone (the PPO terms
         # carry no gradient to the value head and the coefficient only rescales it).
         frozen = [
-            p for n, p in network.named_parameters() if warm and not n.startswith(VALUE_PREFIXES)
+            p for n, p in network.named_parameters() if warm and not n.startswith(WARMUP_PREFIXES)
         ]
         for parameter in frozen:
             parameter.requires_grad_(False)
@@ -719,7 +739,13 @@ class Learner:
         beta_micro = self.last_anchor_beta_micro if role in self.anchors else None
         beta = 0.0 if beta_micro is None else beta_micro / MICRO
         batch = to_device(collate([table.steps[i].query for i in index]), self.device)
-        out = self.networks[role](batch)
+        aux = self.config.ppo.aux_moves if role == "battle" else None
+        aux_ce: torch.Tensor | None = None
+        if aux is None:
+            out = self.networks[role](batch)
+        else:
+            out, aux_logits = self.networks[role].forward_aux(batch)
+            aux_ce = self._aux_ce(aux_logits, [table.steps[i].aux or () for i in index])
         chosen = torch.tensor([table.steps[i].chosen for i in index], device=self.device)
         # `policy_terms` masks padding again although the network already pushes padded
         # logits to the dtype minimum: defence in depth, so a loss never depends on it.
@@ -777,7 +803,29 @@ class Learner:
                 self.networks[role](teacher_batch).logits, teacher_batch.cand_mask, picked, tau
             )
             total = total + (self.last_imitation_coef_micro or 0) / MICRO * (-terms.log_prob).mean()
-        return (loss.value if warm else total), loss, kl
+        aux_term: float | torch.Tensor = 0.0
+        if aux is not None and aux_ce is not None and aux_ce.numel():
+            # ADR-010 erratum A12.2: coef * the mean cross-entropy over the minibatch's unmasked
+            # move-reveal targets; it trains the head and, through the trunk, the representation
+            # (frozen during a value warm-up, which then trains the head alone).
+            aux_term = aux.coef_micro / MICRO * aux_ce.mean()
+        return (loss.value + aux_term if warm else total + aux_term), loss, kl
+
+    def _aux_ce(
+        self, logits: torch.Tensor, targets: Sequence[tuple[Any, ...]]
+    ) -> torch.Tensor | None:
+        """Cross-entropy of each unmasked target of the minibatch (empty if none), and the update's
+        running tally of the sum, the count and the top-1 hits, measured before the step."""
+        batch, rows, known, target = targets_tensors(targets, logits.shape[-1])
+        if not batch.numel():
+            return None
+        selected = logits[batch.to(self.device), rows.to(self.device)]
+        ce, hit = aux_terms(selected, known.to(self.device), target.to(self.device))
+        tally = self._aux_tally
+        tally[0] += float(ce.detach().sum().cpu())
+        tally[1] += float(ce.numel())
+        tally[2] += float(hit.sum().cpu())
+        return ce
 
     @staticmethod
     def _tally(sums: torch.Tensor, loss: Any) -> None:
@@ -828,6 +876,7 @@ class Learner:
             *self._imitation_report(role, table),
             *self._shaping_report(role, table),
             *self._threatened_report(role, table),
+            *self._aux_report(role, table),
         )
 
     def _imitation_report(self, role: str, table: _Table) -> tuple[Any, Any, Any, Any, Any]:
@@ -852,6 +901,13 @@ class Learner:
             kl_sum / count if count else 0.0,
             self.last_anchor_threatened_beta_micro,
         )
+
+    def _aux_report(self, role: str, table: _Table) -> tuple[Any, Any, Any]:
+        if role != "battle" or self.config.ppo.aux_moves is None:
+            return None, None, None
+        total, count, hits = self._aux_tally
+        steps = sum(len(step.aux or ()) for step in table.steps)
+        return steps, total / count if count else 0.0, hits / count if count else 0.0
 
     def _shaping_report(self, role: str, table: _Table) -> tuple[int | None, int | None]:
         shaping = self.config.ppo.shaping
@@ -975,7 +1031,7 @@ class Learner:
             p
             for role, (_, warm) in tables.items()
             for n, p in networks[role].named_parameters()
-            if (warm and not n.startswith(VALUE_PREFIXES)) or (warmup and n in trunk)
+            if (warm and not n.startswith(WARMUP_PREFIXES)) or (warmup and n in trunk)
         ]
         for parameter in frozen:
             parameter.requires_grad_(False)
