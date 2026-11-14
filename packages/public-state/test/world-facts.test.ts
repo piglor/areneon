@@ -173,20 +173,14 @@ describe("Protect streak", () => {
   });
 });
 
-describe("an instructed stall move prints nothing (#1377)", () => {
-  const protect = ["|move|p1a: Alpha|Protect|p1a: Alpha", "|-singleturn|p1a: Alpha|Protect"];
-  const instruct = ["|move|p2a: Gamma|Instruct|p1a: Alpha", "|-singleturn|p1a: Alpha|move: Instruct|[of] p2a: Gamma"];
-  const repeat = "|move|p1a: Alpha|Protect|p1a: Alpha";
-
-  it("counts the repeat in the turn of a success as one more use, and a failed roll as a failure", () => {
-    const f = run("p1", [...HEAD, "|turn|1", ...protect, ...instruct, repeat, "|move|p2b: Delta|Tackle|p1a: Alpha", "|upkeep", "|turn|2"]);
-    expect(f.own.active.a?.protect_streak).toBe(2);
-    const failed = run("p1", [...HEAD, "|turn|1", ...protect, ...instruct, repeat, "|-fail|p1a: Alpha", "|upkeep", "|turn|2"]);
-    expect(failed.own.active.a?.protect_streak).toBe(0);
-  });
-
-  it("still refuses a silent stall move with no earlier success this turn", () => {
-    expect(code(() => run("p1", [...HEAD, "|turn|1", ...instruct, repeat, "|upkeep"]))).toBe("stall_unresolved");
+describe("an instructed stall move (#1377)", () => {
+  // The engine prints no `-singleturn` for a stall move Instruct re-runs in the turn it already succeeded (its own
+  // volatile is still up). This module is part of the probe-outcome/1 identity (its file hash), so it is NOT changed:
+  // it refuses the channel (`stall_unresolved`: every world fact is then unknown). The Python reducer accepts it; a
+  // follow-up aligns this module with the engine together with the other identity-moving reader fixes.
+  it("is refused as an unresolved stall move (a known gap to the engine)", () => {
+    const lines = [...HEAD, "|turn|1", "|move|p1a: Alpha|Protect|p1a: Alpha", "|-singleturn|p1a: Alpha|Protect", "|move|p2a: Gamma|Instruct|p1a: Alpha", "|-singleturn|p1a: Alpha|move: Instruct|[of] p2a: Gamma", "|move|p1a: Alpha|Protect|p1a: Alpha", "|move|p2b: Delta|Tackle|p1a: Alpha", "|upkeep"];
+    expect(code(() => run("p1", lines))).toBe("stall_unresolved");
   });
 });
 
