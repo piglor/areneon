@@ -60,6 +60,9 @@ class Step:
     #: set on a Battle step read under ``ppo.aux_moves``, ``None`` otherwise. A pure function of
     #: the player's own channel; never an input.
     aux: tuple[aux_labels.AuxTarget, ...] | None = None
+    #: The opponent entries of the decision that have no label (no later reveal, Transformed or
+    #: shrunk list): beside ``aux`` so a run can read the masked share. ``None`` with ``aux``.
+    aux_masked: int | None = None
 
 
 @dataclass(frozen=True)
@@ -159,7 +162,8 @@ class _Collector:
             lookup = self._encoders["battle"].game.moves.lookup
             made = aux_labels.labels(seen, lookup)
             self.steps[(episode, "battle")] = [
-                dataclasses.replace(step, aux=aux) for step, aux in zip(steps, made, strict=True)
+                dataclasses.replace(step, aux=aux, aux_masked=len(entries) - len(aux))
+                for step, aux, entries in zip(steps, made, seen, strict=True)
             ]
 
     def collected(self) -> Collected:

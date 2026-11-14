@@ -173,6 +173,7 @@ class RoleReport:
     aux_moves_steps: int | None = None
     aux_moves_loss: float | None = None
     aux_moves_top1: float | None = None
+    aux_moves_masked: int | None = None
 
 
 @dataclass(frozen=True)
@@ -902,12 +903,15 @@ class Learner:
             self.last_anchor_threatened_beta_micro,
         )
 
-    def _aux_report(self, role: str, table: _Table) -> tuple[Any, Any, Any]:
+    def _aux_report(self, role: str, table: _Table) -> tuple[Any, Any, Any, Any]:
         if role != "battle" or self.config.ppo.aux_moves is None:
-            return None, None, None
+            return None, None, None, None
         total, count, hits = self._aux_tally
+        # Denominators differ: ``steps`` counts the table's unmasked targets once; the loss and
+        # top-1 average the minibatch targets of every epoch (``count``, steps times epochs).
         steps = sum(len(step.aux or ()) for step in table.steps)
-        return steps, total / count if count else 0.0, hits / count if count else 0.0
+        masked = sum(step.aux_masked or 0 for step in table.steps)
+        return steps, total / count if count else 0.0, hits / count if count else 0.0, masked
 
     def _shaping_report(self, role: str, table: _Table) -> tuple[int | None, int | None]:
         shaping = self.config.ppo.shaping

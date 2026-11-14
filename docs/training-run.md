@@ -825,9 +825,12 @@ alone; a clone trains no head). It is a new run from generation 0; checkpoints c
   the uniform distribution over the label set. The gradient reaches the shared trunk. During
   `ppo.value_warmup` the trunk is frozen and the head trains with the value head.
 - **Records:** `train-report.json`, Battle role, only with the block: `aux_moves_steps`
-  (unmasked targets of the update's table), `aux_moves_loss` and `aux_moves_top1` (mean
+  (unmasked targets of the update's table, counted once), `aux_moves_masked` (the opponent entries
+  of the table's decisions with no label: no later reveal, Transformed or shrunk list, so the masked
+  share is masked / (steps + masked)), `aux_moves_loss` and `aux_moves_top1` (mean
   cross-entropy and the share whose best unmasked move is in the label, over the minibatches'
-  targets, measured before each step). The sidecar needs no key (the `ppo` block and the model
+  targets of every epoch, so a different denominator from `aux_moves_steps`, measured before each
+  step). The sidecar needs no key (the `ppo` block and the model
   options are in it).
 - **Cost:** one small MLP on at most six tokens a step. Measured on the tiny test network
   (CPU, one thread, shared machine): about +9% learner time per generation; at a real size the

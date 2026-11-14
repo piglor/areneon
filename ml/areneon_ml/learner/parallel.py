@@ -229,7 +229,8 @@ def pack_piece(piece: _Piece) -> bytes:
                 for f in dataclasses.fields(step.query)
             }
             # potential_d and the Threatened flag (None, 0 or 1) travel as entries 3 and 4, the
-            # move-reveal targets (ppo.aux_moves; None or [row, known, next] lists) as entry 5.
+            # move-reveal targets (ppo.aux_moves; None or [row, known, next] lists) as entry 5 and
+            # their masked count as entry 6.
             coded.append(
                 [
                     step.chosen,
@@ -239,6 +240,7 @@ def pack_piece(piece: _Piece) -> bytes:
                     None
                     if step.aux is None
                     else [[t.row, list(t.known), list(t.next)] for t in step.aux],
+                    step.aux_masked,
                 ]
             )
         steps.append([episode, role, coded])
@@ -283,8 +285,9 @@ def unpack_piece(blob: bytes) -> _Piece:
                 None
                 if aux is None
                 else tuple(AuxTarget(row, tuple(known), tuple(nxt)) for row, known, nxt in aux),
+                masked,
             )
-            for chosen, fields, potential, threatened, aux in coded
+            for chosen, fields, potential, threatened, aux, masked in coded
         ]
     return _Piece(
         Collected(header["order"], header["scores"], steps),

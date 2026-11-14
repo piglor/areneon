@@ -471,9 +471,13 @@ def test_the_shaping_keys_are_read_together_on_the_battle_role() -> None:
 
 def test_the_aux_moves_keys_are_read_together_on_the_battle_role() -> None:
     raw = json.loads(json.dumps(TRAIN_REPORT))
-    raw["battle"].update(aux_moves_steps=12, aux_moves_loss=4.5, aux_moves_top1=0.25)
+    raw["battle"].update(
+        aux_moves_steps=12, aux_moves_loss=4.5, aux_moves_top1=0.25, aux_moves_masked=7
+    )
     read_train_report(raw)
-    raw["battle"].update(aux_moves_steps=0, aux_moves_loss=0.0, aux_moves_top1=0.0)
+    raw["battle"].update(
+        aux_moves_steps=0, aux_moves_loss=0.0, aux_moves_top1=0.0, aux_moves_masked=0
+    )
     read_train_report(raw)
 
 
@@ -511,24 +515,26 @@ IMITATION = {
         (lambda r: r["battle"].update(aux_moves_steps=5), "aux_moves keys come together"),
         (
             lambda r: r["preview"].update(
-                aux_moves_steps=5, aux_moves_loss=1.0, aux_moves_top1=0.5
+                aux_moves_steps=5, aux_moves_loss=1.0, aux_moves_top1=0.5, aux_moves_masked=0
             ),
             "aux_moves keys come together",
         ),
         (
             lambda r: r["battle"].update(
-                aux_moves_steps=-1, aux_moves_loss=1.0, aux_moves_top1=0.5
+                aux_moves_steps=-1, aux_moves_loss=1.0, aux_moves_top1=0.5, aux_moves_masked=0
             ),
             "integer",
         ),
         (
             lambda r: r["battle"].update(
-                aux_moves_steps=1, aux_moves_loss=-1.0, aux_moves_top1=0.5
+                aux_moves_steps=1, aux_moves_loss=-1.0, aux_moves_top1=0.5, aux_moves_masked=0
             ),
             "cannot be negative",
         ),
         (
-            lambda r: r["battle"].update(aux_moves_steps=1, aux_moves_loss=1.0, aux_moves_top1=1.5),
+            lambda r: r["battle"].update(
+                aux_moves_steps=1, aux_moves_loss=1.0, aux_moves_top1=1.5, aux_moves_masked=0
+            ),
             "between 0 and 1",
         ),
         (

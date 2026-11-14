@@ -47,7 +47,8 @@ def build(role: str, config: ModelConfig, seed: int = 1) -> PolicyNetwork:
 
 def test_only_true_is_a_value_and_the_option_is_network_scope_and_layout_changing() -> None:
     assert read_options("network", {AUX_MOVE_HEAD: True})
-    for bad in (False, 0, 1, "yes", None, {}):
+    bad_values: list[Any] = [False, 0, 1, "yes", None, {}]
+    for bad in bad_values:
         with pytest.raises(OptionError):
             read_options("network", {AUX_MOVE_HEAD: bad})
     with pytest.raises(OptionError, match="unknown encoder option"):
@@ -167,7 +168,7 @@ def test_the_gradient_of_the_head_reaches_the_trunk_and_never_the_policy_scorer(
     net = build("battle", WITH)
     b = batch("battle")
     _, aux = net.forward_aux(b)
-    aux[:, b.token_mask.shape[1] - 1].sum().backward()
+    torch.autograd.backward(aux[:, b.token_mask.shape[1] - 1].sum())
     live = {n for n, p in net.named_parameters() if p.grad is not None and p.grad.abs().sum() > 0}
     assert any(n.startswith("aux_moves.") for n in live)
     assert any(n.startswith("blocks.") for n in live)

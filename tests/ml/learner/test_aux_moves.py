@@ -369,7 +369,9 @@ def test_the_head_and_the_trunk_learn_from_the_term_and_the_report_has_its_keys(
     assert battle["aux_moves_steps"] > 0
     assert battle["aux_moves_loss"] > 0
     assert 0.0 <= battle["aux_moves_top1"] <= 1.0
-    assert not {"aux_moves_steps", "aux_moves_loss", "aux_moves_top1"} & set(stored["preview"])
+    assert battle["aux_moves_masked"] >= 0
+    keys = {"aux_moves_steps", "aux_moves_loss", "aux_moves_top1", "aux_moves_masked"}
+    assert not keys & set(stored["preview"])
     after = student.networks["battle"].state_dict()
     assert any(not torch.equal(before[n], after[n]) for n in before if n.startswith("aux_moves."))
     assert any(not torch.equal(before[n], after[n]) for n in before if n.startswith("blocks."))
@@ -381,6 +383,12 @@ def test_the_steps_counted_are_the_tables_unmasked_targets() -> None:
     total = sum(len(s.aux or ()) for t in found if t.role == "battle" for s in t.steps)
     report = learner(config).train(found)
     assert report.roles["battle"].aux_moves_steps == total
+    # every non-phantom opponent entry of a decision is a target or masked
+    entries = sum(
+        len(s.aux or ()) + (s.aux_masked or 0) for t in found if t.role == "battle" for s in t.steps
+    )
+    assert report.roles["battle"].aux_moves_masked == entries - total
+    assert entries > total
 
 
 def test_a_run_without_the_block_has_no_aux_keys_and_the_same_bytes() -> None:
@@ -402,7 +410,7 @@ def test_the_term_gradient_reaches_the_trunk_and_the_head_but_not_the_value() ->
     _, logits = network.forward_aux(batch)
     b, rows, known, target = targets_tensors([s.aux or () for s in steps], logits.shape[-1])
     ce, _ = aux_terms(logits[b, rows], known, target)
-    ce.mean().backward()
+    torch.autograd.backward(ce.mean())
     live = {
         n for n, p in network.named_parameters() if p.grad is not None and p.grad.abs().sum() > 0
     }

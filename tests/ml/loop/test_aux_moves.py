@@ -48,6 +48,7 @@ def test_the_battle_report_carries_the_move_reveal_keys_and_the_preview_does_not
         assert battle["aux_moves_steps"] > 0
         assert battle["aux_moves_loss"] > 0
         assert 0 <= battle["aux_moves_top1"] <= 1
+        assert battle["aux_moves_masked"] >= 0
         assert not any(k.startswith("aux_moves") for k in report["preview"])
 
 
