@@ -31,7 +31,7 @@ const edited = (change: (copy: DamageAwareConfig) => void): DamageAwareConfig =>
 
 describe("the committed config", () => {
   it("holds the v1 to v5 records in config/baselines, reads against the vocabulary and equals the corpus sample", () => {
-    expect(readdirSync(DAMAGE_AWARE_CONFIG_DIR)).toEqual(["damage-aware.v1.json", "damage-aware.v2.json", "damage-aware.v3.json", "damage-aware.v4.json", "damage-aware.v5.json"]);
+    expect(readdirSync(DAMAGE_AWARE_CONFIG_DIR)).toEqual(["damage-aware.v1.json", "damage-aware.v2.json", "damage-aware.v3.json", "damage-aware.v4.json", "damage-aware.v5.json", "damage-aware.v6.json"]);
     expect(config).toEqual(sample("valid", "v1"));
   });
 
@@ -167,5 +167,26 @@ describe("the success scaling of damage-aware@v5 (#1344)", () => {
   it("a record with success scaling but no situational weights is refused by the reader, and an unknown scaling by the schema", () => {
     expect(() => readDamageAwareConfig(sample("reader-invalid", "success-scaling-without-situational"), vocabulary)).toThrow("situational");
     expect(() => readDamageAwareConfig(sample("invalid", "success-scaling-unknown"), vocabulary)).toThrow("invalid DamageAwareConfig");
+  });
+});
+
+describe("the stall failure cost of damage-aware@v6 (#1380)", () => {
+  const v5 = loadDamageAwareConfig("v5", vocabulary);
+  const v6 = loadDamageAwareConfig("v6", vocabulary);
+  it("the committed record is v5 plus the field, and equals the corpus sample", () => {
+    const { stall_failure_cost, ...rest } = v6;
+    expect(stall_failure_cost).toBe("threat");
+    expect(rest).toEqual(v5);
+    expect(v6).toEqual(sample("valid", "v6"));
+    expect(damageAwareConfigHash(v6)).not.toBe(damageAwareConfigHash(v5));
+  });
+
+  it("v1 to v5 carry none (their bytes and hashes are unchanged)", () => {
+    for (const version of ["v1", "v3", "v4", "v5"]) expect(loadDamageAwareConfig(version, vocabulary).stall_failure_cost).toBeUndefined();
+  });
+
+  it("a record with the cost but no success scaling is refused by the reader, and an unknown cost by the schema", () => {
+    expect(() => readDamageAwareConfig(sample("reader-invalid", "stall-failure-cost-without-success-scaling"), vocabulary)).toThrow("success scaling");
+    expect(() => readDamageAwareConfig(sample("invalid", "stall-failure-cost-unknown"), vocabulary)).toThrow("invalid DamageAwareConfig");
   });
 });

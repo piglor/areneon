@@ -159,6 +159,10 @@ class DamageAwareConfig(BaseModel):
     """
     How damage-aware@v5 weighs a part's chance to work (ADR-022 erratum E-22.5, #1344). Absent: the record does not scale (v1 to v4). "engine": every damaging part's value and every situational part's value is multiplied by the engine's success chance of the part (the move_outcome probe, the success_ppm of the probe-outcome/1 feature builder, under the branch of the targeted foe's first revealed damaging move, else the switch branch), damage values are computed with the player's own channel history declared, ties are broken by the higher summed success chance, and a candidate with a part that cannot work in any branch is never played while another candidate exists. A record that has it must carry situational and select target_convention engine (reader rule) and is damage-aware@v5. A minor change within v1: an older reader refuses such a record.
     """
+    stall_failure_cost: Literal["threat"] | MISSING = MISSING
+    """
+    How damage-aware@v6 charges a stalling move's failure branch (ADR-022 erratum E-22.6, #1380). Absent: no charge (v1 to v5). "threat": a stalling move (the engine's stall list) by a Threatened own active whose engine success chance s is computed is worth floor(P*s/10^6) - floor(T*(10^6-s)/10^6), P the situational protect value and T the largest value (mean share plus the KO weight times the reaching rolls over 16) of the threat rows that make the slot Threatened. A record that has it must carry success_scaling (reader rule) and is damage-aware@v6. A minor change within v1: an older reader refuses such a record.
+    """
     assumed_set: AssumedSet
     """
     The rule for every opponent field that is not revealed. A revealed species, forme, level, gender, move, item, ability or Mega is used as revealed; an unrevealed move is never invented.

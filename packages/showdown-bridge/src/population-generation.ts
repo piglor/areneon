@@ -91,6 +91,7 @@ export interface PopulationOptions {
   damage_aware_v3?: DamageAwareSetup;
   damage_aware_v4?: DamageAwareSetup;
   damage_aware_v5?: DamageAwareSetup;
+  damage_aware_v6?: DamageAwareSetup;
   damage_aware_v2?: DamageAwareSetup;
   belief_worlds?: BeliefWorldsFactory | undefined;
   stream_limits?: ChunkLimits;
@@ -317,7 +318,7 @@ export async function playPopulationEntries(options: PopulationOptions, shard: S
   const plan = populationPlanOf(config, generation, pool.teams.length, members, options.past?.pool);
   const owner = populationShards(plan, shard.of);
   const mine = plan.filter((_, at) => owner[at] === shard.index);
-  const withRecords: PopulationOptions = { ...options, ...(baselineRecords(options, config) as Pick<PopulationOptions, "damage_aware" | "damage_aware_v2" | "damage_aware_v3" | "damage_aware_v4">) };
+  const withRecords: PopulationOptions = { ...options, ...(baselineRecords(options, config) as Pick<PopulationOptions, "damage_aware" | "damage_aware_v2" | "damage_aware_v3" | "damage_aware_v4" | "damage_aware_v5" | "damage_aware_v6">) };
   const byLabel = new Map<string, PopulationMember>(members.map((entry) => [entry.member, entry]));
   const workersOf = (label: string): number => 1 + (byLabel.get(label)?.peers?.length ?? 0);
   // A snapshot's session lives from the first wave that uses it to the last (`last` is that wave's index).

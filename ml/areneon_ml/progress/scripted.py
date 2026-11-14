@@ -46,6 +46,7 @@ ARMS = (
     "damage-aware@v3",
     "damage-aware@v4",
     "damage-aware@v5",
+    "damage-aware@v6",
 )
 #: How long past the declared wall-time cap the child is given before it is killed (the cap itself
 #: is checked by the Node side between games; a game in flight is bounded by the battle budget).

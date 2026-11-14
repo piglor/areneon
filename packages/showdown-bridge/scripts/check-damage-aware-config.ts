@@ -43,6 +43,14 @@ for (const file of files) {
       const { success_scaling, ...rest } = v5;
       if (success_scaling !== "engine") throw new Error("v5 must select engine success scaling");
       if (!isDeepStrictEqual(rest, v4)) throw new Error("v5 must equal v4 in every value but success scaling");
+    } else if (version === "v6") {
+      // v6 is v5's values plus the stall failure cost (#1380); nothing else may differ, and v5 must not carry the field.
+      const v5 = loadDamageAwareConfig("v5", vocabulary);
+      const v6 = loadDamageAwareConfig(version, vocabulary);
+      if (v5.stall_failure_cost !== undefined) throw new Error("v5 must not carry a stall failure cost");
+      const { stall_failure_cost, ...rest } = v6;
+      if (stall_failure_cost !== "threat") throw new Error("v6 must select the threat stall failure cost");
+      if (!isDeepStrictEqual(rest, v5)) throw new Error("v6 must equal v5 in every value but the stall failure cost");
     } else if (version === "v2") {
       // The belief record names the prior and the belief config by hash: the committed files must be those.
       const record = loadDamageAwareConfigV2(vocabulary);

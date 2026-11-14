@@ -47,6 +47,10 @@ export interface DamageAwareConfig {
    */
   success_scaling?: "engine";
   /**
+   * How damage-aware@v6 charges a stalling move's failure branch (ADR-022 erratum E-22.6, #1380). Absent: no charge (v1 to v5). "threat": a stalling move (the engine's stall list) by a Threatened own active whose engine success chance s is computed is worth floor(P*s/10^6) - floor(T*(10^6-s)/10^6), P the situational protect value and T the largest value (mean share plus the KO weight times the reaching rolls over 16) of the threat rows that make the slot Threatened. A record that has it must carry success_scaling (reader rule) and is damage-aware@v6. A minor change within v1: an older reader refuses such a record.
+   */
+  stall_failure_cost?: "threat";
+  /**
    * The rule for every opponent field that is not revealed. A revealed species, forme, level, gender, move, item, ability or Mega is used as revealed; an unrevealed move is never invented.
    */
   assumed_set: {
