@@ -166,6 +166,20 @@ class SearchDistill(BaseModel):
     """
 
 
+class Shaping(BaseModel):
+    """
+    Optional (a minor change within v1, ADR-010 erratum A11.1, #1365): potential-based reward shaping on the Battle role. With w = coef_micro / 10^6 and Phi(o) = w * d(o) / 10^6, where d(o) is the centred HP and knock-out differential of ADR-026's non-learned leaf (hpKoDifferential minus 500,000) read from the reduced state of the Battle decision's observation (own exact hit points and standing from the last request, the opponent's shown share, every brought opponent Pokemon not yet seen counted full and standing), each Battle trajectory's reward is r'_t = r_t + gamma * Phi(o_{t+1}) - Phi(o_t) with Phi of the state after the last decision 0 and gamma the GAE discount (ppo.discount_micro). GAE and the value target use r'. The value head then estimates the shaped return (the score minus Phi at gamma 1): the Preview bootstrap reads V + Phi and the calibration bins compare V + Phi with the score. The Preview role is untouched. Refused with ppo.search_distill. Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    coef_micro: Annotated[StrictInt, Field(ge=1, le=10000000)]
+    """
+    w in millionths.
+    """
+
+
 class TeamDataset(BaseModel):
     """
     Optional (a minor change within v1): the generated team dataset the generation loop draws its teams from. Absent means the interim pool of committed fixture teams. The directory is read by the dataset reader, which trusts nothing; the pool takes the dev and training splits, never validation. The dataset hash pins the manifest and every record: a directory that hashes differently is refused.
@@ -1120,6 +1134,10 @@ class Ppo(BaseModel):
     search_distill: SearchDistill | MISSING = MISSING
     """
     Optional (a minor change within v1, ADR-026 erratum E2 decisions 5 and 8, ADR-010 erratum A10, #1291): the Battle role's loss gains lambda * mean over the labelled decisions of a minibatch of KL(pi' || pi_theta), both over every real candidate (pending included, padding masked) at the run's play temperature tau (generation.play, else 1). The target is a function of the stored label alone: z(c) = ln(max(prior_ppm(c), 1) / 10^6); q_hat(c) = q(c) for a searched candidate and, for every other one, the prior-weighted mean of the searched q (weights prior_ppm); x(c) = (q_hat(c) - q_min) / (q_max - q_min) over the searched set; a label whose q_max - q_min is below min_spread_ppm is not used; pi' = softmax(z / tau + c_scale * x). Play-time truncation is ignored. lambda = coef_micro / 10^6 and c_scale = c_scale_micro / 10^6. The learner reads the label streams of the current and the previous aggregate_generations - 1 generations. Battle role only; under shared_trunk the gradient reaches the trunk. Comes with generation.search_labels (both or neither). Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.
+    """
+    shaping: Shaping | MISSING = MISSING
+    """
+    Optional (a minor change within v1, ADR-010 erratum A11.1, #1365): potential-based reward shaping on the Battle role. With w = coef_micro / 10^6 and Phi(o) = w * d(o) / 10^6, where d(o) is the centred HP and knock-out differential of ADR-026's non-learned leaf (hpKoDifferential minus 500,000) read from the reduced state of the Battle decision's observation (own exact hit points and standing from the last request, the opponent's shown share, every brought opponent Pokemon not yet seen counted full and standing), each Battle trajectory's reward is r'_t = r_t + gamma * Phi(o_{t+1}) - Phi(o_t) with Phi of the state after the last decision 0 and gamma the GAE discount (ppo.discount_micro). GAE and the value target use r'. The value head then estimates the shaped return (the score minus Phi at gamma 1): the Preview bootstrap reads V + Phi and the calibration bins compare V + Phi with the score. The Preview role is untouched. Refused with ppo.search_distill. Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.
     """
     imitation: Imitation | MISSING = MISSING
     """

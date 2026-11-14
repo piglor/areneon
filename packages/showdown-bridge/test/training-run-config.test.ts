@@ -42,6 +42,19 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     for (const refused of ["probe-damage/2", "probe-damage/3", "probe-outcome/1"]) expect(() => readTrainingRunConfig(withFeatures(refused))).toThrow("its value reads candidate rows");
   });
 
+  it("reads ppo.shaping, hashes it apart from none and refuses it with search distillation (ADR-010 erratum A11.1)", async () => {
+    const shaped = readTrainingRunConfig(sample("potential"));
+    expect(shaped.ppo.shaping).toEqual({ coef_micro: 1000000 });
+    expect(readTrainingRunConfig(sample("tiny"))).not.toHaveProperty("ppo.shaping");
+    expect(await runConfigHash(shaped)).not.toBe(await runConfigHash(readTrainingRunConfig(sample("tiny"))));
+    const refused = JSON.parse(readFileSync(join(SAMPLES_DIR, "v1/training-run-config/reader-invalid/potential-search-distill.json"), "utf8"));
+    expect(() => readTrainingRunConfig(refused)).toThrow("ppo.shaping cannot be combined with ppo.search_distill");
+    for (const name of ["zero", "fractional", "extra-field"]) {
+      const raw = JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/training-run-config/invalid/potential-${name}.json`), "utf8"));
+      expect(() => readTrainingRunConfig(raw)).toThrow(TrainingRunConfigError);
+    }
+  });
+
   it("reads a warm start, hashes it apart from none and refuses the same checkpoint for both roles (ADR-010 erratum A2)", async () => {
     const warm = readTrainingRunConfig(sample("warm-start"));
     expect(warm.warm_start).toEqual({ preview: "a".repeat(64), battle: "b".repeat(64) });

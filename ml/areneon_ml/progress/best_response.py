@@ -40,7 +40,13 @@ from areneon_ml.model.gamedata import GameData
 from areneon_ml.progress import evaluation_key as ekey
 from areneon_ml.progress.eval_dataset import EvalDataset
 from areneon_ml.progress.looks import Look, append_look, looks_path
-from areneon_ml.progress.run import ProgressError, _read_config, _source, max_pairs
+from areneon_ml.progress.run import (
+    ProgressError,
+    _read_config,
+    _source,
+    max_pairs,
+    refuse_shaped_value,
+)
 from areneon_ml.progress.stats import PPM, bootstrap_stream_key, pair_interval
 
 CONTRACT = "best-response-record"
@@ -391,6 +397,7 @@ def best_response(
         key = ekey.check(request.evaluation_key, config.run_key)
     except ekey.EvaluationKeyError as exc:
         raise BestResponseError(str(exc)) from exc
+    refuse_shaped_value(config, "the best-response responder")
     if not config.team_dataset:
         raise ProgressError(
             "the run config names no team dataset: the interim pool has no validation split"

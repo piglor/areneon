@@ -132,3 +132,11 @@ def test_bench_refuses_a_config_with_search_distillation() -> None:
     config = read_run_config(raw("valid/search-distill.json"))
     with pytest.raises(LearnerError, match="does not read label streams"):
         benchmark(config, game(), recorded(), 1)
+
+
+def test_bench_times_a_config_with_shaping() -> None:
+    from tests.ml.learner.support import edited_config  # noqa: PLC0415
+
+    config = edited_config(lambda c: c["ppo"].update(shaping={"coef_micro": 1_000_000}))
+    result = benchmark(config, game(), recorded(), 1)
+    assert result["decisions"] > 0

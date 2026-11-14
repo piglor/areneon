@@ -40,6 +40,7 @@ from areneon_ml.learner.ppo import (
     temper,
     terminal_rewards,
 )
+from areneon_ml.learner.shaping import phi, shaped
 from areneon_ml.model.batch import Batch, collate
 from areneon_ml.model.network import ROLES, PolicyNetwork, shared_trunk_of, tie_trunk
 
@@ -151,7 +152,11 @@ class RoleReport:
     imitation_ce_before: float | None = None
     imitation_ce_after: float | None = None
     imitation_top1_ppm: int | None = None
-
+    # Set only on the Battle role under ``ppo.shaping`` (ADR-010 erratum A11.1): the potential's
+    # weight (millionths) and the mean |gamma * Phi(o_{t+1}) - Phi(o_t)| over the role's steps
+    # (millionths, truncated). Left out of the stored report otherwise.
+    shaping_coef_micro: int | None = None
+    shaping_mean_abs_micro: int | None = None
     # Set only on the Battle role under ``ppo.anchor.threatened`` (ADR-010 erratum A11.2): the
     # Threatened steps of the update's table, the mean KL(pi_theta || pi_anchor) over the
     # Threatened decisions of its minibatches (measured before each step, as ``anchor_kl``; 0.0
@@ -197,6 +202,8 @@ class _Table:
     teacher: tuple[Step, ...] = ()
     teacher_stream: DrawStream | None = None
     imitation_ce_before: float | None = None
+    #: Mean |gamma * Phi(o_{t+1}) - Phi(o_t)| in millionths (``ppo.shaping``, Battle only).
+    shaping_mean_abs_micro: int | None = None
 
 
 @dataclass(frozen=True)
@@ -477,7 +484,8 @@ class Learner:
         start = 0
         for t in battle:
             assert values is not None  # a Battle trajectory holds steps
-            first[t.episode] = float(values[start])
+            # Under ppo.shaping the value head estimates score - Phi: the bootstrap reads V + Phi.
+            first[t.episode] = float(values[start]) + self._phi(t.steps[0])
             start += len(t.steps)
         for t in trajectories:
             if t.role == "preview" and t.episode not in first:
@@ -486,6 +494,15 @@ class Learner:
                     "ppo.preview_bootstrap_micro needs the Battle value of its first position"
                 )
         return _FrozenBattle(log_probs, values, first)
+
+    def _phi(self, step: Step) -> float:
+        """``Phi`` of a Battle step's observation under ``ppo.shaping``; 0.0 without the block."""
+        shaping = self.config.ppo.shaping
+        if shaping is None:
+            return 0.0
+        if step.potential_d is None:
+            raise LearnerError("ppo.shaping needs the Battle steps read with their potential")
+        return phi(step.potential_d, shaping.coef_micro)
 
     def _anchor_scores(self, role: str, steps: Sequence[Step]) -> list[torch.Tensor]:
         """The anchor's log-probabilities over each step's real candidates, no gradient."""
@@ -536,6 +553,9 @@ class Learner:
         bootstrap = role == "preview" and frozen is not None
         advantages, returns, start = [], [], 0
         scores: list[float] = []
+        potentials: list[float] = []  # Phi per step (ppo.shaping, Battle only)
+        shaped_abs = 0.0
+        shaping = role == "battle" and ppo.shaping is not None
         for t in trajectories:
             scores.extend([t.score] * len(t.steps))
             end = start + len(t.steps)
@@ -544,12 +564,15 @@ class Learner:
                 if bootstrap and frozen is not None
                 else t.score
             )
-            a, r = gae(
-                terminal_rewards(len(t.steps), target),
-                values[start:end],
-                ppo.discount,
-                ppo.gae_lambda,
-            )
+            rewards = terminal_rewards(len(t.steps), target)
+            if shaping:
+                # r'_t = r_t + gamma * Phi(o_{t+1}) - Phi(o_t), Phi after the last decision 0.
+                phis = [self._phi(s) for s in t.steps]
+                potentials.extend(phis)
+                moved, magnitude = shaped(rewards.tolist(), phis, ppo.discount)
+                shaped_abs += magnitude
+                rewards = torch.tensor(moved)
+            a, r = gae(rewards, values[start:end], ppo.discount, ppo.gae_lambda)
             advantages.append(a)
             returns.append(r)
             start = end
@@ -560,13 +583,19 @@ class Learner:
         # float32 tensors widened exactly to float64 for the diagnostics.
         value_list = values.double().tolist()
         drawn, stream, ce_before = self._draw_teacher(role, len(steps), teacher)
+        # Under ppo.shaping the head estimates the shaped return (score - Phi at gamma 1), so the
+        # calibration compares V + Phi with the final score; explained variance stays against the
+        # returns the learner trains on.
+        calibrated = (
+            [v + p for v, p in zip(value_list, potentials, strict=True)] if shaping else value_list
+        )
         return _Table(
             steps,
             old_log_prob,
             adv.to(self.device),
             all_returns.to(self.device),
             explained_variance(all_returns.double().tolist(), value_list),
-            calibration(value_list, scores),
+            calibration(calibrated, scores),
             self._anchor_scores(role, steps) if anchor else None,
             labels,
             self._label_kl(labels)
@@ -575,6 +604,7 @@ class Learner:
             drawn,
             stream,
             ce_before,
+            int(shaped_abs / len(steps) * MICRO) if shaping and steps else (0 if shaping else None),
         )
 
     def _draw_teacher(
@@ -796,6 +826,7 @@ class Learner:
             self.config.ppo.preview_bootstrap_micro if role == "preview" else None,
             *self._search_report(role, table),
             *self._imitation_report(role, table),
+            *self._shaping_report(role, table),
             *self._threatened_report(role, table),
         )
 
@@ -821,6 +852,12 @@ class Learner:
             kl_sum / count if count else 0.0,
             self.last_anchor_threatened_beta_micro,
         )
+
+    def _shaping_report(self, role: str, table: _Table) -> tuple[int | None, int | None]:
+        shaping = self.config.ppo.shaping
+        if role != "battle" or shaping is None:
+            return None, None
+        return shaping.coef_micro, table.shaping_mean_abs_micro
 
     def _search_report(self, role: str, table: _Table) -> tuple[Any, Any, Any]:
         if role != "battle" or self.config.ppo.search_distill is None:

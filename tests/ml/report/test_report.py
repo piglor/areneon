@@ -463,6 +463,12 @@ def test_the_imitation_keys_are_read_together_on_the_battle_role() -> None:
     read_train_report(raw)
 
 
+def test_the_shaping_keys_are_read_together_on_the_battle_role() -> None:
+    raw = json.loads(json.dumps(TRAIN_REPORT))
+    raw["battle"].update(shaping_coef_micro=1_000_000, shaping_mean_abs_micro=1234)
+    read_train_report(raw)
+
+
 SEARCH_KLS = {"search_kl_before": 0.25, "search_kl_after": 0.125}
 IMITATION = {
     "imitation_steps": 13,
@@ -493,6 +499,15 @@ IMITATION = {
         (lambda r: r["battle"].update(anchor_kl=True, anchor_beta_micro=5), "finite"),
         (lambda r: r["battle"].update(anchor_kl=0.1, anchor_beta_micro=-5), "integer"),
         (lambda r: r["battle"].update(search_labels=3), "come together"),
+        (lambda r: r["battle"].update(shaping_coef_micro=5), "shaping keys come together"),
+        (
+            lambda r: r["preview"].update(shaping_coef_micro=5, shaping_mean_abs_micro=1),
+            "shaping keys come together",
+        ),
+        (
+            lambda r: r["battle"].update(shaping_coef_micro=5, shaping_mean_abs_micro=-1),
+            "integer",
+        ),
         (lambda r: r["battle"].update(search_labels=-1, **SEARCH_KLS), "integer"),
         (
             lambda r: r["battle"].update(

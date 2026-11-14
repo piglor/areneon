@@ -154,6 +154,13 @@ class ImitationSettings:
 
 
 @dataclass(frozen=True)
+class ShapingSettings:
+    """``ppo.shaping`` (ADR-010 erratum A11.1, #1365): the potential's weight in millionths."""
+
+    coef_micro: int  # w, in millionths
+
+
+@dataclass(frozen=True)
 class PPOSettings:
     epochs: int
     minibatch_size: int
@@ -187,6 +194,8 @@ class PPOSettings:
     search_distill: SearchDistillSettings | None = None
     # ``ppo.imitation`` (ADR-010 erratum A11.3): None when absent (no imitation term).
     imitation: ImitationSettings | None = None
+    # ``ppo.shaping`` (ADR-010 erratum A11.1): None when absent (the score is the only reward).
+    shaping: ShapingSettings | None = None
 
 
 @dataclass(frozen=True)
@@ -340,6 +349,11 @@ def _check_imitation(raw: dict[str, Any]) -> None:
             "training-run-config: ppo.imitation cannot be combined with a population "
             "(no per-member teacher stream)"
         )
+
+
+def _shaping(ppo: dict[str, Any]) -> ShapingSettings | None:
+    found = ppo.get("shaping")
+    return None if found is None else ShapingSettings(found["coef_micro"])
 
 
 def _check_search_distillation(raw: dict[str, Any]) -> None:
@@ -540,6 +554,11 @@ def read_run_config(raw: object) -> RunConfig:
             )
         _check_population(raw)
     _check_search_distillation(raw)
+    if "shaping" in raw["ppo"] and "search_distill" in raw["ppo"]:
+        raise RunConfigError(
+            "training-run-config: ppo.shaping cannot be combined with ppo.search_distill: "
+            "the search labels read the value head as a score"
+        )
     _check_inference(raw)
     sheet_regimes = _sheet_regimes(raw)
     gen, ppo, seeds = raw["generation"], raw["ppo"], raw["seeds"]
@@ -597,6 +616,7 @@ def read_run_config(raw: object) -> RunConfig:
             preview_bootstrap_micro=ppo.get("preview_bootstrap_micro"),
             search_distill=_search_distill(ppo),
             imitation=_imitation(ppo),
+            shaping=_shaping(ppo),
         ),
         device=raw["learner"]["device"],
         threads=raw["learner"]["threads"],

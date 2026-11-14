@@ -884,9 +884,11 @@ def test_auto_load_workers_are_sized_when_a_member_is_loaded(
     sizes: list[int] = []
     real = trajectories
 
-    def spy(stream: Any, manifest: Any, encoders: Any, pair: Any, processes: int = 1) -> Any:
+    def spy(
+        stream: Any, manifest: Any, encoders: Any, pair: Any, processes: int = 1, **kwargs: Any
+    ) -> Any:
         sizes.append(processes)
-        return real(stream, manifest, encoders, pair, processes)
+        return real(stream, manifest, encoders, pair, processes, **kwargs)
 
     sampled: list[int] = []
 

@@ -86,6 +86,19 @@ def test_the_workers_give_the_serial_trajectories_tensor_for_tensor(tmp_path: Pa
     same(serial, trajectories(text, manifest, encoders(), POLICY, processes=4))
 
 
+def test_the_workers_carry_the_shaping_potential_of_every_battle_step(tmp_path: Path) -> None:
+    text, manifest = stream_of(examples_of())
+    path, manifest = write(tmp_path, text, manifest)
+    serial = trajectories(path, manifest, encoders(), POLICY, shaping=True)
+    found = trajectories(path, manifest, encoders(), POLICY, processes=3, shaping=True)
+    same(serial, found)
+    potentials = [[s.potential_d for s in t.steps] for t in found]
+    assert potentials == [[s.potential_d for s in t.steps] for t in serial]
+    assert any(d is not None for row in potentials for d in row)
+    plain = trajectories(path, manifest, encoders(), POLICY, processes=3)
+    assert all(s.potential_d is None for t in plain for s in t.steps)
+
+
 def test_the_default_worker_count_and_the_cheaper_reader_change_no_tensor(tmp_path: Path) -> None:
     text, manifest = stream_of(examples_of())
     path, manifest = write(tmp_path, text, manifest)

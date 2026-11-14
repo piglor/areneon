@@ -109,7 +109,13 @@ def benchmark(
     device = configure_learner(config)
     encoders = {role: Encoder(game, config.model.encoder) for role in ROLES}
     manifest = recorded.manifest
-    found = trajectories(recorded.stream, manifest, encoders, manifest["behaviour_policy_id"])
+    found = trajectories(
+        recorded.stream,
+        manifest,
+        encoders,
+        manifest["behaviour_policy_id"],
+        shaping=config.ppo.shaping is not None,
+    )
     seeds = {"preview": config.init_preview, "battle": config.init_battle}
     networks = {role: init_network(role, game, config.model, seeds[role]) for role in ROLES}
     learner = Learner(config, networks, device)
