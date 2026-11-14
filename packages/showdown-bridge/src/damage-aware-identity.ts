@@ -23,6 +23,9 @@ export const SITUATIONAL_SCORE_FORMAT = 1;
 /** The version of the success-scaled scorer of `damage-aware@v5` (`damage-aware-success.ts` and the actor's scaling and tie rules); bump it when it scores or orders candidates differently for the same input. Part of the identity only for a record with `success_scaling`. */
 export const SUCCESS_SCORE_FORMAT = 1;
 
+/** The version of the stalling move's failure charge of `damage-aware@v6` (`damage-aware-situational.ts` `stallThreat` and `stallValue`); bump it when T or V is computed differently for the same input. Part of the identity only for a record with `stall_failure_cost`, so v1 to v5 keep their bytes. */
+export const STALL_FAILURE_FORMAT = 1;
+
 /**
  * The parts a baseline's play depends on besides its policy id: five, and a sixth only when the config
  * record names a belief (ADR-025 section 5, ADR-018 erratum E-18.3), so v1's identity bytes are unchanged.
@@ -46,6 +49,8 @@ export interface DamageAwareIdentity {
   /** v5 only: its damage values and success chances declare the player's own channel history, read by this facts module (and the probe's `move_outcome` format). */
   history_facts_format?: string;
   outcome_format?: number;
+  /** `STALL_FAILURE_FORMAT`; present only for a record with `stall_failure_cost` (v6). */
+  stall_failure_format?: number;
 }
 
 export interface IdentityParts {
@@ -108,6 +113,7 @@ export function damageAwareIdentity(parts: IdentityParts): DamageAwareIdentity {
           }),
         }
       : {}),
+    ...(parts.config.schema_version === 1 && parts.config.stall_failure_cost !== undefined ? { stall_failure_format: STALL_FAILURE_FORMAT } : {}),
   };
 }
 

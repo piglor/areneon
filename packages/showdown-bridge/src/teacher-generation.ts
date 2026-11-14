@@ -75,8 +75,8 @@ export interface TeacherSettings {
 export const TEACHER_GENERATION = 1;
 
 /** The committed `damage-aware` config record the teacher plays (`config/baselines/damage-aware.<version>.json`). */
-export type TeacherVersion = "v1" | "v3" | "v4" | "v5";
-export const TEACHER_VERSIONS: readonly TeacherVersion[] = ["v1", "v3", "v4", "v5"];
+export type TeacherVersion = "v1" | "v3" | "v4" | "v5" | "v6";
+export const TEACHER_VERSIONS: readonly TeacherVersion[] = ["v1", "v3", "v4", "v5", "v6"];
 export const TEACHER_CONFIG_VERSION: TeacherVersion = "v1";
 
 const RANDOM_OPPONENT: BaselineOpponent = { actor: "random-legal", policy_id: "random-legal@v1" };
@@ -98,7 +98,7 @@ export function checkTeacherSettings(settings: TeacherSettings): void {
   count("actor_rule_games", settings.actor_rule_games, 0);
   count("max_turns", settings.max_turns, 1);
   count("epsilon_ppm", settings.epsilon_ppm, 0);
-  if (settings.teacher_version !== undefined && !TEACHER_VERSIONS.includes(settings.teacher_version)) throw new RangeError("teacher_version is v1, v3, v4 or v5");
+  if (settings.teacher_version !== undefined && !TEACHER_VERSIONS.includes(settings.teacher_version)) throw new RangeError("teacher_version is v1, v3, v4, v5 or v6");
   if (settings.epsilon_ppm > PPM) throw new RangeError("epsilon_ppm is at most 1,000,000");
   if (settings.games + settings.random_games + settings.actor_rule_games < 1) throw new RangeError("a teacher run plays at least one game");
   if (settings.run_key === "" || settings.run_key.startsWith("CHANGE-ME")) throw new RangeError("run_key must name the run");

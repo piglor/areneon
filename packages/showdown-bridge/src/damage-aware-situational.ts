@@ -8,7 +8,7 @@
 
 import { type SituationRows, classifySlot, reaches, threatShare } from "./situation.ts";
 import type { SlotPart } from "./damage-aware-choice.ts";
-import { PPM } from "./damage-aware-score.ts";
+import { PPM, ROLLS } from "./damage-aware-score.ts";
 
 export interface SituationalInput {
   rows: SituationRows;
@@ -42,3 +42,24 @@ export function situationalScore(input: SituationalInput, slot: number, part: Sl
   const streak = input.streaks[slot] ?? null;
   return streak !== null && streak < 1 ? input.weights.protect_value_ppm : 0;
 }
+
+/**
+ * The threat value of a Threatened slot (`damage-aware@v6`, ADR-022 erratum E-22.6.1): the largest, over the threat rows that make the
+ * slot Threatened (`classifySlot(rows, slot).first`, own Mega flag false, computed), of the row's mean share plus `ko_weight_ppm`
+ * times its reaching rolls over 16 (no KO term when the probe gave no KO counts). 0 for a slot that is not Threatened. Integer ppm.
+ */
+export function stallThreat(rows: SituationRows, slot: number, koWeightPpm: number): number {
+  const { first } = classifySlot(rows, slot);
+  let best = 0;
+  for (const reach of first) {
+    for (const t of rows.threats) {
+      if (t.own !== slot || t.mega || t.kind !== "computed" || t.foe !== reach.foe || t.move !== reach.move) continue;
+      const rolls = t.ohko_rolls === null ? 0 : t.ohko_rolls;
+      best = Math.max(best, t.mean_ppm + Math.floor((koWeightPpm * rolls) / ROLLS));
+    }
+  }
+  return best;
+}
+
+/** The failure charge of a stalling move whose engine chance is `successPpm`: floor(T * (10^6 - s) / 10^6). */
+export const stallCharge = (threat: number, successPpm: number): number => Math.floor((threat * (PPM - successPpm)) / PPM);

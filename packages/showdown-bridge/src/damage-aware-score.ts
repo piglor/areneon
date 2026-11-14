@@ -13,7 +13,7 @@ export const PPM = 1_000_000;
  * vectors computed outside the code, so a change that forgets to bump fails there.
  */
 export const DAMAGE_VALUE_FORMAT = 1;
-const ROLLS = 16;
+export const ROLLS = 16;
 
 export type DamageAnswer = Extract<Extract<MechanicsResult, { kind: "computed" }>["answer"], { kind: "damage" }>;
 export type SpeedOrderAnswer = Extract<Extract<MechanicsResult, { kind: "computed" }>["answer"], { kind: "speed_order" }>;

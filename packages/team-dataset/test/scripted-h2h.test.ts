@@ -70,6 +70,18 @@ describe("a head-to-head of two scripted baselines", () => {
     expect(readScriptedH2HRecord(JSON.parse(JSON.stringify(record)))).toEqual(record);
   }, SPLIT_TEST_TIMEOUT_MS);
 
+  it("plays damage-aware@v6 against @v5 (#1380): both named by their own identity, no belief counts", async () => {
+    const pair = arms("damage-aware@v6", "damage-aware@v5");
+    const record = await recordOf(1, pair);
+    expect(record.games).toHaveLength(2);
+    expect(record.arms.a.identity_hash).toBe(pair.a.identity_hash);
+    expect(record.arms.b.identity_hash).toBe(pair.b.identity_hash);
+    expect(pair.a.identity_hash).not.toBe(pair.b.identity_hash);
+    expect(record.arms.a.counts?.decisions).toBeGreaterThan(0);
+    expect(record.arms.a.belief).toBeUndefined();
+    expect(readScriptedH2HRecord(JSON.parse(JSON.stringify(record)))).toEqual(record);
+  }, SPLIT_TEST_TIMEOUT_MS);
+
   // Plays the same two pairs (four games of damage-aware@v1 with the real probe) whole, again, and
   // split over three shards: CPU-bound work with no wait to make event-driven; it took 75 s on a
   // loaded CI runner (PR #217) against the package's 60 s default, so the budget is explicit.
