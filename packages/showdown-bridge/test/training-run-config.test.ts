@@ -136,8 +136,8 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
       expect(() => readTrainingRunConfig(raw), name).toThrow(message);
     };
     reject("anchor-zero-kl", /needs ppo.anchor.threatened/);
-    reject("anchor-threatened-no-features", /probe-damage\/2 or probe-outcome\/1/);
-    reject("anchor-threatened-features-1", /probe-damage\/2 or probe-outcome\/1/);
+    reject("anchor-threatened-no-features", /probe-damage\/2, probe-outcome\/1 or probe-outcome-likely\/1/);
+    reject("anchor-threatened-features-1", /probe-damage\/2, probe-outcome\/1 or probe-outcome-likely\/1/);
   });
 
   it("reads damage-aware as a scripted baseline and refuses a fourth entry (ADR-018 section 7)", () => {
