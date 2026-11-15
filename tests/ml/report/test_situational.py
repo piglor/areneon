@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from areneon_ml.report import situational as s
@@ -312,8 +313,9 @@ def test_likely_tally_leaves_the_1274_statistics_and_counts_unchanged() -> None:
         assert {k: v for k, v in body.items() if k != "likely"} == plain["matches"]["m"][policy]
     assert all("likely" not in b for b in plain["matches"]["m"].values())
     # the history block and the likely block do not disturb each other
-    both = _history_raw()
-    for game, extra in zip(both["games"], _likely_raw()["games"], strict=True):  # type: ignore[attr-defined,index]
+    both: Any = _history_raw()
+    extras: Any = _likely_raw()
+    for game, extra in zip(both["games"], extras["games"], strict=True):
         for seat in ("p1", "p2"):
             if "likely" in extra["seats"][seat]:
                 game["seats"][seat]["likely"] = extra["seats"][seat]["likely"]
