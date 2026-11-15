@@ -37,6 +37,7 @@ from areneon_ml.learner.situation import (
     Groups,
     stall_candidates,
     streak_slots,
+    streak_unmatched,
     threatened_flag,
 )
 from areneon_ml.model.encoder import EncodedQuery, Encoder, EncoderSession
@@ -75,6 +76,9 @@ class Step:
     #: On a ``streak`` step, per candidate: whether it uses a stalling move in a streak slot
     #: (the report's ``stall_teacher`` and ``stall_clone``); ``None`` on every other step.
     stall: tuple[bool, ...] | None = None
+    #: On a grouped step: the request slots whose ident matches no roster entry of the reduced
+    #: state (the streak rule cannot judge them); 0 without a group.
+    unmatched: int = 0
 
 
 @dataclass(frozen=True)
@@ -160,11 +164,15 @@ class _Collector:
             self._seen.setdefault(episode, []).append(aux_labels.snapshot(state, query.n_own))
         features = example.get("candidate_features")
         threatened = threatened_flag(observation["log"], features) if role == "battle" else None
-        group, stall = None, None
+        group, stall, unmatched = None, None, 0
         if self._groups is not None and role == "battle":
-            group, stall = self._situation(episode, session, observation, candidates, features)
+            group, stall, unmatched = self._situation(
+                episode, session, observation, candidates, features
+            )
         self.steps.setdefault((episode, role), []).append(
-            Step(query, chosen, potential, threatened, group=group, stall=stall)
+            Step(
+                query, chosen, potential, threatened, group=group, stall=stall, unmatched=unmatched
+            )
         )
 
     def _situation(
@@ -174,7 +182,7 @@ class _Collector:
         observation: dict[str, Any],
         candidates: list[dict[str, Any]],
         features: dict[str, Any] | None,
-    ) -> tuple[str, tuple[bool, ...] | None]:
+    ) -> tuple[str, tuple[bool, ...] | None, int]:
         """The group of a Battle decision (ADR-010 erratum A13.2, first match) and, for a streak
         decision, which candidates use a stalling move in a streak slot."""
         assert self._groups is not None
@@ -189,18 +197,19 @@ class _Collector:
             )
         request = json.loads(raw[len("|request|") :])
         slots = streak_slots(state, request, stall_moves)
+        unmatched = streak_unmatched(state, request)
         if slots:
             choices = [candidate["choice"] for candidate in candidates]
-            return "streak", stall_candidates(choices, slots, request, stall_moves)
+            return "streak", stall_candidates(choices, slots, request, stall_moves), unmatched
         if not self._groups.threatened:
-            return "other", None
+            return "other", None, unmatched
         flag = threatened_flag(observation["log"], features)
         if flag is None:
             raise LearnerDataError(
                 f"Episode {episode}: clone.situation_weights.threatened_ppm needs the threats, "
                 "speeds and foe_priorities rows in every Battle example"
             )
-        return ("threatened" if flag else "other"), None
+        return ("threatened" if flag else "other"), None, unmatched
 
     def finish(self) -> None:
         """Put the move-reveal labels on the Battle steps (``ppo.aux_moves``), in place and once.

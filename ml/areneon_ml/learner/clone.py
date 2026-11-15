@@ -101,9 +101,14 @@ class GroupAgreement:
     agreement: Agreement
     stall_teacher: int | None = None
     stall_clone: int | None = None
+    #: On ``streak``: request slots (over every grouped step) whose ident matches no roster entry,
+    #: which the streak rule cannot judge; ``None`` on every other group.
+    streak_unmatched: int | None = None
 
     def as_dict(self) -> dict[str, float | int]:
         out = self.agreement.as_dict()
+        if self.streak_unmatched is not None:
+            out["streak_unmatched"] = self.streak_unmatched
         if self.stall_teacher is not None and self.stall_clone is not None:
             out["stall_teacher"] = self.stall_teacher
             out["stall_clone"] = self.stall_clone
@@ -203,6 +208,7 @@ def evaluate_groups(
     chance_sum = dict.fromkeys(GROUPS, 0.0)
     stalls = [0, 0]  # teacher, clone: streak steps whose choice uses a stalling move
     grouped = [s for s in steps if s.group is not None]
+    unmatched = sum(s.unmatched for s in grouped)
     with torch.no_grad():
         for start in range(0, len(grouped), size):
             chunk = grouped[start : start + size]
@@ -229,7 +235,10 @@ def evaluate_groups(
         )
         streak = name == "streak"
         out[name] = GroupAgreement(
-            agreement, stalls[0] if streak else None, stalls[1] if streak else None
+            agreement,
+            stalls[0] if streak else None,
+            stalls[1] if streak else None,
+            unmatched if streak else None,
         )
     return out
 
@@ -246,7 +255,10 @@ def situation_factors(steps: Sequence[Step], weights: SituationWeights) -> tuple
         "threatened": weights.threatened_ppm,
         "other": 1_000_000,
     }
-    found = [table[str(step.group)] or 1_000_000 for step in steps]
+    found: list[int] = []
+    for step in steps:
+        weight = table[str(step.group)]
+        found.append(1_000_000 if weight is None else weight)
     total = sum(found)
     factors = torch.tensor([w * len(found) / total for w in found], dtype=torch.float32)
     return factors, total // len(found)

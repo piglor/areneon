@@ -25,15 +25,23 @@ from areneon_ml.learner.clone import (
     evaluate_groups,
     situation_factors,
     situation_groups,
+    split_parts,
 )
 from areneon_ml.learner.clone_config import CloneConfigError, SituationWeights, read_clone_config
 from areneon_ml.learner.clone_eval import clone_eval
 from areneon_ml.learner.clone_run import write_clone
 from areneon_ml.learner.data import LearnerDataError, Step, trajectories
-from areneon_ml.learner.situation import GROUPS, Groups, stall_candidates, streak_slots
+from areneon_ml.learner.situation import (
+    GROUPS,
+    Groups,
+    stall_candidates,
+    streak_slots,
+    streak_unmatched,
+)
 from areneon_ml.learner.trainer import configure_learner
+from areneon_ml.model.batch import collate
 from areneon_ml.model.encoder import Encoder
-from areneon_ml.model.network import ROLES
+from areneon_ml.model.network import ROLES, init_network
 from areneon_ml.reducer.state import BattleState, PokemonState, SideState
 
 from tests.ml.learner.test_clone import (
@@ -186,6 +194,25 @@ def test_a_forced_switch_a_team_preview_and_an_unknown_name_have_no_streak_slot(
     assert streak_slots(state, stranger, STALL) == ()
 
 
+def test_streak_unmatched_counts_the_living_actives_the_roster_does_not_name() -> None:
+    state = battle_state({"A": 1})
+    base = {
+        "side": {"pokemon": [member("A"), member("Z")]},
+        "active": [slot("protect"), slot("tackle")],
+    }
+    assert streak_unmatched(state, base) == 1  # Z is no roster entry
+    assert streak_slots(state, base, STALL) == (0,)
+    assert streak_unmatched(battle_state({"A": 1, "Z": 0}), base) == 0
+    fainted = {
+        "side": {"pokemon": [member("A"), member("Z", fainted=True)]},
+        "active": base["active"],
+    }
+    assert streak_unmatched(state, fainted) == 0  # a fainted active is not judged either way
+    assert streak_unmatched(state, {**base, "active": [slot("protect"), None]}) == 0
+    assert streak_unmatched(state, {"teamPreview": True, "side": {"pokemon": []}}) == 0
+    assert streak_unmatched(state, {"side": {"pokemon": [member("A")]}, "forceSwitch": [True]}) == 0
+
+
 def test_a_candidate_stalls_when_a_streak_slot_uses_a_stalling_move() -> None:
     request = {"active": [slot("protect", "tackle"), slot("detect", "tackle")]}
     choices = [
@@ -232,21 +259,30 @@ def test_a_decision_is_streak_then_threatened_then_other(monkeypatch: pytest.Mon
     assert both._situation("e", session(streaky, request), observation, candidates, {}) == (
         "streak",
         (True, False),
+        0,
     )
     assert both._situation("e", session(streaky, quiet), observation, candidates, {}) == (
         "threatened",
         None,
+        0,
     )
     flags["value"] = False
     assert both._situation("e", session(streaky, quiet), observation, candidates, {}) == (
         "other",
         None,
+        0,
     )
+    # a request slot no roster entry names is counted, whatever the group
+    stray = {
+        "side": {"pokemon": [member("A"), member("Z")]},
+        "active": [slot("tackle"), slot("tackle")],
+    }
+    assert both._situation("e", session(streaky, stray), observation, candidates, {})[2] == 1
     # without threatened_ppm a Threatened decision is `other`, and no flag is read
     flags["value"] = True
     assert collector(False)._situation(
         "e", session(streaky, quiet), observation, candidates, {}
-    ) == ("other", None)
+    ) == ("other", None, 0)
 
 
 def test_a_battle_example_without_threat_rows_or_a_stall_table_is_refused(
@@ -383,6 +419,32 @@ def run(manifest: dict[str, Any], text: str, weights: dict[str, int] | None) -> 
     return clone(read_clone_config(weighted_raw(manifest, weights)), game(), text, manifest)
 
 
+def test_the_plain_loss_path_is_the_mean_cross_entropy_of_the_initial_network(
+    stream: tuple[str, dict[str, Any]],
+) -> None:
+    """A no-block clone of one epoch and one minibatch reports, as its epoch loss, the mean
+    cross-entropy of the freshly initialised Battle network over its training steps. Computed here
+    independently with ``log_softmax`` in float64 (a pinned literal would move with the torch build,
+    as checkpoint ids do, so this compares to 1e-5 instead): drift of the plain path fails it."""
+    text, manifest = stream
+    raw = weighted_raw(manifest, None, epochs=1)
+    raw["clone"]["minibatch_size"] = 4096
+    config = read_clone_config(raw)
+    encoders = {role: Encoder(game(), config.model.encoder) for role in ROLES}
+    found = trajectories(text, manifest, encoders, config.teacher_policy_id, groups=None)
+    steps = split_parts(config, found)["battle"][0]
+    assert 0 < len(steps) <= 4096
+    network = init_network("battle", game(), config.model, config.init_battle).eval()
+    with torch.no_grad():
+        batch = collate([s.query for s in steps])
+        logits = network(batch).logits.double().masked_fill(~batch.cand_mask, float("-inf"))
+        chosen = torch.tensor([s.chosen for s in steps])
+        expected = -torch.log_softmax(logits, dim=-1).gather(1, chosen[:, None]).mean().item()
+    got = clone(config, game(), text, manifest).roles["battle"].epoch_loss
+    assert len(got) == 1
+    assert got[0] == pytest.approx(expected, rel=1e-5)
+
+
 def battle_id(cloned: Any) -> str:
     return checkpoint_id(checkpoint_bytes(cloned.networks["battle"], game()))
 
@@ -438,6 +500,7 @@ def test_the_report_has_the_group_keys_only_under_the_block(
             "chance",
             "stall_teacher",
             "stall_clone",
+            "streak_unmatched",
         }
         assert "stall_teacher" not in report[part]["other"]
     both = run(manifest, text, {"streak_ppm": 5_000_000})
@@ -603,6 +666,11 @@ def test_the_clone_eval_command_prints_and_writes_the_table_and_refuses_misuse(
     status, _, error = run_main(learner_main, [*argv, "--out", str(out / "table.json")])
     assert status == 3
     assert "changes nothing of the clone" in error
+    dangling = tmp_path / "dangling.json"
+    target = tmp_path / "elsewhere.json"
+    dangling.symlink_to(target)  # exists() is False for it: only an exclusive create refuses
+    assert run_main(learner_main, [*argv, "--out", str(dangling)])[0] == 3
+    assert not target.exists()
     status, _, error = run_main(learner_main, [*argv[:2], str(tmp_path / "none"), *argv[3:]])
     assert status == 3
 
