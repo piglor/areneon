@@ -53,4 +53,20 @@ describe("the CloneRunConfig reader (ADR-019 track 1)", () => {
     const unknown = JSON.parse(readFileSync(join(SAMPLES_DIR, "v1/clone-run-config/invalid/candidate-features-unknown-set.json"), "utf8"));
     expect(() => readCloneRunConfig(unknown)).toThrow(CloneRunConfigError);
   });
+
+  it("takes clone.situation_weights (ADR-010 erratum A13): both keys, the streak alone, the reader rules, absent keeps the hash", async () => {
+    const plain = readCloneRunConfig(sample("tiny"));
+    const both = readCloneRunConfig(sample("situation-weights"));
+    expect(both.clone.situation_weights).toEqual({ streak_ppm: 5000000, threatened_ppm: 2000000 });
+    expect(readCloneRunConfig(sample("situation-weights-streak-only")).clone.situation_weights).toEqual({ streak_ppm: 5000000 });
+    expect(await cloneRunConfigHash(both)).not.toBe(await cloneRunConfigHash(plain));
+    expect(plain.clone.situation_weights).toBeUndefined();
+    const corpus = (kind: string, name: string): unknown =>
+      JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/clone-run-config/${kind}/${name}.json`), "utf8"));
+    for (const name of ["float", "zero", "over-cap", "extra-field", "threatened-alone"]) {
+      expect(() => readCloneRunConfig(corpus("invalid", `situation-weights-${name}`)), name).toThrow(CloneRunConfigError);
+    }
+    expect(() => readCloneRunConfig(corpus("reader-invalid", "situation-weights-no-recent-history"))).toThrow(/recent_history/);
+    expect(() => readCloneRunConfig(corpus("reader-invalid", "situation-weights-no-threat-rows"))).toThrow(/probe-outcome\/1/);
+  });
 });

@@ -33,7 +33,12 @@ from areneon_ml import stopwatch
 from areneon_ml.learner import aux_moves as aux_labels
 from areneon_ml.learner.ppo import GAME_SCORE
 from areneon_ml.learner.shaping import ShapingError, differential
-from areneon_ml.learner.situation import threatened_flag
+from areneon_ml.learner.situation import (
+    Groups,
+    stall_candidates,
+    streak_slots,
+    threatened_flag,
+)
 from areneon_ml.model.encoder import EncodedQuery, Encoder, EncoderSession
 from areneon_ml.model.network import ROLES
 from areneon_ml.worker.view import IncrementalView
@@ -63,6 +68,13 @@ class Step:
     #: The opponent entries of the decision that have no label (no later reveal, Transformed or
     #: shrunk list): beside ``aux`` so a run can read the masked share. ``None`` with ``aux``.
     aux_masked: int | None = None
+    #: The situation group of a Battle step read under ``clone.situation_weights`` (ADR-010
+    #: erratum A13.2: ``streak``, ``threatened`` or ``other``, ``learner/situation.py``), a pure
+    #: function of the example; ``None`` for a Preview step and without the block.
+    group: str | None = None
+    #: On a ``streak`` step, per candidate: whether it uses a stalling move in a streak slot
+    #: (the report's ``stall_teacher`` and ``stall_clone``); ``None`` on every other step.
+    stall: tuple[bool, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -80,9 +92,14 @@ class _Collector:
     """The steps of a run of stream lines, grouped by Episode and role, in first-seen order."""
 
     def __init__(
-        self, encoders: dict[str, Encoder], shaping: bool = False, aux: bool = False
+        self,
+        encoders: dict[str, Encoder],
+        shaping: bool = False,
+        aux: bool = False,
+        groups: Groups | None = None,
     ) -> None:
         self._encoders = encoders
+        self._groups = groups
         self._shaping = shaping
         self._aux = aux
         # Per Battle trajectory, the opponent entries at each decision (labels need later steps).
@@ -143,9 +160,47 @@ class _Collector:
             self._seen.setdefault(episode, []).append(aux_labels.snapshot(state, query.n_own))
         features = example.get("candidate_features")
         threatened = threatened_flag(observation["log"], features) if role == "battle" else None
+        group, stall = None, None
+        if self._groups is not None and role == "battle":
+            group, stall = self._situation(episode, session, observation, candidates, features)
         self.steps.setdefault((episode, role), []).append(
-            Step(query, chosen, potential, threatened)
+            Step(query, chosen, potential, threatened, group=group, stall=stall)
         )
+
+    def _situation(
+        self,
+        episode: str,
+        session: EncoderSession,
+        observation: dict[str, Any],
+        candidates: list[dict[str, Any]],
+        features: dict[str, Any] | None,
+    ) -> tuple[str, tuple[bool, ...] | None]:
+        """The group of a Battle decision (ADR-010 erratum A13.2, first match) and, for a streak
+        decision, which candidates use a stalling move in a streak slot."""
+        assert self._groups is not None
+        state, raw = session.state, session.last_request
+        stall_moves = self._encoders["battle"].game.vocabulary.stall_moves
+        if state is None or raw is None:  # pragma: no cover - encode just fed the reducer
+            raise LearnerDataError("no reduced state to read the situation group from")
+        if stall_moves is None:
+            raise LearnerDataError(
+                "clone.situation_weights needs the stalling moves of this engine pin "
+                "(reducer/data/stall-moves.<format>.json)"
+            )
+        request = json.loads(raw[len("|request|") :])
+        slots = streak_slots(state, request, stall_moves)
+        if slots:
+            choices = [candidate["choice"] for candidate in candidates]
+            return "streak", stall_candidates(choices, slots, request, stall_moves)
+        if not self._groups.threatened:
+            return "other", None
+        flag = threatened_flag(observation["log"], features)
+        if flag is None:
+            raise LearnerDataError(
+                f"Episode {episode}: clone.situation_weights.threatened_ppm needs the threats, "
+                "speeds and foe_priorities rows in every Battle example"
+            )
+        return ("threatened" if flag else "other"), None
 
     def finish(self) -> None:
         """Put the move-reveal labels on the Battle steps (``ppo.aux_moves``), in place and once.
@@ -226,6 +281,7 @@ def trajectories(  # noqa: PLR0913
     private_pool: bool = False,
     shaping: bool = False,
     aux_moves: bool = False,
+    groups: Groups | None = None,
 ) -> list[Trajectory]:
     """The trajectories of a learner-ready stream played by ``behaviour_policy_id``.
 
@@ -245,6 +301,9 @@ def trajectories(  # noqa: PLR0913
 
     ``aux_moves`` (``ppo.aux_moves``, ADR-010 erratum A12.2) reads each Battle step's move-reveal
     targets from the player's own later channel (``Step.aux``).
+
+    ``groups`` (``clone.situation_weights``, ADR-010 erratum A13.2) reads each Battle step's
+    situation group from the example alone (``Step.group``).
     """
     _ready(manifest, behaviour_policy_id)
     if processes > 1 and isinstance(stream, Path):
@@ -258,6 +317,7 @@ def trajectories(  # noqa: PLR0913
             private_pool=private_pool,
             shaping=shaping,
             aux_moves=aux_moves,
+            groups=groups,
         )
         if found is not None:
             return found
@@ -270,7 +330,7 @@ def trajectories(  # noqa: PLR0913
     except TrainingStreamError as exc:
         raise LearnerDataError(str(exc)) from exc
     stopwatch.end("validate", mark)
-    collector = _Collector(encoders, shaping, aux_moves)
+    collector = _Collector(encoders, shaping, aux_moves, groups)
     lines: Iterator[str] = (
         stream_lines(stream) if isinstance(stream, Path) else iter(stream.split("\n")[:-1])
     )

@@ -124,6 +124,8 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/checkpoint-record/reader-invalid/unsorted-league-opponents.json",
       "v1/clone-run-config/reader-invalid/heads-do-not-divide-width.json",
       "v1/clone-run-config/reader-invalid/picks-exceed-team.json",
+      "v1/clone-run-config/reader-invalid/situation-weights-no-recent-history.json",
+      "v1/clone-run-config/reader-invalid/situation-weights-no-threat-rows.json",
       "v1/damage-aware-config-2/reader-invalid/other-format.json",
       "v1/damage-aware-config/reader-invalid/other-format.json",
       "v1/damage-aware-config/reader-invalid/situational-without-engine-convention.json",
@@ -841,6 +843,8 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
   it.each([
     ["v1/clone-run-config/reader-invalid/heads-do-not-divide-width.json", "must be a multiple of n_heads"],
     ["v1/clone-run-config/reader-invalid/picks-exceed-team.json", "cannot exceed max_team"],
+    ["v1/clone-run-config/reader-invalid/situation-weights-no-recent-history.json", "needs model.encoder.options.recent_history"],
+    ["v1/clone-run-config/reader-invalid/situation-weights-no-threat-rows.json", "needs candidate_features of probe-damage/2 or probe-outcome/1"],
   ])("readCloneRunConfig refuses %s", (file, message) => {
     expect(Object.keys(fresh)).toContain(file);
     expect(() => readCloneRunConfig(committed(file))).toThrow(CloneRunConfigError);

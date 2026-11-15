@@ -139,6 +139,19 @@ export interface CloneRunConfig {
        */
       ppm: number;
     };
+    /**
+     * Optional per-decision weights of the cloning loss (ADR-010 erratum A13): a Battle decision in the streak situation (some living own active has protect_streak >= 1 and a stalling move offered) weighs streak_ppm, a Threatened one (ADR-010 erratum A11.2) threatened_ppm, every other decision 1,000,000, in millionths. The loss is mean((w_i / w_bar) * CE_i) with w_bar the mean weight over the role's training part. Needs recent_history; threatened_ppm needs a feature set with threat rows (reader rules). Absent: every byte of a clone is unchanged.
+     */
+    situation_weights?: {
+      /**
+       * Weight of a streak decision, in millionths.
+       */
+      streak_ppm: number;
+      /**
+       * Weight of a Threatened decision that is not a streak one, in millionths.
+       */
+      threatened_ppm?: number;
+    };
   };
   /**
    * Where the learner runs (ADR-010 section 4). A cuda run is not claimed to be bit-reproducible, and its hash differs from a cpu run's.

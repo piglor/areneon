@@ -842,6 +842,13 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     });
   const bounds = (population: Record<string, unknown>) => (population.explore as { bounds: Record<string, unknown> }).bounds;
   const cloneWith = (change: (c: Record<string, unknown>) => void) => mutated(cloneConfig, change);
+  // ADR-010 erratum A13: clone.situation_weights; the encoder option and the feature set it reads are set per sample.
+  const weighted = (weights: Record<string, unknown>, options: Record<string, unknown>) =>
+    cloneWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = options;
+      runSection(c, "clone").situation_weights = weights;
+    });
+  const outcomeFeatures = { feature_set: "probe-outcome/1", feature_set_hash: hexOf("c") };
 
   const valid: Record<string, unknown> = {
     "engine-data/golden": engineData,
@@ -1070,6 +1077,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "clone-run-config/history-facts-outcome": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { history_facts: true, candidate_features: { feature_set: "probe-outcome/1", feature_set_hash: hexOf("c") } };
     }),
+    "clone-run-config/situation-weights": weighted({ streak_ppm: 5000000, threatened_ppm: 2000000 }, { recent_history: true, candidate_features: outcomeFeatures }),
+    "clone-run-config/situation-weights-streak-only": weighted({ streak_ppm: 5000000 }, { recent_history: true }),
     "clone-run-config/no-holdout": cloneWith((c) => (runSection(c, "clone").holdout = { key: "d".repeat(64), ppm: 0 })),
     "run-metrics/cpu": runMetrics,
     "run-metrics/cuda": runMetricsWith((r) => {
@@ -1314,6 +1323,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/inference-above-parallel": runConfigWith((c) => (runSection(c, "generation").inference = { kind: "batched", max_batch: 3 })),
     "training-run-config/inference-search-labels": distilling((c) => (runSection(c, "generation").inference = { kind: "batched", max_batch: 2 })),
     "training-run-config/inference-population": populated((_p, c) => (runSection(c, "generation").inference = { kind: "batched", max_batch: 2 })),
+    "clone-run-config/situation-weights-no-recent-history": weighted({ streak_ppm: 5000000 }, {}),
+    "clone-run-config/situation-weights-no-threat-rows": weighted({ streak_ppm: 5000000, threatened_ppm: 2000000 }, { recent_history: true }),
     "clone-run-config/heads-do-not-divide-width": cloneWith((c) => (runSection(c, "model").n_heads = 3)),
     "clone-run-config/picks-exceed-team": cloneWith((c) => {
       const encoder = runSection(runSection(c, "model"), "encoder");
@@ -1596,6 +1607,11 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "clone-run-config/candidate-features-unknown-set": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/4", feature_set_hash: hexOf("c") } };
     }),
+    "clone-run-config/situation-weights-float": weighted({ streak_ppm: 5000000.5 }, { recent_history: true }),
+    "clone-run-config/situation-weights-zero": weighted({ streak_ppm: 0 }, { recent_history: true }),
+    "clone-run-config/situation-weights-over-cap": weighted({ streak_ppm: 100000001 }, { recent_history: true }),
+    "clone-run-config/situation-weights-extra-field": weighted({ streak_ppm: 5000000, other_ppm: 1 }, { recent_history: true }),
+    "clone-run-config/situation-weights-threatened-alone": weighted({ threatened_ppm: 2000000 }, { recent_history: true, candidate_features: outcomeFeatures }),
     "clone-run-config/extra-field": cloneWith((c) => (c.notes = "x")),
     "clone-run-config/fractional-rate": cloneWith((c) => (runSection(c, "clone").learning_rate_micro = 0.5)),
     "clone-run-config/zero-epochs": cloneWith((c) => (runSection(c, "clone").epochs = 0)),

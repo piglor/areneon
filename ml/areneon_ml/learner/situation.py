@@ -13,8 +13,13 @@ module over ``fixtures/situation/rows.json``, which the TS side writes from the 
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+import re
+from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
+
+from areneon_ml.model.candidates import parse_choice
+from areneon_ml.reducer.state import BattleState
 
 SITUATIONS = ("threatened", "safe", "exposed_slower")
 
@@ -104,3 +109,64 @@ def threatened_flag(log: Sequence[str], features: Mapping[str, Any] | None) -> b
     if features is None or not has_threat_rows(features):
         return None
     return is_threatened(log, features)
+
+
+# -- the groups of the cloning loss (ADR-010 erratum A13.2) ----------------------------------
+
+GROUPS = ("streak", "threatened", "other")
+
+_SIDE = re.compile(r"^p[1-4]: ")
+
+
+@dataclass(frozen=True)
+class Groups:
+    """What the cloning learner reads a Battle decision's group with (``clone.situation_weights``):
+    ``threatened`` says whether ``threatened_ppm`` is set (otherwise a Threatened decision is
+    ``other``)."""
+
+    threatened: bool
+
+
+def streak_slots(
+    state: BattleState, request: Mapping[str, Any], stall_moves: Collection[str]
+) -> tuple[int, ...]:
+    """The active slots (request positions) of a MOVE request that are in the ``streak`` situation:
+    a living own active with ``protect_streak >= 1`` in the reduced state and a stalling move of the
+    engine's own list among the request's moves of that slot, not ``disabled``."""
+    active = request.get("active")
+    if "teamPreview" in request or not active:
+        return ()
+    roster = {mon.name: mon for mon in state.own.roster}
+    found = []
+    for slot, entry in enumerate(active):
+        member = request["side"]["pokemon"][slot]
+        mon = roster.get(_SIDE.sub("", str(member["ident"]), count=1))
+        if not entry or str(member["condition"]).endswith(_FAINTED) or mon is None:
+            continue
+        if mon.recent.protect_streak < 1:
+            continue
+        if any(m["id"] in stall_moves and not m.get("disabled") for m in entry["moves"]):
+            found.append(slot)
+    return tuple(found)
+
+
+def stall_candidates(
+    choices: Sequence[str],
+    slots: Collection[int],
+    request: Mapping[str, Any],
+    stall_moves: Collection[str],
+) -> tuple[bool, ...]:
+    """Per candidate: whether it uses a stalling move in one of the ``slots`` (the streak slots)."""
+    out = []
+    for choice in choices:
+        parsed = parse_choice(choice)
+        uses = False
+        for slot in slots:
+            action = parsed.slots[slot] if parsed.kind == "joint" else None
+            if action is not None and action.kind == "move" and action.index is not None:
+                moves = request["active"][slot]["moves"]
+                uses = uses or (
+                    action.index <= len(moves) and moves[action.index - 1]["id"] in stall_moves
+                )
+        out.append(uses)
+    return tuple(out)

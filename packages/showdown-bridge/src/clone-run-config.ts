@@ -19,7 +19,23 @@ export class CloneRunConfigError extends Error {
 
 const validConfig = ajvFor("contract").compile(cloneRunConfigSchema);
 
-/** Read a CloneRunConfig: the schema, then the heads divide the token width and the picks fit the team. */
+/** Feature sets whose rows carry `threats`, `speeds` and `foe_priorities` (ADR-010 erratum A11.2); held equal to the Python reader's list. */
+const THREAT_ROW_FEATURE_SETS: readonly string[] = ["probe-damage/2", "probe-outcome/1"];
+
+/** The rules of `clone.situation_weights` the profile cannot say (ADR-010 erratum A13.1; Python twin: `_situation_weights`). */
+function checkSituationWeights(config: CloneRunConfig): void {
+  const weights = config.clone.situation_weights;
+  if (weights === undefined) return;
+  const options = (config.model.encoder.options ?? {}) as { recent_history?: boolean; candidate_features?: { feature_set: string } };
+  if (options.recent_history !== true) {
+    throw new CloneRunConfigError("clone.situation_weights.streak_ppm weights a situation the network must see: it needs model.encoder.options.recent_history");
+  }
+  if (weights.threatened_ppm !== undefined && !THREAT_ROW_FEATURE_SETS.includes(options.candidate_features?.feature_set ?? "")) {
+    throw new CloneRunConfigError("clone.situation_weights.threatened_ppm reads the threats, speeds and foe_priorities rows: it needs candidate_features of probe-damage/2 or probe-outcome/1");
+  }
+}
+
+/** Read a CloneRunConfig: the schema, then the heads divide the token width, the picks fit the team and the situation weights have what they read. */
 export function readCloneRunConfig(value: unknown): CloneRunConfig {
   if (!validConfig(value)) throw new CloneRunConfigError(`invalid CloneRunConfig: ${JSON.stringify(validConfig.errors)}`);
   const config = structuredClone(value) as unknown as CloneRunConfig;
@@ -30,6 +46,7 @@ export function readCloneRunConfig(value: unknown): CloneRunConfig {
   if (model.encoder.max_picks > model.encoder.max_team) {
     throw new CloneRunConfigError(`max_picks ${model.encoder.max_picks} cannot exceed max_team ${model.encoder.max_team}`);
   }
+  checkSituationWeights(config);
   return config;
 }
 
