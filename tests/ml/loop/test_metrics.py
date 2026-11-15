@@ -254,3 +254,11 @@ def test_the_driver_records_the_resident_sets_the_simulator_side_reports(tmp_pat
 
 def test_the_driver_peak_is_this_process_in_bytes() -> None:
     assert driver_peak_rss_bytes() > 10_000_000
+
+
+def test_the_micro_batch_is_recorded_only_when_set() -> None:
+    plain = build_metrics(tiny_config(), 1, {}, Counts(), Peaks())
+    assert "learner_micro_batch" not in plain
+    chunked = build_metrics(tiny_config(), 1, {}, Counts(), Peaks(learner_micro_batch=64))
+    assert chunked["learner_micro_batch"] == 64
+    assert read_run_metrics(chunked, tiny_config(), 1) == chunked

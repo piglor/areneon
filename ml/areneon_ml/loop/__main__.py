@@ -221,6 +221,16 @@ def _add_run(commands: Any) -> None:
         "adds its piece's tensors to memory while it runs, see docs/training-run.md)",
     )
     run.add_argument(
+        "--learner-micro-batch",
+        type=_positive,
+        default=None,
+        help="run each learner minibatch through the network in chunks of at most this many "
+        "decisions, accumulating the gradient (operational, not a config field: it bounds the "
+        "activation memory, e.g. 64 on a 16 GB card; the gradients equal the single pass's up "
+        "to float rounding, so a run is reproducible only for the same value; default: one "
+        "pass; recorded in metrics/g*.json)",
+    )
+    run.add_argument(
         "--load-memory-mb",
         type=_positive,
         help="cap the memory the load workers may add (about 400 MB each): fewer workers run "
@@ -773,11 +783,13 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
         pop.load_processes = load_processes
         pop.load_auto = auto
         pop.load_memory_mb = args.load_memory_mb
+        pop.learner_micro_batch = args.learner_micro_batch
         return pop.run(args.generations).as_dict(pop.frozen)
     loop = Loop(config, args.run_dir.resolve(), game, player)
     loop.load_processes = load_processes
     loop.load_auto = auto
     loop.load_memory_mb = args.load_memory_mb
+    loop.learner_micro_batch = args.learner_micro_batch
     loop.profile = args.profile
     result = loop.run(args.generations)
     return result.as_dict(loop.frozen)

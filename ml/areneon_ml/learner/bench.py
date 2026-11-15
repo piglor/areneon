@@ -96,12 +96,14 @@ def time_passes(
     )
 
 
-def benchmark(
+def benchmark(  # noqa: PLR0913
     config: RunConfig,
     game: GameData,
     recorded: Recorded,
     repeats: int,
     clock: Callable[[], float] = time.perf_counter,
+    *,
+    micro_batch: int | None = None,
 ) -> dict[str, Any]:
     """Time ``repeats`` PPO generations over the recorded stream on the config's device."""
     if config.ppo.search_distill is not None:
@@ -119,7 +121,7 @@ def benchmark(
     )
     seeds = {"preview": config.init_preview, "battle": config.init_battle}
     networks = {role: init_network(role, game, config.model, seeds[role]) for role in ROLES}
-    learner = Learner(config, networks, device)
+    learner = Learner(config, networks, device, micro_batch=micro_batch)
     timing = time_passes(lambda: learner.train(found), device, repeats, clock)
     return {
         **device_facts(device),
@@ -132,6 +134,7 @@ def benchmark(
         "peak_memory_bytes": timing.peak_memory_bytes,
         "run_config_hash": config.hash,
         "minibatch_size": config.ppo.minibatch_size,
+        "micro_batch": micro_batch,
         "d_model": config.model.d_model,
         "n_layers": config.model.n_layers,
     }

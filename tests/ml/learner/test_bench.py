@@ -140,3 +140,16 @@ def test_bench_times_a_config_with_shaping() -> None:
     config = edited_config(lambda c: c["ppo"].update(shaping={"coef_micro": 1_000_000}))
     result = benchmark(config, game(), recorded(), 1)
     assert result["decisions"] > 0
+
+
+def test_bench_takes_a_micro_batch_and_says_so() -> None:
+    ticks = iter([0.0, 1.0])
+    found = benchmark(
+        tiny_config(), game(), recorded(), 1, clock=lambda: next(ticks), micro_batch=4
+    )
+    assert found["micro_batch"] == 4
+    ticks = iter([0.0, 1.0])
+    assert (
+        benchmark(tiny_config(), game(), recorded(), 1, clock=lambda: next(ticks))["micro_batch"]
+        is None
+    )

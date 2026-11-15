@@ -224,6 +224,10 @@ class RunMetrics(BaseModel):
     peak_rss_bytes: PeakRss | MISSING = MISSING
     profile: Profile | MISSING = MISSING
     inference_divergence: InferenceDivergence | MISSING = MISSING
+    learner_micro_batch: Annotated[StrictInt | MISSING, Field(ge=1, le=1048576)] = MISSING
+    """
+    Optional, written only when the run was started with --learner-micro-batch (operational, not a config field): the largest number of decisions the learner ran through the network at once, so the activation memory of the generation is that of a chunk and the gradients are accumulated over a minibatch's chunks. Absent: one pass per minibatch.
+    """
     device: Literal["cpu", "cuda"]
     """
     The learner's device, as the run config names it.

@@ -52,7 +52,14 @@ def _clone(args: argparse.Namespace) -> int:
         manifest = _json(args.stream_dir / "training-set.json")
         version_manifest = _json(args.version_manifest)
         device = configure_learner(config)
-        cloned = clone(config, game, args.stream_dir / "stream.jsonl", manifest, device)
+        cloned = clone(
+            config,
+            game,
+            args.stream_dir / "stream.jsonl",
+            manifest,
+            device,
+            micro_batch=args.learner_micro_batch,
+        )
         report = write_clone(args.out, config, game, cloned, version_manifest)
     except (
         CloneConfigError,
@@ -101,6 +108,25 @@ def _bind(args: argparse.Namespace) -> int:
     return 0
 
 
+def _micro_flag(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--learner-micro-batch",
+        type=_micro_batch,
+        default=None,
+        help="run each minibatch through the network in chunks of at most this many decisions "
+        "(gradient accumulation; operational: it bounds the activation memory, not the config; "
+        "the gradients equal the single pass's up to float rounding, so a run is reproducible "
+        "only for the same value; default: one pass)",
+    )
+
+
+def _micro_batch(text: str) -> int:
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return value
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="areneon_ml.learner")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -111,6 +137,7 @@ def main(argv: list[str] | None = None) -> int:
         "--stream-dir", type=Path, required=True, help="holds stream.jsonl and training-set.json"
     )
     bench.add_argument("--repeats", type=int, default=5)
+    _micro_flag(bench)
     cloning = commands.add_parser("clone", help="clone a scripted teacher from its TrainingSet")
     cloning.add_argument("--config", type=Path, required=True, help="a CloneRunConfig JSON file")
     cloning.add_argument("--engine-data", type=Path, required=True)
@@ -121,6 +148,7 @@ def main(argv: list[str] | None = None) -> int:
         "--version-manifest", type=Path, required=True, help="the teacher games' version manifest"
     )
     cloning.add_argument("--out", type=Path, required=True, help="a new directory")
+    _micro_flag(cloning)
     evaluating = commands.add_parser(
         "clone-eval", help="the per-situation agreement of an existing clone (read-only, CPU)"
     )
@@ -146,7 +174,13 @@ def main(argv: list[str] | None = None) -> int:
         game = GameData.from_table(json.loads(args.engine_data.read_text(encoding="utf-8")))
         manifest = json.loads((args.stream_dir / "training-set.json").read_text(encoding="utf-8"))
         stream = args.stream_dir / "stream.jsonl"
-        result = benchmark(config, game, Recorded(stream, manifest), args.repeats)
+        result = benchmark(
+            config,
+            game,
+            Recorded(stream, manifest),
+            args.repeats,
+            micro_batch=args.learner_micro_batch,
+        )
     except (RunConfigError, LearnerError, LearnerDataError, ValueError, OSError) as exc:
         print(f"areneon_ml.learner: {exc}", file=sys.stderr)
         return EXIT_REFUSED

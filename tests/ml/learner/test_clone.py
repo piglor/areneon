@@ -629,3 +629,22 @@ def test_a_clone_with_the_move_head_has_the_policy_tensors_of_a_clone_without_it
             assert torch.equal(tensor, head_state[name]), (role, name)
     battle = outs["head"]["battle"].state_dict()
     assert any(n.startswith("aux_moves.") for n in battle)
+
+
+def test_a_micro_batch_gives_the_same_loss_curve_and_counts(
+    stream: tuple[str, dict[str, Any]],
+) -> None:
+    text, manifest = stream
+    config = config_for(manifest, epochs=3)
+    whole = clone(config, game(), text, manifest)
+    chunked = clone(config, game(), text, manifest, micro_batch=5)
+    for role in ROLES:
+        one, many = whole.roles[role], chunked.roles[role]
+        assert one.optimiser_steps == many.optimiser_steps
+        assert one.train.steps == many.train.steps
+        for a, b in zip(one.epoch_loss, many.epoch_loss, strict=True):
+            assert math.isclose(a, b, rel_tol=5e-2, abs_tol=1e-3)
+    # a chunk larger than the minibatch is the single pass
+    big = clone(config, game(), text, manifest, micro_batch=10_000)
+    for role in ROLES:
+        assert big.roles[role].epoch_loss == whole.roles[role].epoch_loss
