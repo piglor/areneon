@@ -97,7 +97,8 @@ describe("the interpreter reads |showteam| into a per-side sheet", () => {
   });
 
   it("leaves the interpreter file byte-identical to main's: the replay pages and ADR-018's baseline identity hash it", () => {
-    expect(readerSha256()).toBe("f6687af131b7d355d5a317b6ec8ac629575898479eff4b39aad76b4496655ea8");
+    // Moved deliberately by #1375 (Transform stat stages copied); this test still catches accidental edits.
+    expect(readerSha256()).toBe("8a67cbcb6c35c6f9cb7e4d82584918008c5528d7451702a8f5f3375e4b3bdb24");
   });
 });
 
