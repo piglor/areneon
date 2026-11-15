@@ -26,6 +26,9 @@ export const SUCCESS_SCORE_FORMAT = 1;
 /** The version of the stalling move's failure charge of `damage-aware@v6` (`damage-aware-situational.ts` `stallThreat` and `stallValue`); bump it when T or V is computed differently for the same input. Part of the identity only for a record with `stall_failure_cost`, so v1 to v5 keep their bytes. */
 export const STALL_FAILURE_FORMAT = 1;
 
+/** The version of the stall tie break of `damage-aware@v7` (`damage-aware-actor.ts` `bestScored`); bump it when a tie or the all-zero fallback excludes other candidates for the same input. */
+export const STALL_TIE_FORMAT = 1;
+
 /**
  * The parts a baseline's play depends on besides its policy id: five, and a sixth only when the config
  * record names a belief (ADR-025 section 5, ADR-018 erratum E-18.3), so v1's identity bytes are unchanged.
@@ -51,6 +54,8 @@ export interface DamageAwareIdentity {
   outcome_format?: number;
   /** `STALL_FAILURE_FORMAT`; present only for a record with `stall_failure_cost` (v6). */
   stall_failure_format?: number;
+  /** `STALL_TIE_FORMAT`; present only for a record with `stall_tie_break` (v7). */
+  stall_tie_format?: number;
 }
 
 export interface IdentityParts {
@@ -114,6 +119,7 @@ export function damageAwareIdentity(parts: IdentityParts): DamageAwareIdentity {
         }
       : {}),
     ...(parts.config.schema_version === 1 && parts.config.stall_failure_cost !== undefined ? { stall_failure_format: STALL_FAILURE_FORMAT } : {}),
+    ...(parts.config.schema_version === 1 && parts.config.stall_tie_break !== undefined ? { stall_tie_format: STALL_TIE_FORMAT } : {}),
   };
 }
 

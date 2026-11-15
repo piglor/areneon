@@ -13,6 +13,7 @@ import {
   DAMAGE_AWARE_V4_POLICY_ID,
   DAMAGE_AWARE_V5_POLICY_ID,
   DAMAGE_AWARE_V6_POLICY_ID,
+  DAMAGE_AWARE_V7_POLICY_ID,
   baselineRecords,
   forfeitCauses,
   GenerationError,
@@ -736,6 +737,27 @@ describe("damage-aware@v6 as a training opponent (#1380)", () => {
 
   it("never hands a v5 record to a config that names v6", async () => {
     const play = playGeneration({ engine, config: v6Config(), generation: 1, policy_id: POLICY, client: actorClient(), pool, damage_aware_v6: damageAwareSetup(engine, "gen9championsvgc2026regmc", "v5") });
+    await expect(play).rejects.toThrow(/names another record version/);
+  }, 120_000);
+});
+
+describe("damage-aware@v7 as a training opponent (#1392)", () => {
+  const v7Config = () =>
+    readTrainingRunConfig({
+      ...(sample("tiny") as object),
+      generation: { ...config.generation, games: 2, baseline_games: [{ actor: "damage-aware", policy_id: DAMAGE_AWARE_V7_POLICY_ID, games: 2 }] },
+    });
+
+  it("builds the v7 setup (the record with the stall tie break) when a plan names it, and no other", () => {
+    const records = baselineRecords({ engine }, v7Config());
+    const setup = records.damage_aware_v7 as ReturnType<typeof damageAwareSetup>;
+    expect((setup.config as { stall_tie_break?: string }).stall_tie_break).toBe("avoid_failing");
+    expect(records.damage_aware).toBeUndefined();
+    expect(records.damage_aware_v6).toBeUndefined();
+  });
+
+  it("never hands a v6 record to a config that names v7", async () => {
+    const play = playGeneration({ engine, config: v7Config(), generation: 1, policy_id: POLICY, client: actorClient(), pool, damage_aware_v7: damageAwareSetup(engine, "gen9championsvgc2026regmc", "v6") });
     await expect(play).rejects.toThrow(/names another record version/);
   }, 120_000);
 });

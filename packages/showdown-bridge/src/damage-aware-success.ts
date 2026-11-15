@@ -41,3 +41,14 @@ export function partSuccess(outcomes: readonly OutcomeRow[], key: PartKey, branc
 
 /** A value scaled by a chance in ppm, floored. */
 export const scaled = (value: number, ppm: number): number => Math.floor((value * ppm) / PPM);
+
+/**
+ * `damage-aware@v7` (ADR-022 erratum E-22.8.1): among the candidates that share the best score (a tie, which is every candidate in the all-zero
+ * fallback), those with a stalling part whose computed success chance is below certain (`failing`) are left out, but only while a tied candidate
+ * that is neither failing nor pending remains; otherwise the tie is returned as it is (a failing stall that scores best alone, or every
+ * tied candidate failing, is played). The order of the rest is kept. Pure.
+ */
+export function avoidFailingStalls<T>(tied: readonly T[], read: (item: T) => { failing: boolean; pending: boolean }): readonly T[] {
+  const kept = tied.filter((item) => !read(item).failing);
+  return kept.length < tied.length && kept.some((item) => !read(item).pending) ? kept : tied;
+}

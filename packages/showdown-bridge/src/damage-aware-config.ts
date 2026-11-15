@@ -41,6 +41,7 @@ export function readDamageAwareConfig(value: unknown, vocabulary: TeamVocabulary
   if (config.situational !== undefined && config.target_convention !== "engine") throw new DamageAwareConfigError("a record with situational weights (damage-aware@v4) must select the engine's target convention");
   if (config.success_scaling !== undefined && config.situational === undefined) throw new DamageAwareConfigError("a record with success scaling (damage-aware@v5) must carry the situational weights");
   if (config.stall_failure_cost !== undefined && config.success_scaling === undefined) throw new DamageAwareConfigError("a record with a stall failure cost (damage-aware@v6) must carry success scaling");
+  if (config.stall_tie_break !== undefined && config.stall_failure_cost === undefined) throw new DamageAwareConfigError("a record with a stall tie break (damage-aware@v7) must carry a stall failure cost");
   const { item, nature, stat_points } = config.assumed_set;
   if (!vocabulary.natures.some((entry) => entry.id === nature)) throw new DamageAwareConfigError(`nature ${nature} is not in the team vocabulary`);
   if (item.kind === "fixed" && !vocabulary.items.includes(item.item)) throw new DamageAwareConfigError(`item ${item.item} is not in the team vocabulary`);

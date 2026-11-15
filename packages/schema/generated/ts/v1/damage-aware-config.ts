@@ -51,6 +51,10 @@ export interface DamageAwareConfig {
    */
   stall_failure_cost?: "threat";
   /**
+   * How damage-aware@v7 breaks a tie among stalling candidates (ADR-022 erratum E-22.8, #1392). Absent: no rule (v1 to v6). "avoid_failing": in a tie for the best score and in the all-zero fallback, a candidate with a stalling part (the engine's stall list) whose computed success chance is below 10^6 is never chosen while another legal non-pending candidate is available; a failing-chance stall is played only when it strictly scores best. An unread outcome is not excluded. A record that has it must carry stall_failure_cost (reader rule) and is damage-aware@v7. A minor change within v1: an older reader refuses such a record.
+   */
+  stall_tie_break?: "avoid_failing";
+  /**
    * The rule for every opponent field that is not revealed. A revealed species, forme, level, gender, move, item, ability or Mega is used as revealed; an unrevealed move is never invented.
    */
   assumed_set: {
