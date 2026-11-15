@@ -150,6 +150,23 @@ def streak_slots(
     return tuple(found)
 
 
+def streak_unmatched(state: BattleState, request: Mapping[str, Any]) -> int:
+    """How many request slots of a MOVE request hold a living active whose ident matches no roster
+    entry of the reduced state: ``streak_slots`` skips them, so this count says how often the streak
+    rule could not judge a slot (reported as ``streak_unmatched`` in the clone report)."""
+    active = request.get("active")
+    if "teamPreview" in request or not active:
+        return 0
+    roster = {mon.name for mon in state.own.roster}
+    count = 0
+    for slot, entry in enumerate(active):
+        member = request["side"]["pokemon"][slot]
+        if not entry or str(member["condition"]).endswith(_FAINTED):
+            continue
+        count += _SIDE.sub("", str(member["ident"]), count=1) not in roster
+    return count
+
+
 def stall_candidates(
     choices: Sequence[str],
     slots: Collection[int],

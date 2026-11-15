@@ -80,7 +80,10 @@ def _clone_eval(args: argparse.Namespace) -> int:
         game = GameData.from_table(_json(args.engine_data))
         table = clone_eval(clone_dir, args.stream_dir, game)
         if args.out is not None:
-            args.out.write_bytes(jcs(table) + b"\n")
+            with args.out.open(
+                "xb"
+            ) as handle:  # exclusive create: a dangling symlink or a race never overwrites
+                handle.write(jcs(table) + b"\n")
     except (CloneConfigError, CloneError, RecordError, ContractError, ValueError, OSError) as exc:
         print(f"areneon_ml.learner: {exc}", file=sys.stderr)
         return EXIT_REFUSED

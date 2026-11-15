@@ -229,6 +229,26 @@ describe("choosing in a tie (a stand-in probe with known answers)", () => {
     expect(checked).toBeGreaterThan(0);
   });
 
+  it("a failing stall that scores STRICTLY best is still played by v7 (the tie rule never applies), and nothing is counted as avoided", () => {
+    let checked = 0;
+    for (const { c, foeMoves } of scenes()) {
+      for (const order of ["stall-first", "stall-last"] as const) {
+        const request = tied(c, order);
+        if (request === null) continue;
+        // every own stalling move works 9 times in 10 (a computed chance below certain); the foe hits hard, so a Threatened slot values the stall
+        const success = Object.fromEntries(bodyOf(c).active.flatMap((a) => a.moves.filter((m) => stall.has(m.id)).map((m) => [m.id, 900_000])));
+        const scene = sceneFor(c, foeMoves, { success });
+        const seven = run(request, scene);
+        // two candidates, one with no stalling move: had the stall tied with it, v7 would have dropped the stall; choosing it means it scored higher
+        if (!withStall(c, seven.choice)) continue;
+        expect(seven.choice, `request ${c.request.request_seq}`).toBe(run(request, scene, v6).choice);
+        expect(seven.actor.report().success?.stall_tie_avoided).toBe(0);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
   it("a failing stall is still played when it is the only candidate (nothing else to play, nothing counted)", () => {
     let checked = 0;
     for (const { c } of scenes()) {

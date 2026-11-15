@@ -235,7 +235,8 @@ def pack_piece(piece: _Piece) -> bytes:
             # potential_d and the Threatened flag (None, 0 or 1) travel as entries 3 and 4, the
             # move-reveal targets (ppo.aux_moves; None or [row, known, next] lists) as entry 5 and
             # their masked count as entry 6, the situation group (clone.situation_weights) as entry
-            # 7 and the streak step's per-candidate stall flags (None or 0/1 list) as entry 8.
+            # 7, the streak step's per-candidate stall flags (None or 0/1 list) as entry 8 and the
+            # count of request slots no roster entry names as entry 9.
             coded.append(
                 [
                     step.chosen,
@@ -248,6 +249,7 @@ def pack_piece(piece: _Piece) -> bytes:
                     step.aux_masked,
                     step.group,
                     None if step.stall is None else [int(flag) for flag in step.stall],
+                    step.unmatched,
                 ]
             )
         steps.append([episode, role, coded])
@@ -295,8 +297,9 @@ def unpack_piece(blob: bytes) -> _Piece:
                 masked,
                 group,
                 None if stall is None else tuple(bool(flag) for flag in stall),
+                unmatched,
             )
-            for chosen, fields, potential, threatened, aux, masked, group, stall in coded
+            for chosen, fields, potential, threatened, aux, masked, group, stall, unmatched in coded
         ]
     return _Piece(
         Collected(header["order"], header["scores"], steps),
