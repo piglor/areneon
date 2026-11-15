@@ -43,6 +43,7 @@ from areneon_contracts.training import (
 from areneon_ml import stopwatch
 from areneon_ml.learner.aux_moves import AuxTarget
 from areneon_ml.learner.data import Collected, LearnerDataError, Step, Trajectory, _Collector
+from areneon_ml.learner.situation import Groups
 from areneon_ml.model.encoder import EncodedQuery, Encoder
 
 #: Pieces per worker: more pieces than workers keep them all busy when Episodes differ in size.
@@ -159,7 +160,10 @@ def _check_lines(piece: tuple[int, int, int]) -> _Piece:
     torch.set_num_threads(1)
     checker = StreamChecker(_SHARED["manifest"], _SHARED.get("private_pool", False))
     collector = _Collector(
-        _SHARED["encoders"], _SHARED.get("shaping", False), _SHARED.get("aux_moves", False)
+        _SHARED["encoders"],
+        _SHARED.get("shaping", False),
+        _SHARED.get("aux_moves", False),
+        _SHARED.get("groups"),
     )
     result = _Piece(collector.collected(), checker.seen, checker.classes)
     with Path(_SHARED["path"]).open("rb") as handle:
@@ -230,7 +234,8 @@ def pack_piece(piece: _Piece) -> bytes:
             }
             # potential_d and the Threatened flag (None, 0 or 1) travel as entries 3 and 4, the
             # move-reveal targets (ppo.aux_moves; None or [row, known, next] lists) as entry 5 and
-            # their masked count as entry 6.
+            # their masked count as entry 6, the situation group (clone.situation_weights) as entry
+            # 7 and the streak step's per-candidate stall flags (None or 0/1 list) as entry 8.
             coded.append(
                 [
                     step.chosen,
@@ -241,6 +246,8 @@ def pack_piece(piece: _Piece) -> bytes:
                     if step.aux is None
                     else [[t.row, list(t.known), list(t.next)] for t in step.aux],
                     step.aux_masked,
+                    step.group,
+                    None if step.stall is None else [int(flag) for flag in step.stall],
                 ]
             )
         steps.append([episode, role, coded])
@@ -286,8 +293,10 @@ def unpack_piece(blob: bytes) -> _Piece:
                 if aux is None
                 else tuple(AuxTarget(row, tuple(known), tuple(nxt)) for row, known, nxt in aux),
                 masked,
+                group,
+                None if stall is None else tuple(bool(flag) for flag in stall),
             )
-            for chosen, fields, potential, threatened, aux, masked in coded
+            for chosen, fields, potential, threatened, aux, masked, group, stall in coded
         ]
     return _Piece(
         Collected(header["order"], header["scores"], steps),
@@ -328,6 +337,7 @@ def parallel_trajectories(  # noqa: PLR0913
     private_pool: bool = False,
     shaping: bool = False,
     aux_moves: bool = False,
+    groups: Groups | None = None,
 ) -> list[Trajectory] | None:
     """The trajectories of a stream file read by ``processes`` workers; None if it cannot be cut.
 
@@ -354,6 +364,7 @@ def parallel_trajectories(  # noqa: PLR0913
         private_pool=private_pool,
         shaping=shaping,
         aux_moves=aux_moves,
+        groups=groups,
     )
     try:
         context = multiprocessing.get_context("fork")

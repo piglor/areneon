@@ -104,6 +104,24 @@ class Holdout(BaseModel):
     """
 
 
+class SituationWeights(BaseModel):
+    """
+    Optional per-decision weights of the cloning loss (ADR-010 erratum A13): a Battle decision in the streak situation (some living own active has protect_streak >= 1 and a stalling move offered) weighs streak_ppm, a Threatened one (ADR-010 erratum A11.2) threatened_ppm, every other decision 1,000,000, in millionths. The loss is mean((w_i / w_bar) * CE_i) with w_bar the mean weight over the role's training part. Needs recent_history; threatened_ppm needs a feature set with threat rows (reader rules). Absent: every byte of a clone is unchanged.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    streak_ppm: Annotated[StrictInt, Field(ge=1, le=100000000)]
+    """
+    Weight of a streak decision, in millionths.
+    """
+    threatened_ppm: Annotated[StrictInt | MISSING, Field(ge=1, le=100000000)] = MISSING
+    """
+    Weight of a Threatened decision that is not a streak one, in millionths.
+    """
+
+
 class Clone(BaseModel):
     """
     Cross-entropy settings, shared by both roles.
@@ -143,6 +161,10 @@ class Clone(BaseModel):
     holdout: Holdout
     """
     The part of the set held back from training, chosen per Episode by a keyed hash of the Episode hash (the rule shape of ADR-015: HMAC-SHA256 over the Episode hash as 64 lower-case hex characters, first 8 bytes big endian as n, held back when n * 10^6 < ppm * 2^64). The key is a public value of this record, not a secret. An Episode's Preview and Battle decisions are held back together. ppm 0 holds nothing back.
+    """
+    situation_weights: SituationWeights | MISSING = MISSING
+    """
+    Optional per-decision weights of the cloning loss (ADR-010 erratum A13): a Battle decision in the streak situation (some living own active has protect_streak >= 1 and a stalling move offered) weighs streak_ppm, a Threatened one (ADR-010 erratum A11.2) threatened_ppm, every other decision 1,000,000, in millionths. The loss is mean((w_i / w_bar) * CE_i) with w_bar the mean weight over the role's training part. Needs recent_history; threatened_ppm needs a feature set with threat rows (reader rules). Absent: every byte of a clone is unchanged.
     """
 
 
