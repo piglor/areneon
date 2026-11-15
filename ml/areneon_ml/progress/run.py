@@ -108,7 +108,7 @@ DEFAULT_DAMAGE_AWARE_BUDGET_MINUTES = 30
 DAMAGE_AWARE_POLICY = "damage-aware@v1"
 #: The versions of the baseline an evaluation can play (#1183); v1 is the default and keeps every
 #: record's bytes.
-DAMAGE_AWARE_VERSIONS = ("v1", "v3", "v4", "v5", "v6")
+DAMAGE_AWARE_VERSIONS = ("v1", "v3", "v4", "v5", "v6", "v7")
 #: The damage-aware baseline's match ids.
 DAMAGE_AWARE_MATCHES = ("damage-aware-argmax", "damage-aware-sample")
 

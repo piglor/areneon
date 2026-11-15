@@ -130,6 +130,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/damage-aware-config/reader-invalid/other-format.json",
       "v1/damage-aware-config/reader-invalid/situational-without-engine-convention.json",
       "v1/damage-aware-config/reader-invalid/stall-failure-cost-without-success-scaling.json",
+      "v1/damage-aware-config/reader-invalid/stall-tie-break-without-stall-failure-cost.json",
       "v1/damage-aware-config/reader-invalid/stat-points-over-limit.json",
       "v1/damage-aware-config/reader-invalid/success-scaling-without-situational.json",
       "v1/damage-aware-config/reader-invalid/unknown-fixed-item.json",

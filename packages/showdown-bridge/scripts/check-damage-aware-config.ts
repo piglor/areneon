@@ -51,6 +51,14 @@ for (const file of files) {
       const { stall_failure_cost, ...rest } = v6;
       if (stall_failure_cost !== "threat") throw new Error("v6 must select the threat stall failure cost");
       if (!isDeepStrictEqual(rest, v5)) throw new Error("v6 must equal v5 in every value but the stall failure cost");
+    } else if (version === "v7") {
+      // v7 is v6's values plus the stall tie break (#1392); nothing else may differ, and v6 must not carry the field.
+      const v6 = loadDamageAwareConfig("v6", vocabulary);
+      const v7 = loadDamageAwareConfig(version, vocabulary);
+      if (v6.stall_tie_break !== undefined) throw new Error("v6 must not carry a stall tie break");
+      const { stall_tie_break, ...rest } = v7;
+      if (stall_tie_break !== "avoid_failing") throw new Error("v7 must select the avoid_failing stall tie break");
+      if (!isDeepStrictEqual(rest, v6)) throw new Error("v7 must equal v6 in every value but the stall tie break");
     } else if (version === "v2") {
       // The belief record names the prior and the belief config by hash: the committed files must be those.
       const record = loadDamageAwareConfigV2(vocabulary);

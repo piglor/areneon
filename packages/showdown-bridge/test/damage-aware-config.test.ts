@@ -31,7 +31,7 @@ const edited = (change: (copy: DamageAwareConfig) => void): DamageAwareConfig =>
 
 describe("the committed config", () => {
   it("holds the v1 to v5 records in config/baselines, reads against the vocabulary and equals the corpus sample", () => {
-    expect(readdirSync(DAMAGE_AWARE_CONFIG_DIR)).toEqual(["damage-aware.v1.json", "damage-aware.v2.json", "damage-aware.v3.json", "damage-aware.v4.json", "damage-aware.v5.json", "damage-aware.v6.json"]);
+    expect(readdirSync(DAMAGE_AWARE_CONFIG_DIR)).toEqual(["damage-aware.v1.json", "damage-aware.v2.json", "damage-aware.v3.json", "damage-aware.v4.json", "damage-aware.v5.json", "damage-aware.v6.json", "damage-aware.v7.json"]);
     expect(config).toEqual(sample("valid", "v1"));
   });
 
@@ -188,5 +188,26 @@ describe("the stall failure cost of damage-aware@v6 (#1380)", () => {
   it("a record with the cost but no success scaling is refused by the reader, and an unknown cost by the schema", () => {
     expect(() => readDamageAwareConfig(sample("reader-invalid", "stall-failure-cost-without-success-scaling"), vocabulary)).toThrow("success scaling");
     expect(() => readDamageAwareConfig(sample("invalid", "stall-failure-cost-unknown"), vocabulary)).toThrow("invalid DamageAwareConfig");
+  });
+});
+
+describe("the stall tie break of damage-aware@v7 (#1392)", () => {
+  const v6 = loadDamageAwareConfig("v6", vocabulary);
+  const v7 = loadDamageAwareConfig("v7", vocabulary);
+  it("the committed record is v6 plus the field, and equals the corpus sample", () => {
+    const { stall_tie_break, ...rest } = v7;
+    expect(stall_tie_break).toBe("avoid_failing");
+    expect(rest).toEqual(v6);
+    expect(v7).toEqual(sample("valid", "v7"));
+    expect(damageAwareConfigHash(v7)).not.toBe(damageAwareConfigHash(v6));
+  });
+
+  it("v1 to v6 carry none (their bytes and hashes are unchanged)", () => {
+    for (const version of ["v1", "v3", "v4", "v5", "v6"]) expect(loadDamageAwareConfig(version, vocabulary).stall_tie_break).toBeUndefined();
+  });
+
+  it("a record with the tie break but no stall failure cost is refused by the reader, and an unknown tie break by the schema", () => {
+    expect(() => readDamageAwareConfig(sample("reader-invalid", "stall-tie-break-without-stall-failure-cost"), vocabulary)).toThrow("stall failure cost");
+    expect(() => readDamageAwareConfig(sample("invalid", "stall-tie-break-unknown"), vocabulary)).toThrow("invalid DamageAwareConfig");
   });
 });
