@@ -163,6 +163,10 @@ class DamageAwareConfig(BaseModel):
     """
     How damage-aware@v6 charges a stalling move's failure branch (ADR-022 erratum E-22.6, #1380). Absent: no charge (v1 to v5). "threat": a stalling move (the engine's stall list) by a Threatened own active whose engine success chance s is computed is worth floor(P*s/10^6) - floor(T*(10^6-s)/10^6), P the situational protect value and T the largest value (mean share plus the KO weight times the reaching rolls over 16) of the threat rows that make the slot Threatened. A record that has it must carry success_scaling (reader rule) and is damage-aware@v6. A minor change within v1: an older reader refuses such a record.
     """
+    stall_tie_break: Literal["avoid_failing"] | MISSING = MISSING
+    """
+    How damage-aware@v7 breaks a tie among stalling candidates (ADR-022 erratum E-22.8, #1392). Absent: no rule (v1 to v6). "avoid_failing": in a tie for the best score and in the all-zero fallback, a candidate with a stalling part (the engine's stall list) whose computed success chance is below 10^6 is never chosen while another legal non-pending candidate is available; a failing-chance stall is played only when it strictly scores best. An unread outcome is not excluded. A record that has it must carry stall_failure_cost (reader rule) and is damage-aware@v7. A minor change within v1: an older reader refuses such a record.
+    """
     assumed_set: AssumedSet
     """
     The rule for every opponent field that is not revealed. A revealed species, forme, level, gender, move, item, ability or Mega is used as revealed; an unrevealed move is never invented.

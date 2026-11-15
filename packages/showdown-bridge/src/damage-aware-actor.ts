@@ -28,7 +28,7 @@ import type { HistoryDeclarer } from "./candidate-history.ts";
 import type { PlayerChannel } from "./observation.ts";
 import type { SituationRows } from "./situation.ts";
 import { type FeatureConfigs, type FeatureMemo, FeatureBuildError, type OutcomeSetup } from "./candidate-features.ts";
-import { type PartSuccess, partSuccess, scaled } from "./damage-aware-success.ts";
+import { avoidFailingStalls, type PartSuccess, partSuccess, scaled } from "./damage-aware-success.ts";
 import { parseJointChoice, type SlotPart } from "./damage-aware-choice.ts";
 import { situationalScore, stallCharge, stallThreat } from "./damage-aware-situational.ts";
 import { classifySlot } from "./situation.ts";
@@ -129,6 +129,8 @@ export interface SuccessCounts {
   stall_unread: number;
   /** `damage-aware@v6` only: stalling parts of Threatened slots charged a failure cost (distinct parts per request). */
   stall_charged?: number;
+  /** `damage-aware@v7` only: requests where a failing-chance stall candidate was left out of a tie for the best score or of the all-zero fallback (not stored). */
+  stall_tie_avoided?: number;
   /** Candidates left out of the choice because a part of them cannot work in any branch (while another candidate existed). */
   dead_candidates: number;
   /** Requests where the best total was shared and the higher summed success chance decided. */
@@ -146,6 +148,9 @@ interface Scored {
   total: number;
   chance: number;
   dead: boolean;
+  /** v7: a part is a stalling move whose computed success chance is below certain. */
+  failing: boolean;
+  pending: boolean;
 }
 
 type SituationalWeights = { switch_value_ppm: number; protect_value_ppm: number };
@@ -225,7 +230,9 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
   if (scaling && !mechanics.scope.query_kinds.some((entry) => entry.kind === "move_outcome")) throw new DamageAwareError("a record with success scaling needs a mechanics config that lists move_outcome in scope");
   const charging = v1?.stall_failure_cost !== undefined;
   if (charging && !scaling) throw new DamageAwareError("a record with a stall failure cost carries success scaling");
-  const recordVersion = charging ? "6" : scaling ? "5" : situational !== null ? "4" : v1?.target_convention === "engine" ? "3" : String(config.schema_version);
+  const avoiding = v1?.stall_tie_break !== undefined;
+  if (avoiding && !charging) throw new DamageAwareError("a record with a stall tie break carries a stall failure cost");
+  const recordVersion = avoiding ? "7" : charging ? "6" : scaling ? "5" : situational !== null ? "4" : v1?.target_convention === "engine" ? "3" : String(config.schema_version);
   const commit = options.commit ?? `v${recordVersion}`;
   const named = /^v(\d+)(?:-|$)/.exec(commit);
   if (named !== null ? named[1] !== recordVersion : v2 !== null) throw new DamageAwareError("the policy id names another record version than the record the actor plays");
@@ -251,7 +258,7 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
   // The world facts before the request being answered (feed all but its own line, read, then feed it); null when the facts reader refused.
   let facts: WorldFacts | null = null;
   const situationalCounts: SituationalCounts = { protect_no_facts: 0 };
-  const successCounts: SuccessCounts = { parts_scaled: 0, parts_unread: 0, dead_candidates: 0, chance_ties: 0, stall_unread: 0, ...(v1?.stall_failure_cost === undefined ? {} : { stall_charged: 0 }) };
+  const successCounts: SuccessCounts = { parts_scaled: 0, parts_unread: 0, dead_candidates: 0, chance_ties: 0, stall_unread: 0, ...(v1?.stall_failure_cost === undefined ? {} : { stall_charged: 0 }), ...(v1?.stall_tie_break === undefined ? {} : { stall_tie_avoided: 0 }) };
   // v5 only: the history the player's own channel declares in every damage and speed-order query of the request being answered.
   let currentHistory: HistoryDeclarer | null = null;
   // The feature reading shares the actor's probe memo and counts (a memo keyed by query hash changes no answer), so a query is asked once.
@@ -267,7 +274,7 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
    * The score of every legal choice of one request, in the legal set's order, against the foes `foesNow`
    * gives (built on first use). Throws `AssumedSetError` for the caller's fallback.
    */
-  function scoreChoices(request: RequestRecord, state: PublicState, own: readonly OwnSlot[], foesNow: () => Foe[], extra?: (slot: number, part: SlotPart) => number, success?: (slot: number, part: Extract<SlotPart, { kind: "move" }>) => PartSuccess, failure?: (slot: number, part: Extract<SlotPart, { kind: "move" }>, read: PartSuccess) => number): Scored[] {
+  function scoreChoices(request: RequestRecord, state: PublicState, own: readonly OwnSlot[], foesNow: () => Foe[], extra?: (slot: number, part: SlotPart) => number, success?: (slot: number, part: Extract<SlotPart, { kind: "move" }>) => PartSuccess, failure?: (slot: number, part: Extract<SlotPart, { kind: "move" }>, read: PartSuccess) => number, failing?: (slot: number, part: Extract<SlotPart, { kind: "move" }>, read: PartSuccess) => boolean): Scored[] {
     const body = object(request.request, "request");
     const active = array(body.active, "active");
     const scores = new Map<string, number>();
@@ -337,6 +344,7 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
       let total = 0;
       let chance = 0;
       let dead = false;
+      let stalls = false;
       parts.forEach((part, slot) => {
         const value = (part.kind === "move" ? moveScore(slot, part) : 0) + (extra?.(slot, part) ?? 0);
         if (success === undefined || part.kind !== "move") {
@@ -349,8 +357,9 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
         total += scaled(value, read.ppm) - (failure?.(slot, part, read) ?? 0);
         chance += read.ppm;
         dead ||= read.dead;
+        stalls ||= failing?.(slot, part, read) ?? false;
       });
-      return { total, chance, dead };
+      return { total, chance, dead, failing: stalls, pending: (request.legal as NonNullable<RequestRecord["legal"]>).pending.includes(choice) };
     });
   }
 
@@ -374,8 +383,11 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
     successCounts.dead_candidates += scored.length - eligible.length;
     const top = eligible.reduce((best, item) => (item.entry.total > best ? item.entry.total : best), -Infinity);
     const tied = eligible.filter((item) => item.entry.total === top);
-    const pick = tied.reduce((best, item) => (item.entry.chance > best.entry.chance ? item : best), tied[0] as (typeof tied)[number]);
-    if (pick !== tied[0]) successCounts.chance_ties += 1;
+    // v7: a failing-chance stall never wins a tie (or the all-zero fallback) while a tied candidate that is neither failing nor pending exists.
+    const pool = avoiding ? avoidFailingStalls(tied, (item) => item.entry) : tied;
+    if (pool.length < tied.length) (successCounts.stall_tie_avoided as number) += 1;
+    const pick = pool.reduce((best, item) => (item.entry.chance > best.entry.chance ? item : best), pool[0] as (typeof pool)[number]);
+    if (pick !== pool[0]) successCounts.chance_ties += 1;
     return choices[pick.index] as string;
   }
 
@@ -384,8 +396,8 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
     let foes: Foe[] | null = null;
     const foesNow = (): Foe[] => (foes ??= foesOf(state, (mon) => assumedFor(mon, state)));
     if (scaling) {
-      const { extra, success, failure } = successPart(request, team, context, state, foesNow, situational as SituationalWeights);
-      return bestScored(request, scoreChoices(request, state, ownSlots(request.request, state, team), foesNow, extra, success, failure));
+      const { extra, success, failure, failing } = successPart(request, team, context, state, foesNow, situational as SituationalWeights);
+      return bestScored(request, scoreChoices(request, state, ownSlots(request.request, state, team), foesNow, extra, success, failure, failing));
     }
     const extra = situational === null ? undefined : situationalPart(request, team, context, situational);
     return best(request, scoreChoices(request, state, ownSlots(request.request, state, team), foesNow, extra).map((entry) => entry.total));
@@ -441,7 +453,7 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
    * of a part (no Protect streak rule: the engine's chance scales it) and the part's success chance, under the branch of the targeted foe's
    * first revealed damaging move (else the `switch` branch). Throws the builder's refusal like `situationalPart`.
    */
-  function successPart(request: RequestRecord, team: readonly Readonly<PokemonSet>[], context: ActorContext, state: PublicState, foesNow: () => Foe[], weights: SituationalWeights): { extra: (slot: number, part: SlotPart) => number; success: (slot: number, part: Extract<SlotPart, { kind: "move" }>) => PartSuccess; failure?: (slot: number, part: Extract<SlotPart, { kind: "move" }>, read: PartSuccess) => number } {
+  function successPart(request: RequestRecord, team: readonly Readonly<PokemonSet>[], context: ActorContext, state: PublicState, foesNow: () => Foe[], weights: SituationalWeights): { extra: (slot: number, part: SlotPart) => number; success: (slot: number, part: Extract<SlotPart, { kind: "move" }>) => PartSuccess; failure?: (slot: number, part: Extract<SlotPart, { kind: "move" }>, read: PartSuccess) => number; failing?: (slot: number, part: Extract<SlotPart, { kind: "move" }>, read: PartSuccess) => boolean } {
     const setup = options.outcome as OutcomeSetup;
     const legal = request.legal as NonNullable<RequestRecord["legal"]>;
     const channel = ownChannel(context);
@@ -486,6 +498,8 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
         return 0;
       },
       success,
+      // v7: a stalling part (the engine's stall list) with a computed chance below certain makes its candidate a failing stall (E-22.8.1).
+      ...(!avoiding ? {} : { failing: (slot: number, part: Extract<SlotPart, { kind: "move" }>, read: PartSuccess): boolean => read.known && read.ppm < PPM && stall.has(moveId(slot, part.index) ?? "") }),
       // v6: a stalling part of a Threatened slot with a computed chance also gives back the hit it avoids when it fails (E-22.6.1).
       ...(!charging
         ? {}

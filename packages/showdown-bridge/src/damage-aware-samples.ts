@@ -21,8 +21,9 @@ export function damageAwareSamples(): { valid: Cases; invalid: Cases; readerInva
   const fourth = JSON.parse(readFileSync(join(DAMAGE_AWARE_CONFIG_DIR, "damage-aware.v4.json"), "utf8")) as unknown;
   const fifth = JSON.parse(readFileSync(join(DAMAGE_AWARE_CONFIG_DIR, "damage-aware.v5.json"), "utf8")) as unknown;
   const sixth = JSON.parse(readFileSync(join(DAMAGE_AWARE_CONFIG_DIR, "damage-aware.v6.json"), "utf8")) as unknown;
+  const seventh = JSON.parse(readFileSync(join(DAMAGE_AWARE_CONFIG_DIR, "damage-aware.v7.json"), "utf8")) as unknown;
   return {
-    valid: { "damage-aware-config/v1": config, "damage-aware-config-2/v2": second, "damage-aware-config/v4": fourth, "damage-aware-config/v5": fifth, "damage-aware-config/v6": sixth },
+    valid: { "damage-aware-config/v1": config, "damage-aware-config-2/v2": second, "damage-aware-config/v4": fourth, "damage-aware-config/v5": fifth, "damage-aware-config/v6": sixth, "damage-aware-config/v7": seventh },
     invalid: {
       "damage-aware-config-2/extra-field": mutated(second, (c) => (c.note = "x")),
       "damage-aware-config-2/field-rules-instead-of-belief": mutated(second, (c) => (c.assumed_set = (config as any).assumed_set)),
@@ -44,10 +45,12 @@ export function damageAwareSamples(): { valid: Cases; invalid: Cases; readerInva
       "damage-aware-config/situational-fractional-switch": mutated(fourth, (c) => (c.situational.switch_value_ppm = 0.5)),
       "damage-aware-config/situational-weight-over-one": mutated(fourth, (c) => (c.situational.protect_value_ppm = 1000001)),
       "damage-aware-config/success-scaling-unknown": mutated(fifth, (c) => (c.success_scaling = "guess")),
+      "damage-aware-config/stall-tie-break-unknown": mutated(seventh, (c) => (c.stall_tie_break = "guess")),
       "damage-aware-config/stall-failure-cost-unknown": mutated(sixth, (c) => (c.stall_failure_cost = "guess")),
       "damage-aware-config/unknown-rounding": mutated(config, (c) => (c.hp_rounding = "banker")),
     },
     readerInvalid: {
+      "damage-aware-config/stall-tie-break-without-stall-failure-cost": mutated(seventh, (c) => delete c.stall_failure_cost),
       "damage-aware-config/stall-failure-cost-without-success-scaling": mutated(sixth, (c) => delete c.success_scaling),
       "damage-aware-config/success-scaling-without-situational": mutated(fifth, (c) => delete c.situational),
       "damage-aware-config/situational-without-engine-convention": mutated(fourth, (c) => delete c.target_convention),

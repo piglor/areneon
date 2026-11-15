@@ -394,7 +394,7 @@ def test_a_record_that_mixes_a_match_id_and_a_policy_is_refused(run: Path, tmp_p
 
 
 def test_v4_is_a_known_version_with_its_own_policy_id_and_match_ids() -> None:
-    assert DAMAGE_AWARE_VERSIONS == ("v1", "v3", "v4", "v5", "v6")
+    assert DAMAGE_AWARE_VERSIONS == ("v1", "v3", "v4", "v5", "v6", "v7")
     assert damage_aware_policy("v4") == "damage-aware@v4"
     assert damage_aware_matches("v4") == ("damage-aware-v4-argmax", "damage-aware-v4-sample")
     assert damage_aware_matches("v1") == ("damage-aware-argmax", "damage-aware-sample")
@@ -403,6 +403,11 @@ def test_v4_is_a_known_version_with_its_own_policy_id_and_match_ids() -> None:
 def test_v6_is_a_known_version_with_its_own_policy_id_and_match_ids() -> None:
     assert damage_aware_policy("v6") == "damage-aware@v6"
     assert damage_aware_matches("v6") == ("damage-aware-v6-argmax", "damage-aware-v6-sample")
+
+
+def test_v7_is_a_known_version_with_its_own_policy_id_and_match_ids() -> None:
+    assert damage_aware_policy("v7") == "damage-aware@v7"
+    assert damage_aware_matches("v7") == ("damage-aware-v7-argmax", "damage-aware-v7-sample")
 
 
 def test_v5_is_a_known_version_with_its_own_policy_id_and_match_ids() -> None:

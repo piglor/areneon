@@ -10,7 +10,7 @@ import { GenerationError, trainingTeamPool, type TrainingPool } from "../src/lea
 import { loadEngine } from "../src/engine.ts";
 import { type Actor, type BattleRecord, runBattle } from "../src/runner.ts";
 import { damageAwareSetup } from "../src/league-generation.ts";
-import { damageAwareIdentity, damageAwareIdentityHash, STALL_FAILURE_FORMAT } from "../src/damage-aware-identity.ts";
+import { damageAwareIdentity, damageAwareIdentityHash, STALL_FAILURE_FORMAT, STALL_TIE_FORMAT } from "../src/damage-aware-identity.ts";
 import { resolveFormat } from "../src/formats.ts";
 import { readerSha256 } from "@areneon/public-state";
 import { loadTrainingSet, TrainingLoaderError } from "../src/training-loader.ts";
@@ -281,6 +281,23 @@ describe("the damage-aware@v6 teacher (#1380)", () => {
   });
 });
 
+describe("the damage-aware@v7 teacher (#1392)", () => {
+  it("names the teacher damage-aware@v7, reads the record with the stall tie break and counts the avoided ties, with its own identity", () => {
+    const settings7 = settings({ teacher_version: "v7", games: 1, random_games: 0 });
+    expect(teacherPolicyId(0, "v7")).toBe("damage-aware@v7");
+    expect(() => checkTeacherSettings(settings7)).not.toThrow();
+    const context = teacherContext(engine, settings7);
+    expect(context.policy_id).toBe("damage-aware@v7");
+    expect(context.config.stall_tie_break).toBe("avoid_failing");
+    const report = context.makeActor("p1", 1).report();
+    expect(report.policy_id).toBe("damage-aware@v7");
+    expect(report.success).toEqual({ parts_scaled: 0, parts_unread: 0, stall_unread: 0, dead_candidates: 0, chance_ties: 0, stall_charged: 0, stall_tie_avoided: 0 });
+    expect(report.identity.stall_tie_format).toBe(STALL_TIE_FORMAT);
+    expect(report.identity.stall_failure_format).toBe(STALL_FAILURE_FORMAT);
+    expect(report.identity_hash).not.toBe(teacherContext(engine, settings({ teacher_version: "v6" })).makeActor("p1", 1).report().identity_hash);
+  });
+});
+
 describe("the damage-aware@v3 teacher (#1182)", () => {
   const v3 = (change: Partial<TeacherSettings> = {}): TeacherSettings => settings({ teacher_version: "v3", games: 1, random_games: 0, ...change });
   const cache: { run?: Awaited<ReturnType<typeof playTeacherRun>> } = {};
@@ -290,7 +307,7 @@ describe("the damage-aware@v3 teacher (#1182)", () => {
     expect(teacherPolicyId(0, "v3")).toBe("damage-aware@v3");
     expect(teacherPolicyId(50_000, "v3")).toBe("damage-aware@v3-eps50000");
     expect(teacherPolicyId(0)).toBe("damage-aware@v1");
-    expect(() => checkTeacherSettings({ ...settings(), teacher_version: "v2" as never })).toThrow(/v1, v3, v4, v5 or v6/);
+    expect(() => checkTeacherSettings({ ...settings(), teacher_version: "v2" as never })).toThrow(/v1, v3, v4, v5, v6 or v7/);
   });
 
   it("writes a learner-ready synthetic set of v3, with v3's baseline identity; v1 cannot load it", async () => {
