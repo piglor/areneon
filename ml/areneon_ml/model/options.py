@@ -123,13 +123,15 @@ MAX_OUTPUT_SCALE_PPM = 999_999  # 1,000,000 is the default: leave the option out
 #: threat, speed and priority arrays, which the encoder attaches to the own and foe tokens;
 #: ``probe-damage-belief/1``, ADR-025 slice 5, has ``/1``'s rows over sampled belief worlds, so
 #: the encoder reads it exactly as it reads ``/1``; ``probe-outcome/1``, ADR-022 erratum E-22.5.3,
-#: has ``/2``'s five arrays read exactly as ``/2`` reads them and the ``outcomes`` array).
+#: has ``/2``'s five arrays read exactly as ``/2`` reads them and the ``outcomes`` array;
+#: ``probe-outcome-likely/1``, erratum E-22.7, has both of those and ``/3``'s ``belief_threats``).
 FEATURE_SETS = (
     "probe-damage/1",
     "probe-damage/2",
     "probe-damage/3",
     "probe-damage-belief/1",
     "probe-outcome/1",
+    "probe-outcome-likely/1",
 )
 _HASH = re.compile(r"[0-9a-f]{64}")
 

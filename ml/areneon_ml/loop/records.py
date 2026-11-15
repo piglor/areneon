@@ -311,6 +311,15 @@ FEATURES_OUTCOME_FAMILY = (
 )
 
 
+#: ``probe-outcome-likely/1`` (ADR-022 erratum E-22.7): ``probe-outcome/1`` plus the damage of the
+#: moves a foe is likely to hold, from a move-frequency table.
+FEATURES_LIKELY_FAMILY = (
+    "learned policy that consults the engine's damage calculation, turn order and move outcomes "
+    "on assumed opponent sets and the player's own battle history, plus damage of moves a foe is "
+    "likely to hold (from a move-frequency table), at decision time"
+)
+
+
 def family_label(config: RunConfig) -> str | None:
     """The family label of the run's pair, or None for a pair without a feature set."""
     named = feature_set(config.model.encoder.options)
@@ -318,6 +327,8 @@ def family_label(config: RunConfig) -> str | None:
         return None
     if named.feature_set == "probe-damage-belief/1":
         return FEATURES_BELIEF_FAMILY
+    if named.feature_set == "probe-outcome-likely/1":
+        return FEATURES_LIKELY_FAMILY
     if named.feature_set == "probe-outcome/1":
         return FEATURES_OUTCOME_FAMILY
     if named.feature_set == "probe-damage/3":

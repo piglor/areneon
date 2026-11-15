@@ -120,6 +120,11 @@ def no_columns() -> tuple[list[int], list[float]]:
 
 FEATURE_SET_ARRAYS = "probe-damage/2"  # the set whose object carries the four arrays
 FEATURE_SET_BELIEF_THREATS = "probe-damage/3"  # ... and belief_threats beside them
+# ``probe-outcome-likely/1`` (ADR-022 erratum E-22.7): ``probe-outcome/1``'s arrays and ``outcomes``
+# plus ``belief_threats`` in ``/3``'s row shape (the moves a foe is likely to hold, from a
+# frequency table). The encoder reads it as both sets read theirs: ``/3``'s fold of the belief
+# rows and refusal code, ``probe-outcome/1``'s widened kinds and outcome blocks.
+FEATURE_SET_LIKELY = "probe-outcome-likely/1"
 ARRAY_NAMES = ("threats", "speeds", "own_priorities", "foe_priorities")
 BELIEF_ARRAY = "belief_threats"
 OUTCOME_ARRAY = "outcomes"
@@ -177,21 +182,28 @@ SPEED_CATEGORIES_OUTCOME = RESERVED + len(SPEED_KINDS_OUTCOME)
 
 def reads_arrays(feature_set: str | None) -> bool:
     """Whether the feature set carries the four arrays (``/2``, ``/3`` and ``probe-outcome/1``)."""
-    return feature_set in (FEATURE_SET_ARRAYS, FEATURE_SET_BELIEF_THREATS, FEATURE_SET_OUTCOME)
+    return feature_set in (
+        FEATURE_SET_ARRAYS,
+        FEATURE_SET_BELIEF_THREATS,
+        FEATURE_SET_OUTCOME,
+        FEATURE_SET_LIKELY,
+    )
 
 
 def reads_outcomes(feature_set: str | None) -> bool:
-    """Whether the feature set also carries ``outcomes`` (``probe-outcome/1``)."""
-    return feature_set == FEATURE_SET_OUTCOME
+    """Whether the feature set also carries ``outcomes`` (``probe-outcome/1``, ``-likely/1``)."""
+    return feature_set in (FEATURE_SET_OUTCOME, FEATURE_SET_LIKELY)
 
 
 def reads_belief_threats(feature_set: str | None) -> bool:
-    """Whether the feature set also carries ``belief_threats`` (``/3``)."""
-    return feature_set == FEATURE_SET_BELIEF_THREATS
+    """Whether the feature set also carries ``belief_threats`` (``/3`` and the likely set)."""
+    return feature_set in (FEATURE_SET_BELIEF_THREATS, FEATURE_SET_LIKELY)
 
 
 def array_names(feature_set: str | None) -> tuple[str, ...]:
     """The arrays a feature set carries beside ``rows`` (none for ``/1`` and the belief set)."""
+    if feature_set == FEATURE_SET_LIKELY:
+        return (*ARRAY_NAMES, BELIEF_ARRAY, OUTCOME_ARRAY)
     if reads_belief_threats(feature_set):
         return (*ARRAY_NAMES, BELIEF_ARRAY)
     if reads_outcomes(feature_set):
