@@ -26,6 +26,17 @@ summary it always gave, byte for byte.
 * conditional parts (the outcome differs by branch): chosen per offered, and the share of the
   chosen ones' branches that do not fail.
 
+Likely-Threatened tally (ADR-022 erratum E-22.7.10, option 1, report only): when the raw file
+carries a ``likely`` count block per seat (``situational-move-use.ts --likely``), each match and
+policy also gets a ``likely`` entry. Its classes refine the #1274 reading with the likely-move
+threat rows of ``probe-outcome-likely/1`` (see ``situational-likely.ts``): ``likely_threatened``
+(not Threatened by revealed moves, but a likely move reaches the slot from a foe that acts first)
+against ``safe_unlikely`` (Safe, and no likely move reaches it). Per phase (``turn1``, ``fresh``
+foe switch-in, ``later``) and in total: the Protect rate and the switch rate of each class and their
+differences, and the mean inclusion of the likely threats. Pair-level intervals as the other rows
+(one stream per match and policy under its own label). The #1274 statistics are untouched, no gate
+reads the tally, and a raw file without it gives the summary it always gave, byte for byte.
+
 LABEL: situational move-use diagnostic on assumed opponent sets: descriptive, not a strength
 measure.
 
@@ -164,6 +175,50 @@ HISTORY_DIFFERENCES: Differences = (
 )
 
 
+LIKELY_PHASES = ("turn1", "fresh", "later")
+LIKELY_CLASSES = ("likely_threatened", "safe_unlikely")
+
+
+def _likely_keys(action: str, cls: str, leaf: str, phases: Sequence[str]) -> list[str]:
+    return [f"likely.{action}.{cls}.{phase}.{leaf}" for phase in phases]
+
+
+def _likely_rates() -> Rates:
+    rates: Rates = {}
+    for label, phases in (("", LIKELY_PHASES), *((f"_{p}", (p,)) for p in LIKELY_PHASES)):
+        for action in ("protect", "switch"):
+            for cls in LIKELY_CLASSES:
+                rates[f"{action}_{cls}{label}"] = (
+                    _likely_keys(action, cls, "chosen", phases),
+                    _likely_keys(action, cls, "offered", phases),
+                    1,
+                )
+    rates["inclusion_max_likely_threatened"] = (
+        ["likely.likely_threatened.inclusion_max_ppm"],
+        ["likely.likely_threatened.n"],
+        PPM_PER_SHARE,
+    )
+    rates["inclusion_sum_likely_threatened"] = (
+        ["likely.likely_threatened.inclusion_sum_ppm"],
+        ["likely.likely_threatened.n"],
+        PPM_PER_SHARE,
+    )
+    return rates
+
+
+#: The Likely-Threatened rows (E-22.7.10): rates per class, action and phase (``likely`` block).
+LIKELY_RATES: Rates = _likely_rates()
+LIKELY_DIFFERENCES: Differences = tuple(
+    (
+        f"{action}_likely_minus_safe_unlikely{label}",
+        f"{action}_likely_threatened{label}",
+        f"{action}_safe_unlikely{label}",
+    )
+    for label in ("", *(f"_{p}" for p in LIKELY_PHASES))
+    for action in ("protect", "switch")
+)
+
+
 def _rate(counts: Counts, name: str, rates: Rates = RATES) -> Fraction | None:
     numerator, denominator, scale = rates[name]
     offered = _sum(counts, denominator)
@@ -190,6 +245,7 @@ def _ceil_ppm(x: Fraction) -> int:
 
 STATISTIC_NAMES = (*RATES, *(name for name, _, _ in DIFFERENCES))
 HISTORY_STATISTIC_NAMES = (*HISTORY_RATES, *(name for name, _, _ in HISTORY_DIFFERENCES))
+LIKELY_STATISTIC_NAMES = (*LIKELY_RATES, *(name for name, _, _ in LIKELY_DIFFERENCES))
 
 
 def _keys(rates: Rates) -> list[str]:
@@ -235,14 +291,16 @@ def _intervals(
     return out
 
 
-def _history_entry(pairs: list[Counts], key: bytes, b_boot: int) -> dict[str, Any]:
-    """The history rows (#1345) of one match and policy: summed counts, rates in ppm, intervals."""
+def _extra_entry(
+    pairs: list[Counts], key: bytes, b_boot: int, rates: Rates, differences: Differences
+) -> dict[str, Any]:
+    """One extra block of one match and policy: summed counts, rates in ppm, intervals."""
     total: Counts = defaultdict(int)
     for counts in pairs:
         for k, v in counts.items():
             total[k] += v
-    stats = _statistics(total, HISTORY_RATES, HISTORY_DIFFERENCES)
-    found = _intervals(pairs, key, b_boot, HISTORY_RATES, HISTORY_DIFFERENCES)
+    stats = _statistics(total, rates, differences)
+    found = _intervals(pairs, key, b_boot, rates, differences)
     return {
         "counts": {k: total[k] for k in sorted(total)},
         "statistics": {
@@ -255,7 +313,12 @@ def _history_entry(pairs: list[Counts], key: bytes, b_boot: int) -> dict[str, An
     }
 
 
-def summarise(raw: dict[str, Any], *, b_boot: int = B_BOOT) -> dict[str, Any]:
+def _history_entry(pairs: list[Counts], key: bytes, b_boot: int) -> dict[str, Any]:
+    """The history rows (#1345) of one match and policy."""
+    return _extra_entry(pairs, key, b_boot, HISTORY_RATES, HISTORY_DIFFERENCES)
+
+
+def summarise(raw: dict[str, Any], *, b_boot: int = B_BOOT) -> dict[str, Any]:  # noqa: PLR0912
     """Per match and policy: summed counts, rates and differences in ppm, and intervals."""
     if raw.get("format") != FORMAT:
         raise SituationalError("not a situational move-use raw file")
@@ -267,6 +330,10 @@ def summarise(raw: dict[str, Any], *, b_boot: int = B_BOOT) -> dict[str, Any]:
     games: dict[tuple[str, str], int] = defaultdict(int)
     # The history rows (#1345): present only when the raw file carries a `history` block per seat.
     history: dict[tuple[str, str], dict[tuple[str, int], Counts]] = defaultdict(
+        lambda: defaultdict(dict)
+    )
+    # The Likely-Threatened tally (E-22.7.10): only when the raw file has a `likely` block per seat.
+    likely: dict[tuple[str, str], dict[tuple[str, int], Counts]] = defaultdict(
         lambda: defaultdict(dict)
     )
     for game in raw["games"]:
@@ -282,6 +349,10 @@ def summarise(raw: dict[str, Any], *, b_boot: int = B_BOOT) -> dict[str, Any]:
                 at = history[slot][unit]
                 for k, v in who["history"].items():
                     at[k] = at.get(k, 0) + v
+            if "likely" in who:
+                lt = likely[slot][unit]
+                for k, v in who["likely"].items():
+                    lt[k] = lt.get(k, 0) + v
             games[slot] += 1
     matches: dict[str, dict[str, Any]] = {}
     for (match_id, policy), by_pair in sorted(grouped.items()):
@@ -310,6 +381,14 @@ def summarise(raw: dict[str, Any], *, b_boot: int = B_BOOT) -> dict[str, Any]:
                 [history[(match_id, policy)][p] for p in sorted(history[(match_id, policy)])],
                 bootstrap_stream_key(seed, generation, f"situational-history:{match_id}:{policy}"),
                 b_boot,
+            )
+        if (match_id, policy) in likely:
+            entry["likely"] = _extra_entry(
+                [likely[(match_id, policy)][p] for p in sorted(likely[(match_id, policy)])],
+                bootstrap_stream_key(seed, generation, f"situational-likely:{match_id}:{policy}"),
+                b_boot,
+                LIKELY_RATES,
+                LIKELY_DIFFERENCES,
             )
         matches.setdefault(match_id, {})[policy] = entry
     return {
@@ -341,6 +420,10 @@ def read_summary(value: object) -> dict[str, Any]:
                 HISTORY_STATISTIC_NAMES
             ):
                 raise SituationalError("a summary entry lacks a history statistic")
+            if "likely" in body and set(body["likely"]["statistics"]) != set(
+                LIKELY_STATISTIC_NAMES
+            ):
+                raise SituationalError("a summary entry lacks a likely statistic")
     return value
 
 
@@ -358,6 +441,8 @@ def render(summary: dict[str, Any]) -> str:
                 lines.append(f"  {name}: {stat['mean_ppm']} ppm {_span(stat['interval'])}")
             for name, stat in body.get("history", {}).get("statistics", {}).items():
                 lines.append(f"  history.{name}: {stat['mean_ppm']} ppm {_span(stat['interval'])}")
+            for name, stat in body.get("likely", {}).get("statistics", {}).items():
+                lines.append(f"  likely.{name}: {stat['mean_ppm']} ppm {_span(stat['interval'])}")
     return "\n".join(lines)
 
 

@@ -656,6 +656,10 @@ def test_the_situational_flag_prints_the_rates_and_writes_beside_the_root_only(
     main(args(run, *base, "--situational", "--situational-history"))
     capsys.readouterr()
     assert calls[1]["history"] is True
+    assert calls[1]["likely"] is False
+    main(args(run, *base, "--situational", "--situational-likely"))
+    capsys.readouterr()
+    assert calls[2]["likely"] is True
 
     def failing(*_a: Any, **_k: Any) -> dict[str, Any]:
         raise SituationalError("boom")
@@ -664,4 +668,5 @@ def test_the_situational_flag_prints_the_rates_and_writes_beside_the_root_only(
     assert main(args(run, *base, "--situational")) == EXIT_REFUSED
     assert main(args(run, *base, "--situational-max-games", "3")) == EXIT_REFUSED
     assert main(args(run, *base, "--situational-history")) == EXIT_REFUSED
+    assert main(args(run, *base, "--situational-likely")) == EXIT_REFUSED
     capsys.readouterr()

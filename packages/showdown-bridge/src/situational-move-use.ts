@@ -26,10 +26,13 @@ import { type OwnChannel, ownChannel, type HistoryFactsData, historyFactsAtReque
 import type { CandidateFeaturesOutcome } from "./candidate-features-outcome.ts";
 import { goldenHistoryFactsData } from "./history-facts-data.ts";
 import { type HistoryCounts, type SlotFact, tallyHistoryDecision } from "./situational-history.ts";
+import type { CandidateFeaturesLikely } from "./candidate-features-likely.ts";
+import { type LikelyCounts, phaseOf, tallyLikelyDecision } from "./situational-likely.ts";
 import type { CandidateFeatures2 } from "./candidate-features-2.ts";
 import { parseJointChoice, type SlotPart } from "./damage-aware-choice.ts";
 import { classifySlot, reaches as reachesRows, SITUATIONS, type Situation } from "./situation.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
+import { FEATURE_SET_LIKELY } from "./candidate-features.ts";
 import { createFeatureService, type FeatureService, type FeatureServiceSpec } from "./feature-service.ts";
 import { ResimulationInputError, resimulate } from "./resimulate.ts";
 import { BattleAbortedError, type Player } from "./runner.ts";
@@ -128,6 +131,8 @@ export interface SeatTally {
   counts: Counts;
   /** The history rows (#1345), present only when the diagnostic was asked for them (`situationalSetup(..., true)`). */
   history?: HistoryCounts;
+  /** The Likely-Threatened tally (ADR-022 E-22.7.10, report only), present only when the diagnostic was asked for it (`likely` in the setup). */
+  likely?: LikelyCounts;
 }
 export interface GameTally {
   match_id: string;
@@ -145,13 +150,21 @@ export interface SituationalSetup {
   service: FeatureService;
   /** The history rows' inputs (#1345): the `probe-outcome/1` service and the history facts' engine data; absent without the rows. */
   history?: { service: FeatureService; data: HistoryFactsData };
+  /** The Likely-Threatened tally's input: the `probe-outcome-likely/1` service (a second build per decision); absent without the tally. */
+  likely?: { service: FeatureService };
 }
 
-export function situationalSetup(engine: Engine, formatId: string, maxTurns: number, factsData: WorldFactsData, spec?: Partial<FeatureServiceSpec>, history = false): SituationalSetup {
+export function situationalSetup(engine: Engine, formatId: string, maxTurns: number, factsData: WorldFactsData, spec?: Partial<FeatureServiceSpec>, history = false, likely = false): SituationalSetup {
   const full: FeatureServiceSpec = { format_id: formatId, data_class: "synthetic", feature_set: "probe-damage/2", ...spec };
-  const base = { engine, format_id: formatId, max_turns: maxTurns, facts_data: factsData, service: createFeatureService(full, engine) };
-  if (!history) return base;
-  return { ...base, history: { service: createFeatureService({ ...full, feature_set: "probe-outcome/1" }, engine), data: goldenHistoryFactsData() } };
+  return {
+    engine,
+    format_id: formatId,
+    max_turns: maxTurns,
+    facts_data: factsData,
+    service: createFeatureService(full, engine),
+    ...(history ? { history: { service: createFeatureService({ ...full, feature_set: "probe-outcome/1" }, engine), data: goldenHistoryFactsData() } } : {}),
+    ...(likely ? { likely: { service: createFeatureService({ ...full, feature_set: FEATURE_SET_LIKELY }, engine) } } : {}),
+  };
 }
 
 const REQUEST = "|request|";
@@ -180,6 +193,7 @@ export async function tallyGame(setup: SituationalSetup, record: StoredGame): Pr
   for (const player of ["p1", "p2"] as const) {
     const counts: Counts = {};
     const historyCounts: HistoryCounts = {};
+    const likelyCounts: LikelyCounts = {};
     const channel = channels[player];
     const own: OwnChannel = ownChannel(player, channel);
     const facts = worldFactsAtRequests({ channel: own, data: setup.facts_data });
@@ -203,6 +217,19 @@ export async function tallyGame(setup: SituationalSetup, record: StoredGame): Pr
       const letters = asList(body.active).map((_, slot) => String.fromCharCode(97 + slot));
       const streaks = letters.map((letter) => f?.facts?.own.active[letter]?.protect_streak ?? null);
       tallyDecision(counts, { body, candidates: d.candidates, chosen: d.chosen, features: result.outcome.features as CandidateFeatures2, streaks, stall });
+      if (setup.likely !== undefined) {
+        const likelyResult = setup.likely.service.run({ game: `${record.match_id}:${record.game}:${player}:likely`, player, lines: channel.slice(0, end + 1), team: record.teams[player].team, candidates: d.candidates, ...(order === mine.length - 1 ? { final: true } : {}) });
+        if (likelyResult.outcome.kind === "error") {
+          bump(likelyCounts, `likely.feature_error.${likelyResult.outcome.code}`);
+          bump(likelyCounts, "likely.feature_errors");
+        } else {
+          const turn = channel.slice(0, end + 1).reduce((n, l) => (l.startsWith("|turn|") ? Math.max(n, Number(l.slice(6))) : n), 0);
+          const opponent = f?.facts?.opponent.active;
+          const phase = phaseOf(turn, opponent === undefined ? null : Object.values(opponent).map((a) => a?.active_turns ?? null));
+          const likelyFeatures = likelyResult.outcome.features as unknown as CandidateFeaturesLikely;
+          tallyLikelyDecision(likelyCounts, { body, candidates: d.candidates, chosen: d.chosen, base: (result.outcome.features as CandidateFeatures2), likely: likelyFeatures, phase, stall });
+        }
+      }
       if (setup.history !== undefined) {
         const declared = setup.history.service.run({ game: `${record.match_id}:${record.game}:${player}`, player, lines: channel.slice(0, end + 1), team: record.teams[player].team, candidates: d.candidates, ...(order === mine.length - 1 ? { final: true } : {}) });
         if (declared.outcome.kind === "error") {
@@ -221,7 +248,7 @@ export async function tallyGame(setup: SituationalSetup, record: StoredGame): Pr
         }
       }
     });
-    seats[player] = { policy: record.policies[player], counts: sortedCounts(counts), ...(setup.history === undefined ? {} : { history: sortedCounts(historyCounts) }) };
+    seats[player] = { policy: record.policies[player], counts: sortedCounts(counts), ...(setup.history === undefined ? {} : { history: sortedCounts(historyCounts) }), ...(setup.likely === undefined ? {} : { likely: sortedCounts(likelyCounts) }) };
   }
   return { match_id: record.match_id, game: record.game, pair: record.pair ?? null, seats };
 }

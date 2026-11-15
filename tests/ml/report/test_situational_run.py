@@ -10,7 +10,7 @@ import pytest
 from areneon_ml.report import situational as s
 from areneon_ml.report import situational_run as r
 
-from tests.ml.report.test_situational import _history_raw, _raw
+from tests.ml.report.test_situational import _history_raw, _likely_raw, _raw
 
 
 def _fake(raw: object, code: int = 0, seen: list[Sequence[str]] | None = None) -> r.Runner:
@@ -114,3 +114,28 @@ def test_history_rows_have_their_own_file_flag_and_printed_block(tmp_path: Path)
     assert body["history"]["stall_repeat"] == 500_000
     assert set(body["history"]) == set(s.HISTORY_STATISTIC_NAMES)
     assert "history" not in plain["matches"]["m"]["policy:aa"]
+
+
+def test_likely_tally_has_its_own_file_flag_and_printed_block(tmp_path: Path) -> None:
+    root = tmp_path / "p"
+    root.mkdir()
+    seen: list[Sequence[str]] = []
+    plain = r.situational_generation(
+        root, 3, tmp_path / "run", repo=tmp_path, node="n", run=_fake(_raw())
+    )
+    out = r.situational_generation(
+        root,
+        3,
+        tmp_path / "run",
+        repo=tmp_path,
+        node="n",
+        likely=True,
+        run=_fake(_likely_raw(), 0, seen),
+    )
+    assert "--likely" in seen[0]
+    assert out["summary"].endswith("g000003.likely.json")
+    assert plain["summary"].endswith("g000003.json")  # the plain summary is kept as it was
+    body = out["matches"]["m"]["policy:aa"]
+    assert body["likely"]["protect_likely_threatened_turn1"] == 1_000_000
+    assert set(body["likely"]) == set(s.LIKELY_STATISTIC_NAMES)
+    assert "likely" not in plain["matches"]["m"]["policy:aa"]
