@@ -401,6 +401,14 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "decision); the summary is g<N>.history.json",
     )
     progress.add_argument(
+        "--situational-likely",
+        action="store_true",
+        help="with --situational, also the Likely-Threatened tally (ADR-022 E-22.7.10, "
+        "report only: "
+        "slots no revealed move threatens but a likely move would; a second feature build per "
+        "decision); the summary is g<N>.likely.json",
+    )
+    progress.add_argument(
         "--situational-max-games",
         type=int,
         help="at most this many stored games per match for --situational (the summary is "
@@ -595,7 +603,7 @@ def _generation_list(text: str) -> tuple[int, ...]:
         raise argparse.ArgumentTypeError("--anchors takes comma-separated integers") from exc
 
 
-def _progress(args: argparse.Namespace) -> dict[str, object]:  # noqa: PLR0912
+def _progress(args: argparse.Namespace) -> dict[str, object]:  # noqa: PLR0912, PLR0915
     run_dir = args.run_dir.resolve()
     config = read_run_config(layout.read_json(run_dir / layout.CONFIG))
     game = GameData.from_table(json.loads(args.engine_data.read_text(encoding="utf-8")))
@@ -614,6 +622,8 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:  # noqa: PLR0912
         raise ProgressError("--situational-max-games needs --situational")
     if args.situational_history and not args.situational:
         raise ProgressError("--situational-history needs --situational")
+    if args.situational_likely and not args.situational:
+        raise ProgressError("--situational-likely needs --situational")
     if args.damage_aware_budget_minutes is not None and not args.damage_aware:
         raise ProgressError("--damage-aware-budget-minutes needs --damage-aware")
     if args.damage_aware_version is not None and not args.damage_aware:
@@ -704,6 +714,7 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:  # noqa: PLR0912
                     node=args.node,
                     max_games=args.situational_max_games,
                     history=args.situational_history,
+                    likely=args.situational_likely,
                 )
             except SituationalError as exc:
                 raise ProgressError(f"--situational: {exc}") from exc

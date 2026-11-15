@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from areneon_ml.report import situational as s
@@ -259,3 +260,78 @@ def test_a_root_without_games_has_no_history_table_and_the_summary_bytes_are_sta
     assert s.main([str(path), "--out", str(a)]) == 0
     assert s.main([str(path), "--out", str(b)]) == 0
     assert a.read_bytes() == b.read_bytes()
+
+
+def _likely_raw() -> dict[str, object]:
+    raw = _raw()
+    for game in raw["games"]:  # type: ignore[attr-defined]
+        for seat in game["seats"].values():
+            if seat["policy"] == "policy:aa":
+                seat["likely"] = {
+                    "likely.decisions": 3,
+                    "likely.protect.likely_threatened.turn1.offered": 2,
+                    "likely.protect.likely_threatened.turn1.chosen": 2,
+                    "likely.protect.safe_unlikely.turn1.offered": 2,
+                    "likely.protect.likely_threatened.fresh.offered": 1,
+                    "likely.switch.likely_threatened.turn1.offered": 1,
+                    "likely.switch.likely_threatened.turn1.chosen": 1,
+                    "likely.likely_threatened.n": 2,
+                    "likely.likely_threatened.inclusion_max_ppm": 100_000,
+                    "likely.likely_threatened.inclusion_sum_ppm": 150_000,
+                }
+    return raw
+
+
+def test_likely_tally_rates_splits_and_intervals() -> None:
+    out = s.summarise(_likely_raw(), b_boot=100)
+    entry = out["matches"]["m"]["policy:aa"]
+    stats = entry["likely"]["statistics"]
+    assert set(stats) == set(s.LIKELY_STATISTIC_NAMES)
+    assert entry["likely"]["counts"]["likely.decisions"] == 48
+    assert stats["protect_likely_threatened_turn1"]["mean_ppm"] == 1_000_000
+    assert stats["protect_safe_unlikely_turn1"]["mean_ppm"] == 0
+    assert stats["protect_likely_minus_safe_unlikely_turn1"]["mean_ppm"] == 1_000_000
+    assert stats["protect_likely_threatened_fresh"]["mean_ppm"] == 0
+    assert stats["protect_safe_unlikely_fresh"] == {"mean_ppm": None, "interval": None}
+    assert stats["protect_likely_minus_safe_unlikely_fresh"]["mean_ppm"] is None
+    assert stats["protect_likely_threatened"]["mean_ppm"] == 666_666  # 32 of 48
+    assert stats["protect_likely_minus_safe_unlikely"]["mean_ppm"] == 666_666
+    assert stats["switch_likely_threatened_turn1"]["mean_ppm"] == 1_000_000
+    assert stats["switch_safe_unlikely"] == {"mean_ppm": None, "interval": None}
+    assert stats["inclusion_max_likely_threatened"]["mean_ppm"] == 50_000
+    assert stats["inclusion_sum_likely_threatened"]["mean_ppm"] == 75_000
+    assert stats["protect_likely_threatened_turn1"]["interval"]["low_ppm"] == 1_000_000
+    assert "likely" not in out["matches"]["m"]["actor-rule@v1"]
+    again = s.summarise(_likely_raw(), b_boot=100)
+    assert json.dumps(out, sort_keys=True) == json.dumps(again, sort_keys=True)
+
+
+def test_likely_tally_leaves_the_1274_statistics_and_counts_unchanged() -> None:
+    plain = s.summarise(_raw(), b_boot=50)
+    with_likely = s.summarise(_likely_raw(), b_boot=50)
+    for policy, body in with_likely["matches"]["m"].items():
+        assert {k: v for k, v in body.items() if k != "likely"} == plain["matches"]["m"][policy]
+    assert all("likely" not in b for b in plain["matches"]["m"].values())
+    # the history block and the likely block do not disturb each other
+    both: Any = _history_raw()
+    extras: Any = _likely_raw()
+    for game, extra in zip(both["games"], extras["games"], strict=True):
+        for seat in ("p1", "p2"):
+            if "likely" in extra["seats"][seat]:
+                game["seats"][seat]["likely"] = extra["seats"][seat]["likely"]
+    summary = s.summarise(both, b_boot=50)
+    body = summary["matches"]["m"]["policy:aa"]
+    assert "history" in body
+    assert body["likely"] == with_likely["matches"]["m"]["policy:aa"]["likely"]
+
+
+def test_likely_reader_and_render() -> None:
+    summary = s.summarise(_likely_raw(), b_boot=50)
+    assert s.read_summary(json.loads(json.dumps(summary)))["generation"] == 20
+    broken = json.loads(json.dumps(summary))
+    del broken["matches"]["m"]["policy:aa"]["likely"]["statistics"][
+        "inclusion_max_likely_threatened"
+    ]
+    with pytest.raises(s.SituationalError):
+        s.read_summary(broken)
+    assert "likely.protect_likely_threatened_turn1: 1000000 ppm" in s.render(summary)

@@ -12,7 +12,9 @@ LABEL: situational move-use diagnostic on assumed opponent sets: descriptive, no
 measure.
 
 With ``history=True`` (``progress --situational-history``) the script also writes the history
-rows of #1345 and the file is ``g<NNNNNN>.history.json``.
+rows of #1345 and the file is ``g<NNNNNN>.history.json``. With ``likely=True``
+(``progress --situational-likely``) it also writes the Likely-Threatened tally (ADR-022 E-22.7.10,
+report only) and the file is ``g<NNNNNN>.likely.json`` (``.history.likely.json`` with both).
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from areneon_contracts.contracts import jcs
 from areneon_ml.report.situational import (
     HISTORY_STATISTIC_NAMES,
     LABEL,
+    LIKELY_STATISTIC_NAMES,
     SituationalError,
     summarise,
 )
@@ -66,6 +69,7 @@ def situational_generation(  # noqa: PLR0913
     node: str,
     max_games: int | None = None,
     history: bool = False,
+    likely: bool = False,
     run: Runner = _run,
 ) -> dict[str, Any]:
     """Run the Node script on one committed generation; write and return the printed block."""
@@ -74,7 +78,11 @@ def situational_generation(  # noqa: PLR0913
         raise SituationalError("the situational summary must not be inside the run directory")
     out_dir.mkdir(parents=True, exist_ok=True)
     # The history rows (#1345) have their own file: a plain summary is never replaced.
-    cap = ("" if max_games is None else f".max{max_games}") + (".history" if history else "")
+    cap = (
+        ("" if max_games is None else f".max{max_games}")
+        + (".history" if history else "")
+        + (".likely" if likely else "")
+    )
     raw_path = out_dir / f".g{generation:06d}{cap}.raw.json"
     command = [
         "nice",
@@ -95,6 +103,8 @@ def situational_generation(  # noqa: PLR0913
         command += ["--max-games", str(max_games)]
     if history:
         command += ["--history"]
+    if likely:
+        command += ["--likely"]
     try:
         if run(command) != 0:
             raise SituationalError("the situational move-use script failed")
@@ -131,6 +141,16 @@ def printed(summary: dict[str, Any], path: Path) -> dict[str, Any]:
                             }
                         }
                         if "history" in body
+                        else {}
+                    ),
+                    **(
+                        {
+                            "likely": {
+                                name: body["likely"]["statistics"][name]["mean_ppm"]
+                                for name in LIKELY_STATISTIC_NAMES
+                            }
+                        }
+                        if "likely" in body
                         else {}
                     ),
                 }
