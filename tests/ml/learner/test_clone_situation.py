@@ -196,17 +196,12 @@ def test_a_forced_switch_a_team_preview_and_an_unknown_name_have_no_streak_slot(
 
 def test_streak_unmatched_counts_the_living_actives_the_roster_does_not_name() -> None:
     state = battle_state({"A": 1})
-    base = {
-        "side": {"pokemon": [member("A"), member("Z")]},
-        "active": [slot("protect"), slot("tackle")],
-    }
+    active = [slot("protect"), slot("tackle")]
+    base = {"side": {"pokemon": [member("A"), member("Z")]}, "active": active}
     assert streak_unmatched(state, base) == 1  # Z is no roster entry
     assert streak_slots(state, base, STALL) == (0,)
     assert streak_unmatched(battle_state({"A": 1, "Z": 0}), base) == 0
-    fainted = {
-        "side": {"pokemon": [member("A"), member("Z", fainted=True)]},
-        "active": base["active"],
-    }
+    fainted = {"side": {"pokemon": [member("A"), member("Z", fainted=True)]}, "active": active}
     assert streak_unmatched(state, fainted) == 0  # a fainted active is not judged either way
     assert streak_unmatched(state, {**base, "active": [slot("protect"), None]}) == 0
     assert streak_unmatched(state, {"teamPreview": True, "side": {"pokemon": []}}) == 0
@@ -273,10 +268,7 @@ def test_a_decision_is_streak_then_threatened_then_other(monkeypatch: pytest.Mon
         0,
     )
     # a request slot no roster entry names is counted, whatever the group
-    stray = {
-        "side": {"pokemon": [member("A"), member("Z")]},
-        "active": [slot("tackle"), slot("tackle")],
-    }
+    stray = {"side": {"pokemon": [member("A"), member("Z")]}, "active": [slot("tackle")] * 2}
     assert both._situation("e", session(streaky, stray), observation, candidates, {})[2] == 1
     # without threatened_ppm a Threatened decision is `other`, and no flag is read
     flags["value"] = True
