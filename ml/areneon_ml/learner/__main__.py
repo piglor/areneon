@@ -39,6 +39,8 @@ from areneon_ml.learner.trainer import LearnerError, configure_learner
 from areneon_ml.model.gamedata import GameData
 
 EXIT_REFUSED = 3
+#: The run-metrics contract caps ``learner_micro_batch`` here.
+MAX_MICRO_BATCH = 1_048_576
 
 
 def _json(path: Path) -> Any:
@@ -122,8 +124,8 @@ def _micro_flag(parser: argparse.ArgumentParser) -> None:
 
 def _micro_batch(text: str) -> int:
     value = int(text)
-    if value < 1:
-        raise argparse.ArgumentTypeError("must be at least 1")
+    if not 1 <= value <= MAX_MICRO_BATCH:
+        raise argparse.ArgumentTypeError(f"must be between 1 and {MAX_MICRO_BATCH}")
     return value
 
 

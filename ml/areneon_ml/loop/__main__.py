@@ -52,6 +52,7 @@ from areneon_ml.inspector.readers import InspectError, refuse_population
 from areneon_ml.inspector.replay_command import Selection, parse_games, replay_games
 from areneon_ml.inspector.resimulate import node_runner
 from areneon_ml.inspector.resimulate_command import parse_target, resimulate_game
+from areneon_ml.learner.__main__ import MAX_MICRO_BATCH
 from areneon_ml.learner.config import RunConfigError, read_run_config
 from areneon_ml.learner.data import LearnerDataError
 from areneon_ml.learner.state import LearnerStateError
@@ -118,6 +119,14 @@ def _positive(text: str) -> int:
     value = int(text)
     if value < 1:
         raise argparse.ArgumentTypeError("must be at least 1")
+    return value
+
+
+def _micro_batch(text: str) -> int:
+    """1 to the run-metrics contract's cap, so a too-large value fails at parse time."""
+    value = _positive(text)
+    if value > MAX_MICRO_BATCH:
+        raise argparse.ArgumentTypeError(f"must be at most {MAX_MICRO_BATCH}")
     return value
 
 
@@ -222,7 +231,7 @@ def _add_run(commands: Any) -> None:
     )
     run.add_argument(
         "--learner-micro-batch",
-        type=_positive,
+        type=_micro_batch,
         default=None,
         help="run each learner minibatch through the network in chunks of at most this many "
         "decisions, accumulating the gradient (operational, not a config field: it bounds the "
