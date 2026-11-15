@@ -623,6 +623,32 @@ about 1 hour in one process and about 10 minutes with 8; the real dataset's pool
 adds to the start-up. Memory grows with the number of Episodes held (the same as a
 generation of that many games).
 
+### Situation weights in the clone loss and `clone-eval` (ADR-010 erratum A13)
+
+A clone of a scripted teacher learns rare situations poorly under the plain mean cross-entropy
+(the P4b clone repeats Protect after a Protect more than its teacher). `clone.situation_weights
+{streak_ppm, threatened_ppm?}` in the `CloneRunConfig` gives a Battle decision a larger share of
+the gradient: `streak` (a living own active with a Protect streak and a stalling move offered),
+`threatened` (A11.2's flag, only with `threatened_ppm`) or `other` (weight 1,000,000). The loss is
+`mean((w_i / w_bar) * CE_i)` with `w_bar` the mean weight over the Battle training part, computed
+once, so the mean factor is 1 and the learning rate keeps its meaning; the shuffle, minibatches,
+epochs and optimiser steps are those of a clone without the block. Without the block nothing
+changes. `streak_ppm` needs the encoder option `recent_history`, `threatened_ppm` a feature set
+with threat rows. `clone-report.json` then adds, for the Battle role, the weights, `weight_mean_ppm`
+and per-group tables of the training and held-back parts (unweighted loss, top-1, chance, and for
+`streak` how often the teacher and the clone choose a stalling move); `epoch_loss` is the weighted
+objective.
+
+```bash
+.venv/bin/python -m areneon_ml.learner clone-eval --clone-dir .tmp/clone/CLONE-1 \
+  --stream-dir .tmp/teacher/TEACHER-1 \
+  --engine-data fixtures/showdown/gen9championsvgc2026regmc/engine-data-2.json [--out table.json]
+```
+
+`clone-eval` prints the same group table for any existing clone (CPU, nothing of the clone changes;
+the held-back part is the one the clone's own holdout key chooses), so an earlier clone can be
+measured on the same footing.
+
 ### Binding a clone made before the provenance binding
 
 A clone directory written before #853 has no `provenance.json`, and `import-clone` refuses it.

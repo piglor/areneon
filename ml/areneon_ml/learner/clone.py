@@ -37,9 +37,10 @@ import torch
 from areneon_contracts.contracts import jcs, sha256_hex
 from areneon_contracts.training import stream_lines
 
-from areneon_ml.learner.clone_config import CloneConfig
-from areneon_ml.learner.data import LearnerDataError, Step, trajectories
+from areneon_ml.learner.clone_config import CloneConfig, SituationWeights
+from areneon_ml.learner.data import LearnerDataError, Step, Trajectory, trajectories
 from areneon_ml.learner.ppo import policy_terms
+from areneon_ml.learner.situation import GROUPS, Groups
 from areneon_ml.learner.trainer import to_device
 from areneon_ml.model.batch import collate
 from areneon_ml.model.encoder import Encoder
@@ -91,6 +92,52 @@ class Agreement:
 
 
 @dataclass(frozen=True)
+class GroupAgreement:
+    """The agreement of a network on the decisions of one situation group (ADR-010 erratum A13.4):
+    ``loss`` is the UNWEIGHTED mean cross-entropy; on ``streak`` also how many teacher choices
+    (``stall_teacher``) and clone top-1 candidates (``stall_clone``) use a stalling move in a
+    streak slot."""
+
+    agreement: Agreement
+    stall_teacher: int | None = None
+    stall_clone: int | None = None
+
+    def as_dict(self) -> dict[str, float | int]:
+        out = self.agreement.as_dict()
+        if self.stall_teacher is not None and self.stall_clone is not None:
+            out["stall_teacher"] = self.stall_teacher
+            out["stall_clone"] = self.stall_clone
+        return out
+
+
+def _groups_dict(groups: dict[str, GroupAgreement]) -> dict[str, Any]:
+    return {name: groups[name].as_dict() for name in GROUPS}
+
+
+@dataclass(frozen=True)
+class SituationReport:
+    """What a Battle role reports under ``clone.situation_weights`` (ADR-010 erratum A13.4)."""
+
+    weights: SituationWeights
+    weight_mean_ppm: int
+    train_groups: dict[str, GroupAgreement]
+    holdout_groups: dict[str, GroupAgreement] | None
+
+    def as_dict(self) -> dict[str, Any]:
+        weights: dict[str, int] = {"streak_ppm": self.weights.streak_ppm}
+        if self.weights.threatened_ppm is not None:
+            weights["threatened_ppm"] = self.weights.threatened_ppm
+        out: dict[str, Any] = {
+            "situation_weights": weights,
+            "weight_mean_ppm": self.weight_mean_ppm,
+            "train_groups": _groups_dict(self.train_groups),
+        }
+        if self.holdout_groups is not None:
+            out["holdout_groups"] = _groups_dict(self.holdout_groups)
+        return out
+
+
+@dataclass(frozen=True)
 class RoleReport:
     """One role: the loss of each epoch and the agreement on the training and held-back parts."""
 
@@ -98,6 +145,7 @@ class RoleReport:
     epoch_loss: tuple[float, ...]
     train: Agreement
     holdout: Agreement | None
+    situation: SituationReport | None = None
 
     def as_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -107,6 +155,8 @@ class RoleReport:
         }
         if self.holdout is not None:
             out["holdout"] = self.holdout.as_dict()
+        if self.situation is not None:
+            out.update(self.situation.as_dict())
         return out
 
 
@@ -139,16 +189,87 @@ def evaluate(
     return Agreement(len(steps), total / len(steps) if steps else 0.0, hits, chance)
 
 
-def _train_role(
+def evaluate_groups(
+    network: PolicyNetwork, steps: Sequence[Step], size: int, device: torch.device
+) -> dict[str, GroupAgreement]:
+    """The agreement per situation group (``streak``, ``threatened``, ``other``), no gradient.
+
+    A step with no group is not counted. An empty group reports 0 steps and 0.0 values.
+    """
+    network.eval()
+    count = dict.fromkeys(GROUPS, 0)
+    hit = dict.fromkeys(GROUPS, 0)
+    loss_sum = dict.fromkeys(GROUPS, 0.0)
+    chance_sum = dict.fromkeys(GROUPS, 0.0)
+    stalls = [0, 0]  # teacher, clone: streak steps whose choice uses a stalling move
+    grouped = [s for s in steps if s.group is not None]
+    with torch.no_grad():
+        for start in range(0, len(grouped), size):
+            chunk = grouped[start : start + size]
+            batch = to_device(collate([s.query for s in chunk]), device)
+            chosen = torch.tensor([s.chosen for s in chunk], device=device)
+            logits = network(batch).logits
+            floor = torch.finfo(logits.dtype).min
+            picked = logits.masked_fill(~batch.cand_mask, floor).argmax(dim=-1).tolist()
+            losses = (-policy_terms(logits, batch.cand_mask, chosen).log_prob).tolist()
+            for step, loss, pick in zip(chunk, losses, picked, strict=True):
+                name = str(step.group)
+                count[name] += 1
+                loss_sum[name] += loss
+                hit[name] += int(pick == step.chosen)
+                chance_sum[name] += 1.0 / step.query.pending.shape[0]
+                if step.stall is not None:
+                    stalls[0] += int(step.stall[step.chosen])
+                    stalls[1] += int(step.stall[pick])
+    out = {}
+    for name in GROUPS:
+        n = count[name]
+        agreement = Agreement(
+            n, loss_sum[name] / n if n else 0.0, hit[name], chance_sum[name] / n if n else 0.0
+        )
+        streak = name == "streak"
+        out[name] = GroupAgreement(
+            agreement, stalls[0] if streak else None, stalls[1] if streak else None
+        )
+    return out
+
+
+def situation_factors(steps: Sequence[Step], weights: SituationWeights) -> tuple[torch.Tensor, int]:
+    """The loss factor of each training step and the floor of the mean weight in ppm.
+
+    Step weights are integers (``streak_ppm``, ``threatened_ppm``, else 1,000,000); the factor is
+    ``w_i / w_bar = w_i * |S| / sum(w)``, one exact integer ratio rounded once to float64 and then
+    to float32 (ADR-010 erratum A13.3). The mean factor over ``steps`` is 1 up to that rounding.
+    """
+    table = {
+        "streak": weights.streak_ppm,
+        "threatened": weights.threatened_ppm,
+        "other": 1_000_000,
+    }
+    found = [table[str(step.group)] or 1_000_000 for step in steps]
+    total = sum(found)
+    factors = torch.tensor([w * len(found) / total for w in found], dtype=torch.float32)
+    return factors, total // len(found)
+
+
+def _train_role(  # noqa: PLR0913
     config: CloneConfig,
     network: PolicyNetwork,
     parts: tuple[Sequence[Step], Sequence[Step]],
     generator: torch.Generator,
     device: torch.device,
+    *,
+    weights: SituationWeights | None = None,
 ) -> tuple[torch.optim.Adam, RoleReport]:
-    """Train ``network`` on ``parts[0]``; ``parts[1]`` is the held-back part, only measured."""
+    """Train ``network`` on ``parts[0]``; ``parts[1]`` is the held-back part, only measured.
+
+    With ``weights`` (the Battle role under ``clone.situation_weights``) every decision's
+    cross-entropy is scaled by its factor (``situation_factors``); the shuffle, minibatches and
+    optimiser steps are the same as without them.
+    """
     steps, held = parts
     settings = config.clone
+    factors, weight_mean = situation_factors(steps, weights) if weights is not None else (None, 0)
     optimiser = torch.optim.Adam(
         network.parameters(),
         lr=settings.learning_rate,
@@ -165,7 +286,12 @@ def _train_role(
             index = order[start : start + settings.minibatch_size]
             batch = to_device(collate([steps[i].query for i in index]), device)
             chosen = torch.tensor([steps[i].chosen for i in index], device=device)
-            loss = cross_entropy(network(batch).logits, batch.cand_mask, chosen)
+            logits = network(batch).logits
+            if factors is None:
+                loss = cross_entropy(logits, batch.cand_mask, chosen)
+            else:
+                each = -policy_terms(logits, batch.cand_mask, chosen).log_prob
+                loss = (factors[index].to(device) * each).mean()
             optimiser.zero_grad(set_to_none=True)
             torch.autograd.backward(loss)
             torch.nn.utils.clip_grad_norm_(network.parameters(), settings.max_grad_norm)
@@ -174,11 +300,20 @@ def _train_role(
             total += float(loss.detach().cpu()) * len(index)
         epoch_loss.append(total / len(steps))
     size = settings.minibatch_size
+    situation = None
+    if weights is not None:
+        situation = SituationReport(
+            weights,
+            weight_mean,
+            evaluate_groups(network, steps, size, device),
+            evaluate_groups(network, held, size, device) if held else None,
+        )
     report = RoleReport(
         optimiser_steps,
         tuple(epoch_loss),
         evaluate(network, steps, size, device),
         evaluate(network, held, size, device) if held else None,
+        situation,
     )
     return optimiser, report
 
@@ -216,6 +351,25 @@ def check_teacher(config: CloneConfig, manifest: dict[str, Any]) -> None:
         )
 
 
+def situation_groups(config: CloneConfig) -> Groups | None:
+    """How the loader reads situation groups for ``config``: with the block, ``threatened`` only
+    when ``threatened_ppm`` is set (ADR-010 erratum A13.2); without it, no groups."""
+    weights = config.clone.situation_weights
+    return None if weights is None else Groups(weights.threatened_ppm is not None)
+
+
+def split_parts(
+    config: CloneConfig, found: Sequence[Trajectory]
+) -> dict[str, tuple[list[Step], list[Step]]]:
+    """Per role: the training steps, then the held-back ones (per Episode, never by group)."""
+    key, ppm = config.clone.holdout_key, config.clone.holdout_ppm
+    parts: dict[str, tuple[list[Step], list[Step]]] = {role: ([], []) for role in ROLES}
+    for trajectory in found:
+        side = 1 if held_back(key, trajectory.episode, ppm) else 0
+        parts[trajectory.role][side].extend(trajectory.steps)
+    return parts
+
+
 def clone(
     config: CloneConfig,
     game: GameData,
@@ -232,15 +386,12 @@ def clone(
     device = device or torch.device(config.device)
     encoders = {role: Encoder(game, config.model.encoder) for role in ROLES}
     try:
-        found = trajectories(stream, manifest, encoders, config.teacher_policy_id)
+        found = trajectories(
+            stream, manifest, encoders, config.teacher_policy_id, groups=situation_groups(config)
+        )
     except LearnerDataError as exc:
         raise CloneError(str(exc)) from exc
-    key, ppm = config.clone.holdout_key, config.clone.holdout_ppm
-    # per role: the training steps, then the held-back ones
-    parts: dict[str, tuple[list[Step], list[Step]]] = {role: ([], []) for role in ROLES}
-    for trajectory in found:
-        side = 1 if held_back(key, trajectory.episode, ppm) else 0
-        parts[trajectory.role][side].extend(trajectory.steps)
+    parts = split_parts(config, found)
     for role in ROLES:
         if not parts[role][0]:
             raise CloneError(f"no {role} decision is left to train on after the held-back part")
@@ -253,8 +404,9 @@ def clone(
     optimisers: dict[str, torch.optim.Adam] = {}
     roles: dict[str, RoleReport] = {}
     for role in ROLES:
+        weights = config.clone.situation_weights if role == "battle" else None
         optimisers[role], roles[role] = _train_role(
-            config, networks[role], parts[role], generator, device
+            config, networks[role], parts[role], generator, device, weights=weights
         )
         networks[role].eval()
     return Cloned(networks, optimisers, generator, roles, own_team_set(stream))

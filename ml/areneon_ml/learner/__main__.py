@@ -7,6 +7,10 @@ checkpoints, their CheckpointRecords, the sources registry, the learner state an
 the new directory ``O`` (see ``clone_run``). ``V`` is the version manifest of the teacher games
 (showdown commit, format, regulation, ruleset and format-rules hashes). Prints the report.
 
+``clone-eval --clone-dir O --stream-dir D --engine-data E [--out F]`` is the read-only check of
+any existing clone (ADR-010 erratum A13.4): its per-situation agreement on the training and
+held-back parts, CPU only, nothing of ``O`` changed.
+
 For ``bench``, run it in the CPU environment for the CPU figure and in the separate GPU environment
 (``ml/gpu-env``) for the GPU one. Prints one JCS JSON line. Exit 0 ok, 2 usage, 3 a refused
 config, stream or device.
@@ -27,6 +31,7 @@ from areneon_ml.learner.bench import Recorded, benchmark
 from areneon_ml.learner.clone import CloneError, clone
 from areneon_ml.learner.clone_bind import CloneBindError, bind_clone
 from areneon_ml.learner.clone_config import CloneConfigError, read_clone_config
+from areneon_ml.learner.clone_eval import clone_eval
 from areneon_ml.learner.clone_run import CloneOutputError, write_clone
 from areneon_ml.learner.config import RunConfigError, read_run_config
 from areneon_ml.learner.data import LearnerDataError
@@ -65,6 +70,24 @@ def _clone(args: argparse.Namespace) -> int:
     return 0
 
 
+def _clone_eval(args: argparse.Namespace) -> int:
+    try:
+        clone_dir = args.clone_dir.resolve()
+        if args.out is not None and args.out.resolve().is_relative_to(clone_dir):
+            raise CloneError("clone-eval changes nothing of the clone: --out goes elsewhere")
+        if args.out is not None and args.out.exists():
+            raise CloneError(f"{args.out} exists: clone-eval never overwrites")
+        game = GameData.from_table(_json(args.engine_data))
+        table = clone_eval(clone_dir, args.stream_dir, game)
+        if args.out is not None:
+            args.out.write_bytes(jcs(table) + b"\n")
+    except (CloneConfigError, CloneError, RecordError, ContractError, ValueError, OSError) as exc:
+        print(f"areneon_ml.learner: {exc}", file=sys.stderr)
+        return EXIT_REFUSED
+    sys.stdout.buffer.write(jcs(table) + b"\n")
+    return 0
+
+
 def _bind(args: argparse.Namespace) -> int:
     try:
         bound = bind_clone(args.clone_dir)
@@ -95,6 +118,15 @@ def main(argv: list[str] | None = None) -> int:
         "--version-manifest", type=Path, required=True, help="the teacher games' version manifest"
     )
     cloning.add_argument("--out", type=Path, required=True, help="a new directory")
+    evaluating = commands.add_parser(
+        "clone-eval", help="the per-situation agreement of an existing clone (read-only, CPU)"
+    )
+    evaluating.add_argument("--clone-dir", type=Path, required=True)
+    evaluating.add_argument("--engine-data", type=Path, required=True)
+    evaluating.add_argument(
+        "--stream-dir", type=Path, required=True, help="holds stream.jsonl and training-set.json"
+    )
+    evaluating.add_argument("--out", type=Path, help="also write the table to this new file")
     binding = commands.add_parser(
         "bind", help="bind the provenance of a clone directory made before #853"
     )
@@ -104,6 +136,8 @@ def main(argv: list[str] | None = None) -> int:
         return _bind(args)
     if args.command == "clone":
         return _clone(args)
+    if args.command == "clone-eval":
+        return _clone_eval(args)
     try:
         config = read_run_config(json.loads(args.config.read_text(encoding="utf-8")))
         game = GameData.from_table(json.loads(args.engine_data.read_text(encoding="utf-8")))
