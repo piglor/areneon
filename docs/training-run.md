@@ -121,7 +121,7 @@ and lists the SHA-256 of each metrics file among its inputs.
 
 ### Sizing a run to a machine
 
-Six operational flags of the driver change how much memory and how many cores a generation
+Eight operational flags of the driver change how much memory and how many cores a generation
 uses and nothing it writes: the plan, the seeds, every Episode, the stream, the tensors and the
 learner-state hashes are the same for any value (each flag has a test; the play flags were compared on a full-size generation with `diff -r`,
 the load flags by a digest over every tensor). None is in the run config.
@@ -130,7 +130,8 @@ the load flags by a digest over every tensor). None is in the run config.
 | --- | --- | --- |
 | `--game-processes S` | Node game processes that share a generation's games | 1 |
 | `--policy-workers K` | policy worker processes per game process | 1 |
-| `--max-concurrent-starts N` | population runs: policy workers (handshakes) starting at once across all game processes | 2 |
+| `--max-concurrent-starts N` | policy workers (handshakes) starting at once across all game processes; passed to the play script only when given (#1394) | 2 (the play script's) |
+| `--no-memory-guard` | skip the memory guard below (for experts) | guard on |
 | `--node-heap-mb M` | `--max-old-space-size` of each Node game process | Node's own |
 | `--generation-timeout-minutes M` | wall-clock limit of a generation's play phase; past it the driver kills the Node process group and the generation fails, nothing committed | 180 |
 | `--load-processes N\|auto` | worker processes that check and encode the stream in the load phase; `auto` sizes them at each load phase from the usable cores (half, at most 16) and the `MemAvailable` read at that moment (400 MB each above a 2 GB reserve; an estimate, not a guarantee), capped by `--load-memory-mb` | 1 |
@@ -169,6 +170,19 @@ What a process holds, measured on the 28-core, 24 GB, 16 GB GPU machine with the
   until the next phase. `run-metrics` records the peak reserved memory next to the peak
   allocated. From outside, `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` in the learner's
   environment limits fragmentation further.
+
+The memory guard (#1394). At 9 game processes a 4-member population generation was OOM-killed on a
+23 GB machine (peak about 18 GB plus swap at 6 processes). Before each play phase the driver
+compares `MemAvailable` from `/proc/meminfo` (swap is not counted: a run that swaps misses its latency
+budgets), less 4 GB kept for the driver and the load phase (its resident set was observed at 3.2 to 3.6 GB), with `S` times an estimate per game process, and if `S` does not fit it refuses with a fixed
+message (a `PlayError`, exit 4, nothing started) naming the largest `S` that does. It never lowers `S` itself: you choose.
+The estimate is the largest game process peak plus `K` times the largest policy worker peak (times the
+members of a population run) of the newest `metrics/g*.json` that has both
+`peak_rss_bytes.game_process` and `peak_rss_bytes.policy_worker` (a population run reports them too since #1394, as the single lineage does); with none (generation 0, or a run
+without Linux resident-set figures) the default is 0.6 GB per game process plus 0.43 GB per policy
+worker, the rule of thumb above, with every member of a population counted (the 4-member, 6-process smoke needed about 2.4 GB a process: S = 6 passes at 19 GB idle and S = 9 is refused). Once learned peaks exist a population run counts `min(members, 1 + ceil(members / S))` members per process instead, since each process plays a consecutive run of the member-ordered plan. The figures are read from one machine's `MemAvailable`, a moment
+estimate: a run that starts when other work is about to grow can still swap. Where `/proc/meminfo`
+cannot be read the guard does nothing. `--no-memory-guard` skips it. Operational, outside every hash.
 
 How many runs fit. On this machine host RAM is the limit, then the 6 GB swap: one run at
 `S` = 4, `K` = 2 with `--node-heap-mb 640` needs about 5.7 GB during play (and 1.5 GB in load and

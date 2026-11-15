@@ -3,7 +3,7 @@
 // printed. The Python driver (slice 5) passes `--member` for each member. With `--game-processes` above 1 the games
 // are shared over further game processes (runs of games grouped by member, #1355), each with workers for the members that play in its slice (#1333).
 
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Engine } from "./engine.ts";
@@ -15,7 +15,8 @@ import { calibrationAnchors } from "./population-plan.ts";
 import { checkPopulationConfig, membersPlaying, type PopulationEntry, type PopulationMember, type PopulationOptions, playPopulationEntries, playPopulationGeneration, populationPlanOf, type SnapshotSession, writePopulationGeneration } from "./population-generation.ts";
 import { exitWhenParentDies, vouchTo } from "./parent-link.ts";
 import { obtainPool } from "./pool-share.ts";
-import { featuresDirOf, optionalFlag, POOL_FILE, SHARD_FILE, type ShardProcess, startShard, writeShardFile } from "./shard-process.ts";
+import { largest, ownPeakRss } from "./process-usage.ts";
+import { combineUsage, featuresDirOf, optionalFlag, POOL_FILE, SHARD_FILE, type ShardProcess, startShard, USAGE_FILE, usageOf, writeShardFile } from "./shard-process.ts";
 import type { PastPoolFile, PastSnapshot } from "./past-pool.ts";
 import { createStartLimiter, DEFAULT_CONCURRENT_STARTS } from "./start-slots.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
@@ -138,6 +139,8 @@ export async function runPopulationCli(input: PopulationCliInput, print: (line: 
   let startLimiter: ReturnType<typeof createStartLimiter> | undefined;
   const limiter = (): ReturnType<typeof createStartLimiter> => (startLimiter ??= createStartLimiter({ dir: slotsDir, max: input.max_concurrent_starts ?? DEFAULT_CONCURRENT_STARTS }));
   const children: ShardProcess<PopulationEntry>[] = [];
+  // This process's own peak and its workers' (a test double without the figure says none), as the single lineage reports them (#1394).
+  const usageNow = () => usageOf(ownPeakRss(), largest(clients.map((client) => (client as { peakRssBytes?: () => number | null }).peakRssBytes?.() ?? null)));
   const scratch = !input.further && processes > 1 ? mkdtempSync(join(tmpdir(), "areneon-shards-")) : undefined;
   const featuresDir = featuresDirOf(input.features_dir, scratch, input.features !== undefined);
   const slotsDir = input.start_slots_dir ?? (scratch === undefined ? undefined : join(scratch, "slots"));
@@ -193,6 +196,7 @@ export async function runPopulationCli(input: PopulationCliInput, print: (line: 
       // A further game process (it ends with the process that started it). It plays its slice and leaves it for its starter.
       const entries = await playPopulationEntries(options, input.shard);
       writeShardFile(join(input.out, SHARD_FILE), entries);
+      writeFileSync(join(input.out, USAGE_FILE), `${jcs(usageNow() as unknown as Json)}\n`);
       return 0;
     }
     // The first game process to fail fails this one at once: `Promise.all` rejects with its message, `playPopulationGeneration` stops this process's own games, and the `finally` below kills the others (#1100).
@@ -200,6 +204,9 @@ export async function runPopulationCli(input: PopulationCliInput, print: (line: 
     const result = await playPopulationGeneration({ ...options, ...(scratch === undefined ? {} : { others, live_children: () => children.filter((child) => child.alive()).length }) });
     writePopulationGeneration(input.out, result);
     print(jcs({ generation, run_config_hash: await runConfigHash(config), members: result.members.map((entry) => ({ member: entry.member, training_set_hash: entry.training_set_hash, examples: entry.set.examples })) } as unknown as Json));
+    // After the summary line, so a reader of the first line is unchanged: the largest game process and policy worker peaks, the further game processes' included.
+    const usage = combineUsage([usageNow(), ...(await Promise.all(children.map((child) => child.usage)))]);
+    if (Object.keys(usage).length > 0) print(jcs({ resource_usage: usage } as unknown as Json));
     return 0;
   } catch (error) {
     if (error instanceof GenerationError) {

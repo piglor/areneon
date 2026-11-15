@@ -188,6 +188,21 @@ def _add_run(commands: Any) -> None:
         "(operational: the generation's files are the same for any number)",
     )
     run.add_argument(
+        "--max-concurrent-starts",
+        type=_positive,
+        default=None,
+        help="policy workers starting (handshaking) at once across all game processes; passed "
+        "to the play script only when given (its default is 2; operational: the generation's "
+        "files are the same for any number)",
+    )
+    run.add_argument(
+        "--no-memory-guard",
+        action="store_true",
+        help="skip the check that the game processes fit the memory available (MemAvailable + "
+        "swap against an estimate per process; operational, for experts: see "
+        "docs/training-run.md, sizing a run to a machine)",
+    )
+    run.add_argument(
         "--generation-timeout-minutes",
         type=_positive,
         default=180,
@@ -739,6 +754,8 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
         policy_workers=args.policy_workers,
         game_processes=args.game_processes,
         node_heap_mb=args.node_heap_mb,
+        max_concurrent_starts=args.max_concurrent_starts,
+        memory_guard=not args.no_memory_guard,
         profile=args.profile,
         generation_timeout_s=args.generation_timeout_minutes * 60.0,
         play_script=(

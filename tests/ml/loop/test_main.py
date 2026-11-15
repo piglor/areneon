@@ -108,6 +108,18 @@ def test_the_node_heap_cap_is_a_flag_of_the_player_only(
     assert other[0]["node_heap_mb"] is None
 
 
+def test_start_cap_and_memory_guard_are_flags_of_the_player_only(
+    tmp_path: Path, config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built = fake_node(monkeypatch)
+    assert main(run(config_file, tmp_path / "r", 1)) == 0
+    assert (built[0]["max_concurrent_starts"], built[0]["memory_guard"]) == (None, True)
+    other = fake_node(monkeypatch)
+    extra = ("--max-concurrent-starts", "4", "--no-memory-guard")
+    assert main(run(config_file, tmp_path / "s", 1, *extra)) == 0
+    assert (other[0]["max_concurrent_starts"], other[0]["memory_guard"]) == (4, False)
+
+
 def test_the_generation_time_limit_is_a_flag_of_the_player_only(
     tmp_path: Path, config_file: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
