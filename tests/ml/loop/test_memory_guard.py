@@ -91,10 +91,19 @@ def test_check_passes_at_the_limit_and_refuses_above_with_the_largest_fit(tmp_pa
         {"peak_rss_bytes": {"game_process": per // 2, "policy_worker": per // 2}},
     )
     info = meminfo(tmp_path, 11, 6)  # 11 GiB - 4 reserve = 7 processes of 1 GiB; swap ignored
-    args = {"policy_workers": 1, "members": 1, "metrics_dir": run / "metrics", "meminfo": info}
-    guard.check(game_processes=7, **args)
+
+    def check(processes: int) -> None:
+        guard.check(
+            game_processes=processes,
+            policy_workers=1,
+            members=1,
+            metrics_dir=run / "metrics",
+            meminfo=info,
+        )
+
+    check(7)
     with pytest.raises(guard.MemoryGuardError) as err:
-        guard.check(game_processes=9, **args)
+        check(9)
     text = str(err.value)
     assert "largest --game-processes that fits is 7" in text
     assert "measured in the last generation" in text
@@ -185,10 +194,19 @@ def test_single_lineage_play_is_refused_by_the_guard(tmp_path: Path) -> None:
 def test_the_smoke_numbers_s6_passes_and_s9_is_refused_at_idle(tmp_path: Path) -> None:
     """A 4-member population at idle, 19 GB available and 6 GB swap (S=9 was OOM-killed)."""
     info = meminfo(tmp_path, 19, 6)
-    args = {"policy_workers": 1, "members": 4, "metrics_dir": tmp_path / "metrics", "meminfo": info}
-    guard.check(game_processes=6, **args)
+
+    def check(processes: int) -> None:
+        guard.check(
+            game_processes=processes,
+            policy_workers=1,
+            members=4,
+            metrics_dir=tmp_path / "metrics",
+            meminfo=info,
+        )
+
+    check(6)
     with pytest.raises(guard.MemoryGuardError, match="fits is 6"):
-        guard.check(game_processes=9, **args)
+        check(9)
 
 
 def test_a_single_lineage_run_at_s6_passes_at_idle(tmp_path: Path) -> None:
