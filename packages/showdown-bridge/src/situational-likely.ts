@@ -53,18 +53,17 @@ export interface LikelyInput {
   stall: ReadonlySet<string>;
 }
 
-type Reaching = { foe: number; inclusion_ppm: number };
+type Reaching = { foe: number; inclusion_ppm: number; move: string };
+
+/** A likely row that reaches the slot's HP: some no-crit roll does (`ohko_rolls > 0`), or `max_ppm >= 1,000,000` when the KO counts are null. */
+const reachesHp = (r: LikelyRow, position: number): boolean => r.own === position && !r.mega && r.kind === "computed" && (r.ohko_rolls === null ? r.max_ppm >= 1_000_000 : r.ohko_rolls > 0);
 
 /** The likely rows that reach own position `position` and whose foe acts first (speed relation, priority 0). */
-function reachingFirst(rows: readonly LikelyRow[], base: SituationRows, position: number): { reached: Reaching[]; first: Reaching[] } {
-  const reached = rows
-    .filter((r) => r.own === position && !r.mega && r.kind === "computed" && (r.ohko_rolls === null ? r.max_ppm >= 1_000_000 : r.ohko_rolls > 0))
-    .map((r) => ({ foe: r.foe, inclusion_ppm: r.inclusion_ppm, move: r.move }));
-  return { reached, first: reached.filter((r) => foeFirst(base, position, r.foe, r.move)) };
-}
+const reachingFirst = (rows: readonly LikelyRow[], base: SituationRows, position: number): Reaching[] =>
+  rows.filter((r) => reachesHp(r, position)).map((r) => ({ foe: r.foe, inclusion_ppm: r.inclusion_ppm, move: r.move })).filter((r) => foeFirst(base, position, r.foe, r.move));
 
-/** Does any likely row (reaching or not, computed or not) name own position `position`? Used only to keep `safe_unlikely` clean. */
-const anyReach = (rows: readonly LikelyRow[], position: number): boolean => rows.some((r) => r.own === position && !r.mega && r.kind === "computed" && (r.ohko_rolls === null ? r.max_ppm >= 1_000_000 : r.ohko_rolls > 0));
+/** Does any likely row reach own position `position`? Keeps `safe_unlikely` clean. */
+const anyReach = (rows: readonly LikelyRow[], position: number): boolean => rows.some((r) => reachesHp(r, position));
 
 /** Add one decision's Likely-Threatened classes and choices to `counts`. */
 export function tallyLikelyDecision(counts: LikelyCounts, input: LikelyInput): void {
@@ -84,18 +83,21 @@ export function tallyLikelyDecision(counts: LikelyCounts, input: LikelyInput): v
     if (/ fnt$/.test(String(asRecord(pokemon[slot]).condition))) continue;
     const { situation } = classifySlot(input.base, slot);
     let cls: (typeof LIKELY_CLASSES)[number] | "revealed_threatened" = "other";
+    let first: Reaching[] = [];
     if (situation === "threatened") cls = "revealed_threatened";
     else {
-      const { first } = reachingFirst(input.likely.belief_threats, input.base, slot);
-      if (first.length > 0) {
-        cls = "likely_threatened";
-        bump(counts, "likely.likely_threatened.n");
-        bump(counts, "likely.likely_threatened.inclusion_max_ppm", Math.max(...first.map((r) => r.inclusion_ppm)));
-        bump(counts, "likely.likely_threatened.inclusion_sum_ppm", Math.min(1_000_000, first.reduce((n, r) => n + r.inclusion_ppm, 0)));
-      } else if (situation === "safe" && !anyReach(input.likely.belief_threats, slot)) cls = "safe_unlikely";
+      first = reachingFirst(input.likely.belief_threats, input.base, slot);
+      if (first.length > 0) cls = "likely_threatened";
+      else if (situation === "safe" && !anyReach(input.likely.belief_threats, slot)) cls = "safe_unlikely";
     }
     bump(counts, `likely.slots.${cls}.${phase}`);
     if (cls === "revealed_threatened" || phase === "no_facts") continue;
+    // The inclusions are counted with the rates' slots (a no_facts decision is kept out of both).
+    if (cls === "likely_threatened") {
+      bump(counts, "likely.likely_threatened.n");
+      bump(counts, "likely.likely_threatened.inclusion_max_ppm", Math.max(...first.map((r) => r.inclusion_ppm)));
+      bump(counts, "likely.likely_threatened.inclusion_sum_ppm", Math.min(1_000_000, first.reduce((n, r) => n + r.inclusion_ppm, 0)));
+    }
 
     const key = (action: "protect" | "switch"): string => `likely.${action}.${cls}.${phase}`;
     if (parsed.some((p) => stall.has(moveId(slot, p[slot] as SlotPart) ?? ""))) {

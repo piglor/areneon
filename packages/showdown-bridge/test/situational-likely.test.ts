@@ -79,7 +79,7 @@ describe("Likely-Threatened classes from hand-built rows", () => {
     const refused = run("move 1, move 2 1", { base: base([], {}), likely: { belief_threats: [], belief_threats_refused: "species_not_in_prior" } });
     expect(refused).toEqual({ "likely.decisions": 1, "likely.refused.species_not_in_prior": 1 });
     const input = { base: base([], { "0:1": "foe_first" }), likely: { belief_threats: [row(0, 1, "x", 5, 1)] } };
-    expect(run("move 1, move 2 1", input, "no_facts")).toEqual({ "likely.decisions": 1, "likely.slots.likely_threatened.no_facts": 1, "likely.likely_threatened.n": 1, "likely.likely_threatened.inclusion_max_ppm": 5, "likely.likely_threatened.inclusion_sum_ppm": 5, "likely.slots.safe_unlikely.no_facts": 1 });
+    expect(run("move 1, move 2 1", input, "no_facts")).toEqual({ "likely.decisions": 1, "likely.slots.likely_threatened.no_facts": 1, "likely.slots.safe_unlikely.no_facts": 1 });
     const fainted = { ...body, side: { pokemon: [{ condition: "0 fnt" }, { condition: "50/100" }] } };
     const counts: LikelyCounts = {};
     tallyLikelyDecision(counts, { body: fainted, candidates, chosen: "move 2 1, move 2 1", phase: "later", stall: new Set(["protect"]), ...input });

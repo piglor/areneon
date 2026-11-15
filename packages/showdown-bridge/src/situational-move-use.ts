@@ -218,7 +218,7 @@ export async function tallyGame(setup: SituationalSetup, record: StoredGame): Pr
       const streaks = letters.map((letter) => f?.facts?.own.active[letter]?.protect_streak ?? null);
       tallyDecision(counts, { body, candidates: d.candidates, chosen: d.chosen, features: result.outcome.features as CandidateFeatures2, streaks, stall });
       if (setup.likely !== undefined) {
-        const likelyResult = setup.likely.service.run({ game: `${record.match_id}:${record.game}:${player}:likely`, player, lines: channel.slice(0, end + 1), team: record.teams[player].team, candidates: d.candidates, ...(order === mine.length - 1 ? { final: true } : {}) });
+        const likelyResult = setup.likely.service.run({ game: `${record.match_id}:${record.game}:${player}:likely` /* its own game key: a second service keeps a separate probe memo per game */, player, lines: channel.slice(0, end + 1), team: record.teams[player].team, candidates: d.candidates, ...(order === mine.length - 1 ? { final: true } : {}) });
         if (likelyResult.outcome.kind === "error") {
           bump(likelyCounts, `likely.feature_error.${likelyResult.outcome.code}`);
           bump(likelyCounts, "likely.feature_errors");
