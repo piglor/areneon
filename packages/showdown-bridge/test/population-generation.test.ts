@@ -250,7 +250,9 @@ describe("game processes and policy workers (#1333)", () => {
     const printed: string[] = [];
     const run = input(shared, { pool: undefined, processes: 2, shard: { index: 0, of: 2 }, shard_script: "play.ts", forward: ["--config", "c.json"], start_shard: start, load_pool: (got: { write?: string | undefined; vouch?: ((digest: string) => void) | undefined }) => ((written = got.write), got.vouch?.("f".repeat(64)), Promise.resolve(pool)) });
     expect(await runPopulationCli(run, (line) => printed.push(line))).toBe(0);
-    expect(printed).toEqual(lines);
+    expect(printed[0]).toEqual(lines[0]);
+    // After the summary line: the peak resident sets of the largest game process (#1394).
+    expect(JSON.parse(printed[1] as string).resource_usage.game_process_peak_rss_bytes).toBeGreaterThan(0);
     expect(treeBytes(shared)).toEqual(treeBytes(out));
     expect(started).toHaveLength(1);
     expect(started[0]?.args.slice(0, 2)).toEqual(["--config", "c.json"]);

@@ -38,8 +38,8 @@ def peaks(game: object, worker: object) -> dict[str, object]:
     return {"peak_rss_bytes": {"game_process": game, "policy_worker": worker}}
 
 
-def test_available_is_memavailable_plus_swap(tmp_path: Path) -> None:
-    assert guard.available_bytes(meminfo(tmp_path, 10, 2)) == 12 * GIB
+def test_available_is_memavailable_and_swap_is_not_counted(tmp_path: Path) -> None:
+    assert guard.available_bytes(meminfo(tmp_path, 10, 6)) == 10 * GIB
 
 
 def test_available_without_swap_or_without_the_file(tmp_path: Path) -> None:
@@ -90,7 +90,7 @@ def test_check_passes_at_the_limit_and_refuses_above_with_the_largest_fit(tmp_pa
         "g000001.json",
         {"peak_rss_bytes": {"game_process": per // 2, "policy_worker": per // 2}},
     )
-    info = meminfo(tmp_path, 8, 1)  # 9 GiB - 2 reserve = 7 processes of 1 GiB
+    info = meminfo(tmp_path, 11, 6)  # 11 GiB - 4 reserve = 7 processes of 1 GiB; swap ignored
     args = {"policy_workers": 1, "members": 1, "metrics_dir": run / "metrics", "meminfo": info}
     guard.check(game_processes=7, **args)
     with pytest.raises(guard.MemoryGuardError) as err:
@@ -156,7 +156,7 @@ def test_population_play_passes_it_and_guards_with_the_member_count(tmp_path: Pa
     out = tmp_path / "argv.json"
     members = tuple(MemberPair(f"m{k}", f"policy:{k}", "p" * 64, "b" * 64) for k in range(4))
     request = PopulationPlayRequest(1, members, tmp_path / "w")
-    info = meminfo(tmp_path, 7)
+    info = meminfo(tmp_path, 9)
     # default estimate with 4 members, 1 worker: 0.6 + 4 x 0.43 = 2.32 GB; 5 GB / 2.32 = 2 fit
     ok = player(tmp_path, argv_script(out), game_processes=2, max_concurrent_starts=3, meminfo=info)
     ok.play_population(request)
@@ -180,3 +180,34 @@ def test_single_lineage_play_is_refused_by_the_guard(tmp_path: Path) -> None:
             request
         )
     assert not out.exists()
+
+
+def test_the_smoke_numbers_s6_passes_and_s9_is_refused_at_idle(tmp_path: Path) -> None:
+    """A 4-member population at idle, 19 GB available and 6 GB swap (S=9 was OOM-killed)."""
+    info = meminfo(tmp_path, 19, 6)
+    args = {"policy_workers": 1, "members": 4, "metrics_dir": tmp_path / "metrics", "meminfo": info}
+    guard.check(game_processes=6, **args)
+    with pytest.raises(guard.MemoryGuardError, match="fits is 6"):
+        guard.check(game_processes=9, **args)
+
+
+def test_a_single_lineage_run_at_s6_passes_at_idle(tmp_path: Path) -> None:
+    info = meminfo(tmp_path, 19, 6)
+    for workers in (1, 2):
+        guard.check(
+            game_processes=6,
+            policy_workers=workers,
+            members=1,
+            metrics_dir=tmp_path / "metrics",
+            meminfo=info,
+        )
+
+
+def test_learned_peaks_count_only_the_members_a_process_plays(tmp_path: Path) -> None:
+    metrics(tmp_path, "g000001.json", peaks(GIB, GIB))
+    wide = guard.estimate(tmp_path / "metrics", 1, 4, 1)  # one process: all 4 members
+    split = guard.estimate(tmp_path / "metrics", 1, 4, 9)  # min(4, 1 + ceil(4 / 9)) = 2
+    assert wide.per_process_bytes == 5 * GIB
+    assert split.per_process_bytes == 3 * GIB
+    # without a measurement every member counts whatever S is
+    assert guard.estimate(tmp_path / "none", 1, 4, 9) == guard.estimate(tmp_path / "none", 1, 4, 1)

@@ -173,14 +173,14 @@ What a process holds, measured on the 28-core, 24 GB, 16 GB GPU machine with the
 
 The memory guard (#1394). At 9 game processes a 4-member population generation was OOM-killed on a
 23 GB machine (peak about 18 GB plus swap at 6 processes). Before each play phase the driver
-compares `MemAvailable + SwapFree` from `/proc/meminfo`, less 2 GB kept for the driver and the load
-phase, with `S` times an estimate per game process, and if `S` does not fit it refuses with a fixed
+compares `MemAvailable` from `/proc/meminfo` (swap is not counted: a run that swaps misses its latency
+budgets), less 4 GB kept for the driver and the load phase (its resident set was observed at 3.2 to 3.6 GB), with `S` times an estimate per game process, and if `S` does not fit it refuses with a fixed
 message (a `PlayError`, exit 4, nothing started) naming the largest `S` that does. It never lowers `S` itself: you choose.
 The estimate is the largest game process peak plus `K` times the largest policy worker peak (times the
-members of a population run, which is conservative) of the newest `metrics/g*.json` that has both
-`peak_rss_bytes.game_process` and `peak_rss_bytes.policy_worker`; with none (generation 0, or a run
+members of a population run) of the newest `metrics/g*.json` that has both
+`peak_rss_bytes.game_process` and `peak_rss_bytes.policy_worker` (a population run reports them too since #1394, as the single lineage does); with none (generation 0, or a run
 without Linux resident-set figures) the default is 0.6 GB per game process plus 0.43 GB per policy
-worker, the rule of thumb above. The figures are read from one machine's `MemAvailable`, a moment
+worker, the rule of thumb above, with every member of a population counted (the 4-member, 6-process smoke needed about 2.4 GB a process: S = 6 passes at 19 GB idle and S = 9 is refused). Once learned peaks exist a population run counts `min(members, 1 + ceil(members / S))` members per process instead, since each process plays a consecutive run of the member-ordered plan. The figures are read from one machine's `MemAvailable`, a moment
 estimate: a run that starts when other work is about to grow can still swap. Where `/proc/meminfo`
 cannot be read the guard does nothing. `--no-memory-guard` skips it. Operational, outside every hash.
 

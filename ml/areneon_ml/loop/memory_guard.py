@@ -23,8 +23,8 @@ GIB = 1 << 30
 DEFAULT_GAME_PROCESS_BYTES = 6 * GIB // 10
 #: ... plus 0.43 GB for each policy worker it starts.
 DEFAULT_POLICY_WORKER_BYTES = 43 * GIB // 100
-#: Kept free for the driver, its learner and the load phase (docs: plan 1.5 to 2 GB).
-DRIVER_RESERVE_BYTES = 2 * GIB
+#: Kept free for the driver, its learner and the load phase (observed driver RSS: 3.2 to 3.6 GB).
+DRIVER_RESERVE_BYTES = 4 * GIB
 MEMINFO = Path("/proc/meminfo")
 
 
@@ -39,20 +39,18 @@ class Estimate:
 
 
 def available_bytes(meminfo: Path = MEMINFO) -> int | None:
-    """``MemAvailable`` plus ``SwapFree`` in bytes; ``None`` where ``meminfo`` cannot be read."""
+    """``MemAvailable`` in bytes (swap is not counted: a run that swaps misses its latency budgets
+    and the OOM killer came at ~18 GB plus swap); ``None`` where ``meminfo`` cannot be read."""
     try:
         text = meminfo.read_text(encoding="ascii")
     except (OSError, ValueError):
         return None
-    found: dict[str, int] = {}
     for line in text.splitlines():
         name, _, rest = line.partition(":")
         parts = rest.split()
-        if name in ("MemAvailable", "SwapFree") and parts and parts[0].isdigit():
-            found[name] = int(parts[0]) * 1024
-    if "MemAvailable" not in found:
-        return None
-    return found["MemAvailable"] + found.get("SwapFree", 0)
+        if name == "MemAvailable" and parts and parts[0].isdigit():
+            return int(parts[0]) * 1024
+    return None
 
 
 def _learned_peaks(metrics_dir: Path) -> tuple[int, int] | None:
@@ -78,11 +76,23 @@ def _learned_peaks(metrics_dir: Path) -> tuple[int, int] | None:
     return None
 
 
-def estimate(metrics_dir: Path, policy_workers: int, members: int) -> Estimate:
-    """Bytes one game process needs: itself plus ``policy_workers`` workers per member."""
+def estimate(
+    metrics_dir: Path, policy_workers: int, members: int, game_processes: int = 1
+) -> Estimate:
+    """Bytes one game process needs: itself plus ``policy_workers`` workers per member.
+
+    With no measurement every member counts (the default, conservative). With learned peaks a
+    process plays a consecutive run of the member-ordered plan (``populationShards``), so it needs
+    the workers of ``min(members, 1 + ceil(members / S))`` members only.
+    """
     peaks = _learned_peaks(metrics_dir)
-    game, worker = peaks or (DEFAULT_GAME_PROCESS_BYTES, DEFAULT_POLICY_WORKER_BYTES)
-    return Estimate(game + worker * policy_workers * members, peaks is not None)
+    if peaks is None:
+        game, worker = DEFAULT_GAME_PROCESS_BYTES, DEFAULT_POLICY_WORKER_BYTES
+        effective = members
+    else:
+        (game, worker) = peaks
+        effective = min(members, 1 + -(-members // max(1, game_processes)))
+    return Estimate(game + worker * policy_workers * effective, peaks is not None)
 
 
 def largest_fit(available: int, per_process: int) -> int:
@@ -101,7 +111,7 @@ def check(
     available = available_bytes(meminfo)
     if available is None:
         return  # no /proc/meminfo (not Linux): nothing to compare with
-    found = estimate(metrics_dir, policy_workers, members)
+    found = estimate(metrics_dir, policy_workers, members, game_processes)
     fit = largest_fit(available, found.per_process_bytes)
     if game_processes <= fit:
         return
@@ -109,7 +119,7 @@ def check(
     raise MemoryGuardError(
         f"memory guard: {game_processes} game processes x {found.per_process_bytes >> 20} MB "
         f"({source}; {policy_workers} policy workers x {members} members each) do not fit "
-        f"{available >> 20} MB available (MemAvailable + swap, less "
+        f"{available >> 20} MB available (MemAvailable, less "
         f"{DRIVER_RESERVE_BYTES >> 20} MB for the driver): the largest "
         f"--game-processes that fits is {fit}; lower it, or pass --no-memory-guard"
     )
