@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from areneon_ml.loop import memory_guard as guard
+
 
 class PlayError(RuntimeError):
     """The simulator side failed; its message holds the end of its stderr."""
@@ -106,6 +108,15 @@ class NodePlayer:
     #: team pool peaks at about 860 MB without it and about 590 MB with 640 (#1069). Operational:
     #: the generation's files do not depend on it. ``None`` leaves Node's default.
     node_heap_mb: int | None = None
+    #: Bound on policy-worker start-ups in flight across all game processes
+    #: (``--max-concurrent-starts``, #1394); ``None`` leaves the play script's own default (2).
+    #: Operational: the generation's files do not depend on it.
+    max_concurrent_starts: int | None = None
+    #: Refuse a play phase whose game processes do not fit the memory available (#1394).
+    #: Operational; ``--no-memory-guard`` turns it off.
+    memory_guard: bool = True
+    #: Where the guard reads the memory available; a test points it at a fake file.
+    meminfo: Path = guard.MEMINFO
     #: Ask the play script to time its phases, its processes and its workers (ADR-028 section 1,
     #: #1191). Operational: the generation's files do not depend on it, and the timings come
     #: back as one more output line, never into a file the manifest hashes.
@@ -166,6 +177,25 @@ class NodePlayer:
             raise PlayError(f"{script} failed (exit {child.returncode}): {stderr[-_STDERR_TAIL:]}")
         return stdout
 
+    def _guard(self, members: int) -> None:
+        if not self.memory_guard:
+            return
+        try:
+            guard.check(
+                game_processes=self.game_processes,
+                policy_workers=self.policy_workers,
+                members=members,
+                metrics_dir=self.run_dir / "metrics",
+                meminfo=self.meminfo,
+            )
+        except guard.MemoryGuardError as exc:
+            raise PlayError(str(exc)) from None
+
+    def _starts(self) -> tuple[str, ...]:
+        if self.max_concurrent_starts is None:
+            return ()
+        return ("--max-concurrent-starts", str(self.max_concurrent_starts))
+
     def manifest(self, format_id: str) -> dict[str, Any]:
         found = json.loads(
             self._run("packages/showdown-bridge/scripts/format-manifest.ts", "--format", format_id)
@@ -175,6 +205,7 @@ class NodePlayer:
         return found
 
     def play(self, request: PlayRequest) -> None:
+        self._guard(1)
         self.resource_usage.clear()
         self.last_profile.clear()
         self.last_divergence.clear()
@@ -194,6 +225,7 @@ class NodePlayer:
             *(("--policy-workers", str(self.policy_workers)) if self.policy_workers != 1 else ()),
             *(("--game-processes", str(self.game_processes)) if self.game_processes != 1 else ()),
             *(("--profile",) if self.profile else ()),
+            *self._starts(),
             heap_mb=self.node_heap_mb,
             timeout_s=self.generation_timeout_s,
         )
@@ -227,6 +259,7 @@ class NodePlayer:
         with ``policy_workers`` workers for every member that plays in its slice (#1333); the
         generation's files are the same for any counts (operational, and absent at 1).
         """
+        self._guard(len(request.members))
         self.resource_usage.clear()
         out = self._run(
             self.play_script,
@@ -245,6 +278,7 @@ class NodePlayer:
             *(() if request.past_pool is None else ("--past-pool", str(request.past_pool))),
             *(("--policy-workers", str(self.policy_workers)) if self.policy_workers != 1 else ()),
             *(("--game-processes", str(self.game_processes)) if self.game_processes != 1 else ()),
+            *self._starts(),
             heap_mb=self.node_heap_mb,
             timeout_s=self.generation_timeout_s,
         )
