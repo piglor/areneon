@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 from areneon_contracts.contracts import jcs
+from areneon_ml.learner.__main__ import main as learner_main
 from areneon_ml.loop import __main__ as module
 from areneon_ml.loop.__main__ import EXIT_PLAY, EXIT_REFUSED, main
 from areneon_ml.loop.driver import Loop
@@ -328,3 +329,39 @@ def test_a_population_run_cannot_be_profiled_and_says_so(
     fake_node(monkeypatch, FakePopulationPlayer(config))  # type: ignore[arg-type]
     assert main(run(path, tmp_path / "r", 1, "--profile")) == EXIT_REFUSED
     assert "--profile does not apply to a population run" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("value", ["0", "1048577"])
+def test_the_learner_micro_batch_is_bounded_at_parse_time(value: str) -> None:
+    with pytest.raises(SystemExit) as loop_exit:
+        main(
+            [
+                "run",
+                "--config",
+                "c",
+                "--run-dir",
+                "r",
+                "--engine-data",
+                "e",
+                "--generations",
+                "1",
+                "--learner-micro-batch",
+                value,
+            ]
+        )
+    assert loop_exit.value.code == 2
+    with pytest.raises(SystemExit) as learner_exit:
+        learner_main(
+            [
+                "bench",
+                "--config",
+                "c",
+                "--engine-data",
+                "e",
+                "--stream-dir",
+                "s",
+                "--learner-micro-batch",
+                value,
+            ]
+        )
+    assert learner_exit.value.code == 2

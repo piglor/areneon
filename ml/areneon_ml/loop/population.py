@@ -304,6 +304,8 @@ class PopulationLoop:
         #: Size the workers at each load phase from the machine (``--load-processes auto``).
         self.load_auto = False
         self.load_memory_mb: int | None = None
+        #: ``--learner-micro-batch`` (operational): see ``Loop.learner_micro_batch``.
+        self.learner_micro_batch: int | None = None
         self._on_stage = on_stage or (lambda _generation, _stage: None)
         self.clock: Callable[[], float] = time.monotonic
         self.rss_source: Callable[[], int] = driver_peak_rss_bytes
@@ -364,7 +366,7 @@ class PopulationLoop:
             assert self.config.warm_start is not None  # the reader requires warm_start
             anchors = self._warm_pair(self.config.warm_start).networks
         # Built and kept on the host; `_train_member` brings it to the device while it trains.
-        learner = Learner(cfg, built, HOST, anchors)
+        learner = Learner(cfg, built, HOST, anchors, self.learner_micro_batch)
         learner.population_settings = selection.ppo_part(
             settings if settings is not None else selection.member_settings(self.config, index)
         )
@@ -1241,6 +1243,7 @@ class PopulationLoop:
                     timing.peak_memory,
                     timing.peak_reserved,
                     {**timing.play_rss, "driver": self.rss_source()},
+                    learner_micro_batch=self.learner_micro_batch,
                 ),
             ),
         )

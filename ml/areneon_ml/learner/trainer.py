@@ -30,6 +30,7 @@ from areneon_ml.learner.diagnostics import CalibrationBin, calibration, explaine
 from areneon_ml.learner.imitation import DrawStream, TeacherSource
 from areneon_ml.learner.labels import LabelStep
 from areneon_ml.learner.ppo import (
+    LossParts,
     LossWeights,
     Targets,
     anchor_kl,
@@ -244,7 +245,15 @@ class Learner:
         networks: Mapping[str, PolicyNetwork],
         device: torch.device,
         anchors: Mapping[str, PolicyNetwork] | None = None,
+        micro_batch: int | None = None,
     ) -> None:
+        if micro_batch is not None and micro_batch < 1:
+            raise LearnerError("the learner micro-batch must be at least 1")
+        #: Operational (``--learner-micro-batch``, not a config field): a minibatch is run through
+        #: the network in chunks of at most this many decisions, each backpropagated at once and
+        #: scaled by its share (gradient accumulation), so the activations of one optimiser step
+        #: never exceed one chunk's. ``None`` is the single pass of every earlier release.
+        self.micro_batch = micro_batch
         if set(networks) != set(ROLES):
             raise LearnerError(f"one network per role is needed: {sorted(ROLES)}")
         if (anchors is None) != (config.ppo.anchor is None):
@@ -465,10 +474,16 @@ class Learner:
         self.generation += 1
         return TrainReport(roles)
 
+    def _pass_size(self) -> int:
+        """Decisions per forward pass of the no-gradient passes: the minibatch, or the
+        micro-batch when that is smaller."""
+        size = self.config.ppo.minibatch_size
+        return size if self.micro_batch is None else min(size, self.micro_batch)
+
     def _score(self, role: str, steps: Sequence[Step]) -> tuple[torch.Tensor, torch.Tensor]:
         """Log-probability of the chosen candidate and the value of each step, no gradient."""
         network = self.networks[role]
-        size = self.config.ppo.minibatch_size
+        size = self._pass_size()
         tau = self.config.generation.temperature_ppm
         log_probs, values = [], []
         network.eval()
@@ -522,7 +537,7 @@ class Learner:
     def _anchor_scores(self, role: str, steps: Sequence[Step]) -> list[torch.Tensor]:
         """The anchor's log-probabilities over each step's real candidates, no gradient."""
         network = self.anchors[role]
-        size = self.config.ppo.minibatch_size
+        size = self._pass_size()
         tau = self.config.generation.temperature_ppm
         out: list[torch.Tensor] = []
         with torch.no_grad():
@@ -648,7 +663,7 @@ class Learner:
         if not steps:
             return 0.0, 0
         network = self.networks["battle"]
-        size = self.config.ppo.minibatch_size
+        size = self._pass_size()
         tau = self.config.generation.temperature_ppm
         total = torch.zeros(())
         hits = 0
@@ -678,7 +693,7 @@ class Learner:
         if not labels:
             return 0.0
         network = self.networks["battle"]
-        size = self.config.ppo.minibatch_size
+        size = self._pass_size()
         tau = self.config.generation.temperature_ppm
         total = torch.zeros(())
         network.eval()
@@ -724,7 +739,7 @@ class Learner:
         entropy_coef = ppo.entropy_coef if entropy_micro is None else entropy_micro / MICRO
         return LossWeights(ppo.clip, ppo.value_coef, entropy_coef)
 
-    def _minibatch_loss(  # noqa: PLR0913, PLR0917
+    def _minibatch_loss(  # noqa: PLR0913, PLR0915, PLR0917
         self,
         role: str,
         table: _Table,
@@ -733,9 +748,20 @@ class Learner:
         weights: LossWeights,
         label_index: list[int] | None = None,
         teacher_index: list[int] | None = None,
+        shares: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0),
     ) -> tuple[torch.Tensor, Any, torch.Tensor | None]:
         """One minibatch of one role: the tensor to backpropagate, the loss terms and, with an
-        anchor, the (detached-by-the-caller) mean KL to the anchor."""
+        anchor, the (detached-by-the-caller) mean KL to the anchor.
+
+        ``shares`` (micro-batching only) is this chunk's share of the minibatch's decisions, label
+        steps, teacher steps and move-reveal targets: each term is a mean over its own set, so it
+        is scaled by the chunk's share of that set and the chunks' tensors add up to the
+        minibatch's. At 1.0 (the default) nothing is multiplied."""
+        main_share, label_share, teacher_share, aux_share = shares
+
+        def scaled(term: torch.Tensor, share: float) -> torch.Tensor:
+            return term if share == 1.0 else term * share
+
         tau = self.config.generation.temperature_ppm
         beta_micro = self.last_anchor_beta_micro if role in self.anchors else None
         beta = 0.0 if beta_micro is None else beta_micro / MICRO
@@ -756,7 +782,7 @@ class Learner:
             Targets(table.old_log_prob[index], table.advantages[index], table.returns[index]),
             weights,
         )
-        total = loss.total
+        total = scaled(loss.total, main_share)
         kl = None
         if table.anchor_log_probs is not None:
             dense = torch.zeros(batch.cand_mask.shape, device=self.device)
@@ -766,13 +792,13 @@ class Learner:
             kl = kl_rows.mean()
             threatened = self._threatened_beta() if role == "battle" else None
             if threatened is None:
-                total = total + beta * kl
+                total = total + scaled(beta * kl, main_share)
             else:
                 # ADR-010 erratum A11.2: beta(d) per decision, not renormalised.
                 flags = [bool(table.steps[i].threatened) for i in index]
                 hot = torch.tensor(flags, device=self.device)
                 betas = torch.where(hot, threatened / MICRO, beta)
-                total = total + (betas * kl_rows).mean()
+                total = total + scaled((betas * kl_rows).mean(), main_share)
                 tally = self._threatened_kl.setdefault(role, [0.0, 0.0])
                 tally[0] += float(kl_rows.detach()[hot].sum().cpu())
                 tally[1] += float(hot.sum().cpu())
@@ -789,7 +815,7 @@ class Learner:
                 self._label_dense(chosen_labels, label_batch),
                 tau,
             ).mean()
-            total = total + settings.coef_micro / MICRO * label_kl
+            total = total + scaled(settings.coef_micro / MICRO * label_kl, label_share)
         imitation = self.config.ppo.imitation
         if imitation is not None and teacher_index and not warm:
             # ADR-010 erratum A11.3: lambda_im * the mean cross-entropy toward the teacher's choice
@@ -803,14 +829,76 @@ class Learner:
             terms = policy_terms(
                 self.networks[role](teacher_batch).logits, teacher_batch.cand_mask, picked, tau
             )
-            total = total + (self.last_imitation_coef_micro or 0) / MICRO * (-terms.log_prob).mean()
+            imitation_term = (
+                (self.last_imitation_coef_micro or 0) / MICRO * (-terms.log_prob).mean()
+            )
+            total = total + scaled(imitation_term, teacher_share)
         aux_term: float | torch.Tensor = 0.0
         if aux is not None and aux_ce is not None and aux_ce.numel():
             # ADR-010 erratum A12.2: coef * the mean cross-entropy over the minibatch's unmasked
             # move-reveal targets; it trains the head and, through the trunk, the representation
             # (frozen during a value warm-up, which then trains the head alone).
-            aux_term = aux.coef_micro / MICRO * aux_ce.mean()
-        return (loss.value + aux_term if warm else total + aux_term), loss, kl
+            aux_term = scaled(aux.coef_micro / MICRO * aux_ce.mean(), aux_share)
+        warm_loss = scaled(loss.value, main_share)
+        return (warm_loss + aux_term if warm else total + aux_term), loss, kl
+
+    def _accumulate(  # noqa: PLR0913, PLR0917
+        self,
+        role: str,
+        table: _Table,
+        warm: bool,
+        index: list[int],
+        weights: LossWeights,
+        label_index: list[int] | None,
+        teacher_index: list[int] | None,
+    ) -> tuple[LossParts, torch.Tensor | None]:
+        """Micro-batched ``_minibatch_loss``: the minibatch in chunks of at most
+        ``self.micro_batch`` decisions, each backpropagated at once (its graph freed) and scaled by
+        its share, so the gradients accumulate to the minibatch's. The label and teacher steps are
+        spread over the same chunks and each term is scaled by its own share. The returned loss
+        terms and KL are the share-weighted sums, i.e. the minibatch means. The caller zeroes the
+        gradients before and clips and steps after."""
+        assert self.micro_batch is not None
+        size = self.micro_batch
+        chunks = [index[s : s + size] for s in range(0, len(index), size)]
+        parts = len(chunks)
+        labels = self._spread(label_index, parts) if label_index else [None] * parts
+        teachers = self._spread(teacher_index, parts) if teacher_index else [None] * parts
+        aux = self.config.ppo.aux_moves if role == "battle" else None
+        counts = [sum(len(table.steps[i].aux or ()) for i in c) for c in chunks] if aux else None
+        aux_total = sum(counts) if counts else 0
+        fields = [torch.zeros(()) for _ in range(6)]
+        kl_total: torch.Tensor | None = None
+        for k, chunk in enumerate(chunks):
+            main = len(chunk) / len(index)
+            label = len(labels[k] or ()) / len(label_index) if label_index else 1.0
+            teacher = len(teachers[k] or ()) / len(teacher_index) if teacher_index else 1.0
+            aux_share = counts[k] / aux_total if counts and aux_total else 1.0
+            backward, loss, kl = self._minibatch_loss(
+                role,
+                table,
+                warm,
+                chunk,
+                weights,
+                labels[k],
+                teachers[k],
+                (main, label, teacher, aux_share),
+            )
+            torch.autograd.backward(backward)
+            terms = (
+                loss.total,
+                loss.policy,
+                loss.value,
+                loss.entropy,
+                loss.clip_fraction,
+                loss.approx_kl,
+            )
+            for j, term in enumerate(terms):
+                fields[j] = fields[j] + term.detach().cpu() * main
+            if kl is not None:
+                weighted = kl.detach().cpu() * main
+                kl_total = weighted if kl_total is None else kl_total + weighted
+        return LossParts(*fields), kl_total
 
     def _aux_ce(
         self, logits: torch.Tensor, targets: Sequence[tuple[Any, ...]]
@@ -942,19 +1030,30 @@ class Learner:
             teacher_chunks = self._teacher_chunks(table, parts)
             for k, start in enumerate(range(0, len(order), ppo.minibatch_size)):
                 index = order[start : start + ppo.minibatch_size]
-                backward, loss, kl = self._minibatch_loss(
-                    role,
-                    table,
-                    warm,
-                    index,
-                    weights,
-                    label_chunks[k] if label_chunks else None,
-                    teacher_chunks[k] if teacher_chunks else None,
-                )
+                optimiser.zero_grad(set_to_none=True)
+                if self.micro_batch is None:
+                    backward, loss, kl = self._minibatch_loss(
+                        role,
+                        table,
+                        warm,
+                        index,
+                        weights,
+                        label_chunks[k] if label_chunks else None,
+                        teacher_chunks[k] if teacher_chunks else None,
+                    )
+                    torch.autograd.backward(backward)
+                else:
+                    loss, kl = self._accumulate(
+                        role,
+                        table,
+                        warm,
+                        index,
+                        weights,
+                        label_chunks[k] if label_chunks else None,
+                        teacher_chunks[k] if teacher_chunks else None,
+                    )
                 if kl is not None:
                     kl_sum += kl.detach().cpu()
-                optimiser.zero_grad(set_to_none=True)
-                torch.autograd.backward(backward)
                 torch.nn.utils.clip_grad_norm_(network.parameters(), ppo.max_grad_norm)
                 optimiser.step()
                 optimiser_steps += 1
@@ -1012,7 +1111,7 @@ class Learner:
             position += size
         return out
 
-    def _train_joint(
+    def _train_joint(  # noqa: PLR0912, PLR0915
         self, tables: Mapping[str, tuple[_Table, bool]], warmup: bool
     ) -> dict[str, RoleReport]:
         """``shared_trunk``: every optimiser step backpropagates the SUM of the roles' minibatch
@@ -1073,28 +1172,32 @@ class Learner:
                 epoch_n = dict.fromkeys(tables, 0)
                 for k in range(len(chunks[leader])):
                     parts = []
+                    optimiser.zero_grad(set_to_none=True)
                     for role, (table, warm) in tables.items():
                         index = chunks[role][k]
                         if not index:
                             continue
-                        backward, loss, kl = self._minibatch_loss(
-                            role,
-                            table,
-                            warm,
-                            index,
-                            weights,
-                            label_chunks[k] if role == "battle" and label_chunks else None,
-                            teacher_chunks[k] if role == "battle" and teacher_chunks else None,
+                        label_index = label_chunks[k] if role == "battle" and label_chunks else None
+                        teacher_index = (
+                            teacher_chunks[k] if role == "battle" and teacher_chunks else None
                         )
+                        if self.micro_batch is None:
+                            backward, loss, kl = self._minibatch_loss(
+                                role, table, warm, index, weights, label_index, teacher_index
+                            )
+                            parts.append(backward)
+                        else:
+                            loss, kl = self._accumulate(
+                                role, table, warm, index, weights, label_index, teacher_index
+                            )
                         if kl is not None:
                             kl_sums[role] += kl.detach().cpu()
-                        parts.append(backward)
                         counts[role] += 1
                         epoch_n[role] += 1
                         epoch_kl[role] += float(loss.approx_kl.detach().cpu())
                         self._tally(sums[role], loss)
-                    optimiser.zero_grad(set_to_none=True)
-                    torch.autograd.backward(sum(parts[1:], parts[0]))
+                    if self.micro_batch is None:
+                        torch.autograd.backward(sum(parts[1:], parts[0]))
                     torch.nn.utils.clip_grad_norm_(union, ppo.max_grad_norm)
                     optimiser.step()
                 epochs_run += 1

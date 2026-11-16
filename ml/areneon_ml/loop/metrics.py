@@ -84,6 +84,9 @@ class Peaks:
     #: The ``inference_divergence`` value of a run whose config says ``generation.inference``
     #: (ADR-028 section 2 F2, #1195): how far batched self-play strayed from batch 1.
     inference: dict[str, Any] | None = None
+    #: ``--learner-micro-batch`` of the run (operational): recorded so a run says how it was
+    #: trained; written only when set, so every other record keeps its bytes.
+    learner_micro_batch: int | None = None
 
 
 def build_metrics(
@@ -123,6 +126,8 @@ def build_metrics(
         record["profile"] = peaks.profile
     if peaks.inference is not None:
         record["inference_divergence"] = peaks.inference
+    if peaks.learner_micro_batch is not None:
+        record["learner_micro_batch"] = peaks.learner_micro_batch
     validate("run-metrics", record)
     return record
 

@@ -225,6 +225,9 @@ class Loop:
         self.load_memory_mb: int | None = None
         #: Time the phases and processes of each generation into its metrics file (#1191).
         self.profile = False
+        #: ``--learner-micro-batch`` (operational, not a config field): the learner runs each
+        #: minibatch in chunks of at most this many decisions. ``None``: one pass.
+        self.learner_micro_batch: int | None = None
         self._on_stage = on_stage or (lambda _generation, _stage: None)
         #: Wall-clock source for the run-metrics record; a test replaces it.
         self.clock: Clock = time.monotonic
@@ -265,7 +268,7 @@ class Loop:
             # second copy, never the learner's own networks) and checked as at generation 0.
             assert self.config.warm_start is not None  # the reader requires warm_start
             anchors = self._warm_pair(self.config.warm_start).networks
-        return Learner(self.config, built, self.device, anchors)
+        return Learner(self.config, built, self.device, anchors, self.learner_micro_batch)
 
     # -- run -----------------------------------------------------------------
 
@@ -720,6 +723,7 @@ class Loop:
                     {**timing.play_rss, "driver": self.rss_source()},
                     timing.profile,
                     timing.divergence,
+                    self.learner_micro_batch,
                 ),
             ),
         )

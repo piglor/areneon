@@ -52,6 +52,7 @@ from areneon_ml.inspector.readers import InspectError, refuse_population
 from areneon_ml.inspector.replay_command import Selection, parse_games, replay_games
 from areneon_ml.inspector.resimulate import node_runner
 from areneon_ml.inspector.resimulate_command import parse_target, resimulate_game
+from areneon_ml.learner.__main__ import MAX_MICRO_BATCH
 from areneon_ml.learner.config import RunConfigError, read_run_config
 from areneon_ml.learner.data import LearnerDataError
 from areneon_ml.learner.state import LearnerStateError
@@ -118,6 +119,14 @@ def _positive(text: str) -> int:
     value = int(text)
     if value < 1:
         raise argparse.ArgumentTypeError("must be at least 1")
+    return value
+
+
+def _micro_batch(text: str) -> int:
+    """1 to the run-metrics contract's cap, so a too-large value fails at parse time."""
+    value = _positive(text)
+    if value > MAX_MICRO_BATCH:
+        raise argparse.ArgumentTypeError(f"must be at most {MAX_MICRO_BATCH}")
     return value
 
 
@@ -219,6 +228,16 @@ def _add_run(commands: Any) -> None:
         "memory available at that moment (an estimate), capped by --load-memory-mb (default 1; "
         "operational: the trajectories and every hash are the same for any number; each worker "
         "adds its piece's tensors to memory while it runs, see docs/training-run.md)",
+    )
+    run.add_argument(
+        "--learner-micro-batch",
+        type=_micro_batch,
+        default=None,
+        help="run each learner minibatch through the network in chunks of at most this many "
+        "decisions, accumulating the gradient (operational, not a config field: it bounds the "
+        "activation memory, e.g. 64 on a 16 GB card; the gradients equal the single pass's up "
+        "to float rounding, so a run is reproducible only for the same value; default: one "
+        "pass; recorded in metrics/g*.json)",
     )
     run.add_argument(
         "--load-memory-mb",
@@ -773,11 +792,13 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
         pop.load_processes = load_processes
         pop.load_auto = auto
         pop.load_memory_mb = args.load_memory_mb
+        pop.learner_micro_batch = args.learner_micro_batch
         return pop.run(args.generations).as_dict(pop.frozen)
     loop = Loop(config, args.run_dir.resolve(), game, player)
     loop.load_processes = load_processes
     loop.load_auto = auto
     loop.load_memory_mb = args.load_memory_mb
+    loop.learner_micro_batch = args.learner_micro_batch
     loop.profile = args.profile
     result = loop.run(args.generations)
     return result.as_dict(loop.frozen)

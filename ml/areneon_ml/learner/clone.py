@@ -264,6 +264,11 @@ def situation_factors(steps: Sequence[Step], weights: SituationWeights) -> tuple
     return factors, total // len(found)
 
 
+def _pieces(index: list[int], size: int) -> list[list[int]]:
+    """``index`` in consecutive chunks of at most ``size``."""
+    return [index[s : s + size] for s in range(0, len(index), size)]
+
+
 def _train_role(  # noqa: PLR0913
     config: CloneConfig,
     network: PolicyNetwork,
@@ -272,12 +277,18 @@ def _train_role(  # noqa: PLR0913
     device: torch.device,
     *,
     weights: SituationWeights | None = None,
+    micro_batch: int | None = None,
 ) -> tuple[torch.optim.Adam, RoleReport]:
     """Train ``network`` on ``parts[0]``; ``parts[1]`` is the held-back part, only measured.
 
     With ``weights`` (the Battle role under ``clone.situation_weights``) every decision's
     cross-entropy is scaled by its factor (``situation_factors``); the shuffle, minibatches and
     optimiser steps are the same as without them.
+
+    With ``micro_batch`` (operational, not a config field) each minibatch is run in chunks of at
+    most that many decisions, each backpropagated at once and scaled by its share of the minibatch,
+    so the gradient is the minibatch's and the activations are one chunk's; ``None`` is the single
+    pass.
     """
     steps, held = parts
     settings = config.clone
@@ -296,22 +307,33 @@ def _train_role(  # noqa: PLR0913
         order = torch.randperm(len(steps), generator=generator).tolist()
         for start in range(0, len(order), settings.minibatch_size):
             index = order[start : start + settings.minibatch_size]
-            batch = to_device(collate([steps[i].query for i in index]), device)
-            chosen = torch.tensor([steps[i].chosen for i in index], device=device)
-            logits = network(batch).logits
-            if factors is None:
-                loss = cross_entropy(logits, batch.cand_mask, chosen)
-            else:
-                each = -policy_terms(logits, batch.cand_mask, chosen).log_prob
-                loss = (factors[index].to(device) * each).mean()
             optimiser.zero_grad(set_to_none=True)
-            torch.autograd.backward(loss)
+            pieces = [index] if micro_batch is None else _pieces(index, micro_batch)
+            minibatch_loss = 0.0
+            for piece in pieces:
+                batch = to_device(collate([steps[i].query for i in piece]), device)
+                chosen = torch.tensor([steps[i].chosen for i in piece], device=device)
+                logits = network(batch).logits
+                if factors is None:
+                    loss = cross_entropy(logits, batch.cand_mask, chosen)
+                else:
+                    each = -policy_terms(logits, batch.cand_mask, chosen).log_prob
+                    loss = (factors[piece].to(device) * each).mean()
+                if micro_batch is None:
+                    torch.autograd.backward(loss)
+                    minibatch_loss = float(loss.detach().cpu())
+                else:
+                    share = len(piece) / len(index)
+                    torch.autograd.backward(loss * share)
+                    minibatch_loss += float(loss.detach().cpu()) * share
             torch.nn.utils.clip_grad_norm_(network.parameters(), settings.max_grad_norm)
             optimiser.step()
             optimiser_steps += 1
-            total += float(loss.detach().cpu()) * len(index)
+            total += minibatch_loss * len(index)
         epoch_loss.append(total / len(steps))
     size = settings.minibatch_size
+    if micro_batch is not None:
+        size = min(size, micro_batch)
     situation = None
     if weights is not None:
         situation = SituationReport(
@@ -382,12 +404,14 @@ def split_parts(
     return parts
 
 
-def clone(
+def clone(  # noqa: PLR0913
     config: CloneConfig,
     game: GameData,
     stream: str | Path,
     manifest: dict[str, Any],
     device: torch.device | None = None,
+    *,
+    micro_batch: int | None = None,
 ) -> Cloned:
     """Train a Preview and a Battle network to imitate the teacher of ``stream``.
 
@@ -418,7 +442,13 @@ def clone(
     for role in ROLES:
         weights = config.clone.situation_weights if role == "battle" else None
         optimisers[role], roles[role] = _train_role(
-            config, networks[role], parts[role], generator, device, weights=weights
+            config,
+            networks[role],
+            parts[role],
+            generator,
+            device,
+            weights=weights,
+            micro_batch=micro_batch,
         )
         networks[role].eval()
     return Cloned(networks, optimisers, generator, roles, own_team_set(stream))

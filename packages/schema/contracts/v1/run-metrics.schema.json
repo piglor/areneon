@@ -64,6 +64,12 @@
     "inference_divergence": {
       "$ref": "#/$defs/InferenceDivergence"
     },
+    "learner_micro_batch": {
+      "description": "Optional, written only when the run was started with --learner-micro-batch (operational, not a config field): the largest number of decisions the learner ran through the network at once, so the activation memory of the generation is that of a chunk and the gradients are accumulated over a minibatch's chunks. Absent: one pass per minibatch.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1048576
+    },
     "device": {
       "description": "The learner's device, as the run config names it.",
       "enum": [

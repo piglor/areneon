@@ -121,8 +121,8 @@ and lists the SHA-256 of each metrics file among its inputs.
 
 ### Sizing a run to a machine
 
-Eight operational flags of the driver change how much memory and how many cores a generation
-uses and nothing it writes: the plan, the seeds, every Episode, the stream, the tensors and the
+Nine operational flags of the driver change how much memory and how many cores a generation
+uses and, but for `--learner-micro-batch` (below the table), nothing it writes: the plan, the seeds, every Episode, the stream, the tensors and the
 learner-state hashes are the same for any value (each flag has a test; the play flags were compared on a full-size generation with `diff -r`,
 the load flags by a digest over every tensor). None is in the run config.
 
@@ -136,6 +136,20 @@ the load flags by a digest over every tensor). None is in the run config.
 | `--generation-timeout-minutes M` | wall-clock limit of a generation's play phase; past it the driver kills the Node process group and the generation fails, nothing committed | 180 |
 | `--load-processes N\|auto` | worker processes that check and encode the stream in the load phase; `auto` sizes them at each load phase from the usable cores (half, at most 16) and the `MemAvailable` read at that moment (400 MB each above a 2 GB reserve; an estimate, not a guarantee), capped by `--load-memory-mb` | 1 |
 | `--load-memory-mb M` | cap on what the load workers may add (about 400 MB each); fewer run if `N` does not fit | none |
+| `--learner-micro-batch N` | run each learner minibatch through the network in chunks of at most `N` decisions, backpropagating each chunk at once scaled by its share (gradient accumulation); also on `learner clone` and `learner bench`; recorded as `learner_micro_batch` in `metrics/g*.json` | none (one pass) |
+
+`--learner-micro-batch` is the one flag here that is not byte-neutral: it does not change the config
+or the hashes of anything but the learner's weights, and the chunked gradients equal the single pass's
+only up to float32 rounding (the sums are taken in another order), so a run is reproducible only for
+the same value (and, as ever, the same machine and software). Absent, the learner is the single pass of
+every earlier release, byte for byte. **Use it on a 16 GB card: `--learner-micro-batch 64`.** Each query
+in a minibatch is padded to the minibatch's largest candidate count (about 45 MB of activations a query
+at width 256), so one optimiser step reached about 16 GB on a 16 GB card, WSL then paged to system
+memory and the train phase ran 8 to 9 times slower (463 s against 53 s for the same work). With 64 the
+same generation trained in 53.1 s at a peak of 4.18 GB allocated and 8.09 GB reserved; with 128, 64.9 s
+at 8.03 GB allocated and 15.88 GB reserved (at the edge). The no-gradient passes (frozen log-probabilities,
+anchor scores, the imitation and label evaluations) are chunked by the same size, which can change their
+padding and so their values at float rounding.
 
 What a process holds, measured on the 28-core, 24 GB, 16 GB GPU machine with the 20,000 team
 `train-v1` pool, 768 games per generation (`S` = 4, `K` = 2):

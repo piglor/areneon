@@ -34,6 +34,10 @@ export interface RunMetrics {
   profile?: Profile;
   inference_divergence?: InferenceDivergence;
   /**
+   * Optional, written only when the run was started with --learner-micro-batch (operational, not a config field): the largest number of decisions the learner ran through the network at once, so the activation memory of the generation is that of a chunk and the gradients are accumulated over a minibatch's chunks. Absent: one pass per minibatch.
+   */
+  learner_micro_batch?: number;
+  /**
    * The learner's device, as the run config names it.
    */
   device: "cpu" | "cuda";
