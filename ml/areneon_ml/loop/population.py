@@ -1047,7 +1047,9 @@ class PopulationLoop:
             if self.device.type == "cuda":
                 torch.cuda.reset_peak_memory_stats(self.device)
             with timing.phase("train"):
-                report = learner.train(found, None, teacher)
+                report = (
+                    learner.train(found) if teacher is None else learner.train(found, None, teacher)
+                )
             del found
             cause = judge(report.as_dict())
             if cause is not None:
