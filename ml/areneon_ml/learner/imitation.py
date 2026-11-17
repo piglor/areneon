@@ -28,6 +28,9 @@ from areneon_ml.worker.view import IncrementalView
 #: The purpose string of the draw's seed (A11.3).
 PURPOSE = "imitation/1"
 
+#: The largest integer JCS (RFC 8785) holds exactly, plus one.
+SAFE_INTEGER = 2**53
+
 #: A scripted teacher's policy id, ``<name>@<version>`` (the clone config's pattern); a learned
 #: pair's ``policy:<hash>`` is not a teacher.
 TEACHER_ID = re.compile(r"^[a-z0-9][a-z0-9._-]*@[A-Za-z0-9._-]+$")
@@ -143,12 +146,15 @@ def open_teacher(
 
 class DrawStream:
     """A generator for one update's teacher draw, seeded from the learner seed, the update index
-    and the purpose (the first 8 bytes of SHA-256 over their JCS bytes)."""
+    and the purpose (the first 8 bytes of SHA-256 over their JCS bytes).
+
+    A population member's learner seed is a ``population-seed/1`` draw up to 2^63, beyond the
+    integers JCS can hold; such a seed enters the preimage as its decimal string (a seed within
+    the safe range, every single run's, keeps the integer and so its bytes)."""
 
     def __init__(self, learner_seed: int, update: int) -> None:
-        digest = hashlib.sha256(
-            jcs({"purpose": PURPOSE, "seed": learner_seed, "update": update})
-        ).digest()
+        seed: int | str = learner_seed if learner_seed < SAFE_INTEGER else str(learner_seed)
+        digest = hashlib.sha256(jcs({"purpose": PURPOSE, "seed": seed, "update": update})).digest()
         self.generator = torch.Generator(device="cpu")
         self.generator.manual_seed(int.from_bytes(digest[:8], "big") % 2**63)
 

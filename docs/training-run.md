@@ -817,7 +817,7 @@ experiment's job, not this document's.
 A Battle-only warm run may add a supervised term on the fixed states of the scripted teacher's
 `TrainingSet` (ADR-010 erratum A11.3, #1367): `"ppo": {..., "imitation": {"training_set_hash":
 "<64 hex>", "coef_micro": 100000, "share_ppm": 250000, "schedule": {"kind": "constant"}}}`. The
-reader refuses it without `warm_start` and with a `population`. `training_set_hash` is the SHA-256
+reader refuses it without `warm_start`; a population takes it (below). `training_set_hash` is the SHA-256
 of the teacher manifest's JCS bytes (the same hash a clone config names); `coef_micro` is lambda_im
 (1 to 100,000,000), `share_ppm` the teacher steps of an update as a share of its Battle steps, and
 `schedule` is the anchor's (`constant` or `linear` to a final that may be 0).
@@ -854,6 +854,15 @@ of the teacher manifest's JCS bytes (the same hash a clone config names); `coef_
   `training_set_hashes` (with the PPO set), and the sources registry maps it to `[]`, an outside
   behaviour-cloning source, exactly as a warm start's teacher set. Two runs that read one teacher
   set are therefore not independent; `L2` must use its own teacher run.
+- **In a population (#1437):** the same block works with a `population` config. Run
+  `import-teacher` once on the run directory; the population driver indexes that one stream and
+  every member's Battle update draws its K steps from it with the member's own learner seed (its
+  `population-seed/1` draw, or the new seed a copy takes), so a member's draws depend on its seed
+  and the update index alone, never on scheduling, start slots or game processes. A seed of 2^53
+  or more enters the draw's preimage as its decimal string (a single run's seed is below that and
+  keeps its bytes). Each member's `train-report.json` and sidecar carry the keys above, and each
+  member's records list the teacher set beside the member's own stream, mapped to `[]` in the
+  sources registry like a single run's, so `provenance` / `classify` see it in every member.
 
 ### Predicting the foe's next move: `aux_move_head` and `ppo.aux_moves`
 
