@@ -69,6 +69,21 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     }
   });
 
+  it("reads ppo.uniform_kl with both schedules, hashes it apart from none and refuses the profile's violations (ADR-010 erratum A14.1)", async () => {
+    const constant = readTrainingRunConfig(sample("uniform-kl-constant"));
+    expect(constant.ppo.uniform_kl).toEqual({ coef_micro: 10000, schedule: { kind: "constant" } });
+    expect(readTrainingRunConfig(sample("uniform-kl-linear")).ppo.uniform_kl).toEqual({
+      coef_micro: 10000,
+      schedule: { kind: "linear", final_micro: 0, generations: 20 },
+    });
+    expect(await runConfigHash(constant)).not.toBe(await runConfigHash(readTrainingRunConfig(sample("tiny"))));
+    expect(readTrainingRunConfig(sample("tiny")).ppo).not.toHaveProperty("uniform_kl");
+    for (const name of ["zero", "above-cap", "float", "no-schedule", "extra-field"]) {
+      const raw = JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/training-run-config/invalid/uniform-kl-${name}.json`), "utf8"));
+      expect(() => readTrainingRunConfig(raw)).toThrow(TrainingRunConfigError);
+    }
+  });
+
   it("reads a warm start, hashes it apart from none and refuses the same checkpoint for both roles (ADR-010 erratum A2)", async () => {
     const warm = readTrainingRunConfig(sample("warm-start"));
     expect(warm.warm_start).toEqual({ preview: "a".repeat(64), battle: "b".repeat(64) });

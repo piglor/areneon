@@ -924,6 +924,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/separate-value": runConfigWith((c) => {
       runSection(c, "model").options = { separate_value: "network" };
     }),
+    "training-run-config/uniform-kl-constant": runConfigWith((c) => {
+      runSection(c, "ppo").uniform_kl = { coef_micro: 10000, schedule: { kind: "constant" } };
+    }),
+    "training-run-config/uniform-kl-linear": runConfigWith((c) => {
+      runSection(c, "ppo").uniform_kl = { coef_micro: 10000, schedule: { kind: "linear", final_micro: 0, generations: 20 } };
+    }),
     "training-run-config/aux-moves": runConfigWith((c) => {
       runSection(c, "model").options = { aux_move_head: true };
       runSection(c, "ppo").aux_moves = { coef_micro: 50000 };
@@ -1650,6 +1656,21 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/factored-preview-false": runConfigWith(
       (c) => (runSection(c, "model").options = { factored_preview: false }),
     ),
+    "training-run-config/uniform-kl-zero": runConfigWith((c) => {
+      runSection(c, "ppo").uniform_kl = { coef_micro: 0, schedule: { kind: "constant" } };
+    }),
+    "training-run-config/uniform-kl-above-cap": runConfigWith((c) => {
+      runSection(c, "ppo").uniform_kl = { coef_micro: 1000001, schedule: { kind: "constant" } };
+    }),
+    "training-run-config/uniform-kl-float": runConfigWith((c) => {
+      runSection(c, "ppo").uniform_kl = { coef_micro: 10000.5, schedule: { kind: "constant" } };
+    }),
+    "training-run-config/uniform-kl-no-schedule": runConfigWith((c) => {
+      runSection(c, "ppo").uniform_kl = { coef_micro: 10000 };
+    }),
+    "training-run-config/uniform-kl-extra-field": runConfigWith((c) => {
+      runSection(c, "ppo").uniform_kl = { coef_micro: 10000, schedule: { kind: "constant" }, support: "all" };
+    }),
     "training-run-config/aux-moves-zero": runConfigWith((c) => {
       runSection(c, "model").options = { aux_move_head: true };
       runSection(c, "ppo").aux_moves = { coef_micro: 0 };

@@ -26,6 +26,7 @@ from tests.ml.learner.test_imitation import imitating, teacher_steps
 from tests.ml.learner.test_search_distill import battle_labels, distilled
 from tests.ml.learner.test_shared_trunk import shared_config
 from tests.ml.learner.test_trainer import trajs
+from tests.ml.learner.test_uniform_kl import uniform
 
 CPU = torch.device("cpu")
 MICRO = 5  # does not divide the minibatch of 16, nor the 55 Battle steps
@@ -79,6 +80,27 @@ def shared_imitation() -> Case:
     return Case(imitating(coef=1_000_000, share=1_000_000, shared=True))
 
 
+def uniform_term() -> Case:
+    return Case(uniform(coef=1_000_000))
+
+
+def uniform_anchor() -> Case:
+    def edit(config: dict[str, Any]) -> None:
+        config["warm_start"] = {"preview": "a" * 64, "battle": "b" * 64}
+        config["ppo"]["anchor"] = {"kl_micro": 50_000, "schedule": {"kind": "constant"}}
+        config["ppo"]["uniform_kl"] = {"coef_micro": 1_000_000, "schedule": {"kind": "constant"}}
+
+    return Case(edited_config(edit), other_anchors())
+
+
+def uniform_shared() -> Case:
+    def edit(config: dict[str, Any]) -> None:
+        config["model"]["options"] = {"shared_trunk": True}
+        config["ppo"]["uniform_kl"] = {"coef_micro": 1_000_000, "schedule": {"kind": "constant"}}
+
+    return Case(edited_config(edit))
+
+
 CASES: dict[str, Callable[[], Case]] = {
     "plain": plain,
     "anchor": anchor,
@@ -89,6 +111,9 @@ CASES: dict[str, Callable[[], Case]] = {
     "imitation": imitation,
     "search-distill": distill,
     "shared-trunk-imitation": shared_imitation,
+    "uniform-kl": uniform_term,
+    "uniform-kl-anchor": uniform_anchor,
+    "uniform-kl-shared-trunk": uniform_shared,
 }
 
 

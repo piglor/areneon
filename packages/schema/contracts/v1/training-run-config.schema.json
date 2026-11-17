@@ -530,6 +530,26 @@
             }
           }
         },
+        "uniform_kl": {
+          "description": "Optional (a minor change within v1, ADR-010 erratum A14.1, #1433): a zero-avoiding term. The Battle role's loss gains lambda(t) * the mean over its decisions with at least two non-pending candidates of KL(u || pi_theta) = -ln n - (1/n) * sum over the n non-pending real candidates of ln pi_i, where u is uniform on the non-pending real candidates and pi_theta is the softmax over ALL real candidates (pending ones included) at the play temperature (generation.play); a decision with fewer than two non-pending candidates has no term. lambda = coef_micro / 10^6 for a constant schedule; for a linear one, with t the update index from 0, lambda(t) = coef_micro + trunc((final_micro - coef_micro) * min(t, generations) / generations) in exact integers (the rule of the anchor's schedule). The term is off (lambda 0) during ppo.value_warmup and t counts from the first policy update, as the anchor's does. It needs no warm start. Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "coef_micro",
+            "schedule"
+          ],
+          "properties": {
+            "coef_micro": {
+              "description": "lambda at update 0, in millionths.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "schedule": {
+              "$ref": "#/$defs/AnchorSchedule"
+            }
+          }
+        },
         "aux_moves": {
           "description": "Optional (a minor change within v1, ADR-010 erratum A12.2, #1384): the Battle role's loss gains coef * the mean cross-entropy of the auxiliary move-reveal head (model.options.aux_move_head) over the unmasked (decision, opponent entry) targets of a minibatch: a softmax over the move vocabulary with the entry's already revealed moves masked, against the uniform distribution over the moves it first reveals at the next later decision where it reveals any. The labels come from the player's own later channel; an entry never revealing a move later, a Transformed one and Struggle are masked, never a negative. coef = coef_micro / 10^6. During ppo.value_warmup the term trains the head alone (the trunk is frozen). Needs model.options.aux_move_head, and the head needs this term (both readers). Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.",
           "type": "object",

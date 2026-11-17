@@ -41,6 +41,8 @@ from areneon_ml.learner.ppo import (
     ppo_loss,
     temper,
     terminal_rewards,
+    uniform_floor_counts,
+    uniform_kl,
 )
 from areneon_ml.learner.shaping import phi, shaped
 from areneon_ml.model.batch import Batch, collate
@@ -175,6 +177,16 @@ class RoleReport:
     aux_moves_loss: float | None = None
     aux_moves_top1: float | None = None
     aux_moves_masked: int | None = None
+    # Set only on the Battle role under ``ppo.uniform_kl`` (ADR-010 erratum A14.1): the mean
+    # KL(u || pi_theta) over the minibatch decisions that have a term (measured before each step,
+    # 0.0 with none), lambda (millionths) the update used, the table's decisions with a term and
+    # the share (ppm) of their support candidates below 1/(100 n) at the frozen weights. A value
+    # warm-up update (the term is off) reports 0.0, coefficient 0, 0 steps and 0. Left out of the
+    # stored report otherwise.
+    uniform_kl: float | None = None
+    uniform_kl_coef_micro: int | None = None
+    uniform_kl_steps: int | None = None
+    uniform_floor_ppm: int | None = None
 
 
 @dataclass(frozen=True)
@@ -214,6 +226,11 @@ class _Table:
     imitation_ce_before: float | None = None
     #: Mean |gamma * Phi(o_{t+1}) - Phi(o_t)| in millionths (``ppo.shaping``, Battle only).
     shaping_mean_abs_micro: int | None = None
+    #: Per step, whether it has a ``ppo.uniform_kl`` term (two or more non-pending candidates), and
+    #: the share (ppm) of support candidates below 1/(100 n) at the frozen weights; ``None``
+    #: without the block or on a value warm-up update.
+    uniform_valid: list[bool] | None = None
+    uniform_floor_ppm: int | None = None
 
 
 @dataclass(frozen=True)
@@ -326,6 +343,11 @@ class Learner:
         # The running (CE sum, targets, top-1 hits) of the Battle minibatches in the update
         # (``ppo.aux_moves``).
         self._aux_tally = [0.0, 0.0, 0.0]
+        # The running (KL sum, decisions with a term) of the Battle minibatches in the update
+        # (``ppo.uniform_kl``), and lambda (millionths) of the newest update (set only with the
+        # block; stored in the sidecar for a linear schedule only).
+        self._uniform_tally = [0.0, 0.0]
+        self.last_uniform_kl_coef_micro: int | None = None
         # Entropy weight (millionths) of the newest update; set only under a linear
         # ``ppo.entropy_schedule`` (stored in the sidecar then, and nowhere otherwise).
         self.last_entropy_coef_micro: int | None = None
@@ -396,6 +418,18 @@ class Learner:
         warmup = self.config.ppo.value_warmup or 0
         return 0 if update < warmup else settings.coef_micro_at(update - warmup)
 
+    def uniform_kl_coef_micro(self, update: int) -> int | None:
+        """lambda of learner update ``update`` (from 0), or ``None`` without ``ppo.uniform_kl``.
+
+        Off during the value warm-up (0: the policy is frozen); the schedule's index counts from
+        the first policy update, as the anchor's does.
+        """
+        settings = self.config.ppo.uniform_kl
+        if settings is None:
+            return None
+        warmup = self.config.ppo.value_warmup or 0
+        return 0 if update < warmup else settings.coef_micro_at(update - warmup)
+
     def anchor_threatened_beta_micro(self, update: int) -> int | None:
         """Threatened beta of learner update ``update`` (from 0), or ``None`` without
         ``ppo.anchor.threatened``: the anchor's rule, with its own ``kl_micro`` and schedule and
@@ -441,6 +475,8 @@ class Learner:
         self.last_anchor_threatened_beta_micro = self.anchor_threatened_beta_micro(self.generation)
         self._threatened_kl = {}
         self._aux_tally = [0.0, 0.0, 0.0]
+        self._uniform_tally = [0.0, 0.0]
+        self.last_uniform_kl_coef_micro = self.uniform_kl_coef_micro(self.generation)
         self.last_entropy_coef_micro = self.entropy_coef_micro(self.generation)
         self.last_imitation_coef_micro = self.imitation_coef_micro(self.generation)
         # Under ``ppo.preview_bootstrap_micro`` (> 0) both roles' targets are fixed from the
@@ -463,6 +499,7 @@ class Learner:
                         frozen,
                         tuple(labels or ()) if role == "battle" and not warm else (),
                         teacher if role == "battle" and not warm else None,
+                        warm,
                     ),
                     warm,
                 )
@@ -559,6 +596,7 @@ class Learner:
         frozen: _FrozenBattle | None = None,
         labels: tuple[LabelStep, ...] = (),
         teacher: TeacherSource | None = None,
+        warm: bool = False,
     ) -> _Table:
         ppo = self.config.ppo
         steps = [s for t in trajectories for s in t.steps]
@@ -641,7 +679,34 @@ class Learner:
             stream,
             ce_before,
             int(shaped_abs / len(steps) * MICRO) if shaping and steps else (0 if shaping else None),
+            *self._uniform_frozen(role, steps, warm),
         )
+
+    def _uniform_frozen(
+        self, role: str, steps: Sequence[Step], warm: bool
+    ) -> tuple[list[bool] | None, int | None]:
+        """Which Battle steps have a ``ppo.uniform_kl`` term, and the share (ppm) of their support
+        candidates below 1/(100 n) at the frozen weights, one no-gradient pass; ``(None, None)``
+        without the block, for the Preview role and (the term being off) on a warm-up update."""
+        if role != "battle" or self.config.ppo.uniform_kl is None or warm:
+            return None, None
+        network = self.networks[role]
+        size = self._pass_size()
+        tau = self.config.generation.temperature_ppm
+        valid: list[bool] = []
+        below = total = 0
+        network.eval()
+        with torch.no_grad():
+            for start in range(0, len(steps), size):
+                batch = to_device(
+                    collate([s.query for s in steps[start : start + size]]), self.device
+                )
+                logits = network(batch).logits
+                _, has = uniform_kl(logits, batch.cand_mask, batch.pending, tau)
+                valid.extend(bool(v) for v in has.cpu().tolist())
+                low, count = uniform_floor_counts(logits, batch.cand_mask, batch.pending, tau)
+                below, total = below + low, total + count
+        return valid, below * MICRO // total if total else 0
 
     def _draw_teacher(
         self, role: str, battle_steps: int, teacher: TeacherSource | None
@@ -748,7 +813,7 @@ class Learner:
         weights: LossWeights,
         label_index: list[int] | None = None,
         teacher_index: list[int] | None = None,
-        shares: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0),
+        shares: tuple[float, float, float, float, float] = (1.0, 1.0, 1.0, 1.0, 1.0),
     ) -> tuple[torch.Tensor, Any, torch.Tensor | None]:
         """One minibatch of one role: the tensor to backpropagate, the loss terms and, with an
         anchor, the (detached-by-the-caller) mean KL to the anchor.
@@ -757,7 +822,7 @@ class Learner:
         steps, teacher steps and move-reveal targets: each term is a mean over its own set, so it
         is scaled by the chunk's share of that set and the chunks' tensors add up to the
         minibatch's. At 1.0 (the default) nothing is multiplied."""
-        main_share, label_share, teacher_share, aux_share = shares
+        main_share, label_share, teacher_share, aux_share, uniform_share = shares
 
         def scaled(term: torch.Tensor, share: float) -> torch.Tensor:
             return term if share == 1.0 else term * share
@@ -833,6 +898,20 @@ class Learner:
                 (self.last_imitation_coef_micro or 0) / MICRO * (-terms.log_prob).mean()
             )
             total = total + scaled(imitation_term, teacher_share)
+        uniform_term: float | torch.Tensor = 0.0
+        if self.config.ppo.uniform_kl is not None and role == "battle" and not warm:
+            # ADR-010 erratum A14.1: lambda * the mean KL(u || pi_theta) over the minibatch's
+            # decisions with two or more non-pending candidates, at the play temperature over the
+            # real candidates (pending ones stay in the normaliser). No clip: its logit gradient
+            # lambda (pi_k - 1/n) is bounded. The gradient reaches the shared trunk under
+            # shared_trunk, as the anchor's does.
+            rows, valid = uniform_kl(out.logits, batch.cand_mask, batch.pending, tau)
+            count = int(valid.sum())
+            if count:
+                lam = (self.last_uniform_kl_coef_micro or 0) / MICRO
+                uniform_term = scaled(lam * rows.sum() / count, uniform_share)
+                self._uniform_tally[0] += float(rows.detach().sum().cpu())
+                self._uniform_tally[1] += float(count)
         aux_term: float | torch.Tensor = 0.0
         if aux is not None and aux_ce is not None and aux_ce.numel():
             # ADR-010 erratum A12.2: coef * the mean cross-entropy over the minibatch's unmasked
@@ -840,7 +919,7 @@ class Learner:
             # (frozen during a value warm-up, which then trains the head alone).
             aux_term = scaled(aux.coef_micro / MICRO * aux_ce.mean(), aux_share)
         warm_loss = scaled(loss.value, main_share)
-        return (warm_loss + aux_term if warm else total + aux_term), loss, kl
+        return (warm_loss + aux_term if warm else total + aux_term + uniform_term), loss, kl
 
     def _accumulate(  # noqa: PLR0913, PLR0917
         self,
@@ -867,6 +946,11 @@ class Learner:
         aux = self.config.ppo.aux_moves if role == "battle" else None
         counts = [sum(len(table.steps[i].aux or ()) for i in c) for c in chunks] if aux else None
         aux_total = sum(counts) if counts else 0
+        uniform_valid = table.uniform_valid if role == "battle" else None
+        uniform_counts = (
+            [sum(1 for i in c if uniform_valid[i]) for c in chunks] if uniform_valid else None
+        )
+        uniform_total = sum(uniform_counts) if uniform_counts else 0
         fields = [torch.zeros(()) for _ in range(6)]
         kl_total: torch.Tensor | None = None
         for k, chunk in enumerate(chunks):
@@ -874,6 +958,9 @@ class Learner:
             label = len(labels[k] or ()) / len(label_index) if label_index else 1.0
             teacher = len(teachers[k] or ()) / len(teacher_index) if teacher_index else 1.0
             aux_share = counts[k] / aux_total if counts and aux_total else 1.0
+            uniform_share = (
+                uniform_counts[k] / uniform_total if uniform_counts and uniform_total else 1.0
+            )
             backward, loss, kl = self._minibatch_loss(
                 role,
                 table,
@@ -882,7 +969,7 @@ class Learner:
                 weights,
                 labels[k],
                 teachers[k],
-                (main, label, teacher, aux_share),
+                (main, label, teacher, aux_share, uniform_share),
             )
             torch.autograd.backward(backward)
             terms = (
@@ -966,6 +1053,7 @@ class Learner:
             *self._shaping_report(role, table),
             *self._threatened_report(role, table),
             *self._aux_report(role, table),
+            *self._uniform_report(role, table, warm),
         )
 
     def _imitation_report(self, role: str, table: _Table) -> tuple[Any, Any, Any, Any, Any]:
@@ -989,6 +1077,18 @@ class Learner:
             sum(1 for step in table.steps if step.threatened),
             kl_sum / count if count else 0.0,
             self.last_anchor_threatened_beta_micro,
+        )
+
+    def _uniform_report(self, role: str, table: _Table, warm: bool) -> tuple[Any, Any, Any, Any]:
+        if role != "battle" or self.config.ppo.uniform_kl is None:
+            return None, None, None, None
+        total, count = self._uniform_tally
+        steps = 0 if warm or table.uniform_valid is None else sum(table.uniform_valid)
+        return (
+            total / count if count else 0.0,
+            self.last_uniform_kl_coef_micro,
+            steps,
+            table.uniform_floor_ppm or 0,
         )
 
     def _aux_report(self, role: str, table: _Table) -> tuple[Any, Any, Any, Any]:

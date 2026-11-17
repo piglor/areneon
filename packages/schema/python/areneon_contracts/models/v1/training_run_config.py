@@ -1061,6 +1061,21 @@ class Imitation(BaseModel):
     schedule: AnchorSchedule
 
 
+class UniformKl(BaseModel):
+    """
+    Optional (a minor change within v1, ADR-010 erratum A14.1, #1433): a zero-avoiding term. The Battle role's loss gains lambda(t) * the mean over its decisions with at least two non-pending candidates of KL(u || pi_theta) = -ln n - (1/n) * sum over the n non-pending real candidates of ln pi_i, where u is uniform on the non-pending real candidates and pi_theta is the softmax over ALL real candidates (pending ones included) at the play temperature (generation.play); a decision with fewer than two non-pending candidates has no term. lambda = coef_micro / 10^6 for a constant schedule; for a linear one, with t the update index from 0, lambda(t) = coef_micro + trunc((final_micro - coef_micro) * min(t, generations) / generations) in exact integers (the rule of the anchor's schedule). The term is off (lambda 0) during ppo.value_warmup and t counts from the first policy update, as the anchor's does. It needs no warm start. Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    coef_micro: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    lambda at update 0, in millionths.
+    """
+    schedule: AnchorSchedule
+
+
 class Ppo(BaseModel):
     """
     PPO with GAE (ADR-010 section 1). Real-valued settings are integers in millionths (_micro) or billionths (_nano), because contracts carry no floating-point numbers.
@@ -1160,6 +1175,10 @@ class Ppo(BaseModel):
     imitation: Imitation | MISSING = MISSING
     """
     Optional (a minor change within v1, ADR-010 erratum A11.3, #1367): the Battle role's loss gains lambda_im(t) * the mean over the teacher steps of a minibatch of -log pi_theta(teacher choice | example), the softmax over the example's real candidates at the run's play temperature (generation.play, else 1), padding masked: a supervised term on the fixed states of a scripted teacher's TrainingSet (the set the warm start was cloned from), mixed into PPO. No clip and no value term. The set is copied into the run directory by `python -m areneon_ml.loop import-teacher` (nothing is fetched) and read at the start of every update through the stream reader with its manifest; it must hash to training_set_hash (the SHA-256 of the manifest's JCS bytes, as CloneRunConfig.teacher.training_set_hash), be synthetic and learner_ready and be played by a scripted teacher (`<name>@<version>`, never a learned `policy:` id). The teacher's Team Preview examples are not used. Per update K = floor(share_ppm * N_battle / 10^6) teacher steps (N_battle the update's Battle steps, at most the set's size) are drawn without replacement by a generator seeded from the learner seed, the update index and the purpose `imitation/1`, shuffled per epoch and spread over the Battle minibatches; the learner's own generator is untouched. lambda_im(t) = coef_micro / 10^6 for a constant schedule; for a linear one, with t the policy update index from 0, coef_micro + trunc((final_micro - coef_micro) * min(t, generations) / generations) in exact integers (the anchor's rule). Off during ppo.value_warmup (t counts from the first policy update, as the anchor's does); under shared_trunk its gradient reaches the shared trunk. Needs warm_start with a battle checkpoint. Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.
+    """
+    uniform_kl: UniformKl | MISSING = MISSING
+    """
+    Optional (a minor change within v1, ADR-010 erratum A14.1, #1433): a zero-avoiding term. The Battle role's loss gains lambda(t) * the mean over its decisions with at least two non-pending candidates of KL(u || pi_theta) = -ln n - (1/n) * sum over the n non-pending real candidates of ln pi_i, where u is uniform on the non-pending real candidates and pi_theta is the softmax over ALL real candidates (pending ones included) at the play temperature (generation.play); a decision with fewer than two non-pending candidates has no term. lambda = coef_micro / 10^6 for a constant schedule; for a linear one, with t the update index from 0, lambda(t) = coef_micro + trunc((final_micro - coef_micro) * min(t, generations) / generations) in exact integers (the rule of the anchor's schedule). The term is off (lambda 0) during ppo.value_warmup and t counts from the first policy update, as the anchor's does. It needs no warm start. Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.
     """
     aux_moves: AuxMoves | MISSING = MISSING
     """

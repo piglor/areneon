@@ -481,6 +481,39 @@ def test_the_aux_moves_keys_are_read_together_on_the_battle_role() -> None:
     read_train_report(raw)
 
 
+UNIFORM_KL = {
+    "uniform_kl": 0.5,
+    "uniform_kl_coef_micro": 10_000,
+    "uniform_kl_steps": 40,
+    "uniform_floor_ppm": 25_000,
+}
+
+
+def test_the_uniform_kl_keys_are_read_together_on_the_battle_role() -> None:
+    raw = json.loads(json.dumps(TRAIN_REPORT))
+    raw["battle"].update(UNIFORM_KL)
+    read_train_report(raw)
+    raw["battle"].update(uniform_kl=0.0, uniform_kl_coef_micro=0, uniform_kl_steps=0)
+    read_train_report(raw)
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (lambda r: r["battle"].update(uniform_kl=0.5), "uniform_kl keys come together"),
+        (lambda r: r["preview"].update(UNIFORM_KL), "uniform_kl keys come together"),
+        (lambda r: r["battle"].update({**UNIFORM_KL, "uniform_kl": -0.5}), "cannot be negative"),
+        (lambda r: r["battle"].update({**UNIFORM_KL, "uniform_kl_steps": -1}), "integer"),
+        (lambda r: r["battle"].update({**UNIFORM_KL, "uniform_floor_ppm": 1_000_001}), "at most"),
+    ],
+)
+def test_the_uniform_kl_keys_are_checked(change: Any, message: str) -> None:
+    raw = json.loads(json.dumps(TRAIN_REPORT))
+    change(raw)
+    with pytest.raises(InspectError, match=message):
+        read_train_report(raw)
+
+
 SEARCH_KLS = {"search_kl_before": 0.25, "search_kl_after": 0.125}
 IMITATION = {
     "imitation_steps": 13,

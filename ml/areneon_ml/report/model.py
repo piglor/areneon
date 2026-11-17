@@ -106,6 +106,8 @@ IMITATION_KEYS = (
 SHAPING_KEYS = ("shaping_coef_micro", "shaping_mean_abs_micro")
 #: Battle role only, and only under ppo.aux_moves (ADR-010 erratum A12.2).
 AUX_MOVES_KEYS = ("aux_moves_steps", "aux_moves_loss", "aux_moves_top1", "aux_moves_masked")
+#: Battle role only, and only under ppo.uniform_kl (ADR-010 erratum A14.1).
+UNIFORM_KL_KEYS = ("uniform_kl", "uniform_kl_coef_micro", "uniform_kl_steps", "uniform_floor_ppm")
 VALUE_KEYS = ("explained_variance", "value_calibration")  # value-head diagnostics (ADR-010 A4)
 CALIBRATION_BINS = 10
 CALIBRATION_KEYS = (frozenset({"count", "mean_value", "mean_score"}), frozenset[str]())
@@ -124,6 +126,7 @@ TRAIN_ROLE_KEYS = (
             *SHAPING_KEYS,
             *THREATENED_KEYS,
             *AUX_MOVES_KEYS,
+            *UNIFORM_KL_KEYS,
             *VALUE_KEYS,
         }
     ),
@@ -395,6 +398,20 @@ def _check_aux_moves_keys(values: dict[str, Any], role: str) -> None:
         raise ReportError(f"{role} aux_moves_top1 is a share between 0 and 1")
 
 
+def _check_uniform_kl_keys(values: dict[str, Any], role: str) -> None:
+    """The zero-avoiding keys come together, on the Battle role; the KL is not negative."""
+    if not set(UNIFORM_KL_KEYS) & set(values):
+        return
+    if set(UNIFORM_KL_KEYS) - set(values) or role != "battle":
+        raise ReportError(f"{role} uniform_kl keys come together (Battle)")
+    for key in UNIFORM_KL_KEYS[1:]:
+        integer(values[key], f"{role} {key}")
+    if _number(values["uniform_kl"], f"{role} uniform_kl") < 0:
+        raise ReportError(f"{role} uniform_kl is a KL divergence and cannot be negative")
+    if integer(values["uniform_floor_ppm"], f"{role} uniform_floor_ppm") > 1_000_000:  # noqa: PLR2004 - parts per million
+        raise ReportError(f"{role} uniform_floor_ppm is a share, at most 1,000,000")
+
+
 def _check_threatened_keys(values: dict[str, Any], role: str) -> None:
     if not set(THREATENED_KEYS) & set(values):
         return
@@ -435,6 +452,7 @@ def read_train_report(raw: object) -> TrainFacts:
         _check_shaping_keys(values, role)
         _check_threatened_keys(values, role)
         _check_aux_moves_keys(values, role)
+        _check_uniform_kl_keys(values, role)
         if set(VALUE_KEYS) & set(values):
             if set(VALUE_KEYS) - set(values):
                 raise ReportError(f"{role} explained_variance and value_calibration come together")
