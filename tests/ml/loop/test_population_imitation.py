@@ -8,7 +8,9 @@ the same bytes, and a population without the block keeps its bytes.
 
 from __future__ import annotations
 
+import dataclasses
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -18,8 +20,11 @@ from areneon_ml.checkpoint.provenance import ProvenanceGraph
 from areneon_ml.checkpoint.record import read_record
 from areneon_ml.learner.config import RunConfig
 from areneon_ml.learner.data import LearnerDataError
+from areneon_ml.learner.imitation import DrawStream, TeacherSet
+from areneon_ml.learner.trainer import Learner, TrainReport
 from areneon_ml.loop import layout
 from areneon_ml.loop.driver import export_provenance, sources_registry
+from areneon_ml.loop.population import member_config
 from areneon_ml.loop.teacher import import_teacher
 from areneon_ml.loop.warm_start import import_clone
 
@@ -108,15 +113,44 @@ def test_every_member_reports_the_term_and_names_the_teacher_set(
     assert digest not in zero.training_set_hashes
 
 
-def test_members_draw_their_own_teacher_steps(finished: tuple[Path, RunConfig]) -> None:
-    run_dir, _ = finished
-    ce = [
-        layout.read_json(gen_path(run_dir, 2) / "members" / label / "train-report.json")["battle"][
-            "imitation_ce_before"
-        ]
-        for label in LABELS
-    ]
-    assert all(isinstance(v, float) for v in ce)
+def test_members_draw_their_own_teacher_steps(
+    tmp_path: Path,
+    clone_dir: Path,
+    teacher_out: tuple[Path, str],
+    finished: tuple[Path, RunConfig],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, config = finished
+    made: list[tuple[int, int]] = []
+    seeds: list[tuple[int, int]] = []  # the stream that drew each fetch
+    fetched: list[list[int]] = []
+    sizes: list[int] = []
+    real_init, real_fetch = DrawStream.__init__, TeacherSet.fetch
+
+    def init(self: DrawStream, learner_seed: int, update: int) -> None:
+        made.append((learner_seed, update))
+        real_init(self, learner_seed, update)
+
+    def fetch(self: TeacherSet, indices: Sequence[int]) -> Any:
+        seeds.append(made[-1])  # drawn from the stream built just before it
+        fetched.append(list(indices))
+        sizes.append(len(self))
+        return real_fetch(self, indices)
+
+    monkeypatch.setattr(DrawStream, "__init__", init)
+    monkeypatch.setattr(TeacherSet, "fetch", fetch)
+    started(tmp_path, clone_dir, teacher_out[0], config, GENERATIONS)
+    assert len(fetched) == len(seeds) > 0
+    own = {member_config(config, k).learner_seed for k in range(len(LABELS))}
+    for (seed, update), indices, size in zip(seeds, fetched, sizes, strict=True):
+        assert seed in own  # a member's own learner seed
+        # the member's draw is a function of its seed and the update index alone
+        assert indices == DrawStream(seed, update).draw(size, len(indices))
+    assert len(own) == len(LABELS)  # the members have different seeds
+    by_update: dict[int, list[list[int]]] = {}
+    for (_, update), indices in zip(seeds, fetched, strict=True):
+        by_update.setdefault(update, []).append(indices)
+    assert any(len({tuple(i) for i in group}) > 1 for group in by_update.values())
 
 
 def test_the_registry_maps_the_teacher_set_to_nothing_and_classify_sees_it(
@@ -184,3 +218,60 @@ def test_a_population_without_the_block_has_no_term_and_no_teacher(tmp_path: Pat
         report = layout.read_json(gen_path(run_dir, 1) / "members" / label / "train-report.json")
         assert not any(k.startswith("imitation_") for role in report.values() for k in role)
     assert not (run_dir / "teacher").exists()
+
+
+def test_a_quarantined_then_copied_member_gets_no_teacher_hash_it_did_not_train_on(
+    tmp_path: Path,
+    clone_dir: Path,
+    teacher_out: tuple[Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    digest = teacher_out[1]
+    base = config_for(clone_ids(clone_dir), digest, key="pop-im-health")
+    four = population_config(
+        members=4,
+        key="pop-im-health",
+        edit=lambda raw: raw.update(warm_start=base.raw["warm_start"], ppo=base.raw["ppo"]),
+    )
+    real = Learner.train
+    state: dict[str, Any] = {}
+
+    def forced(self: Learner, steps: Any, labels: Any = None, teacher: Any = None) -> TrainReport:
+        report = real(self, steps, labels, teacher)
+        names = [m for m, learner in state["loop"]._learners.items() if learner is self]
+        if names == ["m1"] and self.generation == 2:  # generation 2 (the counter equals it)
+            roles = dict(report.roles)
+            roles["battle"] = dataclasses.replace(roles["battle"], policy_loss=float("nan"))
+            return TrainReport(roles)
+        return report
+
+    monkeypatch.setattr(Learner, "train", forced)
+    run_dir = tmp_path / "run"
+    import_clone(clone_dir, run_dir, ("battle",))
+    import_teacher(teacher_out[0], run_dir)
+    loop = make_population(run_dir, four)
+    state["loop"] = loop
+    loop.run(4)
+
+    def record_bytes(generation: int, member: str, role: str) -> bytes:
+        return (
+            gen_path(run_dir, generation) / "members" / member / "records" / f"{role}.json"
+        ).read_bytes()
+
+    def hashes(generation: int, member: str) -> tuple[str, ...]:
+        found = read_record(json.loads(record_bytes(generation, member, "preview")))
+        return tuple(found.training_set_hashes)
+
+    manifest = {g: layout.read_json(gen_path(run_dir, g) / "manifest.json") for g in (1, 2, 3)}
+    assert digest in hashes(1, "m1")  # trained in generation 1
+    assert digest in hashes(2, "m0")  # a healthy member keeps it
+    # quarantined in generation 2: no training set, and the records it had, byte for byte
+    assert manifest[2]["members"]["m1"]["training_set_hash"] is None
+    for role in ("preview", "battle"):
+        assert record_bytes(2, "m1", role) == record_bytes(1, "m1", role)
+    assert hashes(2, "m1") == hashes(1, "m1")  # no teacher hash added that generation
+    # the next generation's copy of the top member trains again: ordinary records, teacher named
+    assert manifest[3]["members"]["m1"]["training_set_hash"] is not None
+    assert digest in hashes(3, "m1")
+    # a resumed driver re-checks every record against its manifest, copies included
+    make_population(run_dir, four).run(4)

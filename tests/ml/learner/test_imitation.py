@@ -523,3 +523,9 @@ def test_a_population_member_seed_beyond_the_safe_integers_draws_deterministical
     assert first != DrawStream(big + 1, 3).draw(40, 10)
     # a seed within the safe range keeps the integer preimage (every single run's bytes)
     assert DrawStream(2**53 - 1, 3).draw(40, 10) != DrawStream(2**53, 3).draw(40, 10)
+
+
+def test_a_small_seed_draw_is_the_one_main_gave_before_the_population_change() -> None:
+    # Computed with hashlib and torch outside DrawStream, and equal to main's DrawStream before
+    # #1437: the JCS bytes of {"purpose","seed","update"} -> first 8 bytes of SHA-256 -> seed.
+    assert DrawStream(13, 4).draw(40, 10) == [15, 21, 12, 32, 4, 11, 36, 8, 13, 6]
