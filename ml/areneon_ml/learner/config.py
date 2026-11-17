@@ -168,6 +168,25 @@ class AuxMovesSettings:
 
 
 @dataclass(frozen=True)
+class UniformKlSettings:
+    """``ppo.uniform_kl`` (ADR-010 erratum A14.1, #1433): the zero-avoiding term's weight.
+
+    ``coef_micro_at(t)`` is lambda in millionths at policy update ``t`` (the anchor's rule:
+    ``coef_micro`` for a constant schedule, else the linear one in exact integers).
+    """
+
+    coef_micro: int
+    schedule: LinearSchedule | None
+
+    def coef_micro_at(self, t: int) -> int:
+        if self.schedule is None:
+            if t < 0:
+                raise RunConfigError("a learner update index counts from 0")
+            return self.coef_micro
+        return self.schedule.rate_micro(t)
+
+
+@dataclass(frozen=True)
 class PPOSettings:
     epochs: int
     minibatch_size: int
@@ -205,6 +224,8 @@ class PPOSettings:
     shaping: ShapingSettings | None = None
     # ``ppo.aux_moves`` (ADR-010 erratum A12.2): None when absent (no move-reveal term).
     aux_moves: AuxMovesSettings | None = None
+    # ``ppo.uniform_kl`` (ADR-010 erratum A14.1): None when absent (no zero-avoiding term).
+    uniform_kl: UniformKlSettings | None = None
 
 
 @dataclass(frozen=True)
@@ -363,6 +384,19 @@ def _check_imitation(raw: dict[str, Any]) -> None:
 def _shaping(ppo: dict[str, Any]) -> ShapingSettings | None:
     found = ppo.get("shaping")
     return None if found is None else ShapingSettings(found["coef_micro"])
+
+
+def _uniform_kl(ppo: dict[str, Any]) -> UniformKlSettings | None:
+    found = ppo.get("uniform_kl")
+    if found is None:
+        return None
+    schedule = found["schedule"]
+    return UniformKlSettings(
+        found["coef_micro"],
+        None
+        if schedule["kind"] == "constant"
+        else LinearSchedule(found["coef_micro"], schedule["final_micro"], schedule["generations"]),
+    )
 
 
 def _aux_moves(ppo: dict[str, Any]) -> AuxMovesSettings | None:
@@ -649,6 +683,7 @@ def read_run_config(raw: object) -> RunConfig:
             imitation=_imitation(ppo),
             shaping=_shaping(ppo),
             aux_moves=_aux_moves(ppo),
+            uniform_kl=_uniform_kl(ppo),
         ),
         device=raw["learner"]["device"],
         threads=raw["learner"]["threads"],

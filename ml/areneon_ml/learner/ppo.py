@@ -131,6 +131,63 @@ def distill_kl(
     ).sum(-1)
 
 
+#: A decision needs at least this many non-pending candidates for a ``ppo.uniform_kl`` term.
+UNIFORM_MIN_SUPPORT = 2
+#: A candidate's probability is "at the floor" below ``1 / (FLOOR_DIVISOR * n)`` (A14.1.5).
+FLOOR_DIVISOR = 100
+_PENDING_HALF = 0.5  # the pending flag is 0.0 or 1.0
+
+
+def uniform_support(mask: torch.Tensor, pending: torch.Tensor) -> torch.Tensor:
+    """The candidates the zero-avoiding term spreads its uniform target over (ADR-010 erratum
+    A14.1.3): the real candidates that are not pending. A pending candidate's legality depends on
+    hidden information and the engine may refuse it, so no mass is pushed onto it; it stays in the
+    policy's normaliser."""
+    return mask & (pending < _PENDING_HALF)
+
+
+def uniform_kl(
+    logits: torch.Tensor,
+    mask: torch.Tensor,
+    pending: torch.Tensor,
+    temperature_ppm: int | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """``KL(u || pi_theta)`` [B] and which decisions have a term [B] (ADR-010 erratum A14.1).
+
+    ``u`` is uniform on the n non-pending real candidates and ``pi_theta`` the softmax over ALL
+    real candidates (pending ones included) at the play temperature: ``-ln n - (1/n) * sum over
+    the support of ln pi_i``, whose logit gradient is ``pi_k - [k in support] / n``. A decision
+    with fewer than two non-pending candidates has no term: its value is 0 and it is not counted.
+    """
+    floor = torch.finfo(logits.dtype).min
+    log_probs = torch.log_softmax(temper(logits, temperature_ppm).masked_fill(~mask, floor), dim=-1)
+    support = uniform_support(mask, pending)
+    n = support.sum(-1)
+    valid = n >= UNIFORM_MIN_SUPPORT
+    count = n.clamp(min=1).to(log_probs.dtype)
+    inside = torch.where(support, log_probs, torch.zeros_like(log_probs)).sum(-1)
+    kl = -count.log() - inside / count
+    return torch.where(valid, kl, torch.zeros_like(kl)), valid
+
+
+def uniform_floor_counts(
+    logits: torch.Tensor,
+    mask: torch.Tensor,
+    pending: torch.Tensor,
+    temperature_ppm: int | None = None,
+) -> tuple[int, int]:
+    """Support candidates whose probability is below ``1 / (100 n)`` and all support candidates,
+    over the decisions that have a term (ADR-010 erratum A14.1.5, no gradient)."""
+    with torch.no_grad():
+        floor = torch.finfo(logits.dtype).min
+        probs = torch.softmax(temper(logits, temperature_ppm).masked_fill(~mask, floor), dim=-1)
+        support = uniform_support(mask, pending)
+        n = support.sum(-1)
+        valid = (n >= UNIFORM_MIN_SUPPORT)[:, None] & support
+        below = valid & (probs * FLOOR_DIVISOR * n.clamp(min=1)[:, None].to(probs.dtype) < 1.0)
+        return int(below.sum()), int(valid.sum())
+
+
 @dataclass(frozen=True)
 class Targets:
     """What the update is measured against, per decision, from the frozen weights."""

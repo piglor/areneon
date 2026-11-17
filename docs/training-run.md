@@ -890,6 +890,39 @@ alone; a clone trains no head). It is a new run from generation 0; checkpoints c
   (CPU, one thread, shared machine): about +9% learner time per generation; at a real size the
   trunk dominates and the erratum expects under 5%.
 
+### Keeping every move alive: `ppo.uniform_kl`
+
+A zero-avoiding term (ADR-010 erratum A14.1, #1433), `"ppo": {..., "uniform_kl": {"coef_micro":
+10000, "schedule": {"kind": "constant"}}}` (`coef_micro` 1 to 1,000,000; the schedule is the
+anchor's: `constant`, or `linear` to a final that may be 0). It acts on any run (no warm start) and
+a config that carries it is a new run from generation 0. Without the block every byte, report and
+hash is today's.
+
+- **Term:** the Battle loss gains `lambda(t) * mean KL(u || pi_theta)` over the decisions with at
+  least two non-pending candidates, where `u` is uniform on the NON-PENDING real candidates and
+  `pi_theta` the softmax over ALL real candidates (pending ones stay in the normaliser) at the play
+  temperature (`generation.play`). It equals `-ln n - (1/n) sum ln pi_i` over the support, and its
+  logit gradient is `lambda (pi_k - 1/n)` on the support and `lambda pi_k` on a pending candidate. It
+  is the inclusive direction: unlike the entropy bonus (whose push vanishes on a candidate near
+  zero) it keeps lifting a situational move such as Encore. A pending candidate is left out of the
+  target because its legality depends on hidden information. No clip (the gradient is bounded by
+  lambda). Joint candidates are the network's candidates: a non-product set (target rules, Mega once
+  a side) is not exactly uniform per slot.
+- **Schedule:** `t` counts POLICY updates as the anchor's index does: during `ppo.value_warmup`
+  (policy frozen) the term is off (lambda 0) and update `u` >= N uses `t = u - N`. It composes with
+  the A11 anchor and the entropy bonus (all three are summed, none couples them), with a minibatch
+  chunked by `--learner-micro-batch` (each chunk is weighted by its share of the minibatch's
+  decisions with a term, so the gradients equal the single pass) and with `shared_trunk` (its gradient
+  reaches the shared trunk).
+- **Records:** `train-report.json`, Battle role, only with the block: `uniform_kl` (mean over the
+  minibatch decisions with a term, measured before each step, 0.0 with none), `uniform_kl_coef_micro`
+  (this update's lambda, 0 on a warm-up update), `uniform_kl_steps` (the table's decisions with a
+  term, 0 on a warm-up update) and `uniform_floor_ppm` (the share of support candidates whose
+  probability is below `1/(100 n)` at the frozen weights, one extra no-gradient forward pass per
+  generation; 0 on a warm-up update). The sidecar records `uniform_kl_coef_micro` only for a linear
+  schedule and `restore_state` refuses one that is not the schedule's. The dashboard reader takes
+  the four keys as optional and together.
+
 ## 6. Your own teams as a test set: the private test (owner only)
 
 The private test (ADR-015 erratum E1, item 2) measures one frozen pair on your own teams, from

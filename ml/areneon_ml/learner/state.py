@@ -127,6 +127,13 @@ def pack_state(learner: Learner) -> PackedState:
         and learner.last_imitation_coef_micro is not None
     ):  # a linear ppo.imitation schedule only (a constant one is in the run config hash)
         sidecar["imitation_coef_micro"] = learner.last_imitation_coef_micro
+    uniform = learner.config.ppo.uniform_kl
+    if (
+        uniform is not None
+        and uniform.schedule is not None
+        and learner.last_uniform_kl_coef_micro is not None
+    ):  # a linear ppo.uniform_kl schedule only (a constant one is in the run config hash)
+        sidecar["uniform_kl_coef_micro"] = learner.last_uniform_kl_coef_micro
     if learner.population_settings is not None:  # population runs only (ADR-021 section 8)
         sidecar["population_settings"] = learner.population_settings
     data = pack_safetensors(tensors)
@@ -208,6 +215,8 @@ def _check_sidecar(described: Mapping[str, Any], learner: Learner) -> int:
         raise LearnerStateError("the sidecar's learning rate is not the schedule's rate")
     imitation = learner.config.ppo.imitation
     linear = imitation is not None and imitation.schedule is not None
+    uniform = learner.config.ppo.uniform_kl
+    uniform_linear = uniform is not None and uniform.schedule is not None
     previous = generation - 1
     for key, expected, message in (
         (
@@ -229,6 +238,11 @@ def _check_sidecar(described: Mapping[str, Any], learner: Learner) -> int:
             "imitation_coef_micro",
             learner.imitation_coef_micro if linear else (lambda _update: None),
             "imitation weight is not the schedule's weight",
+        ),
+        (
+            "uniform_kl_coef_micro",
+            learner.uniform_kl_coef_micro if uniform_linear else (lambda _update: None),
+            "uniform-KL weight is not the schedule's weight",
         ),
     ):
         wanted = None if generation == 0 else expected(previous)
@@ -252,6 +266,9 @@ def _apply_schedule(learner: Learner) -> None:
     )
     learner.last_imitation_coef_micro = (
         None if learner.generation == 0 else learner.imitation_coef_micro(learner.generation - 1)
+    )
+    learner.last_uniform_kl_coef_micro = (
+        None if learner.generation == 0 else learner.uniform_kl_coef_micro(learner.generation - 1)
     )
     schedule = learner.config.ppo.schedule
     if schedule is None or learner.generation == 0:
