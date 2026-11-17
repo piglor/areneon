@@ -107,6 +107,21 @@ def test_every_member_reports_the_term_and_names_the_teacher_set(
                 record = read_record(layout.read_json(member / "records" / f"{role}.json"))
                 assert digest in record.training_set_hashes
                 assert list(record.training_set_hashes) == sorted(set(record.training_set_hashes))
+    # the Battle network is trained in every generation: a new checkpoint with a trained record
+    # (its parent, its own generation's set and the teacher set), never the clone record again
+    for label in LABELS:
+        previous = None
+        for generation in range(GENERATIONS + 1):
+            member = gen_path(run_dir, generation) / "members" / label
+            record = read_record(layout.read_json(member / "records" / "battle.json"))
+            held = layout.read_json(gen_path(run_dir, generation) / "manifest.json")["members"][
+                label
+            ]
+            if previous is not None:
+                assert record.checkpoint_id != previous.checkpoint_id
+                assert record.parent == previous.checkpoint_id
+                assert set(record.training_set_hashes) == {held["training_set_hash"], digest}
+            previous = record
     zero = read_record(
         layout.read_json(gen_path(run_dir, 0) / "members" / "m0" / "records" / "preview.json")
     )
