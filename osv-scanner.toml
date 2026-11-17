@@ -1,0 +1,6 @@
+# Reviewed exceptions for the osv job (.github/workflows/ci.yml). Each entry expires; renew only after a new review.
+
+[[IgnoredVulns]]
+id = "GHSA-fc5q-39xc-vjpf"
+ignoreUntil = 2026-12-18T00:00:00Z
+reason = "picomatch ReDoS on attacker-supplied extglob patterns; no fixed release exists (4.0.7 is the latest). Dev-only dependency (vitest, vite, tinyglobby, typescript-eslint) that matches only developer-written globs; nothing ships or takes untrusted patterns. Owner approved this dated exception on 2026-11-18. Re-check when a fixed picomatch is published."
