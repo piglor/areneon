@@ -73,6 +73,10 @@ class Options(BaseModel):
     """
     ADR-010 erratum A12.2. The Battle network gains a training-only move-reveal head (aux_moves.*: Linear, GELU, Linear over the move vocabulary on each opponent token's final trunk output), built last so every other seeded weight and logit equals the network's without it. forward never computes it and the worker never reads it; the learner trains it under ppo.aux_moves. The Preview network ignores it. Only true is a value (leave the key out for none). Layout changing: it adds tensors and changes the checkpoint format.
     """
+    aux_opponent_heads: Literal[True] | MISSING = MISSING
+    """
+    ADR-010 erratum A14.2. The Battle network gains three training-only opponent heads (aux_action.*, aux_item.*, aux_ability.*: Linear, GELU, Linear on each opponent token's final trunk output; out = the move vocabulary plus one SWITCH index, the item vocabulary, the ability vocabulary), built last (after aux_moves) so every other seeded weight and logit equals the network's without them. forward never computes them and the worker never reads them; the learner trains them under ppo.aux_opponent. The Preview network ignores it. Only true is a value (leave the key out for none). Layout changing: it adds tensors and changes the checkpoint format.
+    """
 
 
 class ExcludedAbility(RootModel[StrictStr]):
@@ -195,6 +199,28 @@ class AuxMoves(BaseModel):
     coef_micro: Annotated[StrictInt, Field(ge=1, le=1000000)]
     """
     coef in millionths.
+    """
+
+
+class AuxOpponent(BaseModel):
+    """
+    Optional (a minor change within v1, ADR-010 erratum A14.2, #1434): the Battle role's loss gains, for each key present, coef * the mean cross-entropy of that opponent head (model.options.aux_opponent_heads) over the unmasked (decision, opponent entry) targets of a minibatch: action_micro (the entry's next action: a move id or SWITCH, read from the player's own channel between this decision's request and the next one), item_micro and ability_micro (the item or ability the channel first shows as the entry's own later in the game, while unrevealed at the decision). Reserved indices are masked in each softmax. Entries with no label (no later event, a forced move, a called move's source, a fainted or disguised entry, a transferred, copied or changed item or ability, a Mega Evolution or Transform before an ability reveal) are masked, never a negative. coef = key / 10^6. During ppo.value_warmup the terms train the heads alone (the trunk is frozen). At least one key (reader rule); needs model.options.aux_opponent_heads, and the heads need this block (both readers). Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    action_micro: Annotated[StrictInt | MISSING, Field(ge=1, le=1000000)] = MISSING
+    """
+    action head weight in millionths.
+    """
+    item_micro: Annotated[StrictInt | MISSING, Field(ge=1, le=1000000)] = MISSING
+    """
+    item head weight in millionths.
+    """
+    ability_micro: Annotated[StrictInt | MISSING, Field(ge=1, le=1000000)] = MISSING
+    """
+    ability head weight in millionths.
     """
 
 
@@ -1183,6 +1209,10 @@ class Ppo(BaseModel):
     aux_moves: AuxMoves | MISSING = MISSING
     """
     Optional (a minor change within v1, ADR-010 erratum A12.2, #1384): the Battle role's loss gains coef * the mean cross-entropy of the auxiliary move-reveal head (model.options.aux_move_head) over the unmasked (decision, opponent entry) targets of a minibatch: a softmax over the move vocabulary with the entry's already revealed moves masked, against the uniform distribution over the moves it first reveals at the next later decision where it reveals any. The labels come from the player's own later channel; an entry never revealing a move later, a Transformed one and Struggle are masked, never a negative. coef = coef_micro / 10^6. During ppo.value_warmup the term trains the head alone (the trunk is frozen). Needs model.options.aux_move_head, and the head needs this term (both readers). Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.
+    """
+    aux_opponent: AuxOpponent | MISSING = MISSING
+    """
+    Optional (a minor change within v1, ADR-010 erratum A14.2, #1434): the Battle role's loss gains, for each key present, coef * the mean cross-entropy of that opponent head (model.options.aux_opponent_heads) over the unmasked (decision, opponent entry) targets of a minibatch: action_micro (the entry's next action: a move id or SWITCH, read from the player's own channel between this decision's request and the next one), item_micro and ability_micro (the item or ability the channel first shows as the entry's own later in the game, while unrevealed at the decision). Reserved indices are masked in each softmax. Entries with no label (no later event, a forced move, a called move's source, a fainted or disguised entry, a transferred, copied or changed item or ability, a Mega Evolution or Transform before an ability reveal) are masked, never a negative. coef = key / 10^6. During ppo.value_warmup the terms train the heads alone (the trunk is frozen). At least one key (reader rule); needs model.options.aux_opponent_heads, and the heads need this block (both readers). Absent keeps every byte, report and hash; a config that carries it is a new run from generation 0.
     """
 
 

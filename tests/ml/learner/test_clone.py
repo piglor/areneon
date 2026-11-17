@@ -648,3 +648,41 @@ def test_a_micro_batch_gives_the_same_loss_curve_and_counts(
     big = clone(config, game(), text, manifest, micro_batch=10_000)
     for role in ROLES:
         assert big.roles[role].epoch_loss == whole.roles[role].epoch_loss
+
+
+def test_a_clone_with_the_opponent_heads_has_the_policy_tensors_of_a_clone_without_them(
+    stream: tuple[str, dict[str, Any]], tmp_path: Path
+) -> None:
+    """ADR-010 erratum A14.2: the clone trains no head (no term), so the heads stay at their
+    seeded init and every other tensor of the two clones is equal byte for byte."""
+    text, manifest = stream
+    base = copy.deepcopy(config_for(manifest, epochs=1).raw)
+    with_heads = copy.deepcopy(base)
+    with_heads["model"]["options"] = {"aux_opponent_heads": True}
+    plain_config, head_config = read_clone_config(base), read_clone_config(with_heads)
+    outs = {}
+    for name, config in (("plain", plain_config), ("heads", head_config)):
+        cloned = clone(config, game(), text, manifest)
+        write_clone(tmp_path / name, config, game(), cloned, VERSION)
+        outs[name] = {
+            record.role: load_checkpoint(
+                (
+                    tmp_path / name / "checkpoints" / f"{record.checkpoint_id}.safetensors"
+                ).read_bytes(),
+                game(),
+                record.checkpoint_id,
+                record.role,
+                configured=config.model,
+            )
+            for record in records(tmp_path / name)
+        }
+    heads = ("aux_action.", "aux_item.", "aux_ability.")
+    for role in ROLES:
+        plain_state, head_state = outs["plain"][role].state_dict(), outs["heads"][role].state_dict()
+        assert set(head_state) - set(plain_state) == (
+            {n for n in head_state if n.startswith(heads)} if role == "battle" else set()
+        )
+        for name, tensor in plain_state.items():
+            assert torch.equal(tensor, head_state[name]), (role, name)
+    battle = outs["heads"]["battle"].state_dict()
+    assert {n.split(".")[0] for n in battle if n.startswith(heads)} == {h[:-1] for h in heads}

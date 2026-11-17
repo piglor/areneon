@@ -53,6 +53,7 @@ from areneon_ml.model.gamedata import RESERVED, GameData
 from areneon_ml.model.history import STATE_CATEGORIES
 from areneon_ml.model.options import (
     AUX_MOVE_HEAD,
+    AUX_OPPONENT_HEADS,
     CANDIDATE_MATCHUP,
     FACTORED_PREVIEW,
     POLICY_OUTPUT_SCALE_PPM,
@@ -448,6 +449,20 @@ class PolicyNetwork(nn.Module):
             self.aux_moves = nn.Sequential(
                 nn.Linear(d, d), nn.GELU(), nn.Linear(d, len(game.moves))
             )
+        # aux_opponent_heads (ADR-010 erratum A14.2): built after aux_moves, so it too leaves every
+        # other seeded weight, logit and value untouched. The Battle network only; the action head
+        # has one extra output (the last index, SWITCH) after the move vocabulary.
+        self.aux_action: nn.Sequential | None = None
+        self.aux_item: nn.Sequential | None = None
+        self.aux_ability: nn.Sequential | None = None
+        if role == "battle" and not value_only and is_set(config.options, AUX_OPPONENT_HEADS):
+            self.aux_action = nn.Sequential(
+                nn.Linear(d, d), nn.GELU(), nn.Linear(d, len(game.moves) + 1)
+            )
+            self.aux_item = nn.Sequential(nn.Linear(d, d), nn.GELU(), nn.Linear(d, len(game.items)))
+            self.aux_ability = nn.Sequential(
+                nn.Linear(d, d), nn.GELU(), nn.Linear(d, len(game.abilities))
+            )
 
     # -- shared trunk --------------------------------------------------------
 
@@ -711,6 +726,37 @@ class PolicyNetwork(nn.Module):
         """
         trunk = self._trunk(batch)
         return self._policy(batch, trunk), self._aux(trunk[3])
+
+    def forward_opponent(
+        self,
+        batch: Batch,
+        picks: Mapping[str, tuple[torch.Tensor, torch.Tensor]],
+        moves: bool = False,
+    ) -> tuple[PolicyOutput, torch.Tensor | None, dict[str, torch.Tensor]]:
+        """``forward`` plus the opponent heads from ONE trunk pass (the learner's call; A14.2).
+
+        ``picks`` maps a head (``action``, ``item``, ``ability``) to (batch index, token row) of the
+        targets it is trained on: the head is applied to those rows only and returns [K, out]
+        logits in that order. ``moves`` also returns the A12.2 move-reveal logits [B, M, |moves|]
+        (computed exactly as ``forward_aux`` does). The policy output equals ``forward(batch)``.
+        """
+        trunk = self._trunk(batch)
+        mons = trunk[3]
+        extra = self._aux(mons) if moves else None
+        out: dict[str, torch.Tensor] = {}
+        for head, (index, rows) in picks.items():
+            out[head] = self._opponent_head(head)(mons[index, rows])
+        return self._policy(batch, trunk), extra, out
+
+    def _opponent_head(self, head: str) -> nn.Module:
+        module: nn.Module | None = {
+            "action": self.aux_action,
+            "item": self.aux_item,
+            "ability": self.aux_ability,
+        }[head]
+        if module is None:
+            raise ValueError("this network was built without aux_opponent_heads")
+        return module
 
     def aux_logits(self, batch: Batch) -> torch.Tensor:
         """The move-reveal head's logits [B, M, |moves|] (``aux_move_head``); learner only."""

@@ -66,6 +66,13 @@ Defined so far:
   token's trunk output) that the learner trains to predict the foe's next revealed move. Built
   last, so every other seeded weight and logit is the plain network's; ``forward`` never computes
   it and no worker path reads it. Only ``true`` is a value.
+- ``aux_opponent_heads`` (network, layout changing; ADR-010 erratum A14.2): three training-only
+  heads on the Battle network (``aux_action.*``, ``aux_item.*``, ``aux_ability.*``: Linear, GELU,
+  Linear over the move vocabulary plus one SWITCH index, the item vocabulary and the ability
+  vocabulary, on each opponent token's trunk output) that the learner trains to predict each foe's
+  next action and its first revealed item and ability. Built last (after ``aux_moves``), so every
+  other seeded weight and logit is the plain network's; ``forward`` never computes them and no
+  worker path reads them. Only ``true`` is a value.
 """
 
 from __future__ import annotations
@@ -124,6 +131,7 @@ SEPARATE_VALUE_DETACHED = "detached"
 POLICY_OUTPUT_SCALE_PPM = "policy_output_scale_ppm"
 SHARED_TRUNK = "shared_trunk"
 AUX_MOVE_HEAD = "aux_move_head"
+AUX_OPPONENT_HEADS = "aux_opponent_heads"
 MAX_OUTPUT_SCALE_PPM = 999_999  # 1,000,000 is the default: leave the option out
 #: The feature sets the encoder can read (ADR-022 §3, erratum E-22.3: ``/2`` also carries the
 #: threat, speed and priority arrays, which the encoder attaches to the own and foe tokens;
@@ -178,6 +186,7 @@ REGISTRY: dict[str, dict[str, OptionSpec]] = {
         FACTORED_PREVIEW: OptionSpec(FACTORED_PREVIEW, lambda value: value is True, True),
         SHARED_TRUNK: OptionSpec(SHARED_TRUNK, lambda value: value is True, True),
         AUX_MOVE_HEAD: OptionSpec(AUX_MOVE_HEAD, lambda value: value is True, True),
+        AUX_OPPONENT_HEADS: OptionSpec(AUX_OPPONENT_HEADS, lambda value: value is True, True),
         SEPARATE_VALUE: OptionSpec(
             SEPARATE_VALUE, lambda v: v in (SEPARATE_VALUE_NETWORK, SEPARATE_VALUE_DETACHED), True
         ),

@@ -31,6 +31,7 @@ from areneon_contracts.training import (
 
 from areneon_ml import stopwatch
 from areneon_ml.learner import aux_moves as aux_labels
+from areneon_ml.learner import aux_opponent as opp_labels
 from areneon_ml.learner.ppo import GAME_SCORE
 from areneon_ml.learner.shaping import ShapingError, differential
 from areneon_ml.learner.situation import (
@@ -79,6 +80,10 @@ class Step:
     #: On a grouped step: the request slots whose ident matches no roster entry of the reduced
     #: state (the streak rule cannot judge them); 0 without a group.
     unmatched: int = 0
+    #: The unmasked opponent-head targets of the decision (ADR-010 erratum A14.2,
+    #: ``aux_opponent.py``): set on a Battle step read under ``ppo.aux_opponent``, ``None``
+    #: otherwise. A pure function of the player's own channel; never an input.
+    opp: opp_labels.OppLabels | None = None
 
 
 @dataclass(frozen=True)
@@ -101,8 +106,15 @@ class _Collector:
         shaping: bool = False,
         aux: bool = False,
         groups: Groups | None = None,
+        opp: tuple[str, ...] = (),
     ) -> None:
         self._encoders = encoders
+        self._opp = opp
+        # Per Battle trajectory, the opponent half of the state at each decision and the longest
+        # log of the player's own channel (the labels read the lines after each decision).
+        self._opp_snaps: dict[str, list[opp_labels.Snap]] = {}
+        self._opp_logs: dict[str, list[str]] = {}
+        self._opp_sides: dict[str, str] = {}
         self._groups = groups
         self._shaping = shaping
         self._aux = aux
@@ -162,6 +174,16 @@ class _Collector:
             if state is None:  # pragma: no cover - encode just fed the reducer
                 raise LearnerDataError("no reduced state to read the move-reveal labels from")
             self._seen.setdefault(episode, []).append(aux_labels.snapshot(state, query.n_own))
+        if self._opp and role == "battle":
+            state = session.state
+            if state is None:  # pragma: no cover - encode just fed the reducer
+                raise LearnerDataError("no reduced state to read the opponent-head labels from")
+            log = observation["log"]
+            self._opp_snaps.setdefault(episode, []).append(
+                opp_labels.snapshot(state, query.n_own, len(log))
+            )
+            self._opp_logs[episode] = log
+            self._opp_sides[episode] = "p2" if observation["player"] == "p1" else "p1"
         features = example.get("candidate_features")
         threatened = threatened_flag(observation["log"], features) if role == "battle" else None
         group, stall, unmatched = None, None, 0
@@ -219,6 +241,7 @@ class _Collector:
         if self._finished:
             return
         self._finished = True
+        self._finish_opponent()
         if not self._aux:
             return
         for episode, seen in self._seen.items():
@@ -228,6 +251,22 @@ class _Collector:
             self.steps[(episode, "battle")] = [
                 dataclasses.replace(step, aux=aux, aux_masked=len(entries) - len(aux))
                 for step, aux, entries in zip(steps, made, seen, strict=True)
+            ]
+
+    def _finish_opponent(self) -> None:
+        """Put the opponent-head labels (``ppo.aux_opponent``) on the Battle steps, in place."""
+        if not self._opp:
+            return
+        game = self._encoders["battle"].game
+        lookup = opp_labels.lookup_of(game)
+        for episode, snaps in self._opp_snaps.items():
+            made = opp_labels.labels(
+                snaps, self._opp_logs[episode], self._opp_sides[episode], self._opp, lookup
+            )
+            steps = self.steps[(episode, "battle")]
+            self.steps[(episode, "battle")] = [
+                dataclasses.replace(step, opp=found)
+                for step, found in zip(steps, made, strict=True)
             ]
 
     def collected(self) -> Collected:
@@ -291,6 +330,7 @@ def trajectories(  # noqa: PLR0913
     shaping: bool = False,
     aux_moves: bool = False,
     groups: Groups | None = None,
+    aux_opponent: tuple[str, ...] = (),
 ) -> list[Trajectory]:
     """The trajectories of a learner-ready stream played by ``behaviour_policy_id``.
 
@@ -311,6 +351,10 @@ def trajectories(  # noqa: PLR0913
     ``aux_moves`` (``ppo.aux_moves``, ADR-010 erratum A12.2) reads each Battle step's move-reveal
     targets from the player's own later channel (``Step.aux``).
 
+    ``aux_opponent`` (the heads of ``ppo.aux_opponent``, ADR-010 erratum A14.2) reads each Battle
+    step's next-action, item and ability targets for those heads from the player's own later
+    channel (``Step.opp``).
+
     ``groups`` (``clone.situation_weights``, ADR-010 erratum A13.2) reads each Battle step's
     situation group from the example alone (``Step.group``).
     """
@@ -327,6 +371,7 @@ def trajectories(  # noqa: PLR0913
             shaping=shaping,
             aux_moves=aux_moves,
             groups=groups,
+            aux_opponent=aux_opponent,
         )
         if found is not None:
             return found
@@ -339,7 +384,7 @@ def trajectories(  # noqa: PLR0913
     except TrainingStreamError as exc:
         raise LearnerDataError(str(exc)) from exc
     stopwatch.end("validate", mark)
-    collector = _Collector(encoders, shaping, aux_moves, groups)
+    collector = _Collector(encoders, shaping, aux_moves, groups, aux_opponent)
     lines: Iterator[str] = (
         stream_lines(stream) if isinstance(stream, Path) else iter(stream.split("\n")[:-1])
     )

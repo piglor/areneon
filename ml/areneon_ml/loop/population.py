@@ -1001,6 +1001,9 @@ class PopulationLoop:
                 load_workers(self.load_processes, self.load_auto, self.load_memory_mb),
                 shaping=self.config.ppo.shaping is not None,
                 aux_moves=self.config.ppo.aux_moves is not None,
+                aux_opponent=self.config.ppo.aux_opponent.heads
+                if self.config.ppo.aux_opponent is not None
+                else (),
             )
         bring_up(learner, self.device)
         guard = health.Guard(learner)
