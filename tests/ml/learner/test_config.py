@@ -143,6 +143,12 @@ INVALID = sorted(p.name for p in (CONFIGS / "invalid").iterdir())
         ("potential-search-distill.json", "ppo.shaping cannot be combined with ppo.search_distill"),
         ("aux-moves-no-head.json", "ppo.aux_moves needs model.options.aux_move_head"),
         ("aux-move-head-no-term.json", "head nothing trains"),
+        (
+            "aux-opponent-no-heads.json",
+            r"ppo\.aux_opponent needs model\.options\.aux_opponent_heads",
+        ),
+        ("aux-opponent-heads-no-term.json", "heads nothing trains"),
+        ("aux-opponent-empty.json", "at least one of action_micro"),
         ("sheet-regimes-same-format.json", "open_format must be another format"),
         ("sheet-regimes-belief-source.json", "closed_sheet_source belief is accepted once"),
         ("sheet-regimes-population.json", "cannot be combined with a population"),
@@ -156,7 +162,7 @@ def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> Non
 
 
 def test_every_reader_invalid_sample_is_checked_above() -> None:
-    assert len(READER_INVALID) == 43
+    assert len(READER_INVALID) == 46
 
 
 @pytest.mark.parametrize("name", INVALID)

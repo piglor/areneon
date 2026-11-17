@@ -466,6 +466,9 @@ class Loop:
                     load_workers(self.load_processes, self.load_auto, self.load_memory_mb),
                     shaping=self.config.ppo.shaping is not None,
                     aux_moves=self.config.ppo.aux_moves is not None,
+                    aux_opponent=self.config.ppo.aux_opponent.heads
+                    if self.config.ppo.aux_opponent is not None
+                    else (),
                 )
                 labels, label_sets = self._load_labels(generation, work, summary, pair)
                 teacher, label_sets = self._load_teacher(label_sets)

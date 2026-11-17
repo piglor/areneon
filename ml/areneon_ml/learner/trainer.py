@@ -24,6 +24,8 @@ from typing import Any, Protocol
 import torch
 
 from areneon_ml.learner.aux_moves import aux_terms, targets_tensors
+from areneon_ml.learner.aux_opponent import HEADS, opponent_terms
+from areneon_ml.learner.aux_opponent import targets_tensors as opponent_targets
 from areneon_ml.learner.config import MICRO, RunConfig
 from areneon_ml.learner.data import LearnerDataError, Step, Trajectory
 from areneon_ml.learner.diagnostics import CalibrationBin, calibration, explained_variance
@@ -46,7 +48,7 @@ from areneon_ml.learner.ppo import (
 )
 from areneon_ml.learner.shaping import phi, shaped
 from areneon_ml.model.batch import Batch, collate
-from areneon_ml.model.network import ROLES, PolicyNetwork, shared_trunk_of, tie_trunk
+from areneon_ml.model.network import ROLES, PolicyNetwork, PolicyOutput, shared_trunk_of, tie_trunk
 
 
 class LearnerError(ValueError):
@@ -187,6 +189,23 @@ class RoleReport:
     uniform_kl_coef_micro: int | None = None
     uniform_kl_steps: int | None = None
     uniform_floor_ppm: int | None = None
+    # Set only on the Battle role under ``ppo.aux_opponent`` (ADR-010 erratum A14.2), for each head
+    # with a coefficient: the unmasked targets of the update's table, the mean cross-entropy over
+    # the targets of its minibatches (measured before each step, 0.0 with none), the share whose
+    # highest-scored unmasked index is the label, and the units without a label. Left out of the
+    # stored report otherwise.
+    aux_action_steps: int | None = None
+    aux_action_loss: float | None = None
+    aux_action_top1: float | None = None
+    aux_action_masked: int | None = None
+    aux_item_steps: int | None = None
+    aux_item_loss: float | None = None
+    aux_item_top1: float | None = None
+    aux_item_masked: int | None = None
+    aux_ability_steps: int | None = None
+    aux_ability_loss: float | None = None
+    aux_ability_top1: float | None = None
+    aux_ability_masked: int | None = None
 
 
 @dataclass(frozen=True)
@@ -242,9 +261,21 @@ class _FrozenBattle:
     first: Mapping[str, float]
 
 
+def _targets(step: Step, head: str) -> tuple[tuple[int, int], ...]:
+    """A step's unmasked (row, label) targets of an opponent head (none without labels)."""
+    return step.opp.of(head) if step.opp is not None else ()
+
+
 VALUE_PREFIXES = ("value.", "value_net.")  # the head, or the separate value network
-#: What a value warm-up update still trains: the value head and the move-reveal head (A12.2).
-WARMUP_PREFIXES = (*VALUE_PREFIXES, "aux_moves.")
+#: What a value warm-up update still trains: the value head, the move-reveal head (A12.2) and the
+#: opponent heads (A14.2).
+WARMUP_PREFIXES = (
+    *VALUE_PREFIXES,
+    "aux_moves.",
+    "aux_action.",
+    "aux_item.",
+    "aux_ability.",
+)
 
 
 def value_warmup_active(config: RunConfig, generation: int) -> bool:
@@ -348,6 +379,7 @@ class Learner:
         # block; stored in the sidecar for a linear schedule only).
         self._uniform_tally = [0.0, 0.0]
         self.last_uniform_kl_coef_micro: int | None = None
+        self._opp_tally = {head: [0.0, 0.0, 0.0] for head in HEADS}
         # Entropy weight (millionths) of the newest update; set only under a linear
         # ``ppo.entropy_schedule`` (stored in the sidecar then, and nowhere otherwise).
         self.last_entropy_coef_micro: int | None = None
@@ -477,6 +509,7 @@ class Learner:
         self._aux_tally = [0.0, 0.0, 0.0]
         self._uniform_tally = [0.0, 0.0]
         self.last_uniform_kl_coef_micro = self.uniform_kl_coef_micro(self.generation)
+        self._opp_tally = {head: [0.0, 0.0, 0.0] for head in HEADS}
         self.last_entropy_coef_micro = self.entropy_coef_micro(self.generation)
         self.last_imitation_coef_micro = self.imitation_coef_micro(self.generation)
         # Under ``ppo.preview_bootstrap_micro`` (> 0) both roles' targets are fixed from the
@@ -588,6 +621,20 @@ class Learner:
                 out.extend(log_probs[i][batch.cand_mask[i]] for i in range(log_probs.shape[0]))
         return out
 
+    def _check_labels(self, role: str, steps: Sequence[Step]) -> None:
+        """A Battle update with a label-reading term needs the steps read with their labels."""
+        ppo = self.config.ppo
+        if role != "battle":
+            return
+        if ppo.aux_moves is not None and any(step.aux is None for step in steps):
+            raise LearnerDataError(
+                "ppo.aux_moves needs the Battle steps read with their move-reveal labels"
+            )
+        if ppo.aux_opponent is not None and any(step.opp is None for step in steps):
+            raise LearnerDataError(
+                "ppo.aux_opponent needs the Battle steps read with their opponent labels"
+            )
+
     def _table(  # noqa: PLR0913, PLR0917
         self,
         role: str,
@@ -607,12 +654,7 @@ class Learner:
                         "ppo.anchor.threatened needs the threats, speeds and foe_priorities rows "
                         "of every Battle example: a decision has none"
                     )
-        if role == "battle" and ppo.aux_moves is not None:
-            for step in steps:
-                if step.aux is None:
-                    raise LearnerDataError(
-                        "ppo.aux_moves needs the Battle steps read with their move-reveal labels"
-                    )
+        self._check_labels(role, steps)
         if role == "battle" and frozen is not None and frozen.values is not None:
             # The same frozen pass the Preview returns were read from (no second forward pass).
             assert frozen.log_probs is not None
@@ -813,16 +855,18 @@ class Learner:
         weights: LossWeights,
         label_index: list[int] | None = None,
         teacher_index: list[int] | None = None,
-        shares: tuple[float, float, float, float, float] = (1.0, 1.0, 1.0, 1.0, 1.0),
+        shares: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0),
     ) -> tuple[torch.Tensor, Any, torch.Tensor | None]:
         """One minibatch of one role: the tensor to backpropagate, the loss terms and, with an
         anchor, the (detached-by-the-caller) mean KL to the anchor.
 
         ``shares`` (micro-batching only) is this chunk's share of the minibatch's decisions, label
-        steps, teacher steps and move-reveal targets: each term is a mean over its own set, so it
+        steps, teacher steps, move-reveal targets, the decisions with a zero-avoiding term and the
+        targets of the action, item and ability heads: each term is a mean over its own set, so it
         is scaled by the chunk's share of that set and the chunks' tensors add up to the
         minibatch's. At 1.0 (the default) nothing is multiplied."""
-        main_share, label_share, teacher_share, aux_share, uniform_share = shares
+        main_share, label_share, teacher_share, aux_share, uniform_share, *head_shares = shares
+        opp_shares = dict(zip(HEADS, head_shares, strict=True))
 
         def scaled(term: torch.Tensor, share: float) -> torch.Tensor:
             return term if share == 1.0 else term * share
@@ -832,12 +876,7 @@ class Learner:
         beta = 0.0 if beta_micro is None else beta_micro / MICRO
         batch = to_device(collate([table.steps[i].query for i in index]), self.device)
         aux = self.config.ppo.aux_moves if role == "battle" else None
-        aux_ce: torch.Tensor | None = None
-        if aux is None:
-            out = self.networks[role](batch)
-        else:
-            out, aux_logits = self.networks[role].forward_aux(batch)
-            aux_ce = self._aux_ce(aux_logits, [table.steps[i].aux or () for i in index])
+        out, aux_ce, opp_ce = self._forward(role, table, index, batch)
         chosen = torch.tensor([table.steps[i].chosen for i in index], device=self.device)
         # `policy_terms` masks padding again although the network already pushes padded
         # logits to the dtype minimum: defence in depth, so a loss never depends on it.
@@ -918,8 +957,42 @@ class Learner:
             # move-reveal targets; it trains the head and, through the trunk, the representation
             # (frozen during a value warm-up, which then trains the head alone).
             aux_term = scaled(aux.coef_micro / MICRO * aux_ce.mean(), aux_share)
+        aux_term = aux_term + self._opp_loss(opp_ce, opp_shares)
         warm_loss = scaled(loss.value, main_share)
         return (warm_loss + aux_term if warm else total + aux_term + uniform_term), loss, kl
+
+    def _forward(
+        self, role: str, table: _Table, index: Sequence[int], batch: Batch
+    ) -> tuple[PolicyOutput, torch.Tensor | None, dict[str, torch.Tensor]]:
+        """The policy output and, with the move-reveal head (A12.2) or the opponent heads (A14.2),
+        the cross-entropies of their unmasked targets, from one trunk pass."""
+        network = self.networks[role]
+        aux = self.config.ppo.aux_moves if role == "battle" else None
+        opp = self.config.ppo.aux_opponent if role == "battle" else None
+        steps = [table.steps[i].aux or () for i in index]
+        if opp is not None:
+            out, moves, opp_logits = network.forward_opponent(
+                batch, self._opp_picks(table, index, opp.heads), aux is not None
+            )
+            aux_ce = None if moves is None else self._aux_ce(moves, steps)
+            return out, aux_ce, self._opp_ce(table, index, opp_logits)
+        if aux is None:
+            return network(batch), None, {}
+        out, moves = network.forward_aux(batch)
+        return out, self._aux_ce(moves, steps), {}
+
+    def _opp_loss(
+        self, opp_ce: Mapping[str, torch.Tensor], shares: Mapping[str, float]
+    ) -> torch.Tensor | float:
+        """ADR-010 erratum A14.2: per head, coef * the mean cross-entropy over the minibatch's
+        unmasked targets, scaled by the chunk's share of the head's targets (1.0 unchunked)."""
+        opp = self.config.ppo.aux_opponent
+        total: torch.Tensor | float = 0.0
+        for head, ce in opp_ce.items():
+            assert opp is not None
+            term = (opp.coef_micro(head) or 0) / MICRO * ce.mean()
+            total = total + (term if shares[head] == 1.0 else term * shares[head])
+        return total
 
     def _accumulate(  # noqa: PLR0913, PLR0917
         self,
@@ -951,6 +1024,12 @@ class Learner:
             [sum(1 for i in c if uniform_valid[i]) for c in chunks] if uniform_valid else None
         )
         uniform_total = sum(uniform_counts) if uniform_counts else 0
+        opp = self.config.ppo.aux_opponent if role == "battle" else None
+        head_counts: dict[str, list[int]] = {
+            head: [self._opp_count(table, c, head) for c in chunks]
+            for head in (opp.heads if opp else ())
+        }
+        head_totals = {head: sum(found) for head, found in head_counts.items()}
         fields = [torch.zeros(()) for _ in range(6)]
         kl_total: torch.Tensor | None = None
         for k, chunk in enumerate(chunks):
@@ -961,6 +1040,10 @@ class Learner:
             uniform_share = (
                 uniform_counts[k] / uniform_total if uniform_counts and uniform_total else 1.0
             )
+            head_shares = tuple(
+                head_counts[head][k] / head_totals[head] if head_totals.get(head) else 1.0
+                for head in HEADS
+            )
             backward, loss, kl = self._minibatch_loss(
                 role,
                 table,
@@ -969,7 +1052,7 @@ class Learner:
                 weights,
                 labels[k],
                 teachers[k],
-                (main, label, teacher, aux_share, uniform_share),
+                (main, label, teacher, aux_share, uniform_share, *head_shares),
             )
             torch.autograd.backward(backward)
             terms = (
@@ -1002,6 +1085,39 @@ class Learner:
         tally[1] += float(ce.numel())
         tally[2] += float(hit.sum().cpu())
         return ce
+
+    @staticmethod
+    def _opp_count(table: _Table, chunk: Sequence[int], head: str) -> int:
+        """The unmasked targets of ``head`` in the chunk's steps."""
+        return sum(len(_targets(table.steps[i], head)) for i in chunk)
+
+    def _opp_picks(
+        self, table: _Table, index: Sequence[int], heads: Sequence[str]
+    ) -> dict[str, tuple[torch.Tensor, torch.Tensor]]:
+        """(batch index, token row) of each head's unmasked targets in the minibatch."""
+        picks = {}
+        for head in heads:
+            batch, rows, _ = opponent_targets([_targets(table.steps[i], head) for i in index])
+            picks[head] = (batch.to(self.device), rows.to(self.device))
+        return picks
+
+    def _opp_ce(
+        self, table: _Table, index: Sequence[int], logits: Mapping[str, torch.Tensor]
+    ) -> dict[str, torch.Tensor]:
+        """Cross-entropy of each unmasked target of each head in the minibatch (heads with none
+        are left out), and the update's running tallies, measured before the step."""
+        found = {}
+        for head, head_logits in logits.items():
+            _, _, target = opponent_targets([_targets(table.steps[i], head) for i in index])
+            if not target.numel():
+                continue
+            ce, hit = opponent_terms(head_logits, target.to(self.device))
+            tally = self._opp_tally[head]
+            tally[0] += float(ce.detach().sum().cpu())
+            tally[1] += float(ce.numel())
+            tally[2] += float(hit.sum().cpu())
+            found[head] = ce
+        return found
 
     @staticmethod
     def _tally(sums: torch.Tensor, loss: Any) -> None:
@@ -1054,6 +1170,7 @@ class Learner:
             *self._threatened_report(role, table),
             *self._aux_report(role, table),
             *self._uniform_report(role, table, warm),
+            *self._opp_report(role, table),
         )
 
     def _imitation_report(self, role: str, table: _Table) -> tuple[Any, Any, Any, Any, Any]:
@@ -1100,6 +1217,28 @@ class Learner:
         steps = sum(len(step.aux or ()) for step in table.steps)
         masked = sum(step.aux_masked or 0 for step in table.steps)
         return steps, total / count if count else 0.0, hits / count if count else 0.0, masked
+
+    def _opp_report(self, role: str, table: _Table) -> tuple[Any, ...]:
+        opp = self.config.ppo.aux_opponent
+        if role != "battle" or opp is None:
+            return (None,) * (4 * len(HEADS))
+        out: list[Any] = []
+        for head in HEADS:
+            if head not in opp.heads:
+                out.extend((None, None, None, None))
+                continue
+            total, count, hits = self._opp_tally[head]
+            targets = [step.opp.of(head) for step in table.steps if step.opp]
+            masked = sum(step.opp.masked[HEADS.index(head)] for step in table.steps if step.opp)
+            out.extend(
+                (
+                    sum(len(t) for t in targets),
+                    total / count if count else 0.0,
+                    hits / count if count else 0.0,
+                    masked,
+                )
+            )
+        return tuple(out)
 
     def _shaping_report(self, role: str, table: _Table) -> tuple[int | None, int | None]:
         shaping = self.config.ppo.shaping

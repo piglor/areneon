@@ -469,6 +469,65 @@ def test_the_shaping_keys_are_read_together_on_the_battle_role() -> None:
     read_train_report(raw)
 
 
+def test_the_aux_opponent_keys_are_read_per_head_on_the_battle_role() -> None:
+    raw = json.loads(json.dumps(TRAIN_REPORT))
+    raw["battle"].update(
+        aux_action_steps=12, aux_action_loss=4.5, aux_action_top1=0.25, aux_action_masked=7
+    )
+    read_train_report(raw)  # one head alone is a valid report
+    raw["battle"].update(
+        aux_item_steps=0,
+        aux_item_loss=0.0,
+        aux_item_top1=0.0,
+        aux_item_masked=0,
+        aux_ability_steps=3,
+        aux_ability_loss=1.0,
+        aux_ability_top1=1.0,
+        aux_ability_masked=1,
+    )
+    read_train_report(raw)
+
+
+@pytest.mark.parametrize(
+    ("edit", "message"),
+    [
+        (lambda r: r["battle"].update(aux_item_steps=5), "aux_item keys come together"),
+        (
+            lambda r: r["preview"].update(
+                aux_action_steps=5, aux_action_loss=1.0, aux_action_top1=0.5, aux_action_masked=0
+            ),
+            "aux_action keys come together",
+        ),
+        (
+            lambda r: r["battle"].update(
+                aux_ability_steps=-1,
+                aux_ability_loss=1.0,
+                aux_ability_top1=0.5,
+                aux_ability_masked=0,
+            ),
+            "integer",
+        ),
+        (
+            lambda r: r["battle"].update(
+                aux_action_steps=1, aux_action_loss=-1.0, aux_action_top1=0.5, aux_action_masked=0
+            ),
+            "cannot be negative",
+        ),
+        (
+            lambda r: r["battle"].update(
+                aux_item_steps=1, aux_item_loss=1.0, aux_item_top1=1.5, aux_item_masked=0
+            ),
+            "between 0 and 1",
+        ),
+    ],
+)
+def test_a_malformed_aux_opponent_report_is_refused(edit: Any, message: str) -> None:
+    raw = json.loads(json.dumps(TRAIN_REPORT))
+    edit(raw)
+    with pytest.raises(InspectError, match=message):
+        read_train_report(raw)
+
+
 def test_the_aux_moves_keys_are_read_together_on_the_battle_role() -> None:
     raw = json.loads(json.dumps(TRAIN_REPORT))
     raw["battle"].update(

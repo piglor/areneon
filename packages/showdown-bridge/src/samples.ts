@@ -940,6 +940,21 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       runSection(c, "ppo").value_warmup = { generations: 2 };
       c.warm_start = { battle: hexOf("b") };
     }),
+    "training-run-config/aux-opponent": runConfigWith((c) => {
+      runSection(c, "model").options = { aux_opponent_heads: true };
+      runSection(c, "ppo").aux_opponent = { action_micro: 50000, item_micro: 25000, ability_micro: 25000 };
+    }),
+    "training-run-config/aux-opponent-action-only": runConfigWith((c) => {
+      runSection(c, "model").options = { aux_opponent_heads: true };
+      runSection(c, "ppo").aux_opponent = { action_micro: 50000 };
+    }),
+    "training-run-config/aux-opponent-with-aux-moves-warm-start": runConfigWith((c) => {
+      runSection(c, "model").options = { aux_move_head: true, aux_opponent_heads: true };
+      runSection(c, "ppo").aux_moves = { coef_micro: 50000 };
+      runSection(c, "ppo").aux_opponent = { action_micro: 50000, item_micro: 25000, ability_micro: 25000 };
+      runSection(c, "ppo").value_warmup = { generations: 2 };
+      c.warm_start = { battle: hexOf("b") };
+    }),
     "training-run-config/policy-output-scale": runConfigWith((c) => {
       runSection(c, "model").options = { policy_output_scale_ppm: 10000 };
     }),
@@ -1049,6 +1064,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "clone-run-config/aux-move-head": cloneWith((c) => {
       runSection(c, "model").options = { aux_move_head: true };
+    }),
+    "clone-run-config/aux-opponent-heads": cloneWith((c) => {
+      runSection(c, "model").options = { aux_opponent_heads: true };
     }),
     "clone-run-config/policy-output-scale": cloneWith((c) => {
       runSection(c, "model").options = { policy_output_scale_ppm: 10000 };
@@ -1274,6 +1292,16 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "training-run-config/aux-move-head-no-term": runConfigWith((c) => {
       runSection(c, "model").options = { aux_move_head: true };
+    }),
+    "training-run-config/aux-opponent-no-heads": runConfigWith((c) => {
+      runSection(c, "ppo").aux_opponent = { action_micro: 50000 };
+    }),
+    "training-run-config/aux-opponent-heads-no-term": runConfigWith((c) => {
+      runSection(c, "model").options = { aux_opponent_heads: true };
+    }),
+    "training-run-config/aux-opponent-empty": runConfigWith((c) => {
+      runSection(c, "model").options = { aux_opponent_heads: true };
+      runSection(c, "ppo").aux_opponent = {};
     }),
     "training-run-config/potential-search-distill": distilling((c) => (runSection(c, "ppo").shaping = { coef_micro: 1000000 })),
     "training-run-config/search-distill-labels-only": distilling((c) => delete runSection(c, "ppo").search_distill),
@@ -1681,6 +1709,20 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "training-run-config/aux-move-head-false": runConfigWith(
       (c) => (runSection(c, "model").options = { aux_move_head: false }),
+    ),
+    "training-run-config/aux-opponent-zero": runConfigWith((c) => {
+      runSection(c, "model").options = { aux_opponent_heads: true };
+      runSection(c, "ppo").aux_opponent = { action_micro: 0 };
+    }),
+    "training-run-config/aux-opponent-extra-field": runConfigWith((c) => {
+      runSection(c, "model").options = { aux_opponent_heads: true };
+      runSection(c, "ppo").aux_opponent = { action_micro: 50000, target_micro: 1 };
+    }),
+    "training-run-config/aux-opponent-heads-false": runConfigWith(
+      (c) => (runSection(c, "model").options = { aux_opponent_heads: false }),
+    ),
+    "clone-run-config/aux-opponent-heads-false": cloneWith(
+      (c) => (runSection(c, "model").options = { aux_opponent_heads: false }),
     ),
     "clone-run-config/aux-move-head-false": cloneWith(
       (c) => (runSection(c, "model").options = { aux_move_head: false }),
