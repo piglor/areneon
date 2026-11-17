@@ -237,6 +237,17 @@ describe("volatiles, items, abilities and formes", () => {
     ({ state } = after("|detailschange|p2a: Venusaur|Venusaur-Mega, L50, M|90/100"));
     expect(opp(state, "Venusaur")).toMatchObject({ species: "venusaurmega", hp_num: 90 });
   });
+  it("a Transform copies the target's stat stages, a later boost counts from them and a switch-out resets them (#1375)", () => {
+    let { state } = after("|-unboost|p2b: Charizard|spd|2", "|-transform|p2a: Venusaur|p2b: Charizard");
+    expect(opp(state, "Venusaur").boosts.spd).toBe(-2);
+    expect(opp(state, "Charizard").boosts.spd).toBe(-2);
+    // The engine's capped delta: the target sits at -2, so a further -4 reaches -6 and the copy tracks it without leaving -6..6.
+    const run = after("|-unboost|p2b: Charizard|spd|2", "|-transform|p2a: Venusaur|p2b: Charizard", "|-unboost|p2a: Venusaur|spd|4");
+    expect(run.flags).toEqual([]);
+    expect(opp(run.state, "Venusaur").boosts.spd).toBe(-6);
+    ({ state } = after("|-unboost|p2b: Charizard|spd|2", "|-transform|p2a: Venusaur|p2b: Charizard", "|switch|p2a: Pikachu|Pikachu, L50, M|100/100"));
+    expect(opp(state, "Venusaur").boosts.spd).toBe(0);
+  });
   it("moves reveal themselves once, and not when called by another effect", () => {
     const { state } = after("|move|p2a: Venusaur|Giga Drain|p1a: Venusaur", "|move|p2a: Venusaur|Giga Drain|p1a: Venusaur", "|move|p2a: Venusaur|Sleep Talk|p2a: Venusaur", "|move|p2a: Venusaur|Hidden Power|null|[from] move: Sleep Talk");
     expect(opp(state, "Venusaur").moves_revealed).toEqual(["gigadrain", "sleeptalk"]);

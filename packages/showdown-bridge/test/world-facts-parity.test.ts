@@ -291,7 +291,7 @@ function oracle(omni: readonly string[], cut: number, viewer: "p1" | "p2"): Worl
   });
   const opposing = viewer === "p1" ? "p2" : "p1";
   return {
-    world_facts_format: "world-facts/4",
+    world_facts_format: "world-facts/5",
     turn,
     weather,
     terrain,

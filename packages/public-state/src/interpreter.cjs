@@ -862,6 +862,8 @@ var ArReplay = (function () {
         var m = mon(arg(line, 0), line);
         var t = mon(arg(line, 1), line);
         m.temp_species = t.temp_species || t.species;
+        // The engine's `transformInto` copies the target's stat stages (no line states them); a switch-out resets them as for any Pokemon (#1375).
+        m.boosts = clone(t.boosts);
         addSorted(m.volatiles, "transform");
       },
       "-mega": function (line) {

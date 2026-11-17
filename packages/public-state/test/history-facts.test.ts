@@ -79,7 +79,7 @@ const code = (fn: () => unknown): string => {
 
 describe("identity and input", () => {
   it("has a format id and a file hash of its own, and leaves the reader's and the world facts' bytes alone", () => {
-    expect(HISTORY_FACTS_FORMAT).toBe("history-facts/1");
+    expect(HISTORY_FACTS_FORMAT).toBe("history-facts/2");
     expect(historyFactsSha256()).toBe(createHash("sha256").update(readFileSync(HISTORY_FACTS_PATH)).digest("hex"));
     expect(historyFactsSha256()).not.toBe(readerSha256());
     expect(historyFactsSha256()).not.toBe(worldFactsSha256());
@@ -96,7 +96,7 @@ describe("identity and input", () => {
     // facts come from `HistoryFactsData`. `stall` is the engine's condition id of the Baton Pass / Shed Tail copy table,
     // `recoil` and `confusion` are the `[from]` wire tokens of the engine's own damage sources, `slot` a wire word, `}` a fragment of the error-message template.
     const accepted = new Set([
-      "history-facts/1", "p1", "p2", "bad_player", "secret_marker", "malformed_line", "unattributable_line", "stall_unresolved",
+      "history-facts/2", "p1", "p2", "bad_player", "secret_marker", "malformed_line", "unattributable_line", "stall_unresolved",
       "historyfactserror", "|", "|split", "|split|", "unsettled", "ok", "failed",
       "unknown", "none", "", "request", "move", "cant", "switch", "drag", "faint", "turn", "upkeep", "replace", "swap", "win", "tie",
       "-damage", "-heal", "-boost", "-unboost", "-status", "-start", "-sidestart", "-fieldstart", "-weather", "-singleturn",
@@ -209,9 +209,11 @@ describe("the stall counter", () => {
     expect(mon(other, "own", "a").stall_counter).toBe(3);
   });
 
-  it("refuses an instructed stall move, which prints nothing (#1377; a known gap to the engine, kept so the file hash stays)", () => {
+  it("an instructed stall move prints nothing and counts as one more use (#1378; the engine triples the counter again)", () => {
     const lines = [...HEAD, ...TURN(1), "|move|p1a: Alpha|Protect|p1a: Alpha", "|-singleturn|p1a: Alpha|Protect", "|move|p2a: Gamma|Instruct|p1a: Alpha", "|-singleturn|p1a: Alpha|move: Instruct|[of] p2a: Gamma", "|move|p1a: Alpha|Protect|p1a: Alpha", "|move|p2b: Delta|Tackle|p1b: Beta", ...END];
-    expect(code(() => run(lines))).toBe("stall_unresolved");
+    expect(mon(run(lines), "own", "a").stall_counter).toBe(9);
+    // a stalling use that did not succeed this turn and prints nothing is still unresolved
+    expect(code(() => run([...HEAD, ...TURN(1), "|move|p1a: Alpha|Protect|p1a: Alpha", "|move|p2b: Delta|Tackle|p1b: Beta", ...END]))).toBe("stall_unresolved");
   });
 
   it("a side-condition stall move whose condition is already up prints nothing and still succeeds", () => {

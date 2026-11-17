@@ -24,8 +24,10 @@ const inputs: PreviewSolveIdentityInputs = {
   hypothetical_battle_format: 1,
 };
 // Vectors computed with Python hashlib over the sorted-key compact JSON (tests/ml/loop/test_preview_solve_identity.py).
-const CONFIG_HASH = "415714401460127e920daefdc52ad85707fef8fa3d1d98cdd5ff01fbba27ee0e";
-const IDENTITY_HASH = "89ae2b2359f6d1d272b03efc8d7959f9c0a2135d87ae4eefb48270b519caf932";
+const CONFIG_HASH = "705250247a032c32f86ad61e0573a3c2bab3ce3dfea0a42427ab63fa17e8b147";
+const IDENTITY_HASH = "20ee953cd23a78591f3456a6ede1e242e7449cafe55cd500d0e0be57c59fd60b";
+// The policy-id vectors take a solver identity as an opaque string and keep the one they were computed with.
+const ID_VECTOR_SOLVE = "89ae2b2359f6d1d272b03efc8d7959f9c0a2135d87ae4eefb48270b519caf932";
 const SEARCH_VECTOR = "edd348bdf8b9f5069ada74afae22d3ba99e1b349e2748b245de73384c9d666b9";
 
 describe("the committed PreviewSolveConfig", () => {
@@ -101,12 +103,12 @@ describe("the policy id with the solver", () => {
   });
 
   it("adds preview_solve only when present, and equals the Python twin", () => {
-    expect(policyId(pair, "argmax", {}, undefined, undefined, IDENTITY_HASH)).toBe("policy:917a7880a7a04b493d463d68fee28131bc7484f381de95e60329a8a3da8d5499");
-    expect(policyId(pair, "sample", { temperature_ppm: 700000, truncation: { kind: "threshold", min_ppm: 30000 } }, h("f"), SEARCH_VECTOR, IDENTITY_HASH)).toBe("policy:9e18393e4c548c72aa64192bb4c137f1ab4ce6ee163cfa552584863587bbdf92");
+    expect(policyId(pair, "argmax", {}, undefined, undefined, ID_VECTOR_SOLVE)).toBe("policy:917a7880a7a04b493d463d68fee28131bc7484f381de95e60329a8a3da8d5499");
+    expect(policyId(pair, "sample", { temperature_ppm: 700000, truncation: { kind: "threshold", min_ppm: 30000 } }, h("f"), SEARCH_VECTOR, ID_VECTOR_SOLVE)).toBe("policy:9e18393e4c548c72aa64192bb4c137f1ab4ce6ee163cfa552584863587bbdf92");
   });
 
   it("is independent of search: the solver, search and both are three different policies", () => {
-    const ids = [policyId(pair, "argmax"), policyId(pair, "argmax", {}, undefined, undefined, IDENTITY_HASH), policyId(pair, "argmax", {}, undefined, SEARCH_VECTOR), policyId(pair, "argmax", {}, undefined, SEARCH_VECTOR, IDENTITY_HASH)];
+    const ids = [policyId(pair, "argmax"), policyId(pair, "argmax", {}, undefined, undefined, ID_VECTOR_SOLVE), policyId(pair, "argmax", {}, undefined, SEARCH_VECTOR), policyId(pair, "argmax", {}, undefined, SEARCH_VECTOR, ID_VECTOR_SOLVE)];
     expect(new Set(ids).size).toBe(4);
   });
 
