@@ -23,7 +23,7 @@ from typing import Any
 from areneon_contracts.contracts import ContractError, jcs, sha256_hex, validate
 
 from areneon_ml.model.network import ConfigError, ModelConfig
-from areneon_ml.model.options import AUX_MOVE_HEAD, SHARED_TRUNK, is_set
+from areneon_ml.model.options import AUX_MOVE_HEAD, AUX_OPPONENT_HEADS, SHARED_TRUNK, is_set
 
 MICRO = 1_000_000
 NANO = 1_000_000_000
@@ -187,6 +187,24 @@ class UniformKlSettings:
 
 
 @dataclass(frozen=True)
+class AuxOpponentSettings:
+    """``ppo.aux_opponent`` (ADR-010 erratum A14.2, #1434): each opponent head's weight in
+    millionths; a head without a key has no term (and no labels are read for it)."""
+
+    action_micro: int | None = None
+    item_micro: int | None = None
+    ability_micro: int | None = None
+
+    def coef_micro(self, head: str) -> int | None:
+        found: int | None = getattr(self, f"{head}_micro")
+        return found
+
+    @property
+    def heads(self) -> tuple[str, ...]:
+        return tuple(h for h in ("action", "item", "ability") if self.coef_micro(h) is not None)
+
+
+@dataclass(frozen=True)
 class PPOSettings:
     epochs: int
     minibatch_size: int
@@ -226,6 +244,8 @@ class PPOSettings:
     aux_moves: AuxMovesSettings | None = None
     # ``ppo.uniform_kl`` (ADR-010 erratum A14.1): None when absent (no zero-avoiding term).
     uniform_kl: UniformKlSettings | None = None
+    # ``ppo.aux_opponent`` (ADR-010 erratum A14.2): None when absent (no opponent-head terms).
+    aux_opponent: AuxOpponentSettings | None = None
 
 
 @dataclass(frozen=True)
@@ -397,6 +417,36 @@ def _uniform_kl(ppo: dict[str, Any]) -> UniformKlSettings | None:
 def _aux_moves(ppo: dict[str, Any]) -> AuxMovesSettings | None:
     found = ppo.get("aux_moves")
     return None if found is None else AuxMovesSettings(found["coef_micro"])
+
+
+def _aux_opponent(ppo: dict[str, Any]) -> AuxOpponentSettings | None:
+    found = ppo.get("aux_opponent")
+    if found is None:
+        return None
+    return AuxOpponentSettings(
+        found.get("action_micro"), found.get("item_micro"), found.get("ability_micro")
+    )
+
+
+def _check_aux_opponent(raw: dict[str, Any], model: ModelConfig) -> None:
+    """``ppo.aux_opponent`` needs the heads and the heads need it (ADR-010 erratum A14.2)."""
+    head = is_set(model.options, AUX_OPPONENT_HEADS)
+    term = "aux_opponent" in raw["ppo"]
+    if term and not head:
+        raise RunConfigError(
+            "training-run-config: ppo.aux_opponent needs model.options.aux_opponent_heads "
+            "(the term trains the heads)"
+        )
+    if term and not raw["ppo"]["aux_opponent"]:
+        raise RunConfigError(
+            "training-run-config: ppo.aux_opponent needs at least one of action_micro, "
+            "item_micro, ability_micro"
+        )
+    if head and not term:
+        raise RunConfigError(
+            "training-run-config: model.options.aux_opponent_heads needs ppo.aux_opponent "
+            "(heads nothing trains are refused)"
+        )
 
 
 def _check_aux_moves(raw: dict[str, Any], model: ModelConfig) -> None:
@@ -605,6 +655,7 @@ def read_run_config(raw: object) -> RunConfig:
     _check_imitation(raw)
     _check_threatened_anchor(raw)
     _check_aux_moves(raw, model)
+    _check_aux_opponent(raw, model)
     if "population" in raw:
         if warm is not None and "preview" in warm:
             raise RunConfigError(
@@ -679,6 +730,7 @@ def read_run_config(raw: object) -> RunConfig:
             shaping=_shaping(ppo),
             aux_moves=_aux_moves(ppo),
             uniform_kl=_uniform_kl(ppo),
+            aux_opponent=_aux_opponent(ppo),
         ),
         device=raw["learner"]["device"],
         threads=raw["learner"]["threads"],

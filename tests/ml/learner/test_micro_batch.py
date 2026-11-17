@@ -22,6 +22,7 @@ from tests.ml.learner.support import edited_config, networks, tiny_config
 from tests.ml.learner.test_anchor import anchored, other_anchors
 from tests.ml.learner.test_anchor_threatened import flagged, threatening
 from tests.ml.learner.test_aux_moves import aux_config, aux_trajectories
+from tests.ml.learner.test_aux_opponent import opp_config, opp_trajectories
 from tests.ml.learner.test_imitation import imitating, teacher_steps
 from tests.ml.learner.test_search_distill import battle_labels, distilled
 from tests.ml.learner.test_shared_trunk import shared_config
@@ -63,6 +64,11 @@ def aux() -> Case:
     return Case(config, work=aux_trajectories(config))
 
 
+def aux_opponent() -> Case:
+    config = opp_config()
+    return Case(config, work=opp_trajectories(config))
+
+
 def threatened() -> Case:
     config = threatening(other=200_000, hot=900_000)
     return Case(config, other_anchors(), work=flagged(trajs(config)))
@@ -101,12 +107,23 @@ def uniform_shared() -> Case:
     return Case(edited_config(edit))
 
 
+def uniform_aux_opponent() -> Case:
+    def edit(config: dict[str, Any]) -> None:
+        config["model"]["options"] = {"aux_opponent_heads": True}
+        config["ppo"]["aux_opponent"] = {"action_micro": 50_000, "item_micro": 25_000}
+        config["ppo"]["uniform_kl"] = {"coef_micro": 1_000_000, "schedule": {"kind": "constant"}}
+
+    config = edited_config(edit)
+    return Case(config, work=opp_trajectories(config))
+
+
 CASES: dict[str, Callable[[], Case]] = {
     "plain": plain,
     "anchor": anchor,
     "anchor-warmup": anchor_warmup,
     "shared-trunk": shared,
     "aux-moves": aux,
+    "aux-opponent": aux_opponent,
     "anchor-threatened": threatened,
     "imitation": imitation,
     "search-distill": distill,
@@ -114,6 +131,7 @@ CASES: dict[str, Callable[[], Case]] = {
     "uniform-kl": uniform_term,
     "uniform-kl-anchor": uniform_anchor,
     "uniform-kl-shared-trunk": uniform_shared,
+    "uniform-kl-aux-opponent": uniform_aux_opponent,
 }
 
 

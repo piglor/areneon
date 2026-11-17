@@ -932,6 +932,54 @@ hash is today's.
   schedule and `restore_state` refuses one that is not the schedule's. The dashboard reader takes
   the four keys as optional and together.
 
+### Predicting each foe's next action, item and ability: `aux_opponent_heads` and `ppo.aux_opponent`
+
+Three training-only heads that shape the Battle trunk toward what an opponent will do and show
+(ADR-010 erratum A14.2, #1434): `"model": {"options": {"aux_opponent_heads": true}}` and `"ppo":
+{..., "aux_opponent": {"action_micro": 50000, "item_micro": 25000, "ability_micro": 25000}}`. At
+least one key, each 1 to 1,000,000; a head without a key has no term and no labels are read for it.
+The block and the option come together in a run config (a clone config may hold the heads alone; a
+clone trains none). It is a new run from generation 0; checkpoints carry format `"2"`. It composes
+with `aux_move_head` (A12.2), `shared_trunk` and the value warm-up.
+
+- **Heads:** `aux_action.*` (Linear d to d, GELU, Linear d to the move vocabulary plus one SWITCH
+  index, the last), `aux_item.*` and `aux_ability.*` on each opponent token's trunk output, built
+  last (after `aux_moves`), so a seeded network's other weights, logits and value are those of the
+  network without them (a clone with the heads has the clone's policy tensors byte for byte).
+  `forward` never computes them; the learner calls `forward_opponent`, which applies each head to
+  the target rows only. The worker, the scorer and `encoder_version` are untouched.
+- **Labels (`learner/aux_opponent.py`)** come from the player's own channel only, never from the
+  opponent's team, the omniscient log or a verdict. *Action:* at a move request, for each living
+  opponent entry in an active position, the first event of that position between this request and
+  the next Battle request (cut at the first `|turn|`) is the label: a switch before any move or
+  `cant` line is SWITCH, a move line with no `[from]` tag is that move; masked: a `[from]lockedmove`
+  line, `cant`, Struggle, a faint, a drag, a switch after a move (Eject Button), no event, a
+  `replace` of the position anywhere in the game; a move with another `[from]` tag (a call) is
+  skipped. The last Battle decision has no later request in the stream, so no window and no label
+  (the stream carries no channel tail). *Item and ability:* for each non-phantom entry whose item
+  (ability) the reducer does not show, the first own reveal later in the game (`-enditem`, `-item`
+  with no `[from]` or Frisk, a `[from] item:` line without `[of]`, `-mega` for the stone; `-ability`
+  without `[from]`/`[of]`, a `[from] ability:` line without `[of]`, the Frisk holder); masked: a
+  transfer, copy or change first (`-item` with another `[from]`, a silent `-enditem`, `-ability`
+  with `[from]`/`[of]`, `-endability`, Skill Swap, Neutralizing Gas), Mega Evolution (ability), a
+  reveal while Transformed (ability), an Illusion `replace` anywhere (both heads), a nickname two
+  entries share, an id the vocabulary lacks, no later reveal. No negative is ever taken from
+  absence. Targets and the Pokemon switched in are not predicted.
+- **Loss:** per head, `coef * mean` over the minibatch's unmasked targets of the cross-entropy of a
+  softmax over the head's vocabulary (reserved indices masked) against the label. The gradient
+  reaches the shared trunk. During `ppo.value_warmup` the trunk is frozen and the heads train with
+  the value head (`WARMUP_PREFIXES`). Micro-batching scales each head's term by its own target
+  share, so the chunked gradients equal the single pass.
+- **Records:** `train-report.json`, Battle role, only for the heads with a coefficient, four keys
+  each (the dashboard reader's optional keys, together per head): `aux_<head>_steps` (unmasked
+  targets of the update's table), `aux_<head>_masked` (units with no label), `aux_<head>_loss`
+  and `aux_<head>_top1` (mean cross-entropy and the share whose best unmasked index is the label,
+  over the minibatches' targets of every epoch, measured before each step).
+- **Cost:** three small MLPs on the target rows only. Measured on the tiny test network (CPU, one
+  thread, shared machine): about +22% learner time per generation (all three heads, vocabularies
+  large against the tiny width); at a real size the trunk dominates (the erratum expects a few
+  percent). Label building is linear in the channel length and runs in the loader workers.
+
 ## 6. Your own teams as a test set: the private test (owner only)
 
 The private test (ADR-015 erratum E1, item 2) measures one frozen pair on your own teams, from

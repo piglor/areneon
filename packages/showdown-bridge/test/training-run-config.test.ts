@@ -84,6 +84,23 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     }
   });
 
+  it("reads ppo.aux_opponent with its heads, hashes it apart from none and refuses either alone (ADR-010 erratum A14.2)", async () => {
+    const opp = readTrainingRunConfig(sample("aux-opponent"));
+    expect(opp.ppo.aux_opponent).toEqual({ action_micro: 50000, item_micro: 25000, ability_micro: 25000 });
+    expect(opp.model.options).toEqual({ aux_opponent_heads: true });
+    expect(readTrainingRunConfig(sample("aux-opponent-action-only")).ppo.aux_opponent).toEqual({ action_micro: 50000 });
+    const both = readTrainingRunConfig(sample("aux-opponent-with-aux-moves-warm-start"));
+    expect(both.model.options).toEqual({ aux_move_head: true, aux_opponent_heads: true });
+    expect(await runConfigHash(opp)).not.toBe(await runConfigHash(readTrainingRunConfig(sample("tiny"))));
+    const read = (dir: string, name: string) => JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/training-run-config/${dir}/${name}.json`), "utf8"));
+    expect(() => readTrainingRunConfig(read("reader-invalid", "aux-opponent-no-heads"))).toThrow("ppo.aux_opponent needs model.options.aux_opponent_heads");
+    expect(() => readTrainingRunConfig(read("reader-invalid", "aux-opponent-heads-no-term"))).toThrow("heads nothing trains");
+    expect(() => readTrainingRunConfig(read("reader-invalid", "aux-opponent-empty"))).toThrow("at least one of");
+    for (const name of ["aux-opponent-zero", "aux-opponent-extra-field", "aux-opponent-heads-false"]) {
+      expect(() => readTrainingRunConfig(read("invalid", name))).toThrow(TrainingRunConfigError);
+    }
+  });
+
   it("reads a warm start, hashes it apart from none and refuses the same checkpoint for both roles (ADR-010 erratum A2)", async () => {
     const warm = readTrainingRunConfig(sample("warm-start"));
     expect(warm.warm_start).toEqual({ preview: "a".repeat(64), battle: "b".repeat(64) });

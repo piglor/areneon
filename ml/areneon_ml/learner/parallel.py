@@ -42,6 +42,7 @@ from areneon_contracts.training import (
 
 from areneon_ml import stopwatch
 from areneon_ml.learner.aux_moves import AuxTarget
+from areneon_ml.learner.aux_opponent import OppLabels
 from areneon_ml.learner.data import Collected, LearnerDataError, Step, Trajectory, _Collector
 from areneon_ml.learner.situation import Groups
 from areneon_ml.model.encoder import EncodedQuery, Encoder
@@ -164,6 +165,7 @@ def _check_lines(piece: tuple[int, int, int]) -> _Piece:
         _SHARED.get("shaping", False),
         _SHARED.get("aux_moves", False),
         _SHARED.get("groups"),
+        _SHARED.get("aux_opponent", ()),
     )
     result = _Piece(collector.collected(), checker.seen, checker.classes)
     with Path(_SHARED["path"]).open("rb") as handle:
@@ -236,7 +238,8 @@ def pack_piece(piece: _Piece) -> bytes:
             # move-reveal targets (ppo.aux_moves; None or [row, known, next] lists) as entry 5 and
             # their masked count as entry 6, the situation group (clone.situation_weights) as entry
             # 7, the streak step's per-candidate stall flags (None or 0/1 list) as entry 8 and the
-            # count of request slots no roster entry names as entry 9.
+            # count of request slots no roster entry names as entry 9 and the opponent-head targets
+            # (ppo.aux_opponent; None or [action, item, ability, masked]) as entry 10.
             coded.append(
                 [
                     step.chosen,
@@ -250,6 +253,14 @@ def pack_piece(piece: _Piece) -> bytes:
                     step.group,
                     None if step.stall is None else [int(flag) for flag in step.stall],
                     step.unmatched,
+                    None
+                    if step.opp is None
+                    else [
+                        [list(pair) for pair in step.opp.action],
+                        [list(pair) for pair in step.opp.item],
+                        [list(pair) for pair in step.opp.ability],
+                        list(step.opp.masked),
+                    ],
                 ]
             )
         steps.append([episode, role, coded])
@@ -298,8 +309,20 @@ def unpack_piece(blob: bytes) -> _Piece:
                 group,
                 None if stall is None else tuple(bool(flag) for flag in stall),
                 unmatched,
+                opp=_opp(opponent),
             )
-            for chosen, fields, potential, threatened, aux, masked, group, stall, unmatched in coded
+            for (
+                chosen,
+                fields,
+                potential,
+                threatened,
+                aux,
+                masked,
+                group,
+                stall,
+                unmatched,
+                opponent,
+            ) in coded
         ]
     return _Piece(
         Collected(header["order"], header["scores"], steps),
@@ -308,6 +331,19 @@ def unpack_piece(blob: bytes) -> _Piece:
         header["contract_error"],
         None if header["encode_error"] is None else tuple(header["encode_error"]),
         header["timings"],
+    )
+
+
+def _opp(coded: list[Any] | None) -> OppLabels | None:
+    """The opponent-head targets ``pack_piece`` made (``None`` without the option)."""
+    if coded is None:
+        return None
+    action, item, ability, masked = coded
+    return OppLabels(
+        tuple((r, label) for r, label in action),
+        tuple((r, label) for r, label in item),
+        tuple((r, label) for r, label in ability),
+        (masked[0], masked[1], masked[2]),
     )
 
 
@@ -341,6 +377,7 @@ def parallel_trajectories(  # noqa: PLR0913
     shaping: bool = False,
     aux_moves: bool = False,
     groups: Groups | None = None,
+    aux_opponent: tuple[str, ...] = (),
 ) -> list[Trajectory] | None:
     """The trajectories of a stream file read by ``processes`` workers; None if it cannot be cut.
 
@@ -368,6 +405,7 @@ def parallel_trajectories(  # noqa: PLR0913
         shaping=shaping,
         aux_moves=aux_moves,
         groups=groups,
+        aux_opponent=aux_opponent,
     )
     try:
         context = multiprocessing.get_context("fork")

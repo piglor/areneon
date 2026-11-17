@@ -79,6 +79,10 @@ export interface CloneRunConfig {
        * ADR-010 erratum A12.2. The Battle network gains a training-only move-reveal head (aux_moves.*: Linear, GELU, Linear over the move vocabulary on each opponent token's final trunk output), built last so every other seeded weight and logit equals the network's without it. forward never computes it and the worker never reads it; the learner trains it under ppo.aux_moves. The Preview network ignores it. Only true is a value (leave the key out for none). Layout changing: it adds tensors and changes the checkpoint format.
        */
       aux_move_head?: true;
+      /**
+       * ADR-010 erratum A14.2. The Battle network gains three training-only opponent heads (aux_action.*, aux_item.*, aux_ability.*: Linear, GELU, Linear on each opponent token's final trunk output; out = the move vocabulary plus one SWITCH index, the item vocabulary, the ability vocabulary), built last (after aux_moves) so every other seeded weight and logit equals the network's without them. forward never computes them and the worker never reads them; the learner trains them under ppo.aux_opponent. The Preview network ignores it. Only true is a value (leave the key out for none). Layout changing: it adds tensors and changes the checkpoint format.
+       */
+      aux_opponent_heads?: true;
     };
   };
   /**

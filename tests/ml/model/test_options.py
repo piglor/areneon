@@ -75,6 +75,7 @@ def test_only_the_registered_options_exist() -> None:
         "policy_output_scale_ppm",
         "shared_trunk",
         "aux_move_head",
+        "aux_opponent_heads",
     }
     with pytest.raises(OptionError, match="unknown network option 'x'"):
         read_options("network", {"x": 1})

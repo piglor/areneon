@@ -56,6 +56,11 @@ export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
   const auxTerm = config.ppo.aux_moves !== undefined;
   if (auxTerm && !auxHead) throw new TrainingRunConfigError("ppo.aux_moves needs model.options.aux_move_head: the term trains the head");
   if (auxHead && !auxTerm) throw new TrainingRunConfigError("model.options.aux_move_head needs ppo.aux_moves: a head nothing trains is refused");
+  const oppHeads = config.model.options?.aux_opponent_heads !== undefined;
+  const oppTerm = config.ppo.aux_opponent;
+  if (oppTerm !== undefined && !oppHeads) throw new TrainingRunConfigError("ppo.aux_opponent needs model.options.aux_opponent_heads: the terms train the heads");
+  if (oppHeads && oppTerm === undefined) throw new TrainingRunConfigError("model.options.aux_opponent_heads needs ppo.aux_opponent: heads nothing trains are refused");
+  if (oppTerm !== undefined && Object.keys(oppTerm).length === 0) throw new TrainingRunConfigError("ppo.aux_opponent needs at least one of action_micro, item_micro, ability_micro");
   if (generation.play?.temperature_ppm === 1_000_000) {
     throw new TrainingRunConfigError("generation.play.temperature_ppm 1000000 is the default: omit generation.play (one rule, one encoding)");
   }

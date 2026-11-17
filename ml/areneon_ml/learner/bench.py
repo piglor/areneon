@@ -118,6 +118,7 @@ def benchmark(  # noqa: PLR0913
         manifest["behaviour_policy_id"],
         shaping=config.ppo.shaping is not None,
         aux_moves=config.ppo.aux_moves is not None,
+        aux_opponent=config.ppo.aux_opponent.heads if config.ppo.aux_opponent is not None else (),
     )
     seeds = {"preview": config.init_preview, "battle": config.init_battle}
     networks = {role: init_network(role, game, config.model, seeds[role]) for role in ROLES}

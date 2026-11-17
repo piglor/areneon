@@ -23,8 +23,11 @@ EXISTING = json.loads((ROOT / "fixtures/policy-ids/existing.json").read_text())
 H = "a" * 64
 # Vectors shared with packages/showdown-bridge/test/preview-solve-config.test.ts, computed with
 # hashlib over the sorted-key compact JSON of these inputs.
-CONFIG_HASH = "415714401460127e920daefdc52ad85707fef8fa3d1d98cdd5ff01fbba27ee0e"
-IDENTITY_HASH = "89ae2b2359f6d1d272b03efc8d7959f9c0a2135d87ae4eefb48270b519caf932"
+CONFIG_HASH = "705250247a032c32f86ad61e0573a3c2bab3ce3dfea0a42427ab63fa17e8b147"
+IDENTITY_HASH = "20ee953cd23a78591f3456a6ede1e242e7449cafe55cd500d0e0be57c59fd60b"
+# The policy-id vectors take a solver identity as an opaque string and keep the one
+# they were computed with.
+ID_VECTOR_SOLVE = "89ae2b2359f6d1d272b03efc8d7959f9c0a2135d87ae4eefb48270b519caf932"
 SEARCH_VECTOR = "edd348bdf8b9f5069ada74afae22d3ba99e1b349e2748b245de73384c9d666b9"
 
 
@@ -104,7 +107,7 @@ def test_every_existing_policy_id_is_unchanged(case: dict[str, Any]) -> None:
 
 def test_policy_id_gains_preview_solve_only_when_present() -> None:
     assert (
-        policy_id(H, "b" * 64, "argmax", preview_solve=IDENTITY_HASH)
+        policy_id(H, "b" * 64, "argmax", preview_solve=ID_VECTOR_SOLVE)
         == "policy:917a7880a7a04b493d463d68fee28131bc7484f381de95e60329a8a3da8d5499"
     )
     full = policy_id(
@@ -115,13 +118,13 @@ def test_policy_id_gains_preview_solve_only_when_present() -> None:
         truncation={"kind": "threshold", "min_ppm": 30000},
         features="f" * 64,
         search=SEARCH_VECTOR,
-        preview_solve=IDENTITY_HASH,
+        preview_solve=ID_VECTOR_SOLVE,
     )
     assert full == "policy:9e18393e4c548c72aa64192bb4c137f1ab4ce6ee163cfa552584863587bbdf92"
     # Independent of search: the solver alone, search alone and both are three different policies.
-    solve = policy_id(H, "b" * 64, "argmax", preview_solve=IDENTITY_HASH)
+    solve = policy_id(H, "b" * 64, "argmax", preview_solve=ID_VECTOR_SOLVE)
     search = policy_id(H, "b" * 64, "argmax", search=SEARCH_VECTOR)
-    both = policy_id(H, "b" * 64, "argmax", search=SEARCH_VECTOR, preview_solve=IDENTITY_HASH)
+    both = policy_id(H, "b" * 64, "argmax", search=SEARCH_VECTOR, preview_solve=ID_VECTOR_SOLVE)
     assert len({solve, search, both, policy_id(H, "b" * 64, "argmax")}) == 4
     # An id without the field is the id the code gave before it existed.
     assert search == "policy:86611a1d2e6ce20f8e0a1a1f4b61cf3a88d27229bc18ef2a80ec4990b1797453"

@@ -1,6 +1,6 @@
 """The history facts of the reduced state (ADR-022 erratum E-22.5.2, slice H1).
 
-The Python mirror of `packages/public-state/src/history-facts.ts` (`history-facts/1`): the battle
+The Python mirror of `packages/public-state/src/history-facts.ts` (`history-facts/2`): the battle
 history the pinned engine reads from fields of its own (`activeMoveActions`, `stall`'s counter,
 `timesAttacked`, `hurtThisTurn`, `attackedBy`, `moveLastTurnResult`, `statsRaisedThisTurn`,
 `ateBerry`, `lastItem`, `moveSlots[].used`, `side.totalFainted`, `battle.lastMove`, the pending
@@ -24,7 +24,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-HISTORY_FACTS_FORMAT = "history-facts/1"
+HISTORY_FACTS_FORMAT = "history-facts/2"
 UNSETTLED = "unsettled"
 
 _TAG = re.compile(r"^\[([A-Za-z_]+)\]\s?(.*)$")
@@ -357,10 +357,11 @@ class HistoryTracker:
             else:
                 self._stall_succeeded(occupant)
         elif line.kind in _BOUNDARY:
-            if (
-                occupant is not None
-                and move in self._ally_side
-                and f"{side}:{move}" in self._guards
+            # Silent successes: a stalling move already succeeded THIS turn (Instruct, #1378) and a
+            # side-condition stall move whose condition is already up (#1281).
+            if occupant is not None and (
+                occupant.stall_turn == self._turn
+                or (move in self._ally_side and f"{side}:{move}" in self._guards)
             ):
                 self._pending = None
                 self._stall_succeeded(occupant)
