@@ -1,25 +1,26 @@
 // The candidate feature set a run reads, and the builder for it (ADR-022 erratum E-22.3). The play-time actor, the training
 // loader and the row recomputation of the game processes all build rows through this one dispatch, so a set's rows are the
 // same bytes wherever they are made. `probe-damage/1` is `candidateFeatures`, `probe-damage/2` is `candidateFeatures2`, `probe-damage/3` is `candidateFeatures3`,
-// `probe-damage-belief/1` is `candidateFeaturesBelief`, `probe-outcome/1` is `candidateFeaturesOutcome`. The wire carries `probe-outcome/1` since E-22.5 slice H4 and the run config enums name it since the encoder
+// `probe-damage-belief/1` is `candidateFeaturesBelief`, `probe-outcome/1` is `candidateFeaturesOutcome`, `probe-outcome-likely/1` is `candidateFeaturesLikely`. The wire carries `probe-outcome/1` since E-22.5 slice H4 and the run config enums name it since the encoder
 // that reads it (slice H5).
-import { candidateFeatures, type CandidateFeatures, type FeatureConfigs, type FeatureMemo, featureSetHash, featureSetIdentity, type FeatureSetId, FEATURE_SET, FEATURE_SET_3, FEATURE_SET_BELIEF, FEATURE_SET_OUTCOME } from "./candidate-features.ts";
+import { candidateFeatures, type CandidateFeatures, type FeatureConfigs, type FeatureMemo, featureSetHash, featureSetIdentity, type FeatureSetId, FEATURE_SET, FEATURE_SET_3, FEATURE_SET_BELIEF, FEATURE_SET_OUTCOME, FEATURE_SET_LIKELY } from "./candidate-features.ts";
 import { candidateFeaturesBelief, type CandidateFeaturesBelief } from "./candidate-features-belief.ts";
 import { candidateFeatures2, type CandidateFeatures2 } from "./candidate-features-2.ts";
 import { candidateFeatures3, type CandidateFeatures3 } from "./candidate-features-3.ts";
+import { candidateFeaturesLikely, type CandidateFeaturesLikely } from "./candidate-features-likely.ts";
 import { candidateFeaturesOutcome, type CandidateFeaturesOutcome } from "./candidate-features-outcome.ts";
 import type { Candidate } from "./choices.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import type { PlayerChannel } from "./observation.ts";
 
 /** The object a decision carries under either set. */
-export type AnyCandidateFeatures = CandidateFeatures | CandidateFeatures2 | CandidateFeatures3 | CandidateFeaturesBelief | CandidateFeaturesOutcome;
+export type AnyCandidateFeatures = CandidateFeatures | CandidateFeatures2 | CandidateFeatures3 | CandidateFeaturesBelief | CandidateFeaturesOutcome | CandidateFeaturesLikely;
 
 /** The set a run reads: the configs' own, `probe-damage/1` when they name none (so every earlier caller is unchanged). */
 export const featureSetOf = (configs: Pick<FeatureConfigs, "feature_set">): FeatureSetId => configs.feature_set ?? FEATURE_SET;
 
 /** Whether `name` is a feature set this side can build. */
-export const isFeatureSetId = (name: string): name is FeatureSetId => name === FEATURE_SET || name === "probe-damage/2" || name === FEATURE_SET_3 || name === FEATURE_SET_BELIEF || name === FEATURE_SET_OUTCOME;
+export const isFeatureSetId = (name: string): name is FeatureSetId => name === FEATURE_SET || name === "probe-damage/2" || name === FEATURE_SET_3 || name === FEATURE_SET_BELIEF || name === FEATURE_SET_OUTCOME || name === FEATURE_SET_LIKELY;
 
 /** `feature_set_hash` of the set the configs name. */
 export const configuredSetHash = (engine: Engine, configs: FeatureConfigs): string => featureSetHash(featureSetIdentity(engine, configs, featureSetOf(configs)));
@@ -36,6 +37,7 @@ export function buildFeatures(
 ): AnyCandidateFeatures {
   if (set === "probe-damage/2") return candidateFeatures2(engine, configs, channel, team, candidates, memo);
   if (set === FEATURE_SET_3) return candidateFeatures3(engine, configs, channel, team, candidates, memo);
+  if (set === FEATURE_SET_LIKELY) return candidateFeaturesLikely(engine, configs, channel, team, candidates, memo);
   if (set === FEATURE_SET_OUTCOME) return candidateFeaturesOutcome(engine, configs, channel, team, candidates, memo);
   if (set === FEATURE_SET_BELIEF) return candidateFeaturesBelief(engine, configs, channel, team, candidates, memo);
   return candidateFeatures(engine, configs, channel, team, candidates, memo);

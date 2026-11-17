@@ -105,6 +105,8 @@ jobs:
         run: node packages/showdown-bridge/scripts/check-damage-aware-config.ts
       - name: probe-outcome feature record against the pinned engine (ADR-022 E-22.5)
         run: node packages/showdown-bridge/scripts/check-outcome-config.ts
+      - name: probe-outcome-likely feature records against the pinned engine (ADR-022 E-22.7)
+        run: node packages/showdown-bridge/scripts/check-likely-config.ts
 
   team-guard:
     runs-on: ubuntu-24.04

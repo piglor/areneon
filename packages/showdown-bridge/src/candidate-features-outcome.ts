@@ -180,15 +180,20 @@ export function candidateFeaturesOutcome(
     memo,
     trace,
     FEATURE_SET_OUTCOME,
-    (context) => ({ outcomes: outcomeRows(setup.config, context, rawDexOf(engine, configs), (paste) => engine.sim.Teams.import(paste) as { ability?: string; item?: string }[], memo, setup.skip !== false, setup.fold !== false) }),
+    outcomeExtra(engine, configs, setup, memo),
     { outcomes: [] as OutcomeRow[] },
     lazyDeclarer(() => declarerOf(engine, configs, setup, channel)),
   );
   return out as unknown as CandidateFeaturesOutcome;
 }
 
+/** The extra arrays `probe-outcome/1` adds to `/2`'s (the `outcomes`), shared with `probe-outcome-likely/1`, which holds them byte for byte. */
+export function outcomeExtra(engine: Engine, configs: FeatureConfigs, setup: NonNullable<FeatureConfigs["outcome"]>, memo: FeatureMemo): (context: ArrayContext) => { outcomes: OutcomeRow[] } {
+  return (context) => ({ outcomes: outcomeRows(setup.config, context, rawDexOf(engine, configs), (paste) => engine.sim.Teams.import(paste) as { ability?: string; item?: string }[], memo, setup.skip !== false, setup.fold !== false) });
+}
+
 export type RawDex = { moves: { get(id: string): Record<string, unknown> }; abilities: { get(name: string): Record<string, unknown> }; items: { get(name: string): Record<string, unknown> } };
-const rawDexOf = (engine: Engine, configs: FeatureConfigs): RawDex => engine.sim.Dex.mod(engine.sim.Dex.formats.get(configs.config.format_id).mod) as unknown as RawDex;
+export const rawDexOf = (engine: Engine, configs: FeatureConfigs): RawDex => engine.sim.Dex.mod(engine.sim.Dex.formats.get(configs.config.format_id).mod) as unknown as RawDex;
 
 /**
  * The engine's data of a declared Pokemon's ability and item, read from the structured set (the engine's own import of the paste, so a nickname
@@ -208,7 +213,7 @@ export function effectsOf(importSets: (paste: string) => readonly { ability?: st
 }
 
 /** A declarer that builds its facts on first use (a request with nothing to declare never replays the channel). */
-function lazyDeclarer(make: () => HistoryDeclarer): HistoryDeclarer {
+export function lazyDeclarer(make: () => HistoryDeclarer): HistoryDeclarer {
   let declarer: HistoryDeclarer | null = null;
   return (sides) => (declarer ??= make())(sides);
 }

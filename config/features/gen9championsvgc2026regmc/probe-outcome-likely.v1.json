@@ -1,0 +1,19 @@
+{
+  "engine_data_hash": "6f3d19f02b0e8464d813f4bbdced99c6f88140099818f5f225776ac43fa5590e",
+  "format_id": "gen9championsvgc2026regmc",
+  "hp_key_handlers": [
+    "basePowerCallback",
+    "damageCallback",
+    "onBasePower",
+    "onModifyAtk",
+    "onModifyDamage",
+    "onModifySpA",
+    "onSourceModifyDamage"
+  ],
+  "per_foe": 4,
+  "schema_version": 1,
+  "source": {
+    "kind": "generator-matched",
+    "prior_hash": "045f0f60732919317d184ff97eb6ef529c8f71d5615eeede7f17599fb374cfe1"
+  }
+}

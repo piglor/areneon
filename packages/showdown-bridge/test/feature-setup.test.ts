@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { actorRule } from "../src/actor-rule.ts";
 import { type Json, jcs } from "../src/canonical-json.ts";
 import { loadEngine } from "../src/engine.ts";
-import { BELIEF_THREATS_PER_FOE, FEATURE_SET_3, FEATURE_SET_BELIEF, FEATURE_SET_OUTCOME, featureSetHash, featureSetIdentity } from "../src/candidate-features.ts";
+import { BELIEF_THREATS_PER_FOE, FEATURE_SET_3, FEATURE_SET_BELIEF, FEATURE_SET_OUTCOME, FEATURE_SET_LIKELY, featureSetHash, featureSetIdentity } from "../src/candidate-features.ts";
 import type { BeliefWorldsFactory } from "../src/damage-aware-worlds.ts";
 import { configV2, fakePort } from "./damage-aware-world-support.ts";
 import { beliefRowCounts, featureSetup, GenerationError, sheetSetup, playGeneration, trainingTeamPool } from "../src/league-generation.ts";
@@ -132,6 +132,33 @@ describe("featureSetup", () => {
     expect(featureSetHash(featureSetIdentity(engine, setup.configs, FEATURE_SET_OUTCOME))).toBe(hash);
     expect(hash).not.toBe(hashOf());
     expect(hash).not.toBe(hashOf("probe-damage/2"));
+  });
+
+  it("builds probe-outcome-likely/1 from either committed likelihood record, selected by the hash the config names (E-22.7)", () => {
+    const computed = (hash: string): string => {
+      try {
+        featureSetup(engine, withFeatures(hash, FEATURE_SET_LIKELY));
+      } catch (error) {
+        return (error as Error).message;
+      }
+      return "";
+    };
+    const message = computed("0".repeat(64));
+    const [first, second] = [...message.matchAll(/([0-9a-f]{64})/g)].map((m) => m[1] as string).slice(1);
+    // the first computed hash is the base record's, the second the other record's (m = 8)
+    const base = /computes as ([0-9a-f]{64})/.exec(message)?.[1] as string;
+    expect(base).toMatch(/^[0-9a-f]{64}$/);
+    expect(second ?? first).toMatch(/^[0-9a-f]{64}$/);
+    const baseSetup = featureSetup(engine, withFeatures(base, FEATURE_SET_LIKELY)) as NonNullable<ReturnType<typeof featureSetup>>;
+    expect(baseSetup.configs.likely?.config.rank_candidates_max).toBeUndefined();
+    expect(baseSetup.configs.outcome?.config.max_branches).toBe(5);
+    expect(baseSetup.statement).toEqual({ feature_set: FEATURE_SET_LIKELY, feature_set_hash: base });
+    const other = (second ?? first) as string;
+    const m8 = featureSetup(engine, withFeatures(other, FEATURE_SET_LIKELY)) as NonNullable<ReturnType<typeof featureSetup>>;
+    expect(m8.configs.likely?.config.rank_candidates_max).toBe(8);
+    expect(other).not.toBe(base);
+    expect(base).not.toBe(hashOf("probe-outcome/1"));
+    expect(featureSetHash(featureSetIdentity(engine, m8.configs, FEATURE_SET_LIKELY))).toBe(other);
   });
 
   it("refuses a format whose vocabulary it does not hold", () => {
