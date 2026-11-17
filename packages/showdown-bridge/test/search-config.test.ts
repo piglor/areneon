@@ -26,17 +26,17 @@ const inputs: SearchIdentityInputs = {
   damage_value_format: 1,
   world_writers_hash: h("3"),
   world_builder_format: 2,
-  world_facts_format: "world-facts/4",
+  world_facts_format: "world-facts/5",
   reply_model_format: 1,
   leaf_format: 2,
   reader_sha256: h("4"),
   version_manifest: { showdown_commit: "c".repeat(40), format_id: FORMAT, regulation: "M-C", ruleset_hash: h("5"), format_rules_hash: h("6") },
 };
 // Computed with Python (areneon_ml.loop.records), outside the TS code.
-const CONFIG_HASH = "739f4b1f1a30411b3d5fb3d37749739a6673bcaf6195941f3a57f6dc1e70d49c";
+const CONFIG_HASH = "cfd33630ef641b05fa6f6293ea550ff134b34b5d203786731e675025f9fec63f";
 // Moved by #248's format bumps (WORLD_BUILDER_FORMAT 1 -> 2, world-facts/2 -> 3) and by #1282 (world-facts/3 -> 4); recomputed with Python hashlib over the
 // canonical JSON, sort_keys, separators (",", ":"), of the 13 inputs below with search_config_hash = CONFIG_HASH (world-facts/3 still gives 3508d46a...). #1287 moved it again with LEAF_FORMAT 2 (leaf_format 1 gave 17e58d7c...). The policy-id vectors below take a search hash as an opaque string, so they keep edd348bd....
-const SEARCH_HASH = "5eddc05daa1004b1a72ccc3deae10adfcc56b38ceba6a1d755344f2a77b53081";
+const SEARCH_HASH = "20bc5d85046cb5dc3bbd367113bfb8bfa9c5430a2f071ee3681e2104662be87e";
 const ID_VECTOR_SEARCH = "edd348bdf8b9f5069ada74afae22d3ba99e1b349e2748b245de73384c9d666b9";
 
 describe("the committed SearchConfig", () => {
@@ -74,8 +74,8 @@ describe("the committed SearchConfig", () => {
 
 // The label search config of the search distillation (ADR-026 erratum E2 decision 2, SD-b). Hashes computed with Python hashlib over the canonical
 // JSON (sort_keys, separators (",", ":")) of the file and, for the identity, of the same 13 inputs as above with search_config_hash = LABEL_CONFIG_HASH.
-const LABEL_CONFIG_HASH = "a542fed7b3b1c00b355bb62b1c7c220b85e987b919ce9f6e79489659fd69a037";
-const LABEL_SEARCH_HASH = "365867ec7b52fea46f1eb8b2340ed4fa5d0d81a10c32ad72458a404a338264dd";
+const LABEL_CONFIG_HASH = "3ce684dcea62b4016da15e5096a35e4a29042235d7e2e2a3bf885c1c654561a2";
+const LABEL_SEARCH_HASH = "2264472231ff2b470bfc9d094fcaef99def968886b23de8b6111564a8f5fbc95";
 
 describe("the label search config", () => {
   const label = loadSearchConfig(FORMAT, "rerank-1-label.v1");
@@ -125,7 +125,7 @@ describe("the search identity", () => {
       ["damage value", { damage_value_format: 2 }],
       ["writers", { world_writers_hash: h("9") }],
       ["builder", { world_builder_format: 3 }],
-      ["facts", { world_facts_format: "world-facts/5" }],
+      ["facts", { world_facts_format: "world-facts/6" }],
       ["reply model", { reply_model_format: 2 }],
       ["leaf", { leaf_format: 3 }],
       ["reader", { reader_sha256: h("9") }],
@@ -168,7 +168,7 @@ describe("the search identity", () => {
   });
 
   it("names the formats the modules export today", () => {
-    expect({ WORLD_BUILDER_FORMAT, REPLY_MODEL_FORMAT, DAMAGE_VALUE_FORMAT, LEAF_FORMAT, WORLD_FACTS_FORMAT }).toEqual({ WORLD_BUILDER_FORMAT: 2, REPLY_MODEL_FORMAT: 1, DAMAGE_VALUE_FORMAT: 1, LEAF_FORMAT: 2, WORLD_FACTS_FORMAT: "world-facts/4" });
+    expect({ WORLD_BUILDER_FORMAT, REPLY_MODEL_FORMAT, DAMAGE_VALUE_FORMAT, LEAF_FORMAT, WORLD_FACTS_FORMAT }).toEqual({ WORLD_BUILDER_FORMAT: 2, REPLY_MODEL_FORMAT: 1, DAMAGE_VALUE_FORMAT: 1, LEAF_FORMAT: 2, WORLD_FACTS_FORMAT: "world-facts/5" });
   });
 });
 

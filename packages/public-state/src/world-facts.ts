@@ -67,7 +67,7 @@
 // facts of that channel a typed `WorldFactsError`, from that line on. Facts from before are still read.
 
 /** The format of the derivation: bump when how a fact is computed from the lines changes (part of the search identity, ADR-026 section 5). */
-export const WORLD_FACTS_FORMAT = "world-facts/4";
+export const WORLD_FACTS_FORMAT = "world-facts/5";
 
 export type FactsPlayer = "p1" | "p2";
 
@@ -398,7 +398,9 @@ export class WorldFactsReader {
       }
     } else if (BOUNDARY.has(line.kind)) {
       // The silent success of a side-condition stall move whose condition is already up (#1281); anything else is unresolved.
-      if (occupant && this.#allySide.has(pending.move) && this.#guards.has(`${pending.side}:${pending.move}`)) {
+      // The silent successes: a stalling move the Pokemon already succeeded with THIS turn (Instruct re-runs it; the move's own volatile is still up, so
+      // the engine prints no `-singleturn`, #1378), and a side-condition stall move whose condition is already up (#1281). Each counts as one more use.
+      if (occupant && (occupant.stall_turn === this.#turn || (this.#allySide.has(pending.move) && this.#guards.has(`${pending.side}:${pending.move}`)))) {
         this.#pending = null;
         this.#stallSucceeded(occupant);
       } else {

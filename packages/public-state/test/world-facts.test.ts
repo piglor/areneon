@@ -48,7 +48,7 @@ const code = (fn: () => unknown): string => {
 
 describe("identity", () => {
   it("has a format id and a file hash of its own, and leaves the reader's bytes alone", () => {
-    expect(WORLD_FACTS_FORMAT).toBe("world-facts/4");
+    expect(WORLD_FACTS_FORMAT).toBe("world-facts/5");
     expect(worldFactsSha256()).toBe(createHash("sha256").update(readFileSync(WORLD_FACTS_PATH)).digest("hex"));
     expect(worldFactsSha256()).not.toBe(readerSha256());
     expect(readerSha256()).toBe(createHash("sha256").update(readFileSync(INTERPRETER_PATH)).digest("hex"));
@@ -175,12 +175,12 @@ describe("Protect streak", () => {
 
 describe("an instructed stall move (#1377)", () => {
   // The engine prints no `-singleturn` for a stall move Instruct re-runs in the turn it already succeeded (its own
-  // volatile is still up). This module is part of the probe-outcome/1 identity (its file hash), so it is NOT changed:
-  // it refuses the channel (`stall_unresolved`: every world fact is then unknown). The Python reducer accepts it; a
-  // follow-up aligns this module with the engine together with the other identity-moving reader fixes.
-  it("is refused as an unresolved stall move (a known gap to the engine)", () => {
+  // volatile is still up). Since #1378 (world-facts/5) it is a silent success, counted as one more use, as the Python reducer does.
+  it("is a silent success counted as one more use", () => {
     const lines = [...HEAD, "|turn|1", "|move|p1a: Alpha|Protect|p1a: Alpha", "|-singleturn|p1a: Alpha|Protect", "|move|p2a: Gamma|Instruct|p1a: Alpha", "|-singleturn|p1a: Alpha|move: Instruct|[of] p2a: Gamma", "|move|p1a: Alpha|Protect|p1a: Alpha", "|move|p2b: Delta|Tackle|p1a: Alpha", "|upkeep"];
-    expect(code(() => run("p1", lines))).toBe("stall_unresolved");
+    expect(run("p1", lines).own.active.a?.protect_streak).toBe(2);
+    // a stall move that prints nothing and did not succeed earlier this turn is still unresolved
+    expect(code(() => run("p1", [...HEAD, "|turn|1", "|move|p1a: Alpha|Protect|p1a: Alpha", "|move|p2b: Delta|Tackle|p1a: Alpha", "|upkeep"]))).toBe("stall_unresolved");
   });
 });
 

@@ -97,7 +97,7 @@ describe("identity and the earlier sets' bytes", () => {
       outcome_config_hash: outcomeConfigHash(record),
     });
     const hash = featureSetHash(identity);
-    for (const change of [{ outcome_format: OUTCOME_FORMAT + 1 }, { history_facts_format: "history-facts/2" }, { history_facts_sha256: "0".repeat(64) }, { world_facts_format: "world-facts/9" }, { world_facts_sha256: "3".repeat(64) }, { outcome_config_hash: "1".repeat(64) }, { mechanics_config_hash: "2".repeat(64) }]) {
+    for (const change of [{ outcome_format: OUTCOME_FORMAT + 1 }, { history_facts_format: "history-facts/9" }, { history_facts_sha256: "0".repeat(64) }, { world_facts_format: "world-facts/9" }, { world_facts_sha256: "3".repeat(64) }, { outcome_config_hash: "1".repeat(64) }, { mechanics_config_hash: "2".repeat(64) }]) {
       expect(featureSetHash({ ...identity, ...change })).not.toBe(hash);
     }
     expect(featureSetHash(featureSetIdentity(engine, configs({ outcome: { config: { ...record, max_branches: 4 } } }), FEATURE_SET_OUTCOME))).not.toBe(hash);

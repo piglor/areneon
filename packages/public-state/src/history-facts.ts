@@ -52,7 +52,7 @@
 // A line the module cannot place is a typed `HistoryFactsError`; the facts before it stand.
 
 /** The format of the derivation: bump when how a fact is computed from the lines changes. */
-export const HISTORY_FACTS_FORMAT = "history-facts/1";
+export const HISTORY_FACTS_FORMAT = "history-facts/2";
 
 export type HistoryPlayer = "p1" | "p2";
 
@@ -459,7 +459,9 @@ export class HistoryFactsReader {
         occupant.stall_turn = -1;
       } else this.#stallSucceeded(occupant);
     } else if (BOUNDARY.has(line.kind)) {
-      if (occupant && this.#allySide.has(pending.move) && this.#guards.has(`${pending.side}:${pending.move}`)) {
+      // Silent successes: a stalling move already succeeded THIS turn (Instruct re-runs it, the engine prints no `-singleturn`, #1378) and a side-condition
+      // stall move whose condition is already up (#1281); each counts as one more use.
+      if (occupant && (occupant.stall_turn === this.#turn || (this.#allySide.has(pending.move) && this.#guards.has(`${pending.side}:${pending.move}`)))) {
         this.#pending = null;
         this.#stallSucceeded(occupant);
       } else throw new HistoryFactsError("stall_unresolved", this.#index);

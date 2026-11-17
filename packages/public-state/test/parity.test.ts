@@ -24,6 +24,8 @@ function reducerShape(state: any): any {
   return { ...rest, own: strip(state.own), opponent: strip(state.opponent) };
 }
 
+const noMovesOf = (side: any) => ({ ...side, roster: side.roster.map(({ moves_revealed: _moves, ...rest }: any) => rest) });
+
 /** The one known, labelled limit: an Illusion twin shown in two positions is not reconciled. */
 const TWIN = "a Pokemon shown in two positions (an Illusion twin) is not reconciled";
 const unexpected = (flags: { reason: string }[]) => flags.map((f) => f.reason).filter((r) => r !== TWIN);
@@ -78,7 +80,27 @@ describe("the interpreter against the reducer's committed golden states", () => 
 });
 
 describe.skipIf(!existsSync(python))("the interpreter against the reducer at request points", () => {
-  const all = fixtures();
+  // The Transform battle (#938) is the channel that stopped a run on a boost past the cap once the target's stages were not copied (#1375).
+  const transform = ["p1", "p2"].map((p) => {
+    const doc = readJson(join(FORMAT_DIR, "transform", "battle.json"));
+    return { id: `transform/battle/${p}`, player: p, lines: doc.channels[p].lines as string[], team: doc.teams[p] as unknown[] };
+  });
+  // A channel that boosts after a Transform: the golden battle up to its first turn line, then the opponent's active is dropped by two Speed stages,
+  // the own active transforms into it and is dropped by four more (a capped delta, which left -6..6 before the stages were copied).
+  const golden = fixtures().find((f) => f.id === "golden/p1")!;
+  const turnAt = golden.lines.map((l, i) => (l.startsWith("|turn|") ? i : -1)).filter((i) => i >= 0)[0]!;
+  const head = golden.lines.slice(0, turnAt + 1);
+  const state = api.interpretChannel(golden.player, head, dex).frames.at(-1)!.state;
+  const slotName = (side: any, letter: string) => side.roster[side.slots[letter]].name as string;
+  const own = `p1a: ${slotName(state.own, "a")}`;
+  const foe = `p2a: ${slotName(state.opponent, "a")}`;
+  const boosted = {
+    id: "transform/stages/p1",
+    player: "p1",
+    lines: [...head, `|-unboost|${foe}|spd|2`, `|-transform|${own}|${foe}`, `|-unboost|${own}|spd|4`],
+    team: golden.team,
+  };
+  const all = [...fixtures(), ...transform, boosted];
   const cutsOf = (lines: string[], id: string): number[] => {
     const requests = lines.map((l, i) => (l.startsWith("|request|") ? i + 1 : 0)).filter((i) => i > 0);
     const wanted = id.startsWith("random/")
@@ -115,6 +137,10 @@ describe.skipIf(!existsSync(python))("the interpreter against the reducer at req
               Object.entries(s[side].slots).map(([k, v]) => [k, v === null ? null : s[side].roster[v as number].species]);
             expect(slots(got), `${fixture.id} cut ${cut} ${side} slots`).toEqual(slots(reducerShape(expected)));
           }
+        } else if (fixture.id.startsWith("transform/")) {
+          // The interpreter ports the Transform stat-stage copy (#1375), not the reducer's replacement of the revealed move list (#938, `moves_revealed`).
+          const noMoves = (state: any) => ({ ...state, own: noMovesOf(state.own), opponent: noMovesOf(state.opponent) });
+          expect(noMoves(got), `${fixture.id} cut ${cut}`).toEqual(noMoves(reducerShape(expected)));
         } else {
           expect(got, `${fixture.id} cut ${cut}`).toEqual(reducerShape(expected));
         }

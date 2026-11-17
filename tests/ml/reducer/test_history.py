@@ -93,7 +93,7 @@ def protect(n: int, user: str = "p1a: Alpha") -> list[str]:
 
 def test_the_state_carries_the_facts_and_the_format() -> None:
     state = facts(HEAD)
-    assert state["history_facts_format"] == HISTORY_FACTS_FORMAT == "history-facts/1"
+    assert state["history_facts_format"] == HISTORY_FACTS_FORMAT == "history-facts/2"
     assert STATE_SCHEMA_VERSION == 3
     assert state["turn"] == 0
     assert state["field_last_move"] is None
@@ -819,9 +819,9 @@ def test_only_the_modules_own_refusals_are_kept_an_unexpected_exception_propagat
         tracker.feed("|turn|1")
 
 
-def test_an_instructed_stall_move_is_refused_like_the_ts_module() -> None:
-    """#1377: the engine prints nothing for it; the TS module (part of the probe-outcome/1 identity,
-    so unchanged) refuses `stall_unresolved`, and this twin must give the same."""
+def test_an_instructed_stall_move_counts_as_one_more_use_like_the_ts_module() -> None:
+    """#1378: the engine prints nothing for it; the TS module and this twin take it as a silent
+    success (counter 3 x 3 after the second use)."""
     lines = [
         *HEAD,
         *turn(1),
@@ -833,4 +833,12 @@ def test_an_instructed_stall_move_is_refused_like_the_ts_module() -> None:
         "|move|p2b: Delta|Tackle|p1b: Beta",
         *END,
     ]
-    assert facts(lines) == {"refused": "stall_unresolved"}
+    assert mon(facts(lines), "own", "a")["stall_counter"] == 9
+    silent = [
+        *HEAD,
+        *turn(1),
+        "|move|p1a: Alpha|Protect|p1a: Alpha",
+        "|move|p2b: Delta|Tackle|p1b: Beta",
+        *END,
+    ]
+    assert facts(silent) == {"refused": "stall_unresolved"}
