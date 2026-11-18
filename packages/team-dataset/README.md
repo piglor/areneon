@@ -1,6 +1,6 @@
 # @areneon/team-dataset
 
-The synthetic team generator (ADR-013), its dataset and snapshot formats, and the tooling around them. This README covers the DuckDB working database; the generator and the Parquet shards are described in the repository's `CLAUDE.md` and ADR-013.
+The synthetic team generator (ADR-013), its dataset and snapshot formats, and the tooling around them. This README covers the DuckDB working database; the generator and the Parquet shards are described in `docs/architecture/team-dataset.md` and ADR-013.
 
 ## The DuckDB working database
 

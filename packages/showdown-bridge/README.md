@@ -1,6 +1,6 @@
 # @areneon/showdown-bridge
 
-The only package that talks to the pinned Showdown engine. See `CLAUDE.md` for the module map.
+The only package that talks to the pinned Showdown engine. See `docs/architecture/showdown-bridge.md` for the module map.
 
 ## Owner-team feature inventory
 
