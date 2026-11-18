@@ -16,10 +16,7 @@ If no ticket number is given, ask: *"Which Redmine ticket is this for?"*
 
 ## Redmine access
 
-Access Redmine through the Redmine MCP server configured in the agent
-environment, as `.agents/issue-tracker.md` says. The requests below are written
-as Redmine REST calls (path + method + data); send them through that MCP tool.
-
+The requests below are written as Redmine REST calls (path + method + data).
 Use only the Redmine MCP tool (`redmine_request`; give it the path, the
 method and, for writes, `data`). If it is unavailable, stop that step and tell
 the owner. Never read, print, pass or paste a Redmine key or token.

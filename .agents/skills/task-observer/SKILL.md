@@ -60,7 +60,9 @@ files are missing, and point them to the full bundle at the canonical
 source (for the published version, the repository in the attribution
 above).
 
-## Session Start Protocol
+## Protocol when invoked
+
+Run these steps when the skill is invoked.
 
 1. If `skill-observations/log.md` or
    `skill-observations/cross-cutting-principles.md` don't exist, create them
@@ -435,5 +437,5 @@ reference).
 | Open-source or internal? | Default open-source; the boundary is confidential |
 | Small fix or substantial? | Additive → apply directly; restructuring/new skill → `references/skill-authoring.md` |
 | Rewriting the log (archival/renumber/status)? | Backup → re-read live and merge → bounded mutation → verify count against live pre-write file → confirm own entries survived |
-| Weekly review? | Trigger check at session start; procedure in `references/weekly-review.md` |
+| Weekly review? | Check when invoked; procedure in `references/weekly-review.md` |
 | No filesystem? | Handoff-doc mode — `references/environments.md` |

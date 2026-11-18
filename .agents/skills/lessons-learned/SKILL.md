@@ -16,11 +16,17 @@ Internal Areneon skill: a short checklist of durable project lessons. Keep dated
 - **Re-check before any external write or cleanup.** Confirm current state and exact targets immediately before the mutation; never delete an active worktree from a stale inventory.
 - **Reconcile a shared PR immediately before pushing.** Fetch the branch, rebase onto its current tip, drop patches already present, and never force-push a shared branch.
 
+- **Make append-only logs collision-aware.** For the evaluation register and the validation look logs: read the live file, assert the next entry is unused, append, then verify count, uniqueness and the hash chain.
+
 ## Code edits
 
 - **Use the Edit tool for multi-line changes**; inspect the diff straight after. Restore a corrupted file from a known baseline before repairing it.
 - **Removing an implementation does not remove its product claim.** Search the README, CLAUDE.md and docs for stale promises.
 - **Do not ship placeholder code.** Implement from a spec requirement or do not add the field.
+
+- **Treat conformance metadata as executable input.** When a fixture, digest or pinned vector changes, recompute every dependent field (contract corpus, `hashes.json`, pinned vectors) with the documented scripts before publishing.
+
+- **Audit a contract change as a graph change.** Search the schema, generated TS and pydantic types, readers, corpus samples and hashes, and every consumer, before pushing.
 
 ## Coverage
 
@@ -34,6 +40,10 @@ Internal Areneon skill: a short checklist of durable project lessons. Keep dated
 - **Ticket status follows the configured lifecycle.** A commit, an Accepted ADR or a passing CI run does not by itself resolve a ticket. Feature/Bug/Task complete as Resolved (3); Closed (5) is for rejected or superseded work. An Accepted ADR records a decision; it does not start implementation.
 - **Preserve the hierarchy.** Every ADR has a standalone ADR issue; its Epic is created on the Wave roadmap only after acceptance; implementation tickets are Epic children. Reviews are journal notes on the ADR issue.
 
+- **Read back every external write** (Redmine wiki and journals, Notion) and check it rendered, Mermaid diagrams included; a success response is not evidence.
+
+- **Keep an ADR's version scope separate from implementation scope.** An ADR may document future versions; do not rewrite valid future design as current behavior.
+
 ## Code review
 
 - **Request independent review after code changes** with the `code-review` skill, Standards and Spec as separate axes, and review the complete PR diff after rebases against the exact head.
@@ -42,6 +52,8 @@ Internal Areneon skill: a short checklist of durable project lessons. Keep dated
 
 - **Every test must run in CI.** pytest collects `tests/` and vitest runs every `packages/*` project from the root config; a test outside those roots is dead. Name the CI job that runs your new test.
 - **Workflow `name:` is lowercase-with-hyphens** (`ci`, `rules-publish`).
+
+- **Validate a workflow change through a canary PR**, and keep the required aggregate `ci` job alive when scoping expensive gates.
 
 ## Areneon domain and privacy
 
