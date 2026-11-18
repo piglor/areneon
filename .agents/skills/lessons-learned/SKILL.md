@@ -29,7 +29,7 @@ This is an internal Areneon skill and the canonical source of durable project le
 
 ## Code edits
 
-- **Use the repository edit tool for multi-line changes.** `sed` and inline rewrite scripts can corrupt source when a pattern or snapshot is stale. Prefer `apply_patch`, keep the change narrow, and inspect the diff immediately.
+- **Use the repository edit tool for multi-line changes.** `sed` and inline rewrite scripts can corrupt source when a pattern or snapshot is stale. Prefer the Edit tool, keep the change narrow, and inspect the diff immediately.
 
 - **Restore a corrupted file from a known baseline before repairing it.** Preserve any intended changes first, then use a file-scoped restore and reapply the change with the edit tool. Never repair a damaged file by guessing at the original text.
 
@@ -186,7 +186,7 @@ This is an internal Areneon skill and the canonical source of durable project le
 
 - **Actor inputs are player-perspective only.** The omniscient sim stream, opponent hidden sets or future state must never reach a policy input, log, checkpoint or model input. Hidden state may be used only as an evaluation upper bound, labelled as such.
 
-- **Heuristics are integration fixtures, not AI.** Never describe a heuristic or untrained policy as competent; label it and keep `safe_to_submit=false` outside tests.
+- **Heuristics are integration fixtures, not AI.** Never describe a heuristic or untrained policy as competent; label it as such.
 
 - **Do not copy AGPL code.** The Showdown client and Champions Calc are AGPL; write independently and observe behaviour only.
 
