@@ -10,7 +10,7 @@ description: >
 # Technical Documentation Pipeline and Template Generation
 
 Process technical prompts, determine the correct phase of the engineering lifecycle, and generate structured documentation adhering to these platform boundaries:
-1. **Architecture Decision Records (ADRs)** → Redmine (basic Markdown, textile-friendly)
+1. **Architecture Decision Records (ADRs)** → Redmine wiki (Markdown, per the `adr-wiki` skill)
 2. **Technical Design Documents (TDDs)** → Notion (rich Markdown with code blocks, tables, blockquotes)
 
 ## Reference Files — Load on Demand
@@ -131,7 +131,7 @@ sequenceDiagram
 ## 6. Redmine ADR Protocol (The "Why")
 
 **Trigger:** Comparisons, framework selections, or foundational shifts.
-**Format:** Basic Markdown (Redmine textile-friendly). No nested HTML.
+**Format:** Markdown (per `adr-wiki`). No nested HTML.
 **Template:** Load `assets/adr-template.md`
 
 ### Writing Tips

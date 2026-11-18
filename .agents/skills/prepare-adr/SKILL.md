@@ -10,10 +10,9 @@ do not substitute repository documentation for the decision record.
 
 ## Required model
 
-When ADR research or drafting is delegated, use `gpt-5.6-sol` explicitly.
-If it is unavailable, `gpt-5.6-terra` is the only permitted fallback. Do not
-silently substitute a cheaper model; report which model was used before
-publishing or materially revising the ADR.
+When ADR research or drafting is delegated, use the most capable planning model
+the runtime offers, and report which model was used before publishing or
+materially revising the ADR.
 
 ## 1. Establish the decision boundary
 
@@ -23,7 +22,7 @@ publishing or materially revising the ADR.
    already covered, a clarification, or a genuinely new decision before opening
    another ADR.
 2. State one decision question. Split unrelated choices into separate ADRs.
-3. Identify the decision owner, affected Timeline/event/replay boundaries, and
+3. Identify the decision owner, affected Episode/observation/replay boundaries, and
    acceptance criteria. Use exact project vocabulary.
 4. Invoke `start-work` and journal the investigation when the work has a
    Redmine ticket. Invoke `adr-wiki` for Redmine hierarchy and formatting.
@@ -54,9 +53,9 @@ evidence table before selecting an option.
 | Dimension | Questions to answer |
 |---|---|
 | Functional fit | Does it satisfy the ticket's concrete acceptance criteria? |
-| Determinism and replay | Can historical Timelines replay without a live service, changing solver, or changing model? |
+| Determinism and replay | Can a recorded battle replay from its engine pin, seed and choices without a live service or a changed model? |
 | Privacy and security | What data, credentials, capabilities, and attack surfaces cross the boundary? What is persisted? |
-| Compatibility | Schema versions, wire format, migration, upcasting, old Timeline behavior, and interoperability. |
+| Compatibility | Schema versions, wire format, migration, upcasting, old Episode and record readers, and interoperability. |
 | Operational cost | Dependencies, build support, latency, resource use, observability, failure modes, and maintenance ownership. |
 | Licence and supply chain | Licence, release health, native/system dependencies, pinning, and update risk. |
 
@@ -100,10 +99,7 @@ decorative diagram or repeat prose in picture form.
 For example:
 
 ```text
-Adapter -> keyed ingress identity -> EventStore transaction -> Timeline Event
-                                      | duplicate/conflict
-                                      v
-                               bounded identity retention
+runBattle -> PlayerChannel -> buildObservation -> PolicyQuery -> policy worker
 ```
 
 Use a table instead when comparing two or more options, and a short timeline
