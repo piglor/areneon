@@ -94,7 +94,8 @@ export async function loadPrivatePool(input: LoadPrivatePoolInput): Promise<Priv
     kept.push({ canonical: record.canonical_team_hash, played: teamHash(sets), sets, holdout: record.holdout });
   }
   if (kept.length === 0) throw new PrivatePoolRefusal("source_empty");
-  kept.sort((a, b) => (a.canonical < b.canonical ? -1 : a.canonical > b.canonical ? 1 : 0));
+  // Branch-free comparator: which of a < b, a > b or a = b the engine asks about depends on its sort, so a ternary chain is covered only sometimes.
+  kept.sort((a, b) => Number(a.canonical > b.canonical) - Number(a.canonical < b.canonical));
   return { snapshot_hash, teams: kept.map((k) => k.sets), hashes: kept.map((k) => k.played), holdout: kept.map((k) => k.holdout) };
 }
 
