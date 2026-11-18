@@ -60,7 +60,8 @@ from areneon_contracts.contracts import jcs, sha256_hex
 from areneon_ml.checkpoint.files import checkpoint_bytes, checkpoint_id, write_checkpoint
 from areneon_ml.checkpoint.record import CheckpointRecord, read_record
 from areneon_ml.learner.config import PPOSettings, RunConfig
-from areneon_ml.learner.data import trajectories
+from areneon_ml.learner.data import LearnerDataError, trajectories
+from areneon_ml.learner.imitation import TeacherSet, open_teacher
 from areneon_ml.learner.parallel import load_workers
 from areneon_ml.learner.state import pack_state, restore_state
 from areneon_ml.learner.trainer import Learner, TrainReport, configure_learner
@@ -104,6 +105,7 @@ from areneon_ml.loop.records import (
     team_set_hash,
     team_set_manifest,
 )
+from areneon_ml.loop.teacher import teacher_paths
 from areneon_ml.loop.warm_start import WarmPair, WarmStartError, load_warm_start
 from areneon_ml.model.encoder import Encoder, encoder_version
 from areneon_ml.model.gamedata import GameData
@@ -314,6 +316,8 @@ class PopulationLoop:
         self._encoders = {role: Encoder(game, config.model.encoder) for role in ROLES}
         self._learners: dict[str, Learner] = {}
         self._frozen: PopulationFrozen | None = None
+        #: The teacher stream's index (``ppo.imitation``), opened once and shared by every member.
+        self._teacher: TeacherSet | None = None
 
     @property
     def frozen(self) -> PopulationFrozen:
@@ -334,6 +338,39 @@ class PopulationLoop:
 
     def _labels(self) -> list[str]:
         return [member_label(k) for k in range(self.members)]
+
+    def _teacher_set(self) -> TeacherSet | None:
+        """The teacher's Battle steps (``ppo.imitation``, ADR-010 erratum A11.3), or ``None``.
+
+        The one stream ``import-teacher`` copied into the run directory is checked and indexed once
+        and every member's learner draws from it with its own learner seed (the draw is a function
+        of that seed and the update index alone, so it never depends on scheduling).
+        """
+        settings = self.config.ppo.imitation
+        if settings is None:
+            return None
+        if self._teacher is None:
+            stream, manifest_path = teacher_paths(self.run_dir, settings.training_set_hash)
+            if not stream.is_file() or not manifest_path.is_file():
+                raise LearnerDataError(
+                    "the teacher stream is not in the run directory: "
+                    "run `python -m areneon_ml.loop import-teacher` first"
+                )
+            self._teacher = open_teacher(
+                stream,
+                layout.read_json(manifest_path),
+                settings.training_set_hash,
+                self._encoders,
+            )
+        return self._teacher
+
+    def _set_hashes(self, ts_hash: str | None) -> tuple[str, ...]:
+        """The training sets a member's record names: its own stream's and, under
+        ``ppo.imitation``, the teacher set (an outside source, mapped to no checkpoint)."""
+        if ts_hash is None:
+            return ()
+        settings = self.config.ppo.imitation
+        return tuple(sorted({ts_hash} | ({settings.training_set_hash} if settings else set())))
 
     def _warm_pair(self, warm_ids: Any) -> WarmPair:
         try:
@@ -654,7 +691,7 @@ class PopulationLoop:
             write_checkpoint(self.run_dir, found)  # the store may have lost it; weights verified
             if role in warm_roles:
                 continue
-            if record.training_set_hashes != (() if ts_hash is None else (ts_hash,)):
+            if record.training_set_hashes != self._set_hashes(ts_hash):
                 raise LoopError(
                     f"generation {generation}: {label}'s {role} record's training sets "
                     "differ from its manifest"
@@ -1005,6 +1042,7 @@ class PopulationLoop:
                 if self.config.ppo.aux_opponent is not None
                 else (),
             )
+        teacher = self._teacher_set()
         bring_up(learner, self.device)
         guard = health.Guard(learner)
         cause: str | None = None
@@ -1012,7 +1050,9 @@ class PopulationLoop:
             if self.device.type == "cuda":
                 torch.cuda.reset_peak_memory_stats(self.device)
             with timing.phase("train"):
-                report = learner.train(found)
+                report = (
+                    learner.train(found) if teacher is None else learner.train(found, None, teacher)
+                )
             del found
             cause = judge(report.as_dict())
             if cause is not None:
@@ -1197,9 +1237,7 @@ class PopulationLoop:
                             role=role,
                             checkpoint_id=checkpoints[role],
                             parent=None if sealing.parents is None else sealing.parents[role],
-                            training_set_hashes=[]
-                            if sealing.training_set_hash is None
-                            else [sealing.training_set_hash],
+                            training_set_hashes=list(self._set_hashes(sealing.training_set_hash)),
                             team_set_manifest_hash=manifest_hash,
                             learner_state_hash=packed.hash,
                             encoder_version=self.encoder_version,

@@ -394,11 +394,6 @@ def _check_imitation(raw: dict[str, Any]) -> None:
             "training-run-config: ppo.imitation needs warm_start with a battle checkpoint: "
             "the term pulls toward the source the clone came from"
         )
-    if "population" in raw:
-        raise RunConfigError(
-            "training-run-config: ppo.imitation cannot be combined with a population "
-            "(no per-member teacher stream)"
-        )
 
 
 def _shaping(ppo: dict[str, Any]) -> ShapingSettings | None:

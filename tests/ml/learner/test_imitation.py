@@ -110,7 +110,7 @@ def test_the_coefficient_rule_and_k() -> None:
 
 @pytest.mark.parametrize(
     ("name", "message"),
-    [("no-warm-start", "needs warm_start"), ("population", "cannot be combined with a population")],
+    [("no-warm-start", "needs warm_start")],
 )
 def test_the_reader_rules(name: str, message: str) -> None:
     with pytest.raises(RunConfigError, match=message):
@@ -514,3 +514,18 @@ def test_a_teacher_set_with_search_labels_is_refused(tmp_path: Path) -> None:
     encoders = {role: Encoder(game(), config.model.encoder) for role in ROLES}
     with pytest.raises(LearnerDataError, match="search_labels"):
         open_teacher(path, labelled, sha256_hex(jcs(labelled)), encoders)
+
+
+def test_a_population_member_seed_beyond_the_safe_integers_draws_deterministically() -> None:
+    big = 2**62 + 12345  # a population-seed/1 draw (#1437): JCS holds no such integer
+    first = DrawStream(big, 3).draw(40, 10)
+    assert first == DrawStream(big, 3).draw(40, 10)
+    assert first != DrawStream(big + 1, 3).draw(40, 10)
+    # a seed within the safe range keeps the integer preimage (every single run's bytes)
+    assert DrawStream(2**53 - 1, 3).draw(40, 10) != DrawStream(2**53, 3).draw(40, 10)
+
+
+def test_a_small_seed_draw_is_the_one_main_gave_before_the_population_change() -> None:
+    # Computed with hashlib and torch outside DrawStream, and equal to main's DrawStream before
+    # #1437: the JCS bytes of {"purpose","seed","update"} -> first 8 bytes of SHA-256 -> seed.
+    assert DrawStream(13, 4).draw(40, 10) == [15, 21, 12, 32, 4, 11, 36, 8, 13, 6]
