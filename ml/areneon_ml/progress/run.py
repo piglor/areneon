@@ -32,13 +32,12 @@ from areneon_ml.checkpoint.provenance import ProvenanceGraph
 from areneon_ml.checkpoint.record import CheckpointRecord, read_record
 from areneon_ml.learner.config import RunConfig, read_run_config
 from areneon_ml.loop import layout
-from areneon_ml.loop.driver import sources_registry
+from areneon_ml.loop.driver import provenance_inputs
 from areneon_ml.loop.ladder_write import json_hash
 from areneon_ml.loop.play import NodePlayer, PlayError
 from areneon_ml.loop.records import features_hash, policy_id
 from areneon_ml.loop.sheet_counts import read_sheet_counts
 from areneon_ml.model.gamedata import GameData
-from areneon_ml.model.network import ROLES
 from areneon_ml.model.options import sheet_set
 from areneon_ml.progress import evaluation_key as ekey
 from areneon_ml.progress.ablation import ablation_summary, expected_ablation_matches
@@ -207,6 +206,9 @@ class VersusSpec:
     #: The other run's engine-data table when its checkpoints were made for another one than the
     #: evaluated run's (#1306); None: the evaluated run's table, and no argument is passed.
     engine_data: Path | None = None
+    #: The other run's population member (``m<k>``, ADR-021): None takes the generation's ladder
+    #: top. Refused for a single-lineage run.
+    member: str | None = None
 
 
 @dataclass(frozen=True)
@@ -228,6 +230,8 @@ class RunPair:
     features: str | None = None
     #: The other run's own engine-data table (None: the evaluated run's).
     engine_data: Path | None = None
+    #: The population member (``m<k>``) of the other run whose pair this is (None: a single run).
+    member: str | None = None
 
 
 @dataclass(frozen=True)
@@ -369,6 +373,7 @@ class NodeProgressPlayer(NodePlayer):
                 ),
                 *("--versus-team-set", str(versus.team_set)),
                 *("--run-games", str(versus.games)),
+                *(() if versus.member is None else ("--versus-member", versus.member)),
             )
         )
         out = self._run(
@@ -860,8 +865,10 @@ def _versus_pair(
     if other_dir == run_dir.resolve():
         raise ProgressError("the other run is the evaluated run itself")
     other = _read_config(other_dir)
-    if other.population:
-        raise ProgressError("the other run is a population run: it has no single frozen pair")
+    if spec.member is not None and not other.population:
+        raise ProgressError(
+            "--versus-member names a member of a population run: the other has none"
+        )
     if other.run_key == config.run_key:
         raise ProgressError("the other run has the same run key as the evaluated one")
     if other.format_id != config.format_id:
@@ -876,7 +883,7 @@ def _versus_pair(
             "--eval-dataset-hash is the other run's own training dataset: its teams are not "
             "held out from that run"
         )
-    found = _source(other_dir, other, spec.generation)
+    found = _source(other_dir, other, spec.generation, member=spec.member)
     return RunPair(
         other.run_key,
         other.hash,
@@ -891,20 +898,8 @@ def _versus_pair(
         spec.games,
         features_hash(other),
         spec.engine_data,
+        found.member,
     )
-
-
-def _run_records(run_dir: Path) -> list[CheckpointRecord]:
-    newest = layout.latest_complete(run_dir)
-    if newest is None:
-        raise ProgressError(f"{run_dir} holds no committed generation")
-    return [
-        read_record(
-            layout.read_json(layout.generation_dir(run_dir, g) / "records" / f"{role}.json")
-        )
-        for g in range(newest.generation + 1)
-        for role in ROLES
-    ]
 
 
 RELATED_LABEL = "related lineage: shared start"
@@ -940,12 +935,11 @@ def versus_relation(run_dir: Path, source: _Source, pair: RunPair) -> dict[str, 
     if set(candidate) & set(opponent):
         raise ProgressError("the two compared pairs share a checkpoint: not two different pairs")
     registry: dict[str, list[str]] = {}
-    for part in (sources_registry(run_dir), sources_registry(pair.run_dir)):
+    mine, theirs = provenance_inputs(run_dir), provenance_inputs(pair.run_dir)
+    for part in (mine[1], theirs[1]):
         for key, generators in part.items():
             registry[key] = sorted({*registry.get(key, []), *generators})
-    graph = ProvenanceGraph(
-        _merged_records(_run_records(run_dir), _run_records(pair.run_dir)), registry
-    )
+    graph = ProvenanceGraph(_merged_records(mine[0], theirs[0]), registry)
     if set(opponent) & graph.ancestry(candidate).checkpoints or set(candidate) & (
         graph.ancestry(opponent).checkpoints
     ):
@@ -988,7 +982,7 @@ def _check_versus(record: dict[str, Any], versus: RunPair | None, *, legacy: boo
             "generation": versus.generation,
             "policy_id": ids[match["mode"]],
             "checkpoints": {"preview": versus.preview, "battle": versus.battle},
-        }:
+        } | ({} if versus.member is None else {"member": versus.member}):
             raise ProgressError(f"{match['match_id']}: the opponent is not the other run's pair")
 
 
@@ -1659,11 +1653,11 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
     )
     config = _read_config(run_dir)
     if config.population and (
-        anchors or previous_matches or preview_ablation or versus or search_mode or preview_solve
+        anchors or previous_matches or preview_ablation or search_mode or preview_solve
     ):
         raise ProgressError(
-            "a population run is evaluated against the baselines only: no --anchors, "
-            "--previous-matches, --preview-ablation, --versus-run-dir, --search-mode "
+            "a population run is evaluated against the baselines and --versus-run-dir only: "
+            "no --anchors, --previous-matches, --preview-ablation, --search-mode "
             "or --preview-solve"
         )
     refuse_shaped_pair(config, search_mode, preview_solve)

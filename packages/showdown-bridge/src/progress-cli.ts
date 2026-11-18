@@ -67,6 +67,8 @@ const FLAGS = {
   "versus-encoder-version": { type: "string" },
   // The other run's engine-data table when its checkpoints were made for another one than --engine-data (#1306).
   "versus-engine-data": { type: "string" },
+  // The population member (ADR-021, `m<k>`) of the other run whose pair plays; named in the record's opponent entry. Only with `--versus`.
+  "versus-member": { type: "string" },
   "versus-team-set": { type: "string" },
   "run-games": { type: "string" },
   // The Preview ablation (#940): `--ablation-preview <generation>,<preview-checkpoint>,<policy-id-argmax>` (this
@@ -97,7 +99,7 @@ const FLAGS = {
   // variant of the run's format, read from the rules snapshot.
   "team-sheets": { type: "string" },
 } as const;
-const OPTIONAL = new Set<string>(["extra-mode", "previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "versus", "versus-dir", "versus-encoder-version", "versus-team-set", "versus-engine-data", "run-games", "ablation-preview", "ablation-random-policy-id", "damage-aware-budget-ms", "damage-aware-version", "eval-dataset-dir", "eval-dataset-hash", "evaluation-key", "search-mode", "preview-solve", "team-sheets"]);
+const OPTIONAL = new Set<string>(["extra-mode", "previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "versus", "versus-dir", "versus-encoder-version", "versus-team-set", "versus-engine-data", "versus-member", "run-games", "ablation-preview", "ablation-random-policy-id", "damage-aware-budget-ms", "damage-aware-version", "eval-dataset-dir", "eval-dataset-hash", "evaluation-key", "search-mode", "preview-solve", "team-sheets"]);
 const VERSUS = ["versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games"] as const;
 const PREVIOUS = ["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax"] as const;
 
@@ -270,6 +272,8 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   const versusGiven = VERSUS.filter((name) => values[name] !== undefined);
   if (versusGiven.length !== 0 && versusGiven.length !== VERSUS.length) throw new UsageError(`the cross-run flags go together: ${VERSUS.map((n) => `--${n}`).join(", ")}`);
   const versusParts = values.versus?.split(",");
+  const versusMember = values["versus-member"];
+  if (versusMember !== undefined && (versusParts === undefined || !/^m\d{1,6}$/.test(versusMember))) throw new UsageError("--versus-member must be m<k> and needs --versus");
   if (versusParts !== undefined && (versusParts.length !== 7 || !/^\d+$/.test(versusParts[2] as string))) throw new UsageError("--versus must be <run-id>,<run-config-hash>,<generation>,<preview>,<battle>,<policy-id-sample>,<policy-id-argmax>");
   const run_games = values["run-games"] === undefined ? undefined : integer("run-games", values["run-games"], 2);
   if (versusParts !== undefined && (ablationParts !== undefined)) throw new UsageError("the Preview ablation is played alone: no other run");
@@ -334,6 +338,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
           generation: Number(versusParts[2]),
           checkpoints: { preview: versusParts[3] as string, battle: versusParts[4] as string },
           policy_ids: { sample: versusParts[5] as string, argmax: versusParts[6] as string },
+          ...(versusMember === undefined ? {} : { member: versusMember }),
         };
   // The other run's pair is set up from its own config (its team set is read first: a malformed flag is a usage error before any file of the run).
   const versusTeamSet = values["versus-team-set"] === undefined ? [] : readTeamSet(values["versus-team-set"]);

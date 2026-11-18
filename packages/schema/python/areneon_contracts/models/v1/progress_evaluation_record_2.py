@@ -166,6 +166,10 @@ class RunOpponent(BaseModel):
     The other run's pair, in the mode the match played.
     """
     checkpoints: Checkpoints
+    member: Annotated[StrictStr | MISSING, Field(pattern="^m[0-9]{1,6}$")] = MISSING
+    """
+    The population member (ADR-021) whose pair played, when the other run is a population run (a minor change within v2: absent for a single-lineage run, so every such record keeps its bytes).
+    """
 
 
 class ForfeitCount(BaseModel):

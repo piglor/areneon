@@ -13,7 +13,6 @@ from areneon_ml.loop import __main__ as entry
 from areneon_ml.loop import ladder_write, layout
 from areneon_ml.loop.__main__ import main
 from areneon_ml.loop.records import policy_id
-from areneon_ml.progress import run as run_module
 from areneon_ml.progress.run import ProgressError, ladder_top, progress_dir_of, verify_progress_dir
 from areneon_ml.progress.run import progress_generation as evaluate
 
@@ -104,17 +103,14 @@ def test_generation_zero_needs_a_named_member(population: tuple[Path, Any], tmp_
 def test_the_refusals(population: tuple[Path, Any], tmp_path: Path) -> None:
     with pytest.raises(ProgressError, match="has no member m7"):
         run(population, tmp_path / "a", 2, "m7")
-    with pytest.raises(ProgressError, match="baselines only"):
+    with pytest.raises(ProgressError, match="baselines and --versus-run-dir only"):
         run(population, tmp_path / "b", 2, "m0", anchors=(0,))
-    with pytest.raises(ProgressError, match="baselines only"):
+    with pytest.raises(ProgressError, match="baselines and --versus-run-dir only"):
         run(population, tmp_path / "c", 2, "m0", previous_matches=True)
-    with pytest.raises(ProgressError, match="baselines only"):
+    with pytest.raises(ProgressError, match="baselines and --versus-run-dir only"):
         run(population, tmp_path / "e", 2, "m0", preview_ablation=True)
-    with pytest.raises(ProgressError, match="baselines only"):
+    with pytest.raises(ProgressError, match="baselines and --versus-run-dir only"):
         run(population, tmp_path / "f", 2, "m0", search_mode="argmax")
-    spec = run_module.VersusSpec(population[0], 2, 2, "e" * 64)
-    with pytest.raises(ProgressError, match="baselines only"):
-        run(population, tmp_path / "g", 2, "m0", versus=spec)
     other = tmp_path / "single"
     config = make_run(other, 1)
     fake = FakeProgressPlayer(config, {})
@@ -168,16 +164,3 @@ def test_the_progress_command_runs_a_population_member(
     # The default member at generation 0 is refused by the command in fixed words.
     assert main([*argv[:5], "--generation", "0", "--progress-dir", str(tmp_path / "q")]) != 0
     assert "generation 0 has no ladder" in capsys.readouterr().err
-
-
-def test_a_population_run_is_not_the_other_run_of_a_head_to_head(
-    population: tuple[Path, Any], tmp_path: Path
-) -> None:
-    run_dir, config = population
-    single = tmp_path / "single"
-    other = make_run(single, 1)
-    fake = FakeProgressPlayer(other, {})
-    spec = run_module.VersusSpec(run_dir, 2, 2, "e" * 64)
-    with pytest.raises(ProgressError, match="the other run is a population run"):
-        evaluate(single, 1, tmp_path / "v", fake, 2, 1, versus=spec)
-    assert config.population

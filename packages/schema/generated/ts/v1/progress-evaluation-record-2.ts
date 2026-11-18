@@ -303,6 +303,10 @@ export interface RunOpponent {
    */
   policy_id: string;
   checkpoints: Checkpoints;
+  /**
+   * The population member (ADR-021) whose pair played, when the other run is a population run (a minor change within v2: absent for a single-lineage run, so every such record keeps its bytes).
+   */
+  member?: string;
 }
 /**
  * The control opponent of a search policy (ADR-026 section 5, finding N-C): the very pair the search policy wraps, played without search. A minor change within v2: a reader older than it rejects a record that carries it.

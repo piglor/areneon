@@ -573,6 +573,12 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "--versus-generation", type=int, help="the other run's generation (with --versus-run-dir)"
     )
     progress.add_argument(
+        "--versus-member",
+        help="with --versus-run-dir, when the other run is a population run (ADR-021): the member "
+        "(m<k>) whose pair plays (default: the ladder top of --versus-generation, as --member "
+        "does for the evaluated run); refused for a single-lineage run",
+    )
+    progress.add_argument(
         "--versus-engine-data",
         type=Path,
         help="with --versus-run-dir: the other run's engine-data table, when its checkpoints were "
@@ -633,7 +639,42 @@ def _generation_list(text: str) -> tuple[int, ...]:
         raise argparse.ArgumentTypeError("--anchors takes comma-separated integers") from exc
 
 
-def _progress(args: argparse.Namespace) -> dict[str, object]:  # noqa: PLR0912
+def _versus_spec(args: argparse.Namespace, game: GameData) -> VersusSpec | None:
+    """The head-to-head request of the command line (``--versus-*``), or None without one."""
+    if (args.versus_run_dir is None) != (args.versus_generation is None):
+        raise ProgressError("--versus-run-dir and --versus-generation go together")
+    versus = None
+    if args.versus_engine_data is not None and args.versus_run_dir is None:
+        raise ProgressError("--versus-engine-data needs --versus-run-dir")
+    if args.versus_member is not None and args.versus_run_dir is None:
+        raise ProgressError("--versus-member needs --versus-run-dir")
+    if args.versus_run_dir is not None:
+        if args.all:
+            raise ProgressError("--versus-run-dir needs --generation, not --all")
+        other_dir = args.versus_run_dir.resolve()
+        other = read_run_config(layout.read_json(other_dir / layout.CONFIG))
+        other_game = game
+        if args.versus_engine_data is not None:
+            try:
+                other_game = GameData.from_table(
+                    json.loads(args.versus_engine_data.read_text(encoding="utf-8"))
+                )
+            except Exception as exc:  # a missing, malformed or off-contract table
+                raise ProgressError(
+                    "--versus-engine-data is not a readable engine-data table"
+                ) from exc
+        versus = VersusSpec(
+            other_dir,
+            args.versus_generation,
+            args.run_games,
+            encoder_version(other_game, other.model.encoder),
+            None if args.versus_engine_data is None else args.versus_engine_data.resolve(),
+            args.versus_member,
+        )
+    return versus
+
+
+def _progress(args: argparse.Namespace) -> dict[str, object]:
     run_dir = args.run_dir.resolve()
     config = read_run_config(layout.read_json(run_dir / layout.CONFIG))
     game = GameData.from_table(json.loads(args.engine_data.read_text(encoding="utf-8")))
@@ -665,33 +706,7 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:  # noqa: PLR0912
         if args.damage_aware
         else None
     )
-    if (args.versus_run_dir is None) != (args.versus_generation is None):
-        raise ProgressError("--versus-run-dir and --versus-generation go together")
-    versus = None
-    if args.versus_engine_data is not None and args.versus_run_dir is None:
-        raise ProgressError("--versus-engine-data needs --versus-run-dir")
-    if args.versus_run_dir is not None:
-        if args.all:
-            raise ProgressError("--versus-run-dir needs --generation, not --all")
-        other_dir = args.versus_run_dir.resolve()
-        other = read_run_config(layout.read_json(other_dir / layout.CONFIG))
-        other_game = game
-        if args.versus_engine_data is not None:
-            try:
-                other_game = GameData.from_table(
-                    json.loads(args.versus_engine_data.read_text(encoding="utf-8"))
-                )
-            except Exception as exc:  # a missing, malformed or off-contract table
-                raise ProgressError(
-                    "--versus-engine-data is not a readable engine-data table"
-                ) from exc
-        versus = VersusSpec(
-            other_dir,
-            args.versus_generation,
-            args.run_games,
-            encoder_version(other_game, other.model.encoder),
-            None if args.versus_engine_data is None else args.versus_engine_data.resolve(),
-        )
+    versus = _versus_spec(args, game)
     try:
         modes = parse_modes(() if args.modes is None else args.modes.split(","))
     except ModeError as exc:

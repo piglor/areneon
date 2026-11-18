@@ -168,6 +168,8 @@ export interface ProgressOptions {
     run_config_hash: string;
     generation: number;
     checkpoints: { preview: string; battle: string };
+    /** The population member (ADR-021) of the other run whose pair plays; named in the opponent entry (absent for a single-lineage run). */
+    member?: string;
     policy_ids: Record<ProgressMode, string>;
     client: PolicyClient & { beginGame?: () => Promise<void> };
     /** The other run's own candidate features (from ITS run config; absent: its pair reads none): each run's seat has its own statement. */
@@ -647,7 +649,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       id: "run",
       cross: true,
       extras: true,
-      opponent: (mode, extra) => ({ kind: "run", run_id: versus.run_id, run_config_hash: versus.run_config_hash, generation: versus.generation, policy_id: versusId(mode, extra), checkpoints: versus.checkpoints }),
+      opponent: (mode, extra) => ({ kind: "run", run_id: versus.run_id, run_config_hash: versus.run_config_hash, generation: versus.generation, policy_id: versusId(mode, extra), checkpoints: versus.checkpoints, ...(versus.member === undefined ? {} : { member: versus.member }) }),
       // Both sides play the extra mode: the other run's pair samples at the same temperature and threshold.
       seat: (mode, _game, extra) => ({ seat: { client: versus.client, policy_id: versusId(mode, extra), sampling: mode, ...(extra === undefined ? {} : { play: extra.play }), ...(versus.features === undefined ? {} : { features: { configs: versus.features } }), ...sheetSeat(versus.sheet) } }),
       policies: (mode, extra) => versusId(mode, extra),

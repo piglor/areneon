@@ -397,7 +397,7 @@ def progress_files(  # noqa: PLR0912, PLR0915
                     "generation": versus.generation,
                     "policy_id": other,
                     "checkpoints": {"preview": versus.preview, "battle": versus.battle},
-                }
+                } | ({} if versus.member is None else {"member": versus.member})
             elif previous is not None and "control" in previous:
                 other = plain
                 opponent = {
