@@ -88,11 +88,6 @@ Preserve stable boundary context in command-line errors so a hosted-only run
 identifies the failing construction, encoding, signing, persistence, or
 verification layer while retaining the underlying typed error.
 
-For mutation timeouts, inspect the scenario outcome and individual log. Separate
-cold `cargo test --no-run` build allowance from the strict Test-phase timeout.
-If tests started, trace the last running tests and shared fixture complexity at
-domain maxima before changing timeout policy.
-
 ### Minimise
 
 Once it's red, shrink the repro to the **smallest scenario that still goes red**. Cut inputs, callers, config, data, and steps **one at a time**, re-running the loop after each cut — keep only what's load-bearing for the failure.
