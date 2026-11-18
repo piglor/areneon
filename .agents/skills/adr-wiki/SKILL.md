@@ -81,9 +81,9 @@ Rules for managing ADR pages on the Redmine wiki at `redmine.piglor.com/projects
    - `PUT /projects/areneon/wiki/<title>.json` — update
    - Auth: see rule 11 (Redmine MCP first)
 
-11. **Auth:** Prefer the Redmine MCP server configured in the agent
-   environment. When it is unavailable, send the key from the environment
-   (`curl -H "X-Redmine-API-Key: $KEY"`); never paste or commit the key.
+11. **Auth:** use only the Redmine MCP tool (`redmine_request`, with the
+   path, method and `data` shown above). If it is unavailable, stop that step
+   and tell the owner. Never read, print, pass or paste a Redmine key or token.
 
 12. **Synchronize and verify external writes.** Fetch the current canonical
     page and any source design before editing. After every write, fetch the page

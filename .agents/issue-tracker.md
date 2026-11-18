@@ -1,8 +1,7 @@
 # Issue tracker: Redmine (Internal Roadmap)
 
 The internal roadmap, features, and tickets for this repo live in **Redmine** at `redmine.piglor.com/projects/areneon`.
-Access is through the Redmine MCP server configured in the agent environment. Never commit Redmine API keys to this public repo.
-Use `curl -H "X-Redmine-API-Key: $KEY"` for direct API access when MCP is unavailable.
+Agents use only the Redmine MCP tool (`redmine_request`: path, method, `data`); the REST paths below are what they send through it. If it is unavailable, stop that step and tell the owner. Never read, print, pass or paste a Redmine key or token.
 
 > **Note on GitHub Issues**: Redmine is for internal team contributions. GitHub Issues (`piglor/areneon`) is for open source community contributions — the repo is public. Do not use GitHub Issues for internal work.
 
