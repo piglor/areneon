@@ -608,6 +608,9 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       mkdirSync(bare, { recursive: true });
       await expect(run("v6", all({ "--versus-dir": bare }))).rejects.toThrow(/no readable run-config\.json/);
       await expect(run("v7", all({ "--versus-dir": runDir }))).rejects.toThrow(/another run config/);
+      // The other run's population member (#1442): m<k>, and only with --versus.
+      await expect(run("v8", all({ "--versus-member": "top" }))).rejects.toThrow(/--versus-member must be m<k>/);
+      await expect(run("v8b", ["--versus-member", "m0"])).rejects.toThrow(/--versus-member must be m<k> and needs --versus/);
       // The other run's table (#1306): only with --versus, and a readable engine-data table.
       await expect(run("v9", ["--versus-engine-data", DATA])).rejects.toThrow(/--versus-engine-data needs --versus/);
       const junk = join(dir, "junk-table.json");

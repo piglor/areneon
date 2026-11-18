@@ -8,13 +8,17 @@ from typing import Any
 import pytest
 from areneon_ml.learner.config import RunConfig, read_run_config
 from areneon_ml.loop import layout
+from areneon_ml.loop.__main__ import EXIT_REFUSED, main
 from areneon_ml.loop.records import policy_id
+from areneon_ml.loop.warm_start import import_clone
 from areneon_ml.progress import run as run_module
 from areneon_ml.progress.run import ProgressError, VersusSpec
 from areneon_ml.progress.run import progress_generation as evaluate
 
-from tests.ml.loop.test_population import gen_path, make_population
+from tests.ml.loop.test_population import gen_path, make_population, population_config
 from tests.ml.loop.test_population_copy import Dominant, config_with_copies
+from tests.ml.loop.test_warm_start import clone_ids, clone_output
+from tests.ml.model.support import FORMAT_DIR
 from tests.ml.progress.support import (
     FakeProgressPlayer,
     committed_manifest,
@@ -24,6 +28,7 @@ from tests.ml.progress.support import (
 from tests.ml.progress.test_population import with_dataset
 
 ENCODER = "enc-other"
+DATA = FORMAT_DIR / "engine-data.json"
 
 
 def pop_config(key: str, seeds: tuple[int, int] | None) -> RunConfig:
@@ -161,3 +166,33 @@ def test_the_refusals(runs: dict[str, tuple[Path, RunConfig]], tmp_path: Path) -
     run_dir, config = runs["a"]
     with pytest.raises(ProgressError, match="baselines and --versus-run-dir only"):
         evaluate(run_dir, 2, tmp_path / "e", fake(run_dir, config), 2, 1, anchors=(0,))
+
+
+def test_populations_warm_started_from_one_clone_are_related(tmp_path: Path) -> None:
+    (tmp_path / "clone").mkdir()
+    clone = clone_output(tmp_path / "clone")
+    battle = clone_ids(clone)["battle"]
+    found: dict[str, tuple[Path, RunConfig]] = {}
+    for name in ("w1", "w2"):
+
+        def edit(raw: dict[str, Any]) -> None:
+            raw["warm_start"] = {"battle": battle}
+            with_dataset(raw)
+
+        config = population_config(key=f"pop-{name}", edit=edit)
+        run_dir = tmp_path / name
+        import_clone(clone, run_dir, ("battle",))
+        make_population(run_dir, config).run(2)
+        found[name] = (run_dir, config)
+    done, _ = go(found, "w1", "w2", tmp_path / "p", member="m0", versus_member="m1")
+    assert done["head_to_head"]["lineage"]["label"] == run_module.RELATED_LABEL
+
+
+def test_versus_member_needs_the_other_run_at_the_command_line(
+    runs: dict[str, tuple[Path, RunConfig]], capsys: pytest.CaptureFixture[str]
+) -> None:
+    run_dir = runs["a"][0]
+    argv = ["progress", "--run-dir", str(run_dir), "--engine-data", str(DATA)]
+    argv += ["--generation", "2", "--versus-member", "m0"]
+    assert main(argv) == EXIT_REFUSED
+    assert "--versus-member needs --versus-run-dir" in capsys.readouterr().err

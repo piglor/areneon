@@ -139,8 +139,6 @@ export interface ProgressOptions {
    */
   previous?: {
     checkpoints: { preview: string; battle: string };
-    /** The population member (ADR-021) of the other run whose pair plays; named in the opponent entry (absent for a single-lineage run). */
-    member?: string;
     policy_ids: Record<ProgressMode, string>;
     client: PolicyClient & { beginGame?: () => Promise<void> };
   };
@@ -170,6 +168,8 @@ export interface ProgressOptions {
     run_config_hash: string;
     generation: number;
     checkpoints: { preview: string; battle: string };
+    /** The population member (ADR-021) of the other run whose pair plays; named in the opponent entry (absent for a single-lineage run). */
+    member?: string;
     policy_ids: Record<ProgressMode, string>;
     client: PolicyClient & { beginGame?: () => Promise<void> };
     /** The other run's own candidate features (from ITS run config; absent: its pair reads none): each run's seat has its own statement. */
