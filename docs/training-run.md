@@ -348,6 +348,18 @@ adopt rule is applied by the experiment, not here. Use a progress directory of i
 this run's, on the same pairs and seeds; the other run's actor-rule score on these
 pairs is not played.
 
+**Head to head with population runs (ADR-021, #1442).** Either run, or both, may be a
+population run. The evaluated run's member is `--member` (default: the generation's ladder top)
+and the other run's is `--versus-member` (default: that generation's ladder top; refused for a
+single-lineage run, an unknown member and a generation the other run has not committed). The
+chosen member's generation manifest and records are verified exactly as a single member's
+evaluation does, and its policy ids come from its own run config. The relation label is the
+usual C1/C6 one over both runs' records (members that descend from one shared clone read
+"related lineage: shared start"). A population run is still refused `--anchors`,
+`--previous-matches`, `--preview-ablation`, `--search-mode` and `--preview-solve`. The `run`
+opponent entry gains an optional `member` (`m<k>`) when the other run is a population run; a
+single-run head to head keeps every byte.
+
 **Extra play modes and the play-mode gap (ADR-023, #1044, #1042).** A progress result is
 read with its play mode: every match, score cell and replay page names it (`argmax`,
 `sample`, `sample, T 0.5`, `sample, T 1, threshold 0.03`). `progress --modes

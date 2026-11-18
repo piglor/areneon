@@ -380,6 +380,8 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/previous-match": v2Previous,
       "progress-evaluation-record-2/anchor-match": v2Anchor(),
       "progress-evaluation-record-2/run-match": v2Run(),
+      // The other run is a population run (ADR-021): the opponent names the member whose pair played.
+      "progress-evaluation-record-2/run-match-member": v2Run((e) => (e.matches[0].opponent.member = "m2")),
       "progress-evaluation-record-2/ablation-match": v2Ablation(),
       "progress-evaluation-record-2/extra-mode-match": v2Extra(),
       "progress-evaluation-record-2/extra-mode-temperature-match": v2Extra((e) => {
@@ -425,6 +427,7 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/evaluation-dataset-not-hash": withV2((e) => (e.teams.evaluation_dataset_hash = "not-a-hash")),
       "progress-evaluation-record-2/anchor-no-generation": v2Anchor((e) => delete e.matches[0].opponent.generation),
       "progress-evaluation-record-2/run-no-run-id": v2Run((e) => delete e.matches[0].opponent.run_id),
+      "progress-evaluation-record-2/run-member-malformed": v2Run((e) => (e.matches[0].opponent.member = "top")),
       "progress-evaluation-record-2/ablation-no-checkpoint": v2Ablation((e) => delete e.matches[0].candidate_preview.checkpoint),
       "progress-evaluation-record-2/extra-mode-temperature-default": v2Extra((e) => (e.matches[0].temperature_ppm = 1000000)),
       "progress-evaluation-record-2/extra-mode-temperature-zero": v2Extra((e) => (e.matches[0].temperature_ppm = 0)),

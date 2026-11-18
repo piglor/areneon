@@ -802,6 +802,25 @@ def _population_inputs(
         raise LoopError(f"population: {exc}") from exc
 
 
+def provenance_inputs(run_dir: Path) -> tuple[list[CheckpointRecord], dict[str, list[str]]]:
+    """The records of every committed generation of a run (a population's members' included) and
+    its sources registry: what the C1/C6 checker reads, for a comparison across two runs."""
+    newest = layout.latest_complete(run_dir)
+    if newest is None:
+        raise LoopError("the run directory holds no committed generation")
+    if "members" in newest.manifest:
+        found, registry = _population_inputs(run_dir, newest)
+        return [record for record, _ in found], registry
+    records = [
+        read_record(
+            layout.read_json(layout.generation_dir(run_dir, g) / "records" / f"{role}.json")
+        )
+        for g in range(newest.generation + 1)
+        for role in ROLES
+    ]
+    return records, sources_registry(run_dir)
+
+
 def provenance_graph(run_dir: Path) -> ProvenanceGraph:
     """The C1/C6 provenance graph of every committed generation of a run."""
     newest = layout.latest_complete(run_dir)
