@@ -13,7 +13,7 @@ Subsystem documentation split out of `CLAUDE.md`. `CLAUDE.md` keeps the commands
 | [mechanics-probe.md](mechanics-probe.md) | Mechanics probe: The ADR-016 mechanics probe (stats, speed order, damage, KO counts), its config and the calc differential. |
 | [opponent-model.md](opponent-model.md) | Opponent model: usage priors, belief and sampler: Usage priors and weight tables, the opponent belief and its evidence, the sampler, the generator-matched and role-sets priors, and the opponent sheet block. |
 | [opponent-sheet.md](opponent-sheet.md) | Opponent sheet block and sheet regimes: The opponent sheet input (closed and open regimes), its builders, encoder use, sidecar, the team sheet reader and open-sheet evaluation. |
-| [damage-aware.md](damage-aware.md) | Damage-aware baselines: The `damage-aware` scripted baselines (v1, v2 over belief worlds, v3), their inputs, identity and use as opponents. |
+| [damage-aware.md](damage-aware.md) | Damage-aware baselines: The `damage-aware` scripted baselines (v1 to v7: v2 over belief worlds, v3 engine choice location, v4 to v7 situational and success-chance scoring), their inputs, identity and use as opponents. |
 | [search.md](search.md) | Decision-time search: World facts, the scenario world builder, the fork oracle, search worlds, the probe reply model and the `rerank-1` search actor. |
 | [search-distillation.md](search-distillation.md) | Search distillation: Search labellers, the label stream contracts and distillation in the learner. |
 | [population.md](population.md) | Population loop and ladder: The ADR-021 population: config, plan, ladder, rating, driver, selection, health and frozen pool. |
