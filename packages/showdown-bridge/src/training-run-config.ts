@@ -50,7 +50,6 @@ export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
   }
   if (config.ppo.imitation !== undefined) {
     if (config.warm_start === undefined) throw new TrainingRunConfigError("ppo.imitation needs warm_start with a battle checkpoint: the term pulls toward the source the clone came from");
-    if (config.population !== undefined) throw new TrainingRunConfigError("ppo.imitation cannot be combined with a population (no per-member teacher stream)");
   }
   checkThreatenedAnchor(config);
   const auxHead = config.model.options?.aux_move_head !== undefined;
