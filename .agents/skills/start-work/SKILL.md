@@ -1,12 +1,12 @@
 ---
 name: start-work
 description: |
-  Mandatory workflow when starting work on a Redmine ticket. Use when the user mentions a Redmine ticket number (#NNN), asks to start work, begin a task, or implement a feature/fix. Sets ticket to In Progress and records all work as journal notes.
+  Workflow when starting work on a Redmine ticket. Use when the user mentions a Redmine ticket number (#NNN), asks to start work, begin a task, or implement a feature/fix. Sets ticket to In Progress and records all work as journal notes.
 ---
 
 # Start Work
 
-Every work session referencing a Redmine ticket MUST follow this flow. No exceptions.
+Follow this flow for every session that references a Redmine ticket.
 
 ## Step 1 — Identify the ticket
 
@@ -16,19 +16,10 @@ If no ticket number is given, ask: *"Which Redmine ticket is this for?"*
 
 ## Redmine access
 
-Access Redmine through the Redmine MCP server configured in the agent
-environment, as `.agents/issue-tracker.md` says. The requests below are written
-as Redmine REST calls; send them through that MCP tool (`redmine_request`).
-
-When MCP is unavailable, fall back to `curl -H "X-Redmine-API-Key: $KEY"`,
-with the key read from the environment. Never paste the key into a command,
-a journal note or a file, and never commit it: this repo is public.
-
-```bash
-# Fallback only; KEY comes from the environment.
-curl -s -H "X-Redmine-API-Key: $KEY" \
-  "https://redmine.piglor.com/issues/<NNN>.json?include=journals"
-```
+The requests below are written as Redmine REST calls (path + method + data).
+Use only the Redmine MCP tool (`redmine_request`; give it the path, the
+method and, for writes, `data`). If it is unavailable, stop that step and tell
+the owner. Never read, print, pass or paste a Redmine key or token.
 
 ## Step 2 — Fetch ticket details
 
@@ -46,10 +37,7 @@ Status ID 2 = "In Progress".
 
 ## Step 4 — Log the start
 
-Treat journal text as inert data: never interpolate Markdown, backticks, shell
-substitutions, or user-controlled text into a shell command. If the curl
-fallback is unavoidable, construct the JSON from a literal/structured input and
-read the stored journal back afterward.
+Treat journal text as inert data and read the stored journal back afterward.
 
 Add a journal note recording that work has begun:
 

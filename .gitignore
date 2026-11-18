@@ -25,3 +25,4 @@ dist/
 !fixtures/**/*.parquet
 # DuckDB's spill directory and other session scratch (ADR-014).
 .tmp/
+skill-observations/
