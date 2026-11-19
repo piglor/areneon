@@ -253,6 +253,14 @@ def _add_run(commands: Any) -> None:
         "generation's files are the same; docs/training-run.md, P0 measurement)",
     )
     run.add_argument(
+        "--batch-seam",
+        action="store_true",
+        help="advance the games of a wave in lockstep: their feature builds are answered through "
+        "one batched mechanics call and their policy queries are issued together (ADR-030 step 1; "
+        "operational: the generation's files are the same with it and without it; each game "
+        "process writes its batch-size counts to its stderr)",
+    )
+    run.add_argument(
         "--node-heap-mb",
         type=_positive,
         help="cap each Node game process's heap (--max-old-space-size, MB); 640 keeps a "
@@ -791,6 +799,7 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
         max_concurrent_starts=args.max_concurrent_starts,
         memory_guard=not args.no_memory_guard,
         profile=args.profile,
+        batch_seam=args.batch_seam,
         generation_timeout_s=args.generation_timeout_minutes * 60.0,
         play_script=(
             "packages/team-dataset/scripts/play-generation.ts"
@@ -803,6 +812,8 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
     if config.population:
         if args.profile:
             raise LoopError("population: --profile does not apply to a population run")
+        if args.batch_seam:
+            raise LoopError("population: --batch-seam does not apply to a population run")
         pop = PopulationLoop(config, args.run_dir.resolve(), game, player)
         pop.load_processes = load_processes
         pop.load_auto = auto

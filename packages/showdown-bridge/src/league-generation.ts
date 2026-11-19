@@ -40,6 +40,8 @@ import { nodeSha256 } from "./player-channel.ts";
 import { type PolicyClient } from "./policy-worker.ts";
 import type { PolicyQueryInput } from "./policy-protocol.ts";
 import { type PolicyGameOptions, policyGame, type PolicySeat } from "./policy-actor.ts";
+import { batchRunnerOf } from "./candidate-features.ts";
+import { type SeamStats, WaveSeam } from "./probe-batch.ts";
 import { readerSha256 } from "@areneon/public-state";
 import { loadRandomCorpus } from "./random-corpus.ts";
 import { randomLegalActor } from "./random-legal.ts";
@@ -465,6 +467,16 @@ export interface GenerationOptions {
    * `inference-divergence.ts`). Observes only; never changes a byte.
    */
   on_answer?: (query: PolicyQueryInput, choice: string) => void;
+  /**
+   * The batch seam (ADR-030 step 1, operational: no config field, no hash moves): each wave of games advances in lockstep, its
+   * pending feature builds answered through ONE batched mechanics call and its policy queries issued together. Every file the generation
+   * writes is the same with it and without it. Absent: each decision calls the probe and the worker by itself, as before.
+   */
+  batch_seam?: boolean;
+  /** Called with each wave's seam statistics (batch sizes; counts only) when `batch_seam` is on. */
+  on_seam_stats?: (stats: SeamStats) => void;
+  /** The wave's seam, made by `playEntries` for the games of one wave (internal). */
+  seam?: WaveSeam;
   /** Called after each game with the counts of each of the pair's seats' sheet builders (blocks built, refusals by code). */
   on_sheet_counts?: (game: number, counts: readonly SheetCounts[]) => void;
   /** The belief port factory of the composition root (`packages/team-dataset`); without it a plan that names `damage-aware@v2` is refused. */
@@ -696,7 +708,7 @@ async function playOne(options: GenerationOptions, plan: GamePlan, client: Polic
     sheets[player] = kept;
     return { sheet: { builder, record: (seq: number, block: OpponentSheet) => void kept.set(seq, block) } };
   };
-  const observed = options.on_answer === undefined ? {} : { on_answer: options.on_answer };
+  const observed = { ...(options.on_answer === undefined ? {} : { on_answer: options.on_answer }), ...(options.seam === undefined ? {} : { seam: options.seam }) };
   const seatFor = (player: Player): PolicySeat => {
     if (options.features === undefined) return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), ...observed, ...sheetFor(player) };
     const memo = createFeatureMemo();
@@ -737,6 +749,13 @@ async function playOne(options: GenerationOptions, plan: GamePlan, client: Polic
 }
 
 const idOf = (opponent: GamePlan["opponent"], policy_id: string): string => (opponent === "self" ? policy_id : opponent.policy_id);
+
+/** The seam of one wave: its mechanics batch is the probe of the run's feature configs (none without a feature set: only the policy queries are batched). */
+function waveSeam(options: GenerationOptions): { seam: WaveSeam; features?: GenerationOptions["features"] } {
+  if (options.features === undefined) return { seam: new WaveSeam() };
+  const { configs, batch } = batchRunnerOf(options.engine, options.features);
+  return { seam: new WaveSeam({ batch }), features: configs };
+}
 
 /** A slice of the plan for one game process: games `g` with `g mod of = index`. */
 export interface Shard {
@@ -835,7 +854,10 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
       await Promise.all(workers.map((worker) => worker.beginGame?.()));
       stopped(); // a restart that began before the stop must not start games
       // A game stays on one worker, chosen by its place in the wave.
-      played = await Promise.all(wave.map((entry, place) => playOne(withRecords, entry, workers[place % workers.length] as PolicyClient)));
+      const seam = options.batch_seam === true ? waveSeam(withRecords) : undefined;
+      const inWave = seam === undefined ? withRecords : { ...withRecords, seam: seam.seam, ...(seam.features === undefined ? {} : { features: seam.features }) };
+      played = await Promise.all(wave.map((entry, place) => playOne(inWave, entry, workers[place % workers.length] as PolicyClient)));
+      if (seam !== undefined) options.on_seam_stats?.(seam.seam.stats());
     } finally {
       activity.busy--;
     }

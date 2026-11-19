@@ -23,7 +23,8 @@
 // own team and the candidate strings; no opponent team, hidden verdict, `BattleRecord` or seed is a parameter of anything here.
 import { type HistoryFacts, HistoryFactsError, historyFacts, type HistoryFactsData, ownChannel, ownHistoryChannel, type WorldFacts, WorldFactsError, worldFacts, type WorldFactsData } from "@areneon/public-state";
 import { buildArrays, type ArrayContext, type CostTrace, type FoePriorityRow, type OwnPriorityRow, type SpeedRow, type ThreatRow } from "./candidate-features-2.ts";
-import { type FeatureConfigs, type FeatureMemo, type FeatureRow, FEATURE_SET_OUTCOME, createFeatureMemo } from "./candidate-features.ts";
+import { driveSync, type Gen, pure } from "./probe-batch.ts";
+import { type FeatureConfigs, type FeatureMemo, type FeatureRow, FEATURE_SET_OUTCOME, createFeatureMemo, inlineProbe } from "./candidate-features.ts";
 import { type HistoryDeclarer, historyDeclarer } from "./candidate-history.ts";
 import type { Candidate } from "./choices.ts";
 import { array, DamageAwareError, type DamageView, type Fighter, type Foe, object, ProbeRefusal, UNKNOWN_HISTORIES } from "./damage-aware-view.ts";
@@ -168,10 +169,24 @@ export function candidateFeaturesOutcome(
   memo: FeatureMemo = createFeatureMemo(),
   trace?: CostTrace,
 ): CandidateFeaturesOutcome {
+  const inline = inlineProbe(engine, configs);
+  return driveSync(candidateFeaturesOutcomeG(engine, inline.configs, channel, team, candidates, memo, trace), inline.run);
+}
+
+/** `candidateFeaturesOutcome` as a generator: its mechanics queries are yielded (see `probe-batch.ts`). */
+export function* candidateFeaturesOutcomeG(
+  engine: Engine,
+  configs: FeatureConfigs,
+  channel: PlayerChannel,
+  team: readonly Readonly<PokemonSet>[],
+  candidates: readonly Pick<Candidate, "choice" | "pending">[],
+  memo: FeatureMemo = createFeatureMemo(),
+  trace?: CostTrace,
+): Gen<CandidateFeaturesOutcome> {
   const setup = configs.outcome;
   if (setup === undefined) throw new DamageAwareError("probe-outcome/1 needs its reviewed record");
   // The declarer is built only for a request that has rows (the facts replay the channel): the empty ones are cheap.
-  const out = buildArrays(
+  const out = yield* buildArrays(
     engine,
     configs,
     channel,
@@ -180,7 +195,9 @@ export function candidateFeaturesOutcome(
     memo,
     trace,
     FEATURE_SET_OUTCOME,
-    (context) => ({ outcomes: outcomeRows(setup.config, context, rawDexOf(engine, configs), (paste) => engine.sim.Teams.import(paste) as { ability?: string; item?: string }[], memo, setup.skip !== false, setup.fold !== false) }),
+    function* (context) {
+      return { outcomes: yield* outcomeRows(setup.config, context, rawDexOf(engine, configs), (paste) => engine.sim.Teams.import(paste) as { ability?: string; item?: string }[], memo, setup.skip !== false, setup.fold !== false) };
+    },
     { outcomes: [] as OutcomeRow[] },
     lazyDeclarer(() => declarerOf(engine, configs, setup, channel)),
   );
@@ -214,7 +231,7 @@ function lazyDeclarer(make: () => HistoryDeclarer): HistoryDeclarer {
 }
 
 /** The `outcomes` of one move request. */
-function outcomeRows(record: OutcomeConfig, { view, state, entries, foes, parsed, body, measured }: ArrayContext, raw: RawDex, importSets: (paste: string) => readonly { ability?: string; item?: string }[], memo: FeatureMemo, skip: boolean, fold: boolean): OutcomeRow[] {
+function* outcomeRows(record: OutcomeConfig, { view, state, entries, foes, parsed, body, measured }: ArrayContext, raw: RawDex, importSets: (paste: string) => readonly { ability?: string; item?: string }[], memo: FeatureMemo, skip: boolean, fold: boolean): Gen<OutcomeRow[]> {
   const active = Array.isArray(body.active) ? (body.active as unknown[]) : null;
   if (active === null) return []; // a forced switch asks no move
   const actives = entries.filter((entry) => entry.slot !== null);
@@ -236,10 +253,10 @@ function outcomeRows(record: OutcomeConfig, { view, state, entries, foes, parsed
   const foeFighters = foes.map((foe) => foe.fighter);
   const out: OutcomeRow[] = [];
   /** The answer, and whether the engine's run did not touch the action queue (then other opposing actions cannot change it). */
-  const ask = (query: OutcomeQuery): { value: OutcomeValue; foldable: boolean } => {
+  const ask = function* (query: OutcomeQuery): Gen<{ value: OutcomeValue; foldable: boolean }> {
     let result: ReturnType<DamageView["query"]>;
     try {
-      result = view.query(query);
+      result = yield* view.queryG(query);
     } catch (error) {
       if (!(error instanceof ProbeRefusal)) throw error;
       view.noteRefused();
@@ -270,7 +287,7 @@ function outcomeRows(record: OutcomeConfig, { view, state, entries, foes, parsed
       continue;
     }
     // One declaration per part: the branches differ only in the foes' actions.
-    const { sides, history } = measured("outcomes", () => view.declared([ownFighters, foeFighters], [ownFighters[actor] as Fighter]));
+    const { sides, history } = yield* measured("outcomes", () => pure(view.declared([ownFighters, foeFighters], [ownFighters[actor] as Fighter])));
     // A Mega part is never skipped (its forme's ability is not the set's); a name the engine does not know proves nothing.
     if (skip && !part.mega) {
       const marked = history !== undefined && UNKNOWN_HISTORIES.has(history);
@@ -295,13 +312,13 @@ function outcomeRows(record: OutcomeConfig, { view, state, entries, foes, parsed
         counts.folded += 1;
         continue;
       }
-      const asked = measured("outcomes", () => {
+      const asked = yield* measured("outcomes", function* () {
         const actions: [Action, ...Action[]] = [{ side: 0, position: actor, move: part.id, mega: part.mega }];
         foes.forEach((foe, position) => {
           const move = branch.action === "switch" ? null : foe === aimed ? (branch.foe_move as string) : otherFoeMove(foe, view.dex);
           actions.push({ side: 1, position, move, mega: false });
         });
-        return ask({ kind: "move_outcome", sides: sides as unknown as OutcomeQuery["sides"], actions, asked: 0, target: { side: 1, position: targetIndex }, state: view.field(state, true), history: history as NonNullable<typeof history> });
+        return yield* ask({ kind: "move_outcome", sides: sides as unknown as OutcomeQuery["sides"], actions, asked: 0, target: { side: 1, position: targetIndex }, state: view.field(state, true), history: history as NonNullable<typeof history> });
       });
       if (fold && branch.action === "switch") {
         if (asked.foldable) shared = asked.value;

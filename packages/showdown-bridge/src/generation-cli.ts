@@ -12,6 +12,7 @@ import { parseArgs } from "node:util";
 import { engineDataHash, readEngineDataAny } from "./engine-data.ts";
 import { loadEngine } from "./engine.ts";
 import type { Engine } from "./engine.ts";
+import { type SeamStats, sumSeamStats } from "./probe-batch.ts";
 import { featureSetup, GenerationError, labelSetup, type SearchSetupFactory, sheetSetup, type PoolRequest, playEntries, playGeneration, type Shard, type TrainingPool, trainingTeamPool, writeGeneration } from "./league-generation.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import { resolveFormat } from "./formats.ts";
@@ -86,6 +87,8 @@ const FLAGS = {
   profile: { type: "boolean" },
   // Internal: the directory the game processes and policy workers leave their profile figures in (made by the process that starts the others when --profile is given).
   "profile-dir": { type: "string" },
+  // Operational (ADR-030 step 1, #1455): advance the games of a wave in lockstep, answering their feature builds through one batched mechanics call and issuing their policy queries together. Every file the generation writes is the same with it and without it; a line `batch seam: {...}` of batch-size counts goes to stderr.
+  "batch-seam": { type: "boolean" },
   // A population run (ADR-021): one `m<k>,PREVIEW,BATTLE,POLICY_ID` per member, in place of --preview, --battle and --policy-id.
   member: { type: "string", multiple: true },
   // A population run with a past-pool share (ADR-021 section 3, slice 10): the committed `past-pool.json` of the generation before.
@@ -94,7 +97,7 @@ const FLAGS = {
   calibrate: { type: "boolean" },
 } as const;
 
-const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "max-concurrent-starts", "start-slots-dir", "shard", "episodes-dir", "features-dir", "labels-dir", "pool-file", "profile", "profile-dir", "member", "calibrate", "past-pool"];
+const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "max-concurrent-starts", "start-slots-dir", "shard", "episodes-dir", "features-dir", "labels-dir", "pool-file", "profile", "profile-dir", "batch-seam", "member", "calibrate", "past-pool"];
 /** The flags a population run gives per member instead. */
 const PER_MEMBER: readonly (keyof typeof FLAGS)[] = ["preview", "battle", "policy-id"];
 
@@ -111,10 +114,26 @@ export function combinedLoad(processes: number, workers: number, nParallel: numb
   return { games, over: games > MAX_COMBINED_LOAD };
 }
 
+/**
+ * The generation options of the batch seam (ADR-030 step 1, #1455) and the report of its statistics: with the flag, `playEntries` makes a
+ * seam per wave and hands each wave's statistics to `add`; `report` writes their sum as one `batch seam: {...}` line (default: to stderr).
+ * Without the flag there are no options and nothing is written.
+ */
+export function seamArgs(on: boolean, write: (line: string) => void = (line) => void process.stderr.write(line)): { options: { batch_seam?: true; on_seam_stats?: (stats: SeamStats) => void }; report: () => void } {
+  const waves: SeamStats[] = [];
+  return {
+    options: on ? { batch_seam: true, on_seam_stats: (stats) => void waves.push(stats) } : {},
+    report: () => {
+      if (waves.length > 0) write(`batch seam: ${jcs(sumSeamStats(waves) as unknown as Json)}\n`);
+    },
+  };
+}
+
 /** The flags a further game process is started with: the ones this process was given, but its own output, slice and internal directories. */
 export function forwardedFlags(values: Record<string, string | string[] | boolean | undefined>): string[] {
   const internal = ["out", "game-processes", "shard", "episodes-dir", "features-dir", "labels-dir", "pool-file", "start-slots-dir", "profile", "profile-dir"];
   return Object.entries(values).flatMap(([name, value]) => {
+    if (name === "batch-seam") return value === true ? ["--batch-seam"] : []; // operational: every game process of the generation plays it
     if (internal.includes(name) || value === undefined) return [];
     if (Array.isArray(value)) return value.flatMap((each) => [`--${name}`, each]); // --member, once per member
     return typeof value === "string" ? [`--${name}`, value] : [];
@@ -135,20 +154,20 @@ export async function runGenerationCli(
   /** The search setup factory, for a run config that asks for search labels (the composition root supplies it). */
   searchSetups?: SearchSetupFactory,
 ): Promise<number> {
-  let values: Record<Exclude<keyof typeof FLAGS, "member" | "calibrate" | "profile">, string | undefined> & { member?: string[]; calibrate?: boolean; profile?: boolean };
+  let values: Record<Exclude<keyof typeof FLAGS, "member" | "calibrate" | "profile" | "batch-seam">, string | undefined> & { member?: string[]; calibrate?: boolean; profile?: boolean; "batch-seam"?: boolean };
   try {
     values = parseArgs({ args: [...argv], options: FLAGS, strict: true }).values as typeof values;
   } catch (error) {
     throw new UsageError((error as Error).message);
   }
-  const need = (name: Exclude<keyof typeof FLAGS, "member" | "calibrate" | "profile">): string => {
+  const need = (name: Exclude<keyof typeof FLAGS, "member" | "calibrate" | "profile" | "batch-seam">): string => {
     const value = values[name];
     if (value === undefined) throw new UsageError(`--${name} is required`);
     return value;
   };
   for (const name of Object.keys(FLAGS) as (keyof typeof FLAGS)[]) {
     if (OPTIONAL.includes(name) || ((values.member !== undefined || values.calibrate === true) && PER_MEMBER.includes(name))) continue;
-    need(name as Exclude<keyof typeof FLAGS, "member" | "calibrate" | "profile">);
+    need(name as Exclude<keyof typeof FLAGS, "member" | "calibrate" | "profile" | "batch-seam">);
   } // refuse a missing flag before anything starts
   const generation = Number(need("generation"));
   const calibrating = values.calibrate === true;
@@ -166,6 +185,7 @@ export async function runGenerationCli(
   if ((config.population !== undefined) !== (values.member !== undefined)) throw new UsageError("a population config is played with --member for each member, and --member only with a population config");
   if (config.population !== undefined) {
     if (values.profile === true || values["profile-dir"] !== undefined) throw new UsageError("--profile does not apply to a population run");
+    if (values["batch-seam"] === true) throw new UsageError("--batch-seam does not apply to a population run");
     let flags: MemberFlag[];
     try {
       flags = (values.member as string[]).map(parseMemberFlag);
@@ -266,6 +286,8 @@ export async function runGenerationCli(
     return 1;
   }
   const labelling = labels !== undefined && generation >= labels.start_generation;
+  // The batch seam (#1455): operational; each wave's statistics are kept and written to stderr when this process's games are done.
+  const seam = seamArgs(values["batch-seam"] === true);
   // The profile (#1191): on for --profile, and for a game process whose starter gave it the directory. Timers only read clocks.
   const profile = startProfile(values["profile-dir"], values.profile === true);
   const profileDir = profile?.dir;
@@ -328,7 +350,8 @@ export async function runGenerationCli(
     const [client, ...peers] = clients as [PolicyWorkerClient, ...PolicyWorkerClient[]];
     if (values.shard !== undefined) {
       // A further game process (it ends with the process that started it, see above). It plays the slice and leaves it for the process that started this one.
-      const entries = await playEntries({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, episodes_dir: episodesDir, belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, ...labelArgs, ...divergence.observer, features_dir: featuresDir }, own);
+      const entries = await playEntries({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, episodes_dir: episodesDir, belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, ...labelArgs, ...divergence.observer, ...seam.options, features_dir: featuresDir }, own);
+      seam.report();
       mkdirSync(need("out"), { recursive: true });
       writeShardFile(join(need("out"), SHARD_FILE), entries);
       await divergence.leave(need("out"), client, makeClient);
@@ -340,11 +363,12 @@ export async function runGenerationCli(
     const others = Promise.all(children.map((child) => child.entries));
     // The stream goes straight to its file in chunks as the examples are made (#998).
     mkdirSync(need("out"), { recursive: true });
-    const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, ...divergence.observer, stream_path: join(need("out"), "stream.jsonl"), episodes_dir: episodesDir, ...labelArgs, ...(labelling ? { labels_path: join(need("out"), "labels.jsonl") } : {}), belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, features_dir: featuresDir, ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()), live_children: () => children.filter((child) => child.alive()).length });
+    const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, ...divergence.observer, stream_path: join(need("out"), "stream.jsonl"), episodes_dir: episodesDir, ...labelArgs, ...(labelling ? { labels_path: join(need("out"), "labels.jsonl") } : {}), belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, ...seam.options, features_dir: featuresDir, ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()), live_children: () => children.filter((child) => child.alive()).length });
     timed("merge", () => writeGeneration(need("out"), result));
     // The labelling counts of this generation (also in generation.json): a generation with no label is told from a broken labeller by them.
     if (result.labels !== undefined) process.stderr.write(`search labels: ${jcs(labelCounts(result.labels.totals) as unknown as Json)}\n`);
     sheetArgs.report();
+    seam.report();
     print(jcs({ generation, run_config_hash: await runConfigHash(config), training_set_hash: result.training_set_hash, examples: result.set.examples }));
     // After the summary line, so a reader of the first line is unchanged: the peak memory of this process, its workers and the further game processes.
     const usage = combineUsage([usageOf(ownPeakRss(), largest(clients.map((worker) => worker.peakRssBytes()))), ...(await Promise.all(children.map((child) => child.usage)))]);

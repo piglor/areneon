@@ -32,7 +32,7 @@ import type { HistoryDeclarer } from "./candidate-history.ts";
 import type { HistoryFactsData, WorldFactsData } from "@areneon/public-state";
 import { type OutcomeConfig, outcomeConfigHash } from "./outcome-config.ts";
 import { OUTCOME_FORMAT } from "./mechanics-outcome.ts";
-import { array, DamageAwareError, type DamageView, damageView, type Foe, foesHit, object, type OwnSlot, ProbeRefusal, type ProbeMemo, type ProbeCounts, ReaderGap, text } from "./damage-aware-view.ts";
+import { array, DamageAwareError, type DamageView, damageView, type Foe, foesHitG, object, type OwnSlot, ProbeRefusal, type ProbeMemo, type ProbeCounts, ReaderGap, text } from "./damage-aware-view.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import type { Candidate } from "./choices.ts";
 import { type VersionManifest, resolveFormat } from "./formats.ts";
@@ -41,6 +41,7 @@ import { type MechanicsContext, type ProbeOutcome, probeMechanics } from "./mech
 import { type ParsedMechanicsQuery } from "./mechanics-query.ts";
 import { MECHANICS_ADAPTER_FORMAT, type MechanicsResult, type PlainReason, plainReason } from "./mechanics-result.ts";
 import type { PlayerChannel } from "./observation.ts";
+import { type BatchRunner, batchOf, driveSync, type Gen, type ProbeRunner, pure } from "./probe-batch.ts";
 import { loadRulesSnapshot } from "./rules-load.ts";
 import type { RulesSnapshot } from "./rules.ts";
 import { sha256Hex } from "./rules.ts";
@@ -278,15 +279,29 @@ export function openRequest(engine: Engine, configs: FeatureConfigs, snapshot: R
   return { view, state: reader.snapshot(), allFlags };
 }
 
+/** The builder's refusal a baseline fall-back signal stands for, or `error` itself. */
+function refusal(error: unknown): unknown {
+  if (error instanceof ReaderGap) return new FeatureBuildError("reader_gap");
+  if (error instanceof AssumedSetError) return new FeatureBuildError("assumed_set");
+  if (error instanceof ProbeRefusal) return new FeatureBuildError("probe_refused");
+  return error;
+}
+
 /** Run `build`, turning the baseline's fall-back signals into the builder's refusals (the caller decides what then). */
 export function refusing<T>(build: () => T): T {
   try {
     return build();
   } catch (error) {
-    if (error instanceof ReaderGap) throw new FeatureBuildError("reader_gap");
-    if (error instanceof AssumedSetError) throw new FeatureBuildError("assumed_set");
-    if (error instanceof ProbeRefusal) throw new FeatureBuildError("probe_refused");
-    throw error;
+    throw refusal(error);
+  }
+}
+
+/** `refusing` for a build that asks the probe (a generator: see `probe-batch.ts`). */
+export function* refusingG<T>(build: () => Gen<T>): Gen<T> {
+  try {
+    return yield* build();
+  } catch (error) {
+    throw refusal(error);
   }
 }
 
@@ -294,31 +309,35 @@ export function refusing<T>(build: () => T): T {
  * The rows of one move request: one damage query per distinct (slot, move position, target position, Mega flag) that some
  * candidate uses with a damaging move into an opposing active, in canonical order. `own` are the request's actives (`view.ownSlots`).
  */
-export function damageRows(view: DamageView, state: PublicState, body: Record<string, unknown>, own: readonly OwnSlot[], foesNow: () => readonly Foe[], candidates: readonly Pick<Candidate, "choice" | "pending">[]): FeatureRow[] {
+export function* damageRowsG(view: DamageView, state: PublicState, body: Record<string, unknown>, own: readonly OwnSlot[], foesNow: () => Gen<readonly Foe[]>, candidates: readonly Pick<Candidate, "choice" | "pending">[]): Gen<FeatureRow[]> {
   const active = array(body.active, "active");
   const rows = new Map<string, FeatureRow>();
   for (const { choice } of candidates) {
     const parts = parseJointChoice(choice);
     if (parts.length !== active.length) throw new DamageAwareError("a choice has a different number of parts than the request has active Pokemon");
-    parts.forEach((part, slot) => {
-      if (part.kind !== "move") return;
+    for (const [slot, part] of parts.entries()) {
+      if (part.kind !== "move") continue;
       const moves = array(object(active[slot], "an active entry").moves, "moves");
       const slotMove = object(moves[part.index - 1], "a move of the request");
       const id = text(slotMove.id, "a move id");
       const data = view.dex.moves.get(id);
-      if (!data.exists || data.category === "Status") return;
+      if (!data.exists || data.category === "Status") continue;
       const type = typeof slotMove.target === "string" ? slotMove.target : undefined;
-      for (const foe of foesHit(type, part.target, foesNow)) {
+      for (const foe of yield* foesHitG(type, part.target, foesNow)) {
         const key = `${slot}/${part.index}/${foe.loc}/${part.mega}`;
         if (rows.has(key)) continue;
         const mine = (own[slot] as OwnSlot).fighter;
-        const values = damageValuesOf(view, () => view.damageResult({ ...mine, mega: mine.mega || part.mega }, foe.fighter, id, state, true));
+        const values = yield* damageValuesOfG(view, () => view.damageResultG({ ...mine, mega: mine.mega || part.mega }, foe.fighter, id, state, true));
         rows.set(key, { slot, move: part.index, target: foe.loc, mega: part.mega, ...values });
       }
-    });
+    }
   }
   return [...rows.values()].sort((a, b) => a.slot - b.slot || a.move - b.move || a.target - b.target || Number(a.mega) - Number(b.mega));
 }
+
+/** `damageRowsG` with the probe called inline. */
+export const damageRows = (view: DamageView, state: PublicState, body: Record<string, unknown>, own: readonly OwnSlot[], foesNow: () => readonly Foe[], candidates: readonly Pick<Candidate, "choice" | "pending">[]): FeatureRow[] =>
+  view.run(damageRowsG(view, state, body, own, () => pure(foesNow()), candidates));
 
 /**
  * The rows of one decision: one damage query per distinct (slot, move position, target position, Mega flag) that
@@ -334,6 +353,35 @@ export function candidateFeatures(
   candidates: readonly Pick<Candidate, "choice" | "pending">[],
   memo: FeatureMemo = createFeatureMemo(),
 ): CandidateFeatures {
+  const inline = inlineProbe(engine, configs);
+  return driveSync(candidateFeaturesG(engine, inline.configs, channel, team, candidates, memo), inline.run);
+}
+
+/**
+ * The probe as a builder driven inline calls it: `configs` with the rules snapshot fixed (the one object every query of the
+ * build uses) and the runner that asks `configs.probe` (default the engine's) for one query's result.
+ */
+export function inlineProbe(engine: Engine, configs: FeatureConfigs): { configs: FeatureConfigs; run: ProbeRunner } {
+  const snapshot = configs.snapshot ?? loadRulesSnapshot(engine.commit);
+  const probe = configs.probe ?? probeMechanics;
+  return { configs: { ...configs, snapshot }, run: (query) => probe({ engine, config: configs.mechanics, snapshot }, query).result };
+}
+
+/** The batched mechanics call of the wave (`probe-batch.ts`) whose implementation is the probe of `configs`. */
+export function batchRunnerOf(engine: Engine, configs: FeatureConfigs): { configs: FeatureConfigs; batch: BatchRunner } {
+  const inline = inlineProbe(engine, configs);
+  return { configs: inline.configs, batch: batchOf(inline.run) };
+}
+
+/** `candidateFeatures` as a generator: its mechanics queries are yielded (see `probe-batch.ts`). */
+export function* candidateFeaturesG(
+  engine: Engine,
+  configs: FeatureConfigs,
+  channel: PlayerChannel,
+  team: readonly Readonly<PokemonSet>[],
+  candidates: readonly Pick<Candidate, "choice" | "pending">[],
+  memo: FeatureMemo = createFeatureMemo(),
+): Gen<CandidateFeatures> {
   const snapshot = configs.snapshot ?? loadRulesSnapshot(engine.commit);
   const identity = featureSetIdentity(engine, { ...configs, snapshot });
   const out = (rows: FeatureRow[]): CandidateFeatures => ({ feature_set: FEATURE_SET, feature_set_hash: featureSetHash(identity), rows });
@@ -342,11 +390,13 @@ export function candidateFeatures(
   // Only a move request has a damaging move to featurise; the others have no active entries to read.
   if (body.teamPreview !== undefined || body.active === undefined) return out([]);
   const { view, state } = openRequest(engine, configs, snapshot, channel, memo);
-  return refusing(() => {
+  return yield* refusingG(function* () {
     const own = view.ownSlots(body, state, team);
     let foes: Foe[] | null = null;
-    const foesNow = (): Foe[] => (foes ??= view.foesOf(state, (mon) => view.assumedFor(mon, state)));
-    return out(damageRows(view, state, body, own, foesNow, candidates));
+    const foesNow = function* (): Gen<Foe[]> {
+      return (foes ??= yield* view.foesOfG(state, (mon) => view.assumedForG(mon, state)));
+    };
+    return out(yield* damageRowsG(view, state, body, own, foesNow, candidates));
   });
 }
 
@@ -376,6 +426,17 @@ export function damageValues(result: MechanicsResult | null, reasonOf: (reason: 
 export function damageValuesOf(view: Pick<DamageView, "noteRefused"> & Partial<Pick<DamageView, "reasonOf">>, ask: () => MechanicsResult | null): DamageValues {
   try {
     return damageValues(ask(), view.reasonOf);
+  } catch (error) {
+    if (!(error instanceof ProbeRefusal)) throw error;
+    view.noteRefused();
+    return { kind: "unsupported", reason: "query_kind" };
+  }
+}
+
+/** `damageValuesOf` for a query asked as a generator. */
+export function* damageValuesOfG(view: Pick<DamageView, "noteRefused"> & Partial<Pick<DamageView, "reasonOf">>, ask: () => Gen<MechanicsResult | null>): Gen<DamageValues> {
+  try {
+    return damageValues(yield* ask(), view.reasonOf);
   } catch (error) {
     if (!(error instanceof ProbeRefusal)) throw error;
     view.noteRefused();

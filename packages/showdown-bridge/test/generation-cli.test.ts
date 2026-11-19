@@ -7,7 +7,7 @@ import { spawn } from "node:child_process";
 import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { exitWhenParentDies, poolLine, vouchTo } from "../src/parent-link.ts";
-import { combinedLoad, combineUsage, featuresDirOf, forwardedFlags, interimPoolSource, MAX_COMBINED_LOAD, optionalFlag, readShardFile, runGenerationCli, runManifestCli, startShard, UsageError, writeShardFile } from "../src/generation-cli.ts";
+import { combinedLoad, combineUsage, featuresDirOf, forwardedFlags, seamArgs, interimPoolSource, MAX_COMBINED_LOAD, optionalFlag, readShardFile, runGenerationCli, runManifestCli, startShard, UsageError, writeShardFile } from "../src/generation-cli.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT } from "../src/golden.ts";
 import { loadEngine, readTrainingRunConfig } from "../src/index.ts";
 import { runConfigHash } from "../src/training-run-config.ts";
@@ -139,6 +139,7 @@ describe("a population run (ADR-021 slice 4)", () => {
     await expect(runGenerationCli(flags(file, perMember))).rejects.toThrow(/is required/);
     await expect(runGenerationCli([...flags(file, perMember), "--member", "m0,x"])).rejects.toThrow(/--member is m<k>/);
     await expect(runGenerationCli([...flags(file, perMember), ...member(0), ...member(1), "--profile"], console.log, undefined, "play.ts")).rejects.toThrow(/--profile does not apply/);
+    await expect(runGenerationCli([...flags(file, perMember), ...member(0), ...member(1), "--batch-seam"], console.log, undefined, "play.ts")).rejects.toThrow(/--batch-seam does not apply to a population run/);
     // Worker and process counts and slices are checked as a single lineage checks them (#1333).
     const both = [...flags(file, perMember), ...member(0), ...member(1)];
     await expect(runGenerationCli([...both, "--policy-workers", "0"], console.log, undefined, "play.ts")).rejects.toThrow(/--policy-workers must be an integer/);
@@ -152,6 +153,30 @@ describe("a population run (ADR-021 slice 4)", () => {
   it("forwards its own flags, one --member per member, to a further game process and none of its internal ones", () => {
     const flagsOf = forwardedFlags({ config: "c.json", member: ["m0,x", "m1,y"], "policy-workers": "2", out: "o", shard: "1/2", "episodes-dir": "e", profile: true, calibrate: true, quiet: false });
     expect(flagsOf).toEqual(["--config", "c.json", "--member", "m0,x", "--member", "m1,y", "--policy-workers", "2"]);
+  });
+
+  it("forwards --batch-seam (operational: every game process plays the seam) and drops it when it is off", () => {
+    expect(forwardedFlags({ config: "c.json", "batch-seam": true })).toEqual(["--config", "c.json", "--batch-seam"]);
+    expect(forwardedFlags({ config: "c.json", "batch-seam": false })).toEqual(["--config", "c.json"]);
+  });
+
+  it("the seam options are present with the flag only, and its report is the sum of the waves, one line", () => {
+    const off = seamArgs(false);
+    expect(off.options).toEqual({});
+    const lines: string[] = [];
+    off.report();
+    const on = seamArgs(true, (line) => void lines.push(line));
+    expect(on.options.batch_seam).toBe(true);
+    on.report();
+    expect(lines).toEqual([]); // no wave yet: nothing to say
+    const wave = { builds: 2, rounds: 1, queries: 3, builds_per_flush: { "2": 1 }, queries_per_round: { "3": 1 }, asks_per_issue: { "2": 1 }, held_forced: 0 };
+    on.options.on_seam_stats?.(wave);
+    on.options.on_seam_stats?.(wave);
+    on.report();
+    expect(lines.length).toBe(1);
+    expect(lines[0]).toMatch(/^batch seam: \{"asks_per_issue":\{"2":2\},"builds":4,"builds_per_flush":\{"2":2\},"held_forced":0,"queries":6,"queries_per_round":\{"3":2\},"rounds":2\}\n$/);
+    // The default writer is stderr.
+    seamArgs(true).report();
   });
 
   it("reaches the population branch with the members it was given, and the pool source", async () => {
