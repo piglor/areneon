@@ -1,0 +1,5349 @@
+{
+  "schema_version": 1,
+  "format_id": "gen9championsvgc2026regmc",
+  "engine_data_hash": "3cb5be9054d0b32b8ac80f0dce4acbeb60cdc0813a614d48466413cbd513afe8",
+  "vocabulary_hash": "5fdd31126208dbb46948ddaca14dfc9c28b70c14b147318fc6ba74e50843cab2",
+  "dims": [
+    {
+      "kind": "count",
+      "symbol": "ACTIVE",
+      "size": 2,
+      "source": "active_per_side"
+    },
+    {
+      "kind": "count",
+      "symbol": "BOOST",
+      "size": 7,
+      "source": "boost_ids"
+    },
+    {
+      "kind": "count",
+      "symbol": "MOVE",
+      "size": 4,
+      "source": "max_move_count"
+    },
+    {
+      "kind": "count",
+      "symbol": "PRNG",
+      "size": 8,
+      "source": "prng_words"
+    },
+    {
+      "kind": "vocabulary",
+      "symbol": "PSEUDO_WEATHER",
+      "lists": [
+        "conditions",
+        "moves"
+      ]
+    },
+    {
+      "kind": "count",
+      "symbol": "ROSTER",
+      "size": 6,
+      "source": "max_team_size"
+    },
+    {
+      "kind": "count",
+      "symbol": "SEAT",
+      "size": 2,
+      "source": "players"
+    },
+    {
+      "kind": "count",
+      "symbol": "SIDE",
+      "size": 2,
+      "source": "players"
+    },
+    {
+      "kind": "vocabulary",
+      "symbol": "SIDE_CONDITION",
+      "lists": [
+        "conditions",
+        "moves"
+      ]
+    },
+    {
+      "kind": "vocabulary",
+      "symbol": "SLOT_CONDITION",
+      "lists": [
+        "conditions",
+        "moves"
+      ]
+    },
+    {
+      "kind": "count",
+      "symbol": "STAT",
+      "size": 5,
+      "source": "stored_stat_ids"
+    },
+    {
+      "kind": "vocabulary",
+      "symbol": "TYPE",
+      "lists": [
+        "types"
+      ]
+    },
+    {
+      "kind": "vocabulary",
+      "symbol": "VOLATILE",
+      "lists": [
+        "abilities",
+        "conditions",
+        "items",
+        "moves"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "id": "active",
+      "shape": [
+        "SIDE",
+        "ACTIVE"
+      ],
+      "description": "Per side and active slot: the Pokemon in play there, its volatiles and the slot's conditions."
+    },
+    {
+      "id": "battle",
+      "shape": [],
+      "description": "Battle-wide engine state."
+    },
+    {
+      "id": "field",
+      "shape": [],
+      "description": "Weather, terrain and field conditions."
+    },
+    {
+      "id": "roster",
+      "shape": [
+        "SIDE",
+        "ROSTER"
+      ],
+      "description": "Per side and roster entry (Team Preview order): the Pokemon's engine state."
+    },
+    {
+      "id": "seat_active",
+      "shape": [
+        "SEAT",
+        "SIDE",
+        "ACTIVE"
+      ],
+      "description": "Per seat, side and active slot: what that seat was shown or derives (not in toJSON)."
+    },
+    {
+      "id": "seat_field",
+      "shape": [
+        "SEAT"
+      ],
+      "description": "Per seat: its own request and what it derives of the field."
+    },
+    {
+      "id": "seat_roster",
+      "shape": [
+        "SEAT",
+        "SIDE",
+        "ROSTER"
+      ],
+      "description": "Per seat, side and roster entry: the reveal masks and the history the seat derives from its own channel."
+    },
+    {
+      "id": "seat_side",
+      "shape": [
+        "SEAT",
+        "SIDE"
+      ],
+      "description": "Per seat and side: what the seat derives of the side's conditions."
+    },
+    {
+      "id": "side",
+      "shape": [
+        "SIDE"
+      ],
+      "description": "Per side: side conditions and faint counters."
+    }
+  ],
+  "fields": [
+    {
+      "id": "active.active_move_actions",
+      "group": "active",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 127
+      },
+      "source": {
+        "kind": "engine",
+        "path": "active.activeMoveActions",
+        "read": "value"
+      },
+      "visibility": "public",
+      "description": "Move actions since the switch-in (the world facts' move_actions)."
+    },
+    {
+      "id": "active.active_turns",
+      "group": "active",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 127
+      },
+      "source": {
+        "kind": "engine",
+        "path": "active.activeTurns",
+        "read": "value"
+      },
+      "visibility": "public",
+      "description": "Turns since the switch-in (the world facts' active_turns)."
+    },
+    {
+      "id": "active.dragged_in",
+      "group": "active",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "active.draggedIn",
+        "read": "bool"
+      },
+      "visibility": "public",
+      "description": "Whether it was dragged in this turn."
+    },
+    {
+      "id": "active.last_move",
+      "group": "active",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "moves"
+        ]
+      },
+      "source": {
+        "kind": "engine",
+        "path": "active.lastMove.move",
+        "read": "id"
+      },
+      "visibility": "public",
+      "description": "Its last move (Encore, Disable)."
+    },
+    {
+      "id": "active.last_move_target",
+      "group": "active",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": -9,
+        "max": 9
+      },
+      "source": {
+        "kind": "engine",
+        "path": "active.lastMoveTargetLoc",
+        "read": "value"
+      },
+      "visibility": "public",
+      "description": "The location its last move aimed at."
+    },
+    {
+      "id": "active.last_move_used",
+      "group": "active",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "moves"
+        ]
+      },
+      "source": {
+        "kind": "engine",
+        "path": "active.lastMoveUsed.move",
+        "read": "id"
+      },
+      "visibility": "public",
+      "description": "Its last move used, called moves included."
+    },
+    {
+      "id": "active.maybe_disabled",
+      "group": "active",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "active.maybeDisabled",
+        "read": "bool"
+      },
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "Whether a move may be disabled by a hidden cause (the own request)."
+    },
+    {
+      "id": "active.maybe_locked",
+      "group": "active",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "active.maybeLocked",
+        "read": "bool"
+      },
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "Whether it may be locked into a move (the own request)."
+    },
+    {
+      "id": "active.maybe_trapped",
+      "group": "active",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "active.maybeTrapped",
+        "read": "bool"
+      },
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "Whether it may be trapped by a hidden cause (the own request)."
+    },
+    {
+      "id": "active.move_this_turn",
+      "group": "active",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "moves"
+        ]
+      },
+      "source": {
+        "kind": "engine",
+        "path": "active.moveThisTurn",
+        "read": "id"
+      },
+      "visibility": "public",
+      "description": "The move it used this turn."
+    },
+    {
+      "id": "active.newly_switched",
+      "group": "active",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "active.newlySwitched",
+        "read": "bool"
+      },
+      "visibility": "public",
+      "description": "Whether it switched in this turn."
+    },
+    {
+      "id": "active.roster_index",
+      "group": "active",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": -1,
+        "max": 63
+      },
+      "source": {
+        "kind": "engine",
+        "path": "side.active[]",
+        "read": "pokemon_ref"
+      },
+      "visibility": "public",
+      "description": "The roster index of the Pokemon in each active slot, -1 empty."
+    },
+    {
+      "id": "active.slot_condition_duration",
+      "group": "active",
+      "extra": [
+        "SLOT_CONDITION"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 64
+      },
+      "source": {
+        "kind": "engine",
+        "path": "side.slotConditions[]{}.duration",
+        "read": "value"
+      },
+      "visibility": "public",
+      "description": "Turns until a slot condition resolves (fixed by the condition, shown when it starts)."
+    },
+    {
+      "id": "active.slot_condition_present",
+      "group": "active",
+      "extra": [
+        "SLOT_CONDITION"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "side.slotConditions[]{}",
+        "read": "present"
+      },
+      "visibility": "public",
+      "description": "Whether each slot condition (Wish, a delayed move) is pending at the slot."
+    },
+    {
+      "id": "active.switch_flag",
+      "group": "active",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "active.switchFlag",
+        "read": "bool"
+      },
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "Whether it must switch out (the own forced-switch request)."
+    },
+    {
+      "id": "active.trapped",
+      "group": "active",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "active.trapped",
+        "read": "bool"
+      },
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "Whether it is trapped (the own request)."
+    },
+    {
+      "id": "active.volatile_counter",
+      "group": "active",
+      "extra": [
+        "VOLATILE"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 127
+      },
+      "source": {
+        "kind": "engine",
+        "path": "active.volatiles{}.counter",
+        "read": "value"
+      },
+      "visibility": "hidden",
+      "description": "A volatile's counter (the stall counter). Never projected (the seat's derived stall counter is its view)."
+    },
+    {
+      "id": "active.volatile_duration",
+      "group": "active",
+      "extra": [
+        "VOLATILE"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 64
+      },
+      "source": {
+        "kind": "engine",
+        "path": "active.volatiles{}.duration",
+        "read": "value"
+      },
+      "visibility": "hidden",
+      "description": "Turns left of a timed volatile; some are engine draws. Never projected (the seat's started turn is its view)."
+    },
+    {
+      "id": "active.volatile_hp",
+      "group": "active",
+      "extra": [
+        "VOLATILE"
+      ],
+      "dtype": "int16",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 9999
+      },
+      "source": {
+        "kind": "engine",
+        "path": "active.volatiles{}.hp",
+        "read": "value"
+      },
+      "visibility": "hidden",
+      "description": "A volatile's hit points (a Substitute). Never projected."
+    },
+    {
+      "id": "active.volatile_layers",
+      "group": "active",
+      "extra": [
+        "VOLATILE"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 8
+      },
+      "source": {
+        "kind": "engine",
+        "path": "active.volatiles{}.layers",
+        "read": "value"
+      },
+      "visibility": "revealed-only",
+      "reveal": "seat_active.volatile_shown",
+      "description": "The layers of a stacking volatile (Stockpile)."
+    },
+    {
+      "id": "active.volatile_present",
+      "group": "active",
+      "extra": [
+        "VOLATILE"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "active.volatiles{}",
+        "read": "present"
+      },
+      "visibility": "revealed-only",
+      "reveal": "seat_active.volatile_shown",
+      "description": "Whether each volatile is up (locks, choice lock, stall and every other engine condition)."
+    },
+    {
+      "id": "battle.ended",
+      "group": "battle",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "battle.ended",
+        "read": "bool"
+      },
+      "visibility": "public",
+      "description": "Whether the battle has ended."
+    },
+    {
+      "id": "battle.last_move",
+      "group": "battle",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "moves"
+        ]
+      },
+      "source": {
+        "kind": "engine",
+        "path": "battle.lastMove.move",
+        "read": "id"
+      },
+      "visibility": "public",
+      "description": "The last move used by anyone (Copycat's reference; the history facts' field_last_move)."
+    },
+    {
+      "id": "battle.prng",
+      "group": "battle",
+      "extra": [
+        "PRNG"
+      ],
+      "dtype": "int32",
+      "value": {
+        "kind": "range",
+        "min": -2147483648,
+        "max": 2147483647
+      },
+      "source": {
+        "kind": "engine",
+        "path": "battle.prng",
+        "read": "opaque"
+      },
+      "visibility": "hidden",
+      "description": "The engine's random-number state as opaque 32-bit words. Never projected."
+    },
+    {
+      "id": "battle.quick_claw_roll",
+      "group": "battle",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "battle.quickClawRoll",
+        "read": "bool"
+      },
+      "visibility": "hidden",
+      "description": "The engine's Quick Claw roll of the turn. Never projected."
+    },
+    {
+      "id": "battle.started",
+      "group": "battle",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "battle.started",
+        "read": "bool"
+      },
+      "visibility": "public",
+      "description": "Whether the battle has started (after Team Preview)."
+    },
+    {
+      "id": "battle.turn",
+      "group": "battle",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 9999
+      },
+      "source": {
+        "kind": "engine",
+        "path": "battle.turn",
+        "read": "value"
+      },
+      "visibility": "public",
+      "description": "The turn counter.",
+      "projection": "none"
+    },
+    {
+      "id": "field.pseudo_duration",
+      "group": "field",
+      "extra": [
+        "PSEUDO_WEATHER"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 64
+      },
+      "source": {
+        "kind": "engine",
+        "path": "field.pseudoWeather{}.duration",
+        "read": "value"
+      },
+      "visibility": "hidden",
+      "description": "Turns left of a field condition. Never projected."
+    },
+    {
+      "id": "field.pseudo_present",
+      "group": "field",
+      "extra": [
+        "PSEUDO_WEATHER"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "field.pseudoWeather{}",
+        "read": "present"
+      },
+      "visibility": "public",
+      "description": "Whether each field condition (Trick Room, Gravity) is up."
+    },
+    {
+      "id": "field.terrain",
+      "group": "field",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "terrains"
+        ]
+      },
+      "source": {
+        "kind": "engine",
+        "path": "field.terrain",
+        "read": "id"
+      },
+      "visibility": "public",
+      "description": "The terrain."
+    },
+    {
+      "id": "field.terrain_duration",
+      "group": "field",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 64
+      },
+      "source": {
+        "kind": "engine",
+        "path": "field.terrainState.duration",
+        "read": "value"
+      },
+      "visibility": "hidden",
+      "description": "Turns left of the terrain. Never projected."
+    },
+    {
+      "id": "field.weather",
+      "group": "field",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "weathers"
+        ]
+      },
+      "source": {
+        "kind": "engine",
+        "path": "field.weather",
+        "read": "id"
+      },
+      "visibility": "public",
+      "description": "The weather."
+    },
+    {
+      "id": "field.weather_duration",
+      "group": "field",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 64
+      },
+      "source": {
+        "kind": "engine",
+        "path": "field.weatherState.duration",
+        "read": "value"
+      },
+      "visibility": "hidden",
+      "description": "Turns left of the weather; it depends on the source's item. Never projected."
+    },
+    {
+      "id": "roster.ability",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "abilities"
+        ]
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.ability",
+        "read": "id"
+      },
+      "visibility": "revealed-only",
+      "reveal": "seat_roster.ability_shown",
+      "description": "The current ability (after a Mega Evolution, the forme's)."
+    },
+    {
+      "id": "roster.added_type",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "types"
+        ]
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.addedType",
+        "read": "id"
+      },
+      "visibility": "public",
+      "description": "A type added by a move (Forest's Curse, Trick-or-Treat)."
+    },
+    {
+      "id": "roster.ate_berry",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.ateBerry",
+        "read": "bool"
+      },
+      "visibility": "public",
+      "description": "Whether the Pokemon ate a berry."
+    },
+    {
+      "id": "roster.attacked_by",
+      "group": "roster",
+      "extra": [
+        "SIDE",
+        "ACTIVE"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.attackedBy",
+        "read": "pokemon_ref"
+      },
+      "visibility": "public",
+      "description": "Whether the Pokemon in each side and active slot hit it this turn."
+    },
+    {
+      "id": "roster.base_ability",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "abilities"
+        ]
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.baseAbility",
+        "read": "id"
+      },
+      "visibility": "revealed-only",
+      "reveal": "seat_roster.ability_shown",
+      "description": "The set's ability (before an Evolution or a change)."
+    },
+    {
+      "id": "roster.base_move",
+      "group": "roster",
+      "extra": [
+        "MOVE"
+      ],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "moves"
+        ]
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.baseMoveSlots[].id",
+        "read": "id"
+      },
+      "visibility": "revealed-only",
+      "reveal": "seat_roster.move_shown",
+      "description": "The set's move in each slot while Transform replaces the slots."
+    },
+    {
+      "id": "roster.base_species",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "species"
+        ]
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.baseSpecies",
+        "read": "id"
+      },
+      "visibility": "public",
+      "description": "The species shown at Team Preview (the set's species)."
+    },
+    {
+      "id": "roster.boosts",
+      "group": "roster",
+      "extra": [
+        "BOOST"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": -6,
+        "max": 6
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.boosts",
+        "read": "value"
+      },
+      "visibility": "public",
+      "description": "The stat stages (the shown boost lines)."
+    },
+    {
+      "id": "roster.can_mega_evo",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.canMegaEvo",
+        "read": "bool"
+      },
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "Whether it can still Mega Evolve (the own request's canMegaEvo)."
+    },
+    {
+      "id": "roster.fainted",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.fainted",
+        "read": "bool"
+      },
+      "visibility": "public",
+      "description": "Whether it has fainted."
+    },
+    {
+      "id": "roster.gender",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 3
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.gender",
+        "read": "value"
+      },
+      "visibility": "public",
+      "description": "Gender: 0 none, 1 M, 2 F, 3 N."
+    },
+    {
+      "id": "roster.hp",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 9999
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.hp",
+        "read": "value"
+      },
+      "visibility": "own-exact",
+      "projection": "hp_percent",
+      "description": "Current hit points; another seat sees the display rule's percentage."
+    },
+    {
+      "id": "roster.hurt_this_turn",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.hurtThisTurn",
+        "read": "bool"
+      },
+      "visibility": "public",
+      "description": "Whether it was hurt this turn."
+    },
+    {
+      "id": "roster.illusion",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 64
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.illusion",
+        "read": "pokemon_ref"
+      },
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "The Pokemon its Illusion shows: 0 none, else 1 + that roster index."
+    },
+    {
+      "id": "roster.is_active",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.isActive",
+        "read": "bool"
+      },
+      "visibility": "public",
+      "description": "Whether it is in play."
+    },
+    {
+      "id": "roster.item",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "items"
+        ]
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.item",
+        "read": "id"
+      },
+      "visibility": "revealed-only",
+      "reveal": "seat_roster.item_shown",
+      "description": "The held item (a Mega Stone holder's stone is its item)."
+    },
+    {
+      "id": "roster.item_knocked_off",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.itemKnockedOff",
+        "read": "bool"
+      },
+      "visibility": "public",
+      "description": "Whether the item was knocked off."
+    },
+    {
+      "id": "roster.last_item",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "items"
+        ]
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.lastItem",
+        "read": "id"
+      },
+      "visibility": "public",
+      "description": "The item last used up (shown by the line that uses it)."
+    },
+    {
+      "id": "roster.level",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 1,
+        "max": 100
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.details",
+        "read": "details_level"
+      },
+      "visibility": "public",
+      "description": "The level shown in the details (the rule table's adjusted level)."
+    },
+    {
+      "id": "roster.max_hp",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "range",
+        "min": 1,
+        "max": 9999
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.maxhp",
+        "read": "value"
+      },
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "Maximum hit points (level 50 and Stat Points enter here)."
+    },
+    {
+      "id": "roster.mega",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.species",
+        "read": "species_mega"
+      },
+      "visibility": "public",
+      "description": "Whether the current forme is a Mega Evolution (the engine data's isMega of the forme)."
+    },
+    {
+      "id": "roster.move",
+      "group": "roster",
+      "extra": [
+        "MOVE"
+      ],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "moves"
+        ]
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.moveSlots[].id",
+        "read": "id"
+      },
+      "visibility": "revealed-only",
+      "reveal": "seat_roster.move_shown",
+      "description": "The move in each slot."
+    },
+    {
+      "id": "roster.move_disabled",
+      "group": "roster",
+      "extra": [
+        "MOVE"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.moveSlots[].disabled",
+        "read": "bool"
+      },
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "Whether each slot is disabled (the own request shows it)."
+    },
+    {
+      "id": "roster.move_last_turn_result",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 2
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.moveLastTurnResult",
+        "read": "value"
+      },
+      "visibility": "public",
+      "description": "Last turn's move result: 0 none, 1 failed, 2 succeeded."
+    },
+    {
+      "id": "roster.move_max_pp",
+      "group": "roster",
+      "extra": [
+        "MOVE"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 64
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.moveSlots[].maxpp",
+        "read": "value"
+      },
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "Maximum PP of each slot."
+    },
+    {
+      "id": "roster.move_pp",
+      "group": "roster",
+      "extra": [
+        "MOVE"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 64
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.moveSlots[].pp",
+        "read": "value"
+      },
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "PP left in each slot."
+    },
+    {
+      "id": "roster.move_this_turn_result",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 2
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.moveThisTurnResult",
+        "read": "value"
+      },
+      "visibility": "public",
+      "description": "This turn's move result: 0 none, 1 failed, 2 succeeded."
+    },
+    {
+      "id": "roster.move_used",
+      "group": "roster",
+      "extra": [
+        "MOVE"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.moveSlots[].used",
+        "read": "bool"
+      },
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "Whether each slot was used since the switch-in."
+    },
+    {
+      "id": "roster.position",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 63
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.position",
+        "read": "value"
+      },
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "The Pokemon's index in the side's current order (the bench order)."
+    },
+    {
+      "id": "roster.previously_switched_in",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 127
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.previouslySwitchedIn",
+        "read": "value"
+      },
+      "visibility": "public",
+      "description": "How often it switched in."
+    },
+    {
+      "id": "roster.shiny",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.details",
+        "read": "details_shiny"
+      },
+      "visibility": "public",
+      "description": "Whether the details say shiny."
+    },
+    {
+      "id": "roster.species",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "species"
+        ]
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.species",
+        "read": "id"
+      },
+      "visibility": "revealed-only",
+      "reveal": "seat_roster.species_shown",
+      "description": "The current species forme (a Mega forme after the Evolution); a disguise hides it until it is shown."
+    },
+    {
+      "id": "roster.stats",
+      "group": "roster",
+      "extra": [
+        "STAT"
+      ],
+      "dtype": "int16",
+      "value": {
+        "kind": "range",
+        "min": 1,
+        "max": 9999
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.storedStats",
+        "read": "value"
+      },
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "The five stored stats other than HP (nature, level and Stat Points enter here)."
+    },
+    {
+      "id": "roster.stats_lowered_this_turn",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.statsLoweredThisTurn",
+        "read": "bool"
+      },
+      "visibility": "public",
+      "description": "Whether a stat fell this turn."
+    },
+    {
+      "id": "roster.stats_raised_this_turn",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.statsRaisedThisTurn",
+        "read": "bool"
+      },
+      "visibility": "public",
+      "description": "Whether a stat rose this turn."
+    },
+    {
+      "id": "roster.status",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "statuses"
+        ]
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.status",
+        "read": "id"
+      },
+      "visibility": "public",
+      "description": "The major status (the engine marks a fainted Pokemon fnt, which is roster.fainted and reads as none here)."
+    },
+    {
+      "id": "roster.status_counter",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 64
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.statusState.time",
+        "read": "value"
+      },
+      "visibility": "hidden",
+      "description": "The sleep counter, an engine draw. Never projected."
+    },
+    {
+      "id": "roster.status_stage",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 64
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.statusState.stage",
+        "read": "value"
+      },
+      "visibility": "public",
+      "description": "The bad-poison stage (the world facts count its ticks)."
+    },
+    {
+      "id": "roster.status_start",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 64
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.statusState.startTime",
+        "read": "value"
+      },
+      "visibility": "hidden",
+      "description": "The sleep length the engine drew. Never projected."
+    },
+    {
+      "id": "roster.times_attacked",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 127
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.timesAttacked",
+        "read": "value"
+      },
+      "visibility": "public",
+      "description": "Hits taken (Rage Fist)."
+    },
+    {
+      "id": "roster.transformed",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.transformed",
+        "read": "bool"
+      },
+      "visibility": "public",
+      "description": "Whether it is transformed."
+    },
+    {
+      "id": "roster.truant_turn",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.truantTurn",
+        "read": "bool"
+      },
+      "visibility": "public",
+      "description": "Truant's loafing turn."
+    },
+    {
+      "id": "roster.types",
+      "group": "roster",
+      "extra": [
+        "TYPE"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.types",
+        "read": "multi_hot"
+      },
+      "visibility": "public",
+      "description": "Its current types, one flag per type of the vocabulary (the engine's typeless marker ??? sets none)."
+    },
+    {
+      "id": "roster.used_item_this_turn",
+      "group": "roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "pokemon.usedItemThisTurn",
+        "read": "bool"
+      },
+      "visibility": "public",
+      "description": "Whether it used its item this turn."
+    },
+    {
+      "id": "seat_active.slot_pending_remaining",
+      "group": "seat_active",
+      "extra": [
+        "SLOT_CONDITION"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 64
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer_history",
+        "name": "pending_slot.remaining"
+      },
+      "visibility": "public",
+      "description": "Turns until each pending slot condition resolves, as the seat counts them."
+    },
+    {
+      "id": "seat_active.stall_counter",
+      "group": "seat_active",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 9999
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer_history",
+        "name": "active.stall_counter"
+      },
+      "visibility": "public",
+      "description": "The stall counter the seat derives from the shown stalling uses (0 none)."
+    },
+    {
+      "id": "seat_active.volatile_derived",
+      "group": "seat_active",
+      "extra": [
+        "VOLATILE"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 16
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer",
+        "name": "derived"
+      },
+      "visibility": "public",
+      "description": "The derived suffix the seat was shown (stockpile2, perish3; a stat for Protosynthesis), as a number or a stat index."
+    },
+    {
+      "id": "seat_active.volatile_shown",
+      "group": "seat_active",
+      "extra": [
+        "VOLATILE"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "volatiles"
+      },
+      "visibility": "public",
+      "description": "Mask: the seat was shown each volatile (a line started it and none ended it)."
+    },
+    {
+      "id": "seat_active.volatile_started",
+      "group": "seat_active",
+      "extra": [
+        "VOLATILE"
+      ],
+      "dtype": "int16",
+      "value": {
+        "kind": "range",
+        "min": -1,
+        "max": 9999
+      },
+      "source": {
+        "kind": "derived",
+        "from": "world_facts",
+        "name": "volatiles.started_turn"
+      },
+      "visibility": "public",
+      "description": "The turn each volatile began as the seat saw it, -1 none."
+    },
+    {
+      "id": "seat_field.history_available",
+      "group": "seat_field",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer_history",
+        "name": "refused"
+      },
+      "visibility": "public",
+      "description": "Whether the seat's history facts are available (no tracker refused a line)."
+    },
+    {
+      "id": "seat_field.pseudo_elapsed",
+      "group": "seat_field",
+      "extra": [
+        "PSEUDO_WEATHER"
+      ],
+      "dtype": "int16",
+      "value": {
+        "kind": "range",
+        "min": -1,
+        "max": 9999
+      },
+      "source": {
+        "kind": "derived",
+        "from": "world_facts",
+        "name": "field_conditions.started_turn"
+      },
+      "visibility": "public",
+      "description": "Turns since each field condition began, -1 none."
+    },
+    {
+      "id": "seat_field.request_kind",
+      "group": "seat_field",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 3
+      },
+      "source": {
+        "kind": "derived",
+        "from": "engine_request",
+        "name": "kind"
+      },
+      "visibility": "public",
+      "description": "The seat's own request: 0 none, 1 preview, 2 move, 3 forced switch."
+    },
+    {
+      "id": "seat_field.terrain_elapsed",
+      "group": "seat_field",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "range",
+        "min": -1,
+        "max": 9999
+      },
+      "source": {
+        "kind": "derived",
+        "from": "world_facts",
+        "name": "terrain.started_turn"
+      },
+      "visibility": "public",
+      "description": "Turns since the terrain began, -1 none."
+    },
+    {
+      "id": "seat_field.weather_elapsed",
+      "group": "seat_field",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "range",
+        "min": -1,
+        "max": 9999
+      },
+      "source": {
+        "kind": "derived",
+        "from": "world_facts",
+        "name": "weather.started_turn"
+      },
+      "visibility": "public",
+      "description": "Turns since the weather began, -1 none (the reducer's elapsed.weather)."
+    },
+    {
+      "id": "seat_roster.ability_shown",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "ability"
+      },
+      "visibility": "public",
+      "description": "Mask: the seat knows the ability."
+    },
+    {
+      "id": "seat_roster.brought",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 2
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer",
+        "name": "brought"
+      },
+      "visibility": "public",
+      "description": "What the seat knows of whether it was brought: 0 unknown, 1 not brought, 2 brought."
+    },
+    {
+      "id": "seat_roster.history_roster_state",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 2
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer_history",
+        "name": "roster.ate_berry"
+      },
+      "visibility": "public",
+      "description": "Whether the seat can settle the Pokemon's own facts: 0 no entry, 1 unknown, 2 known."
+    },
+    {
+      "id": "seat_roster.history_state",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 2
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer_history",
+        "name": "active.unknown"
+      },
+      "visibility": "public",
+      "description": "Whether the seat can settle the facts of the Pokemon's position: 0 not in play, 1 unknown, 2 known."
+    },
+    {
+      "id": "seat_roster.hp_shown",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "range",
+        "min": -1,
+        "max": 9999
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "hp_num"
+      },
+      "visibility": "public",
+      "description": "The hit points the seat was last shown, -1 never: exact for its own Pokemon, the display percentage for another's. A benched Pokemon's value is the last display (a silent change, such as a switch-out heal, is not shown)."
+    },
+    {
+      "id": "seat_roster.item_shown",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "item"
+      },
+      "visibility": "public",
+      "description": "Mask: the seat knows the held item (an own Pokemon: its request; another: a line showed it)."
+    },
+    {
+      "id": "seat_roster.move_shown",
+      "group": "seat_roster",
+      "extra": [
+        "MOVE"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "moves_revealed"
+      },
+      "visibility": "public",
+      "description": "Mask: the seat knows the move in each slot."
+    },
+    {
+      "id": "seat_roster.name_shown",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "name"
+      },
+      "visibility": "public",
+      "description": "Mask: the seat was shown the nickname."
+    },
+    {
+      "id": "seat_roster.phantom",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer",
+        "name": "phantom"
+      },
+      "visibility": "public",
+      "description": "An extra entry the seat's channel forced (Illusion)."
+    },
+    {
+      "id": "seat_roster.recent_hp_dealt_last_turn",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 9999
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer",
+        "name": "recent.hp_dealt_last_turn"
+      },
+      "visibility": "public",
+      "description": "Damage dealt last turn in the target's units as the seat sees them."
+    },
+    {
+      "id": "seat_roster.recent_hp_dealt_this_turn",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 9999
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer",
+        "name": "recent.hp_dealt_this_turn"
+      },
+      "visibility": "public",
+      "description": "Damage dealt this turn in the target's units as the seat sees them."
+    },
+    {
+      "id": "seat_roster.recent_hp_taken_last_turn",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 9999
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer",
+        "name": "recent.hp_taken_last_turn"
+      },
+      "visibility": "public",
+      "description": "Damage taken last turn in the units the seat sees."
+    },
+    {
+      "id": "seat_roster.recent_hp_taken_this_turn",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 9999
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer",
+        "name": "recent.hp_taken_this_turn"
+      },
+      "visibility": "public",
+      "description": "Damage taken this turn in the units the seat sees."
+    },
+    {
+      "id": "seat_roster.recent_last_action_order",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 16
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer",
+        "name": "recent.last_action_order"
+      },
+      "visibility": "public",
+      "description": "Its place among that turn's actions."
+    },
+    {
+      "id": "seat_roster.recent_last_action_turn",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "range",
+        "min": -1,
+        "max": 9999
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer",
+        "name": "recent.last_action_turn"
+      },
+      "visibility": "public",
+      "description": "The turn of its latest action, -1 none."
+    },
+    {
+      "id": "seat_roster.recent_last_move",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "moves"
+        ]
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer",
+        "name": "recent.last_move"
+      },
+      "visibility": "public",
+      "description": "The last move the seat saw it choose."
+    },
+    {
+      "id": "seat_roster.recent_last_move_turn",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "range",
+        "min": -1,
+        "max": 9999
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer",
+        "name": "recent.last_move_turn"
+      },
+      "visibility": "public",
+      "description": "The turn of that move, -1 none."
+    },
+    {
+      "id": "seat_roster.recent_last_target",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 6
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer",
+        "name": "recent.last_target"
+      },
+      "visibility": "public",
+      "description": "Its last target as shown: 0 none, else 1 + side * 3 + slot letter."
+    },
+    {
+      "id": "seat_roster.recent_protect_streak",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 64
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer",
+        "name": "recent.protect_streak"
+      },
+      "visibility": "public",
+      "description": "Consecutive turns of successful stalling uses."
+    },
+    {
+      "id": "seat_roster.shown_species",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "species"
+        ]
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "species"
+      },
+      "visibility": "public",
+      "description": "The species forme the seat was shown at this roster entry (a disguise until it breaks)."
+    },
+    {
+      "id": "seat_roster.species_shown",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "species"
+      },
+      "visibility": "public",
+      "description": "Mask: the seat was shown the Pokemon's real species forme (not a disguise)."
+    },
+    {
+      "id": "seat_roster.temp_species",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "species"
+        ]
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer",
+        "name": "temp_species"
+      },
+      "visibility": "public",
+      "description": "A temporary forme the seat was shown."
+    },
+    {
+      "id": "seat_roster.types_changed",
+      "group": "seat_roster",
+      "extra": [
+        "TYPE"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer",
+        "name": "types"
+      },
+      "visibility": "public",
+      "description": "The types a typechange line showed, one flag per type."
+    },
+    {
+      "id": "seat_side.condition_elapsed",
+      "group": "seat_side",
+      "extra": [
+        "SIDE_CONDITION"
+      ],
+      "dtype": "int16",
+      "value": {
+        "kind": "range",
+        "min": -1,
+        "max": 9999
+      },
+      "source": {
+        "kind": "derived",
+        "from": "world_facts",
+        "name": "conditions.started_turn"
+      },
+      "visibility": "public",
+      "description": "Turns since each side condition began, -1 none."
+    },
+    {
+      "id": "side.condition_duration",
+      "group": "side",
+      "extra": [
+        "SIDE_CONDITION"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 64
+      },
+      "source": {
+        "kind": "engine",
+        "path": "side.sideConditions{}.duration",
+        "read": "value"
+      },
+      "visibility": "hidden",
+      "description": "Turns left of a timed side condition; it can depend on the source's item, so no seat is shown it (the seat's elapsed turns are its view)."
+    },
+    {
+      "id": "side.condition_layers",
+      "group": "side",
+      "extra": [
+        "SIDE_CONDITION"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 8
+      },
+      "source": {
+        "kind": "engine",
+        "path": "side.sideConditions{}.layers",
+        "read": "value"
+      },
+      "visibility": "public",
+      "description": "The layers of a stacking side condition (0 for one that does not stack)."
+    },
+    {
+      "id": "side.condition_present",
+      "group": "side",
+      "extra": [
+        "SIDE_CONDITION"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "engine",
+        "path": "side.sideConditions{}",
+        "read": "present"
+      },
+      "visibility": "public",
+      "description": "Whether each side condition is up."
+    },
+    {
+      "id": "side.fainted_last_turn",
+      "group": "side",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 64
+      },
+      "source": {
+        "kind": "engine",
+        "path": "side.faintedLastTurn",
+        "read": "pokemon_ref"
+      },
+      "visibility": "public",
+      "description": "The Pokemon that fainted last turn: 0 none, else 1 + its roster index."
+    },
+    {
+      "id": "side.fainted_this_turn",
+      "group": "side",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 64
+      },
+      "source": {
+        "kind": "engine",
+        "path": "side.faintedThisTurn",
+        "read": "pokemon_ref"
+      },
+      "visibility": "public",
+      "description": "The Pokemon that fainted this turn: 0 none, else 1 + its roster index."
+    },
+    {
+      "id": "side.pokemon_left",
+      "group": "side",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 64
+      },
+      "source": {
+        "kind": "engine",
+        "path": "side.pokemonLeft",
+        "read": "value"
+      },
+      "visibility": "public",
+      "description": "Pokemon of the side not fainted."
+    },
+    {
+      "id": "side.team_size",
+      "group": "side",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 64
+      },
+      "source": {
+        "kind": "engine",
+        "path": "side.pokemon",
+        "read": "length"
+      },
+      "visibility": "public",
+      "description": "Pokemon the side brought (after Team Preview) or showed (at it)."
+    },
+    {
+      "id": "side.total_fainted",
+      "group": "side",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 64
+      },
+      "source": {
+        "kind": "engine",
+        "path": "side.totalFainted",
+        "read": "value"
+      },
+      "visibility": "public",
+      "description": "Pokemon of the side that have fainted."
+    }
+  ],
+  "omitted": [
+    {
+      "level": "battle",
+      "key": "activeMove",
+      "reason": "internal"
+    },
+    {
+      "level": "battle",
+      "key": "activePerHalf",
+      "reason": "derived"
+    },
+    {
+      "level": "battle",
+      "key": "activePokemon",
+      "reason": "internal"
+    },
+    {
+      "level": "battle",
+      "key": "activeTarget",
+      "reason": "internal"
+    },
+    {
+      "level": "battle",
+      "key": "debugMode",
+      "reason": "cosmetic"
+    },
+    {
+      "level": "battle",
+      "key": "effect",
+      "reason": "internal"
+    },
+    {
+      "level": "battle",
+      "key": "effectOrder",
+      "reason": "internal"
+    },
+    {
+      "level": "battle",
+      "key": "effectState",
+      "reason": "internal"
+    },
+    {
+      "level": "battle",
+      "key": "event",
+      "reason": "internal"
+    },
+    {
+      "level": "battle",
+      "key": "eventDepth",
+      "reason": "internal"
+    },
+    {
+      "level": "battle",
+      "key": "events",
+      "reason": "internal"
+    },
+    {
+      "level": "battle",
+      "key": "faintQueue",
+      "reason": "internal"
+    },
+    {
+      "level": "battle",
+      "key": "field",
+      "reason": "reference"
+    },
+    {
+      "level": "battle",
+      "key": "forceRandomChance",
+      "reason": "internal"
+    },
+    {
+      "level": "battle",
+      "key": "formatData",
+      "reason": "reference"
+    },
+    {
+      "level": "battle",
+      "key": "formatid",
+      "reason": "reference"
+    },
+    {
+      "level": "battle",
+      "key": "gameType",
+      "reason": "derived"
+    },
+    {
+      "level": "battle",
+      "key": "hints",
+      "reason": "cosmetic"
+    },
+    {
+      "level": "battle",
+      "key": "inputLog",
+      "reason": "cosmetic"
+    },
+    {
+      "level": "battle",
+      "key": "lastDamage",
+      "reason": "derived"
+    },
+    {
+      "level": "battle",
+      "key": "lastMoveLine",
+      "reason": "cosmetic"
+    },
+    {
+      "level": "battle",
+      "key": "lastSuccessfulMoveThisTurn",
+      "reason": "derived"
+    },
+    {
+      "level": "battle",
+      "key": "log",
+      "reason": "cosmetic"
+    },
+    {
+      "level": "battle",
+      "key": "messageLog",
+      "reason": "cosmetic"
+    },
+    {
+      "level": "battle",
+      "key": "midTurn",
+      "reason": "internal"
+    },
+    {
+      "level": "battle",
+      "key": "prngSeed",
+      "reason": "hidden_input"
+    },
+    {
+      "level": "battle",
+      "key": "queue",
+      "reason": "internal"
+    },
+    {
+      "level": "battle",
+      "key": "rated",
+      "reason": "cosmetic"
+    },
+    {
+      "level": "battle",
+      "key": "reportExactHP",
+      "reason": "cosmetic"
+    },
+    {
+      "level": "battle",
+      "key": "reportPercentages",
+      "reason": "cosmetic"
+    },
+    {
+      "level": "battle",
+      "key": "requestState",
+      "reason": "derived"
+    },
+    {
+      "level": "battle",
+      "key": "sentEnd",
+      "reason": "cosmetic"
+    },
+    {
+      "level": "battle",
+      "key": "sentLogPos",
+      "reason": "cosmetic"
+    },
+    {
+      "level": "battle",
+      "key": "sentRequests",
+      "reason": "cosmetic"
+    },
+    {
+      "level": "battle",
+      "key": "sides",
+      "reason": "reference"
+    },
+    {
+      "level": "battle",
+      "key": "speedOrder",
+      "reason": "internal"
+    },
+    {
+      "level": "battle",
+      "key": "strictChoices",
+      "reason": "cosmetic"
+    },
+    {
+      "level": "battle",
+      "key": "supportCancel",
+      "reason": "cosmetic"
+    },
+    {
+      "level": "effect",
+      "key": "boundDivisor",
+      "reason": "hidden_input"
+    },
+    {
+      "level": "effect",
+      "key": "busted",
+      "reason": "internal"
+    },
+    {
+      "level": "effect",
+      "key": "checkedBerserk",
+      "reason": "internal"
+    },
+    {
+      "level": "effect",
+      "key": "damage",
+      "reason": "internal"
+    },
+    {
+      "level": "effect",
+      "key": "def",
+      "reason": "internal"
+    },
+    {
+      "level": "effect",
+      "key": "effectOrder",
+      "reason": "internal"
+    },
+    {
+      "level": "effect",
+      "key": "ending",
+      "reason": "internal"
+    },
+    {
+      "level": "effect",
+      "key": "endingTurn",
+      "reason": "internal"
+    },
+    {
+      "level": "effect",
+      "key": "fallen",
+      "reason": "internal"
+    },
+    {
+      "level": "effect",
+      "key": "gluttony",
+      "reason": "internal"
+    },
+    {
+      "level": "effect",
+      "key": "id",
+      "reason": "reference"
+    },
+    {
+      "level": "effect",
+      "key": "isSlotCondition",
+      "reason": "internal"
+    },
+    {
+      "level": "effect",
+      "key": "lastMove",
+      "reason": "derived"
+    },
+    {
+      "level": "effect",
+      "key": "libero",
+      "reason": "internal"
+    },
+    {
+      "level": "effect",
+      "key": "linkedPokemon",
+      "reason": "reference"
+    },
+    {
+      "level": "effect",
+      "key": "linkedStatus",
+      "reason": "reference"
+    },
+    {
+      "level": "effect",
+      "key": "move",
+      "reason": "reference"
+    },
+    {
+      "level": "effect",
+      "key": "moveData",
+      "reason": "internal"
+    },
+    {
+      "level": "effect",
+      "key": "multiplier",
+      "reason": "internal"
+    },
+    {
+      "level": "effect",
+      "key": "name",
+      "reason": "cosmetic"
+    },
+    {
+      "level": "effect",
+      "key": "numConsecutive",
+      "reason": "internal"
+    },
+    {
+      "level": "effect",
+      "key": "protean",
+      "reason": "internal"
+    },
+    {
+      "level": "effect",
+      "key": "slot",
+      "reason": "reference"
+    },
+    {
+      "level": "effect",
+      "key": "source",
+      "reason": "reference"
+    },
+    {
+      "level": "effect",
+      "key": "sourceEffect",
+      "reason": "reference"
+    },
+    {
+      "level": "effect",
+      "key": "sourceSlot",
+      "reason": "reference"
+    },
+    {
+      "level": "effect",
+      "key": "spd",
+      "reason": "internal"
+    },
+    {
+      "level": "effect",
+      "key": "startingTurn",
+      "reason": "internal"
+    },
+    {
+      "level": "effect",
+      "key": "target",
+      "reason": "reference"
+    },
+    {
+      "level": "effect",
+      "key": "targetLoc",
+      "reason": "reference"
+    },
+    {
+      "level": "effect",
+      "key": "targetSlot",
+      "reason": "reference"
+    },
+    {
+      "level": "effect",
+      "key": "trueDuration",
+      "reason": "hidden_input"
+    },
+    {
+      "level": "effect",
+      "key": "unnerved",
+      "reason": "internal"
+    },
+    {
+      "level": "move_slot",
+      "key": "disabledSource",
+      "reason": "derived"
+    },
+    {
+      "level": "move_slot",
+      "key": "move",
+      "reason": "cosmetic"
+    },
+    {
+      "level": "move_slot",
+      "key": "target",
+      "reason": "derived"
+    },
+    {
+      "level": "move_slot",
+      "key": "virtual",
+      "reason": "internal"
+    },
+    {
+      "level": "pokemon",
+      "key": "abilityState",
+      "reason": "internal"
+    },
+    {
+      "level": "pokemon",
+      "key": "apparentType",
+      "reason": "derived"
+    },
+    {
+      "level": "pokemon",
+      "key": "baseHpPower",
+      "reason": "not_in_format"
+    },
+    {
+      "level": "pokemon",
+      "key": "baseHpType",
+      "reason": "not_in_format"
+    },
+    {
+      "level": "pokemon",
+      "key": "baseMaxhp",
+      "reason": "derived"
+    },
+    {
+      "level": "pokemon",
+      "key": "baseStoredStats",
+      "reason": "derived"
+    },
+    {
+      "level": "pokemon",
+      "key": "baseTypes",
+      "reason": "derived"
+    },
+    {
+      "level": "pokemon",
+      "key": "beingCalledBack",
+      "reason": "internal"
+    },
+    {
+      "level": "pokemon",
+      "key": "bondTriggered",
+      "reason": "not_in_format"
+    },
+    {
+      "level": "pokemon",
+      "key": "canGigantamax",
+      "reason": "not_in_format"
+    },
+    {
+      "level": "pokemon",
+      "key": "canTerastallize",
+      "reason": "not_in_format"
+    },
+    {
+      "level": "pokemon",
+      "key": "canUltraBurst",
+      "reason": "not_in_format"
+    },
+    {
+      "level": "pokemon",
+      "key": "duringMove",
+      "reason": "internal"
+    },
+    {
+      "level": "pokemon",
+      "key": "dynamaxLevel",
+      "reason": "not_in_format"
+    },
+    {
+      "level": "pokemon",
+      "key": "faintQueued",
+      "reason": "internal"
+    },
+    {
+      "level": "pokemon",
+      "key": "forceSwitchFlag",
+      "reason": "internal"
+    },
+    {
+      "level": "pokemon",
+      "key": "formeRegression",
+      "reason": "internal"
+    },
+    {
+      "level": "pokemon",
+      "key": "gigantamax",
+      "reason": "not_in_format"
+    },
+    {
+      "level": "pokemon",
+      "key": "heroMessageDisplayed",
+      "reason": "cosmetic"
+    },
+    {
+      "level": "pokemon",
+      "key": "hpPower",
+      "reason": "not_in_format"
+    },
+    {
+      "level": "pokemon",
+      "key": "hpType",
+      "reason": "not_in_format"
+    },
+    {
+      "level": "pokemon",
+      "key": "isStarted",
+      "reason": "internal"
+    },
+    {
+      "level": "pokemon",
+      "key": "itemState",
+      "reason": "internal"
+    },
+    {
+      "level": "pokemon",
+      "key": "knownType",
+      "reason": "derived"
+    },
+    {
+      "level": "pokemon",
+      "key": "lastDamage",
+      "reason": "derived"
+    },
+    {
+      "level": "pokemon",
+      "key": "lastMoveEncore",
+      "reason": "derived"
+    },
+    {
+      "level": "pokemon",
+      "key": "m",
+      "reason": "internal"
+    },
+    {
+      "level": "pokemon",
+      "key": "pendingStaleness",
+      "reason": "internal"
+    },
+    {
+      "level": "pokemon",
+      "key": "ppUps",
+      "reason": "hidden_input"
+    },
+    {
+      "level": "pokemon",
+      "key": "set",
+      "reason": "hidden_input"
+    },
+    {
+      "level": "pokemon",
+      "key": "shieldBoost",
+      "reason": "not_in_format"
+    },
+    {
+      "level": "pokemon",
+      "key": "skipBeforeSwitchOutEventFlag",
+      "reason": "internal"
+    },
+    {
+      "level": "pokemon",
+      "key": "speciesState",
+      "reason": "internal"
+    },
+    {
+      "level": "pokemon",
+      "key": "speed",
+      "reason": "derived"
+    },
+    {
+      "level": "pokemon",
+      "key": "staleness",
+      "reason": "internal"
+    },
+    {
+      "level": "pokemon",
+      "key": "stellarBoostedTypes",
+      "reason": "not_in_format"
+    },
+    {
+      "level": "pokemon",
+      "key": "subFainted",
+      "reason": "internal"
+    },
+    {
+      "level": "pokemon",
+      "key": "swordBoost",
+      "reason": "not_in_format"
+    },
+    {
+      "level": "pokemon",
+      "key": "syrupTriggered",
+      "reason": "not_in_format"
+    },
+    {
+      "level": "pokemon",
+      "key": "teraType",
+      "reason": "not_in_format"
+    },
+    {
+      "level": "pokemon",
+      "key": "volatileStaleness",
+      "reason": "internal"
+    },
+    {
+      "level": "pokemon",
+      "key": "weighthg",
+      "reason": "derived"
+    },
+    {
+      "level": "side",
+      "key": "allySide",
+      "reason": "reference"
+    },
+    {
+      "level": "side",
+      "key": "avatar",
+      "reason": "cosmetic"
+    },
+    {
+      "level": "side",
+      "key": "choice",
+      "reason": "internal"
+    },
+    {
+      "level": "side",
+      "key": "dynamaxUsed",
+      "reason": "not_in_format"
+    },
+    {
+      "level": "side",
+      "key": "foe",
+      "reason": "reference"
+    },
+    {
+      "level": "side",
+      "key": "id",
+      "reason": "reference"
+    },
+    {
+      "level": "side",
+      "key": "lastEnemyMove",
+      "reason": "derived"
+    },
+    {
+      "level": "side",
+      "key": "lastEnemySelectedMove",
+      "reason": "derived"
+    },
+    {
+      "level": "side",
+      "key": "lastMove",
+      "reason": "derived"
+    },
+    {
+      "level": "side",
+      "key": "lastSelectedMove",
+      "reason": "derived"
+    },
+    {
+      "level": "side",
+      "key": "lastSelectedMoveSlot",
+      "reason": "derived"
+    },
+    {
+      "level": "side",
+      "key": "n",
+      "reason": "reference"
+    },
+    {
+      "level": "side",
+      "key": "name",
+      "reason": "cosmetic"
+    },
+    {
+      "level": "side",
+      "key": "team",
+      "reason": "reference"
+    },
+    {
+      "level": "side",
+      "key": "zMoveUsed",
+      "reason": "not_in_format"
+    }
+  ],
+  "encoder": [
+    {
+      "group": "cand_cat",
+      "column": "action",
+      "option": "base",
+      "own": [],
+      "opponent": [],
+      "shared": [],
+      "query": true
+    },
+    {
+      "group": "cand_cat",
+      "column": "event",
+      "option": "base",
+      "own": [],
+      "opponent": [],
+      "shared": [],
+      "query": true
+    },
+    {
+      "group": "cand_cat",
+      "column": "matchup_ally_#",
+      "option": "candidate_matchup",
+      "own": [
+        "active.roster_index",
+        "seat_roster.shown_species"
+      ],
+      "opponent": [],
+      "shared": [],
+      "query": true
+    },
+    {
+      "group": "cand_cat",
+      "column": "matchup_foe_#_#",
+      "option": "candidate_matchup",
+      "own": [],
+      "opponent": [
+        "active.roster_index",
+        "seat_roster.shown_species"
+      ],
+      "shared": [],
+      "query": true
+    },
+    {
+      "group": "cand_cat",
+      "column": "move",
+      "option": "base",
+      "own": [],
+      "opponent": [],
+      "shared": [],
+      "query": true
+    },
+    {
+      "group": "cand_cat",
+      "column": "move_slot",
+      "option": "base",
+      "own": [],
+      "opponent": [],
+      "shared": [],
+      "query": true
+    },
+    {
+      "group": "cand_cat",
+      "column": "same_type",
+      "option": "candidate_matchup",
+      "own": [
+        "active.roster_index",
+        "seat_roster.shown_species"
+      ],
+      "opponent": [],
+      "shared": [],
+      "query": true
+    },
+    {
+      "group": "cand_cat",
+      "column": "target",
+      "option": "base",
+      "own": [],
+      "opponent": [],
+      "shared": [],
+      "query": true
+    },
+    {
+      "group": "cand_tok",
+      "column": "actor",
+      "option": "base",
+      "own": [
+        "active.roster_index"
+      ],
+      "opponent": [],
+      "shared": [],
+      "query": true
+    },
+    {
+      "group": "cand_tok",
+      "column": "switch_in",
+      "option": "base",
+      "own": [
+        "roster.position"
+      ],
+      "opponent": [],
+      "shared": [],
+      "query": true
+    },
+    {
+      "group": "field_cat",
+      "column": "history_available",
+      "option": "history_facts",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "seat_field.history_available"
+      ],
+      "query": false
+    },
+    {
+      "group": "field_cat",
+      "column": "history_last_move",
+      "option": "history_facts",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "battle.last_move",
+        "seat_field.history_available"
+      ],
+      "query": false
+    },
+    {
+      "group": "field_cat",
+      "column": "request",
+      "option": "base",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "seat_field.request_kind"
+      ],
+      "query": true
+    },
+    {
+      "group": "field_cat",
+      "column": "terrain",
+      "option": "base",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "field.terrain"
+      ],
+      "query": false
+    },
+    {
+      "group": "field_cat",
+      "column": "weather",
+      "option": "base",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "field.weather"
+      ],
+      "query": false
+    },
+    {
+      "group": "field_num",
+      "column": "field_#",
+      "option": "base",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "field.pseudo_present"
+      ],
+      "query": false
+    },
+    {
+      "group": "field_num",
+      "column": "field_turns_#",
+      "option": "recent_history",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "field.pseudo_present",
+        "seat_field.pseudo_elapsed"
+      ],
+      "query": false
+    },
+    {
+      "group": "field_num",
+      "column": "hist_pending_opponent_*_*",
+      "option": "history_facts",
+      "own": [],
+      "opponent": [
+        "active.slot_condition_present",
+        "seat_active.slot_pending_remaining"
+      ],
+      "shared": [
+        "seat_field.history_available"
+      ],
+      "query": false
+    },
+    {
+      "group": "field_num",
+      "column": "hist_pending_own_*_*",
+      "option": "history_facts",
+      "own": [
+        "active.slot_condition_present",
+        "seat_active.slot_pending_remaining"
+      ],
+      "opponent": [],
+      "shared": [
+        "seat_field.history_available"
+      ],
+      "query": false
+    },
+    {
+      "group": "field_num",
+      "column": "hist_total_fainted_opponent",
+      "option": "history_facts",
+      "own": [],
+      "opponent": [
+        "side.total_fainted"
+      ],
+      "shared": [
+        "seat_field.history_available"
+      ],
+      "query": false
+    },
+    {
+      "group": "field_num",
+      "column": "hist_total_fainted_own",
+      "option": "history_facts",
+      "own": [
+        "side.total_fainted"
+      ],
+      "opponent": [],
+      "shared": [
+        "seat_field.history_available"
+      ],
+      "query": false
+    },
+    {
+      "group": "field_num",
+      "column": "opponent_side_#",
+      "option": "base",
+      "own": [],
+      "opponent": [
+        "side.condition_layers",
+        "side.condition_present"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "field_num",
+      "column": "opponent_side_turns_#",
+      "option": "recent_history",
+      "own": [],
+      "opponent": [
+        "seat_side.condition_elapsed",
+        "side.condition_present"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "field_num",
+      "column": "own_side_#",
+      "option": "base",
+      "own": [
+        "side.condition_layers",
+        "side.condition_present"
+      ],
+      "opponent": [],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "field_num",
+      "column": "own_side_turns_#",
+      "option": "recent_history",
+      "own": [
+        "seat_side.condition_elapsed",
+        "side.condition_present"
+      ],
+      "opponent": [],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "field_num",
+      "column": "started",
+      "option": "base",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "battle.started"
+      ],
+      "query": false
+    },
+    {
+      "group": "field_num",
+      "column": "terrain_elapsed",
+      "option": "recent_history",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "seat_field.terrain_elapsed"
+      ],
+      "query": false
+    },
+    {
+      "group": "field_num",
+      "column": "turn",
+      "option": "base",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "battle.turn"
+      ],
+      "query": false
+    },
+    {
+      "group": "field_num",
+      "column": "weather_elapsed",
+      "option": "recent_history",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "seat_field.weather_elapsed"
+      ],
+      "query": false
+    },
+    {
+      "group": "mon_cat",
+      "column": "ability",
+      "option": "base",
+      "own": [
+        "roster.ability",
+        "seat_roster.ability_shown"
+      ],
+      "opponent": [
+        "roster.ability",
+        "seat_roster.ability_shown"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_cat",
+      "column": "active_slot",
+      "option": "base",
+      "own": [
+        "active.roster_index"
+      ],
+      "opponent": [
+        "active.roster_index"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_cat",
+      "column": "base_species",
+      "option": "base",
+      "own": [
+        "roster.base_species"
+      ],
+      "opponent": [
+        "roster.base_species"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_cat",
+      "column": "gender",
+      "option": "base",
+      "own": [
+        "roster.gender"
+      ],
+      "opponent": [
+        "roster.gender"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_cat",
+      "column": "history_last_item",
+      "option": "history_facts",
+      "own": [
+        "roster.last_item",
+        "seat_roster.history_roster_state"
+      ],
+      "opponent": [
+        "roster.last_item",
+        "seat_roster.history_roster_state"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_cat",
+      "column": "history_roster",
+      "option": "history_facts",
+      "own": [
+        "seat_roster.history_roster_state"
+      ],
+      "opponent": [
+        "seat_roster.history_roster_state"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_cat",
+      "column": "history_state",
+      "option": "history_facts",
+      "own": [
+        "seat_roster.history_state"
+      ],
+      "opponent": [
+        "seat_roster.history_state"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_cat",
+      "column": "item",
+      "option": "base",
+      "own": [
+        "roster.item",
+        "seat_roster.item_shown"
+      ],
+      "opponent": [
+        "roster.item",
+        "seat_roster.item_shown"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_cat",
+      "column": "last_move",
+      "option": "recent_history",
+      "own": [
+        "seat_roster.recent_last_move"
+      ],
+      "opponent": [
+        "seat_roster.recent_last_move"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_cat",
+      "column": "mega_stone",
+      "option": "base",
+      "own": [
+        "roster.item",
+        "roster.mega",
+        "seat_roster.item_shown"
+      ],
+      "opponent": [
+        "roster.item",
+        "roster.mega",
+        "seat_roster.item_shown"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_cat",
+      "column": "move_#",
+      "option": "base",
+      "own": [
+        "roster.move",
+        "seat_roster.move_shown"
+      ],
+      "opponent": [
+        "roster.move",
+        "seat_roster.move_shown"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_cat",
+      "column": "species",
+      "option": "base",
+      "own": [
+        "roster.species",
+        "seat_roster.shown_species"
+      ],
+      "opponent": [
+        "seat_roster.shown_species"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_cat",
+      "column": "status",
+      "option": "base",
+      "own": [
+        "roster.status"
+      ],
+      "opponent": [
+        "roster.status"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_cat",
+      "column": "temp_species",
+      "option": "base",
+      "own": [
+        "seat_roster.temp_species"
+      ],
+      "opponent": [
+        "seat_roster.temp_species"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "ability_suppressed",
+      "option": "base",
+      "own": [
+        "active.volatile_present",
+        "seat_active.volatile_shown"
+      ],
+      "opponent": [
+        "active.volatile_present",
+        "seat_active.volatile_shown"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "active_turns",
+      "option": "recent_history",
+      "own": [
+        "active.active_turns"
+      ],
+      "opponent": [
+        "active.active_turns"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "boost_*",
+      "option": "base",
+      "own": [
+        "roster.boosts"
+      ],
+      "opponent": [
+        "roster.boosts"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "boosted_stat_*",
+      "option": "exact_volatiles",
+      "own": [
+        "seat_active.volatile_derived"
+      ],
+      "opponent": [
+        "seat_active.volatile_derived"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "brought",
+      "option": "base",
+      "own": [
+        "seat_roster.brought"
+      ],
+      "opponent": [
+        "seat_roster.brought"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "brought_known",
+      "option": "base",
+      "own": [
+        "seat_roster.brought"
+      ],
+      "opponent": [
+        "seat_roster.brought"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "can_mega_evo",
+      "option": "base",
+      "own": [
+        "roster.can_mega_evo"
+      ],
+      "opponent": [],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "fainted",
+      "option": "base",
+      "own": [
+        "roster.fainted"
+      ],
+      "opponent": [
+        "roster.fainted"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hist_ate_berry",
+      "option": "history_facts",
+      "own": [
+        "roster.ate_berry",
+        "seat_roster.history_roster_state"
+      ],
+      "opponent": [
+        "roster.ate_berry",
+        "seat_roster.history_roster_state"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hist_attacked_by_*_*",
+      "option": "history_facts",
+      "own": [
+        "roster.attacked_by",
+        "seat_roster.history_state"
+      ],
+      "opponent": [
+        "roster.attacked_by",
+        "seat_roster.history_state"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hist_attackers_unknown",
+      "option": "history_facts",
+      "own": [
+        "roster.attacked_by",
+        "seat_roster.history_state"
+      ],
+      "opponent": [
+        "roster.attacked_by",
+        "seat_roster.history_state"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hist_hurt_this_turn",
+      "option": "history_facts",
+      "own": [
+        "roster.hurt_this_turn",
+        "seat_roster.history_state"
+      ],
+      "opponent": [
+        "roster.hurt_this_turn",
+        "seat_roster.history_state"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hist_last_move_failed",
+      "option": "history_facts",
+      "own": [
+        "roster.move_last_turn_result",
+        "roster.move_this_turn_result",
+        "seat_roster.history_state"
+      ],
+      "opponent": [
+        "roster.move_last_turn_result",
+        "roster.move_this_turn_result",
+        "seat_roster.history_state"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hist_last_move_failed_unknown",
+      "option": "history_facts",
+      "own": [
+        "roster.move_last_turn_result",
+        "roster.move_this_turn_result",
+        "seat_roster.history_state"
+      ],
+      "opponent": [
+        "roster.move_last_turn_result",
+        "roster.move_this_turn_result",
+        "seat_roster.history_state"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hist_move_actions",
+      "option": "history_facts",
+      "own": [
+        "active.active_move_actions",
+        "seat_roster.history_state"
+      ],
+      "opponent": [
+        "active.active_move_actions",
+        "seat_roster.history_state"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hist_moves_used_known",
+      "option": "history_facts",
+      "own": [
+        "roster.move_used",
+        "seat_roster.history_state"
+      ],
+      "opponent": [],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hist_stall_active",
+      "option": "history_facts",
+      "own": [
+        "seat_active.stall_counter",
+        "seat_roster.history_state"
+      ],
+      "opponent": [
+        "seat_active.stall_counter",
+        "seat_roster.history_state"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hist_stall_counter",
+      "option": "history_facts",
+      "own": [
+        "seat_active.stall_counter",
+        "seat_roster.history_state"
+      ],
+      "opponent": [
+        "seat_active.stall_counter",
+        "seat_roster.history_state"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hist_stats_lowered",
+      "option": "history_facts",
+      "own": [
+        "roster.stats_lowered_this_turn",
+        "seat_roster.history_state"
+      ],
+      "opponent": [
+        "roster.stats_lowered_this_turn",
+        "seat_roster.history_state"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hist_stats_raised",
+      "option": "history_facts",
+      "own": [
+        "roster.stats_raised_this_turn",
+        "seat_roster.history_state"
+      ],
+      "opponent": [
+        "roster.stats_raised_this_turn",
+        "seat_roster.history_state"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hist_times_attacked",
+      "option": "history_facts",
+      "own": [
+        "roster.times_attacked",
+        "seat_roster.history_state"
+      ],
+      "opponent": [
+        "roster.times_attacked",
+        "seat_roster.history_state"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hist_used_#",
+      "option": "history_facts",
+      "own": [
+        "roster.move",
+        "roster.move_used",
+        "seat_roster.history_state"
+      ],
+      "opponent": [],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hist_volatile_count",
+      "option": "history_facts",
+      "own": [
+        "seat_active.volatile_started",
+        "seat_roster.history_state"
+      ],
+      "opponent": [
+        "seat_active.volatile_started",
+        "seat_roster.history_state"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hist_volatile_oldest_age",
+      "option": "history_facts",
+      "own": [
+        "seat_active.volatile_started",
+        "seat_roster.history_state"
+      ],
+      "opponent": [
+        "seat_active.volatile_started",
+        "seat_roster.history_state"
+      ],
+      "shared": [
+        "battle.turn"
+      ],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hp_dealt_last_turn",
+      "option": "recent_history",
+      "own": [
+        "seat_roster.recent_hp_dealt_last_turn"
+      ],
+      "opponent": [
+        "seat_roster.recent_hp_dealt_last_turn"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hp_dealt_this_turn",
+      "option": "recent_history",
+      "own": [
+        "seat_roster.recent_hp_dealt_this_turn"
+      ],
+      "opponent": [
+        "seat_roster.recent_hp_dealt_this_turn"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hp_fraction",
+      "option": "base",
+      "own": [
+        "roster.hp",
+        "roster.max_hp"
+      ],
+      "opponent": [
+        "seat_roster.hp_shown"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hp_known",
+      "option": "base",
+      "own": [
+        "roster.hp"
+      ],
+      "opponent": [
+        "seat_roster.hp_shown"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hp_stat",
+      "option": "base",
+      "own": [
+        "roster.max_hp"
+      ],
+      "opponent": [],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hp_taken_last_turn",
+      "option": "recent_history",
+      "own": [
+        "seat_roster.recent_hp_taken_last_turn"
+      ],
+      "opponent": [
+        "seat_roster.recent_hp_taken_last_turn"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "hp_taken_this_turn",
+      "option": "recent_history",
+      "own": [
+        "seat_roster.recent_hp_taken_this_turn"
+      ],
+      "opponent": [
+        "seat_roster.recent_hp_taken_this_turn"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "item_known",
+      "option": "base",
+      "own": [
+        "seat_roster.item_shown"
+      ],
+      "opponent": [
+        "seat_roster.item_shown"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "item_lost",
+      "option": "base",
+      "own": [
+        "roster.item",
+        "roster.item_knocked_off",
+        "roster.last_item"
+      ],
+      "opponent": [
+        "roster.item",
+        "roster.item_knocked_off",
+        "roster.last_item"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "last_action_age",
+      "option": "recent_history",
+      "own": [
+        "seat_roster.recent_last_action_turn"
+      ],
+      "opponent": [
+        "seat_roster.recent_last_action_turn"
+      ],
+      "shared": [
+        "battle.turn"
+      ],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "last_action_known",
+      "option": "recent_history",
+      "own": [
+        "seat_roster.recent_last_action_turn"
+      ],
+      "opponent": [
+        "seat_roster.recent_last_action_turn"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "last_action_order",
+      "option": "recent_history",
+      "own": [
+        "seat_roster.recent_last_action_order"
+      ],
+      "opponent": [
+        "seat_roster.recent_last_action_order"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "last_move_age",
+      "option": "recent_history",
+      "own": [
+        "seat_roster.recent_last_move_turn"
+      ],
+      "opponent": [
+        "seat_roster.recent_last_move_turn"
+      ],
+      "shared": [
+        "battle.turn"
+      ],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "last_target_*_*",
+      "option": "recent_history",
+      "own": [
+        "seat_roster.recent_last_target"
+      ],
+      "opponent": [
+        "seat_roster.recent_last_target"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "level",
+      "option": "base",
+      "own": [
+        "roster.level"
+      ],
+      "opponent": [
+        "roster.level"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "mega",
+      "option": "base",
+      "own": [
+        "roster.mega"
+      ],
+      "opponent": [
+        "roster.mega"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "own",
+      "option": "base",
+      "own": [],
+      "opponent": [],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "pp_#",
+      "option": "base",
+      "own": [
+        "roster.move_pp"
+      ],
+      "opponent": [],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "protect_streak",
+      "option": "recent_history",
+      "own": [
+        "seat_roster.recent_protect_streak"
+      ],
+      "opponent": [
+        "seat_roster.recent_protect_streak"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "shiny",
+      "option": "base",
+      "own": [
+        "roster.shiny"
+      ],
+      "opponent": [
+        "roster.shiny"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "stat_*",
+      "option": "base",
+      "own": [
+        "roster.stats"
+      ],
+      "opponent": [],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "stats_known",
+      "option": "base",
+      "own": [
+        "roster.stats"
+      ],
+      "opponent": [],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "type_*",
+      "option": "exact_volatiles",
+      "own": [
+        "seat_roster.types_changed"
+      ],
+      "opponent": [
+        "seat_roster.types_changed"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "types_known",
+      "option": "exact_volatiles",
+      "own": [
+        "seat_roster.types_changed"
+      ],
+      "opponent": [
+        "seat_roster.types_changed"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "types_typeless",
+      "option": "exact_volatiles",
+      "own": [
+        "seat_roster.types_changed"
+      ],
+      "opponent": [
+        "seat_roster.types_changed"
+      ],
+      "shared": [],
+      "query": false
+    },
+    {
+      "group": "mon_num",
+      "column": "volatile_#",
+      "option": "base",
+      "own": [
+        "active.volatile_present",
+        "seat_active.volatile_shown"
+      ],
+      "opponent": [
+        "active.volatile_present",
+        "seat_active.volatile_shown"
+      ],
+      "shared": [],
+      "query": false
+    }
+  ],
+  "reducer": [
+    {
+      "key": "SIDE.condition_turns.*",
+      "own": [
+        "seat_side.condition_elapsed"
+      ],
+      "opponent": [
+        "seat_side.condition_elapsed"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.conditions.*",
+      "own": [
+        "side.condition_layers",
+        "side.condition_present"
+      ],
+      "opponent": [
+        "side.condition_layers",
+        "side.condition_present"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.player",
+      "own": [],
+      "opponent": [],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].ability",
+      "own": [
+        "roster.ability",
+        "seat_roster.ability_shown"
+      ],
+      "opponent": [
+        "roster.ability",
+        "seat_roster.ability_shown"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].ability_suppressed",
+      "own": [
+        "active.volatile_present",
+        "seat_active.volatile_shown"
+      ],
+      "opponent": [
+        "active.volatile_present",
+        "seat_active.volatile_shown"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].active_slot",
+      "own": [
+        "active.roster_index"
+      ],
+      "opponent": [
+        "active.roster_index"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].base_species",
+      "own": [
+        "roster.base_species"
+      ],
+      "opponent": [
+        "roster.base_species"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].boosts.*",
+      "own": [
+        "roster.boosts"
+      ],
+      "opponent": [
+        "roster.boosts"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].brought",
+      "own": [
+        "seat_roster.brought"
+      ],
+      "opponent": [
+        "seat_roster.brought"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].can_mega_evo",
+      "own": [
+        "roster.can_mega_evo"
+      ],
+      "opponent": [],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].fainted",
+      "own": [
+        "roster.fainted"
+      ],
+      "opponent": [
+        "roster.fainted"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].gender",
+      "own": [
+        "roster.gender"
+      ],
+      "opponent": [
+        "roster.gender"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].hp_den",
+      "own": [
+        "roster.max_hp"
+      ],
+      "opponent": [
+        "seat_roster.hp_shown"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].hp_fraction",
+      "own": [
+        "roster.hp",
+        "roster.max_hp"
+      ],
+      "opponent": [
+        "seat_roster.hp_shown"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].hp_num",
+      "own": [
+        "roster.hp"
+      ],
+      "opponent": [
+        "seat_roster.hp_shown"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].item",
+      "own": [
+        "roster.item",
+        "seat_roster.item_shown"
+      ],
+      "opponent": [
+        "roster.item",
+        "seat_roster.item_shown"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].item_known",
+      "own": [
+        "seat_roster.item_shown"
+      ],
+      "opponent": [
+        "seat_roster.item_shown"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].item_lost",
+      "own": [
+        "roster.item",
+        "roster.item_knocked_off",
+        "roster.last_item"
+      ],
+      "opponent": [
+        "roster.item",
+        "roster.item_knocked_off",
+        "roster.last_item"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].level",
+      "own": [
+        "roster.level"
+      ],
+      "opponent": [
+        "roster.level"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].mega",
+      "own": [
+        "roster.mega"
+      ],
+      "opponent": [
+        "roster.mega"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].mega_stone",
+      "own": [
+        "roster.item",
+        "roster.mega",
+        "seat_roster.item_shown"
+      ],
+      "opponent": [
+        "roster.item",
+        "roster.mega",
+        "seat_roster.item_shown"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].moves_own",
+      "own": [
+        "roster.move"
+      ],
+      "opponent": [],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].moves_revealed",
+      "own": [
+        "roster.move",
+        "seat_roster.move_shown"
+      ],
+      "opponent": [
+        "roster.move",
+        "seat_roster.move_shown"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].name",
+      "own": [
+        "seat_roster.name_shown"
+      ],
+      "opponent": [
+        "seat_roster.name_shown"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].phantom",
+      "own": [
+        "seat_roster.phantom"
+      ],
+      "opponent": [
+        "seat_roster.phantom"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].pp.*",
+      "own": [
+        "roster.move_pp"
+      ],
+      "opponent": [],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].recent.active_turns",
+      "own": [
+        "active.active_turns"
+      ],
+      "opponent": [
+        "active.active_turns"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].recent.hp_dealt_last_turn",
+      "own": [
+        "seat_roster.recent_hp_dealt_last_turn"
+      ],
+      "opponent": [
+        "seat_roster.recent_hp_dealt_last_turn"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].recent.hp_dealt_this_turn",
+      "own": [
+        "seat_roster.recent_hp_dealt_this_turn"
+      ],
+      "opponent": [
+        "seat_roster.recent_hp_dealt_this_turn"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].recent.hp_taken_last_turn",
+      "own": [
+        "seat_roster.recent_hp_taken_last_turn"
+      ],
+      "opponent": [
+        "seat_roster.recent_hp_taken_last_turn"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].recent.hp_taken_this_turn",
+      "own": [
+        "seat_roster.recent_hp_taken_this_turn"
+      ],
+      "opponent": [
+        "seat_roster.recent_hp_taken_this_turn"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].recent.last_action_order",
+      "own": [
+        "seat_roster.recent_last_action_order"
+      ],
+      "opponent": [
+        "seat_roster.recent_last_action_order"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].recent.last_action_turn",
+      "own": [
+        "seat_roster.recent_last_action_turn"
+      ],
+      "opponent": [
+        "seat_roster.recent_last_action_turn"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].recent.last_move",
+      "own": [
+        "seat_roster.recent_last_move"
+      ],
+      "opponent": [
+        "seat_roster.recent_last_move"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].recent.last_move_turn",
+      "own": [
+        "seat_roster.recent_last_move_turn"
+      ],
+      "opponent": [
+        "seat_roster.recent_last_move_turn"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].recent.last_target",
+      "own": [
+        "seat_roster.recent_last_target"
+      ],
+      "opponent": [
+        "seat_roster.recent_last_target"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].recent.protect_streak",
+      "own": [
+        "seat_roster.recent_protect_streak"
+      ],
+      "opponent": [
+        "seat_roster.recent_protect_streak"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].shiny",
+      "own": [
+        "roster.shiny"
+      ],
+      "opponent": [
+        "roster.shiny"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].species",
+      "own": [
+        "seat_roster.shown_species"
+      ],
+      "opponent": [
+        "seat_roster.shown_species"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].stats",
+      "own": [
+        "roster.stats"
+      ],
+      "opponent": [],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].stats.*",
+      "own": [
+        "roster.stats"
+      ],
+      "opponent": [],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].status",
+      "own": [
+        "roster.status"
+      ],
+      "opponent": [
+        "roster.status"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].temp_species",
+      "own": [
+        "seat_roster.temp_species"
+      ],
+      "opponent": [
+        "seat_roster.temp_species"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].types",
+      "own": [
+        "seat_roster.types_changed"
+      ],
+      "opponent": [
+        "seat_roster.types_changed"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.roster[].volatiles",
+      "own": [
+        "active.volatile_present",
+        "seat_active.volatile_shown"
+      ],
+      "opponent": [
+        "active.volatile_present",
+        "seat_active.volatile_shown"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.slots.*",
+      "own": [
+        "active.roster_index"
+      ],
+      "opponent": [
+        "active.roster_index"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.teamsize",
+      "own": [
+        "side.team_size"
+      ],
+      "opponent": [
+        "side.team_size"
+      ],
+      "shared": []
+    },
+    {
+      "key": "SIDE.username",
+      "own": [],
+      "opponent": [],
+      "shared": []
+    },
+    {
+      "key": "elapsed.field_conditions.*",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "seat_field.pseudo_elapsed"
+      ]
+    },
+    {
+      "key": "elapsed.terrain",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "seat_field.terrain_elapsed"
+      ]
+    },
+    {
+      "key": "elapsed.weather",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "seat_field.weather_elapsed"
+      ]
+    },
+    {
+      "key": "field_conditions",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "field.pseudo_present"
+      ]
+    },
+    {
+      "key": "format_name",
+      "own": [],
+      "opponent": [],
+      "shared": []
+    },
+    {
+      "key": "gametype",
+      "own": [],
+      "opponent": [],
+      "shared": []
+    },
+    {
+      "key": "history.SIDE.active.*",
+      "own": [
+        "active.roster_index",
+        "seat_roster.history_state"
+      ],
+      "opponent": [
+        "active.roster_index",
+        "seat_roster.history_state"
+      ],
+      "shared": []
+    },
+    {
+      "key": "history.SIDE.active.*.attackers_this_turn",
+      "own": [
+        "roster.attacked_by"
+      ],
+      "opponent": [
+        "roster.attacked_by"
+      ],
+      "shared": []
+    },
+    {
+      "key": "history.SIDE.active.*.hurt_this_turn",
+      "own": [
+        "roster.hurt_this_turn"
+      ],
+      "opponent": [
+        "roster.hurt_this_turn"
+      ],
+      "shared": []
+    },
+    {
+      "key": "history.SIDE.active.*.last_move_failed",
+      "own": [
+        "roster.move_last_turn_result",
+        "roster.move_this_turn_result"
+      ],
+      "opponent": [
+        "roster.move_last_turn_result",
+        "roster.move_this_turn_result"
+      ],
+      "shared": []
+    },
+    {
+      "key": "history.SIDE.active.*.move_actions",
+      "own": [
+        "active.active_move_actions"
+      ],
+      "opponent": [
+        "active.active_move_actions"
+      ],
+      "shared": []
+    },
+    {
+      "key": "history.SIDE.active.*.moves_used",
+      "own": [
+        "roster.move_used"
+      ],
+      "opponent": [],
+      "shared": []
+    },
+    {
+      "key": "history.SIDE.active.*.name",
+      "own": [
+        "active.roster_index"
+      ],
+      "opponent": [
+        "active.roster_index"
+      ],
+      "shared": []
+    },
+    {
+      "key": "history.SIDE.active.*.stall_counter",
+      "own": [
+        "seat_active.stall_counter"
+      ],
+      "opponent": [
+        "seat_active.stall_counter"
+      ],
+      "shared": []
+    },
+    {
+      "key": "history.SIDE.active.*.stats_lowered_this_turn",
+      "own": [
+        "roster.stats_lowered_this_turn"
+      ],
+      "opponent": [
+        "roster.stats_lowered_this_turn"
+      ],
+      "shared": []
+    },
+    {
+      "key": "history.SIDE.active.*.stats_raised_this_turn",
+      "own": [
+        "roster.stats_raised_this_turn"
+      ],
+      "opponent": [
+        "roster.stats_raised_this_turn"
+      ],
+      "shared": []
+    },
+    {
+      "key": "history.SIDE.active.*.times_attacked",
+      "own": [
+        "roster.times_attacked"
+      ],
+      "opponent": [
+        "roster.times_attacked"
+      ],
+      "shared": []
+    },
+    {
+      "key": "history.SIDE.active.*.unknown",
+      "own": [
+        "seat_roster.history_state"
+      ],
+      "opponent": [
+        "seat_roster.history_state"
+      ],
+      "shared": []
+    },
+    {
+      "key": "history.SIDE.active.*.volatile_started.*.after_residual",
+      "own": [
+        "seat_active.volatile_started"
+      ],
+      "opponent": [
+        "seat_active.volatile_started"
+      ],
+      "shared": []
+    },
+    {
+      "key": "history.SIDE.active.*.volatile_started.*.started_turn",
+      "own": [
+        "seat_active.volatile_started"
+      ],
+      "opponent": [
+        "seat_active.volatile_started"
+      ],
+      "shared": []
+    },
+    {
+      "key": "history.SIDE.pending_slot.*.*.after_residual",
+      "own": [
+        "active.slot_condition_present",
+        "seat_active.slot_pending_remaining"
+      ],
+      "opponent": [
+        "active.slot_condition_present",
+        "seat_active.slot_pending_remaining"
+      ],
+      "shared": []
+    },
+    {
+      "key": "history.SIDE.pending_slot.*.*.remaining",
+      "own": [
+        "active.slot_condition_present",
+        "seat_active.slot_pending_remaining"
+      ],
+      "opponent": [
+        "active.slot_condition_present",
+        "seat_active.slot_pending_remaining"
+      ],
+      "shared": []
+    },
+    {
+      "key": "history.SIDE.pending_slot.*.*.started_turn",
+      "own": [
+        "active.slot_condition_present",
+        "seat_active.slot_pending_remaining"
+      ],
+      "opponent": [
+        "active.slot_condition_present",
+        "seat_active.slot_pending_remaining"
+      ],
+      "shared": []
+    },
+    {
+      "key": "history.SIDE.roster.*.ate_berry",
+      "own": [
+        "roster.ate_berry"
+      ],
+      "opponent": [
+        "roster.ate_berry"
+      ],
+      "shared": []
+    },
+    {
+      "key": "history.SIDE.roster.*.last_item",
+      "own": [
+        "roster.last_item"
+      ],
+      "opponent": [
+        "roster.last_item"
+      ],
+      "shared": []
+    },
+    {
+      "key": "history.SIDE.total_fainted",
+      "own": [
+        "side.total_fainted"
+      ],
+      "opponent": [
+        "side.total_fainted"
+      ],
+      "shared": []
+    },
+    {
+      "key": "history.field_last_move",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "battle.last_move"
+      ]
+    },
+    {
+      "key": "history.history_facts_format",
+      "own": [],
+      "opponent": [],
+      "shared": []
+    },
+    {
+      "key": "history.refused",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "seat_field.history_available"
+      ]
+    },
+    {
+      "key": "history.turn",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "battle.turn"
+      ]
+    },
+    {
+      "key": "player",
+      "own": [],
+      "opponent": [],
+      "shared": []
+    },
+    {
+      "key": "request_kind",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "seat_field.request_kind"
+      ]
+    },
+    {
+      "key": "schema_version",
+      "own": [],
+      "opponent": [],
+      "shared": []
+    },
+    {
+      "key": "started",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "battle.started"
+      ]
+    },
+    {
+      "key": "terrain",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "field.terrain"
+      ]
+    },
+    {
+      "key": "turn",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "battle.turn"
+      ]
+    },
+    {
+      "key": "weather",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "field.weather"
+      ]
+    },
+    {
+      "key": "winner",
+      "own": [],
+      "opponent": [],
+      "shared": [
+        "battle.ended"
+      ]
+    }
+  ],
+  "out_of_scope": [
+    {
+      "option": "candidate_features",
+      "reason": "Probe rows per candidate (probe-damage, probe-outcome): computed by the mechanics probe from assumed sets, not battle state."
+    },
+    {
+      "option": "candidate_target",
+      "reason": "The candidate's target token: an index of the candidate's own choice into the tokens, not battle state."
+    },
+    {
+      "option": "opponent_sheet",
+      "reason": "The belief's opponent sheet block: a function of the opponent model and the seat's view, not battle state."
+    }
+  ],
+  "world_items": [
+    {
+      "kind": "held",
+      "id": "ability_changed",
+      "fields": [
+        "roster.ability",
+        "roster.base_ability"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "active_turns",
+      "fields": [
+        "active.active_move_actions",
+        "active.active_turns"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "bench_order",
+      "fields": [
+        "roster.position"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "bench_status",
+      "fields": [
+        "roster.status",
+        "roster.status_stage"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "choice_lock",
+      "fields": [
+        "active.volatile_present"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "condition_duration",
+      "fields": [
+        "field.pseudo_duration",
+        "field.terrain_duration",
+        "field.weather_duration",
+        "side.condition_duration"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "confusion_duration",
+      "fields": [
+        "active.volatile_duration"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "fainted_last_turn",
+      "fields": [
+        "side.fainted_last_turn",
+        "side.fainted_this_turn"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "illusion_transform",
+      "fields": [
+        "roster.base_move",
+        "roster.illusion",
+        "roster.transformed"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "item_removed",
+      "fields": [
+        "roster.item",
+        "roster.item_knocked_off",
+        "roster.last_item"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "item_replaced",
+      "fields": [
+        "roster.item"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "last_move",
+      "fields": [
+        "active.last_move",
+        "active.last_move_used",
+        "battle.last_move"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "locked_moves",
+      "fields": [
+        "active.volatile_counter",
+        "active.volatile_duration",
+        "active.volatile_present"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "opponent_pp",
+      "fields": [
+        "roster.move_pp"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "per_turn_fields",
+      "fields": [
+        "active.move_this_turn",
+        "roster.hurt_this_turn",
+        "roster.move_this_turn_result",
+        "roster.stats_lowered_this_turn",
+        "roster.stats_raised_this_turn",
+        "roster.used_item_this_turn"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "protect_counter",
+      "fields": [
+        "active.volatile_counter",
+        "active.volatile_present"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "sleep_counter",
+      "fields": [
+        "roster.status_counter",
+        "roster.status_start"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "slot_conditions",
+      "fields": [
+        "active.slot_condition_duration",
+        "active.slot_condition_present"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "start_trigger_restore",
+      "fields": [
+        "roster.ability",
+        "roster.item"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "substitute",
+      "fields": [
+        "active.volatile_hp",
+        "active.volatile_present"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "total_fainted",
+      "fields": [
+        "side.total_fainted"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "toxic_stage",
+      "fields": [
+        "roster.status_stage"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "trapping",
+      "fields": [
+        "active.maybe_trapped",
+        "active.trapped",
+        "active.volatile_present"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "truant_slow_start",
+      "fields": [
+        "active.volatile_present",
+        "roster.truant_turn"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "turn_number",
+      "fields": [
+        "battle.turn"
+      ]
+    },
+    {
+      "kind": "held",
+      "id": "unadmitted_id",
+      "fields": [
+        "active.volatile_present"
+      ]
+    },
+    {
+      "kind": "not_held",
+      "id": "unavailable_mechanics",
+      "reason": "Terastallization, Z-Moves, Dynamax and Ultra Burst are not mechanics of the format: the spec holds none of their state, and their engine keys are omitted as not_in_format."
+    },
+    {
+      "kind": "held",
+      "id": "volatile_duration",
+      "fields": [
+        "active.volatile_duration"
+      ]
+    }
+  ]
+}
