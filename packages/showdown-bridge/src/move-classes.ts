@@ -40,7 +40,7 @@ export const MOVE_CLASSES_SUMMARY = "move-classes.summary.json";
 export const MOVE_CLASS_NAMES = ["status", "lowers_target_stat", "raises_own_stat", "side_condition", "field_condition", "protection"] as const;
 
 /** Who a move's target kind names: the user or an ally, a foe, or no Pokemon (a side, the field, a script). */
-const TARGET_KINDS: Record<string, "friendly" | "foe" | "none"> = {
+export const TARGET_KINDS: Record<string, "friendly" | "foe" | "none"> = {
   adjacentAlly: "friendly",
   adjacentAllyOrSelf: "friendly",
   allies: "friendly",

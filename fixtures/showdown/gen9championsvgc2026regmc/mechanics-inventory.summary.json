@@ -1,0 +1,25 @@
+{
+  "inventory_hash": "b937a6409c667fbabaa8c5d017df51405b7679e752ddb60365c145be5173d2a6",
+  "engine_data_hash": "3cb5be9054d0b32b8ac80f0dce4acbeb60cdc0813a614d48466413cbd513afe8",
+  "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+  "counts": {
+    "species": 382,
+    "moves": 510,
+    "moves_with_handlers": 227,
+    "moves_with_damage_handlers": 72,
+    "move_damage_handler_definitions": 76,
+    "abilities": 215,
+    "abilities_with_handlers": 209,
+    "abilities_with_damage_handlers": 62,
+    "ability_damage_handler_definitions": 81,
+    "items": 166,
+    "items_with_handlers": 159,
+    "items_with_damage_handlers": 47,
+    "item_damage_handler_definitions": 48,
+    "conditions": 166,
+    "conditions_with_handlers": 161,
+    "conditions_with_damage_handlers": 41,
+    "condition_damage_handler_definitions": 25,
+    "sim_referenced": 73
+  }
+}
