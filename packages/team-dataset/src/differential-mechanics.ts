@@ -8,7 +8,9 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  addBatch,
   type Backend,
+  compareBatch,
   type CorpusTally,
   type DifferentialReport,
   differentialReport,
@@ -16,7 +18,7 @@ import {
   type Json,
   type Level,
   mechanicsLevel,
-  runCorpus,
+  newTally,
   sha256Jcs,
 } from "@areneon/differential";
 import {
@@ -199,25 +201,64 @@ export const mechanicsHarnessLevel = (engine: Engine): Level<ParsedMechanicsQuer
 export interface SelfDifferential {
   report: DifferentialReport;
   tallies: CorpusTally[];
-  collected: Record<string, Collected>;
+  /** Per corpus: builds, refused builds and distinct queries compared. */
+  collected: Record<string, { builds: number; refused: Record<string, number>; queries: number }>;
 }
 
 /**
- * The probe against itself (gate 1 of #1461): the oracle on `engine`, the backend the same probe on `second` (another engine
- * object, so its own per-engine probe tables), every committed corpus as a regression corpus. `limit` takes the first battles of
- * each corpus (the CI subset); the full run is the committed report.
+ * One committed corpus through the harness, battle by battle so memory stays bounded: the queries the builders issue on a battle
+ * (answered by the oracle as they are asked), less those an earlier battle of the corpus already compared, are compared with the
+ * backend in batches and tallied; then the battle's answers are dropped.
  */
-export function selfDifferential(engine: Engine, second: Engine, limit?: number, batchSize = 256): SelfDifferential {
-  const configs = harnessConfigs(engine);
-  const oracle = remembering(probeOracle(engine, { config: configs.oracle, snapshot: configs.snapshot }));
-  const backend = probeOracle(second, { config: configs.oracle, snapshot: loadRulesSnapshot(second.commit), id: "showdown-probe-second" });
+export function differentialCorpus(
+  engine: Engine,
+  configs: HarnessConfigs,
+  backend: Backend<ParsedMechanicsQuery, MechanicsResult>,
+  corpus: { id: string; dir: string },
+  limit?: number,
+  batchSize = 256,
+): { tally: CorpusTally; builds: number; refused: Record<string, number> } {
   const level = mechanicsHarnessLevel(engine);
+  const tally = newTally({ id: corpus.id, kind: "regression", seed: corpusHash(corpus.dir, limit) });
+  const seen = new Set<string>();
+  const refused: Record<string, number> = {};
+  let builds = 0;
+  for (const battle of corpusBattles(corpus.dir, limit)) {
+    const oracle = remembering(probeOracle(engine, { config: configs.oracle, snapshot: configs.snapshot }));
+    const found = collectQueries(engine, configs, [battle], oracle);
+    builds += found.builds;
+    for (const [code, n] of Object.entries(found.refused)) refused[code] = (refused[code] ?? 0) + n;
+    const queries = found.queries.filter((q) => {
+      const hash = mechanicsQueryHash(q);
+      if (seen.has(hash)) return false;
+      seen.add(hash);
+      return true;
+    });
+    for (let first = 0; first < queries.length; first += batchSize) {
+      addBatch(tally, compareBatch(level, oracle as Backend<ParsedMechanicsQuery, MechanicsResult>, backend, queries.slice(first, first + batchSize), tally.items));
+    }
+  }
+  return { tally, builds, refused };
+}
+
+/** The backend of the self-differential: the same probe on another engine object (its own per-engine probe tables). */
+export const secondProbe = (second: Engine, configs: HarnessConfigs): Backend<ParsedMechanicsQuery, MechanicsResult> =>
+  probeOracle(second, { config: configs.oracle, snapshot: loadRulesSnapshot(second.commit), id: "showdown-probe-second" }) as Backend<ParsedMechanicsQuery, MechanicsResult>;
+
+/**
+ * The probe against itself (gate 1 of #1461): the oracle on `engine`, the backend the same probe on `second`, every committed
+ * corpus as a regression corpus. `limit` takes the first battles of each corpus (the CI subset); the full run is the committed
+ * report (`scripts/differential-report.ts`).
+ */
+export function selfDifferential(engine: Engine, second: Engine, limit?: number): SelfDifferential {
+  const configs = harnessConfigs(engine);
+  const backend = secondProbe(second, configs);
   const tallies: CorpusTally[] = [];
-  const collected: Record<string, Collected> = {};
+  const collected: SelfDifferential["collected"] = {};
   for (const corpus of COMMITTED_CORPORA) {
-    const found = collectQueries(engine, configs, corpusBattles(corpus.dir, limit), oracle);
-    collected[corpus.id] = found;
-    tallies.push(runCorpus(level, oracle as Backend<ParsedMechanicsQuery, MechanicsResult>, backend as Backend<ParsedMechanicsQuery, MechanicsResult>, { id: corpus.id, kind: "regression", seed: corpusHash(corpus.dir, limit) }, found.queries, batchSize));
+    const run = differentialCorpus(engine, configs, backend, corpus, limit);
+    tallies.push(run.tally);
+    collected[corpus.id] = { builds: run.builds, refused: run.refused, queries: run.tally.items };
   }
   return { report: differentialReport(reportInputs(engine, configs, limit), tallies), tallies, collected };
 }

@@ -9,20 +9,9 @@
 // The parts form lets the corpora run in separate processes (about half an hour of probe work in all on one thread).
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type CorpusTally, differentialReport, type EntityTally, renderReport, runCorpus } from "@areneon/differential";
-import { loadEngine, loadRulesSnapshot, probeOracle } from "@areneon/showdown-bridge";
-import {
-  COMMITTED_CORPORA,
-  collectQueries,
-  corpusBattles,
-  corpusHash,
-  harnessConfigs,
-  mechanicsHarnessLevel,
-  remembering,
-  reportInputs,
-  SELF_REPORT_DIR,
-  SELF_REPORT_TITLE,
-} from "../src/differential-mechanics.ts";
+import { type CorpusTally, differentialReport, type EntityTally, renderReport } from "@areneon/differential";
+import { loadEngine } from "@areneon/showdown-bridge";
+import { COMMITTED_CORPORA, differentialCorpus, harnessConfigs, reportInputs, secondProbe, SELF_REPORT_DIR, SELF_REPORT_TITLE } from "../src/differential-mechanics.ts";
 
 const engine = loadEngine();
 const configs = harnessConfigs(engine);
@@ -30,14 +19,10 @@ const configs = harnessConfigs(engine);
 function tallyOf(id: string): CorpusTally {
   const corpus = COMMITTED_CORPORA.find((c) => c.id === id);
   if (corpus === undefined) throw new Error(`unknown corpus ${id}`);
-  const second = loadEngine();
-  const oracle = remembering(probeOracle(engine, { config: configs.oracle, snapshot: configs.snapshot }));
-  const backend = probeOracle(second, { config: configs.oracle, snapshot: loadRulesSnapshot(second.commit), id: "showdown-probe-second" });
   const started = Date.now();
-  const found = collectQueries(engine, configs, corpusBattles(corpus.dir), oracle);
-  const tally = runCorpus(mechanicsHarnessLevel(engine), oracle as never, backend as never, { id, kind: "regression", seed: corpusHash(corpus.dir) }, found.queries);
-  console.error(`${id}: ${found.builds} builds, ${found.queries.length} queries, ${tally.differences.length} differences, refused ${JSON.stringify(found.refused)}, ${Math.round((Date.now() - started) / 1000)} s`);
-  return tally;
+  const run = differentialCorpus(engine, configs, secondProbe(loadEngine(), configs), corpus);
+  console.error(`${id}: ${run.builds} builds, ${run.tally.items} queries, ${run.tally.differences.length} differences, refused ${JSON.stringify(run.refused)}, ${Math.round((Date.now() - started) / 1000)} s`);
+  return run.tally;
 }
 
 const toJson = (t: CorpusTally) => ({ spec: t.spec, items: t.items, entities: [...t.entities], differences: t.differences, count_mismatches: t.count_mismatches });

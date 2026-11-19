@@ -196,8 +196,14 @@ describe("a ledger from a fresh corpus drawn by the backend's own seed", () => {
     expect(admitted).toContain("kind:damage");
     expect(ledger.revoked).toEqual([]);
     const router = admissionRouter(ledger);
-    const routed = fresh.items.filter((q) => router.route(level.entities(q)) === null);
-    expect(routed.length).toBeGreaterThan(0);
+    // A query goes to the backend only when every entity it holds is admitted (an unused set move too: ADR-030 rule 2).
+    const admittedSet = new Set(admitted);
+    for (const q of fresh.items.slice(0, 200)) {
+      const entities = level.entities(q);
+      const refusal = router.route(entities);
+      expect(refusal === null).toBe(entities.every((e) => admittedSet.has(e)) && ledger.pairs.every((p) => p.admitted || !entities.includes(p.a) || !entities.includes(p.b)));
+    }
+    expect(router.route(["kind:damage"])).toBeNull();
     expect(() => readBackendAdmission(ledger, { showdown_commit: "0".repeat(40) })).toThrow("another pinned engine");
   });
 });
