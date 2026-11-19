@@ -653,7 +653,7 @@ Every failure below leaves the database unchanged. A `stale` step is not a failu
 (The planner is deliberately coarse here: a channel naming a snapshot that is neither released nor stored fails the whole run, so a channel can never point at a snapshot the database cannot serve. This fail-closed behaviour is intended.)
 A channel artifact was released, or its Release exists, but the snapshot it names has no Release and is not stored. Causes: a cancelled or never approved `publish` run, a channel change that predates the publish workflow, or a Release that is still a draft.
 1. In GitHub, open the Actions run of `rules-publish` for the commit that last changed the snapshot's records (`source_commit` of the artifact, or the commit the channel names). If `publish` is waiting, approve `rules-dev` (3.2). If it was cancelled or failed, re-run it: re-run only the `publish` job while the plan artifact is still kept (90 days); after that, re-run the whole workflow.
-2. A snapshot older than the workflow was never released. Re-run that commit's workflow, or revert the records in a PR so a new snapshot is published (CLAUDE.md, rules store).
+2. A snapshot older than the workflow was never released. Re-run that commit's workflow, or revert the records in a PR so a new snapshot is published (docs/architecture/rules-store.md).
 3. Run the importer again.
    *Expected result:* `inserted` for the snapshot, then the channel.
 

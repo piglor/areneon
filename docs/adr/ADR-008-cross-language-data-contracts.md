@@ -224,7 +224,7 @@ engine BattleStream --getPlayerStreams--> omniscient --> BattleRecord, hidden_ve
 **The builder.**
 - There is one builder per observation type, in an engine-free module of `showdown-bridge`: it imports only contracts, the pure JSON canonicalisation and request parsing. It imports neither `engine.ts` nor any Node built-in, so it runs wherever WebCrypto does.
 - **Hashing seam.** The module never computes a digest itself. The builder and the request parser take an injected `Sha256` port, `(bytes: Uint8Array) => Promise<string>` returning lowercase hex, and are therefore asynchronous at that boundary.
-  - On A1 and A2, the adapter passes Node's `createHash`. `request-identity.ts` keeps importing only Node built-ins, as CLAUDE.md requires for `rules-hash.ts`.
+  - On A1 and A2, the adapter passes Node's `createHash`. `request-identity.ts` keeps importing only Node built-ins, as `docs/architecture/showdown-bridge.md` requires for `rules-hash.ts`.
   - Where Node's `createHash` is not available, the adapter passes WebCrypto's `crypto.subtle.digest`.
   - `decodeRequest` is split into a pure parse step plus hashing through the port.
   - A cross-runtime test hashes the shared corpus with both implementations and requires identical digests. Node 24 has `globalThis.crypto.subtle`, so one vitest run covers both.
