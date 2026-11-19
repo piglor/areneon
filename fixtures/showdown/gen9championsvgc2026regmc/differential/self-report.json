@@ -3,10 +3,16 @@
   "inputs": {
     "harness_format": 1,
     "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+    "mechanics_adapter_format": 2,
     "feature_sets": [
       "probe-damage/2",
       "probe-outcome/1"
     ],
+    "feature_set_hashes": {
+      "probe-damage/2": "04f70b601f5222ae45da41bd8980f06a4ba43f668f91c62579605c7eb5291cab",
+      "probe-outcome/1": "c0ba6961fb75fcca35b5c090cfb46de400bcecf7557b0a1b65f6b1945f489512"
+    },
+    "sources_sha256": "e98f2c1f45d093b12f05cbd6d13e5c92a7534c3cf50272d9ffe4bde6e75f9bab",
     "mechanics_config_hash": "34fc05a61649a3a9c02e9cbc78dea0e8ad86a248a8ab4131ba706a0903028420",
     "damage_aware_config_hash": "1df63656d4747a06f3e8b47e18959c1f7763f83ac500d317e3ae0e4a5db9ec14",
     "outcome_config_hash": "e3e124d891cb814e61621ea3e3e21a50b3aa13d1c9b5c40378aeda01b1431da1",
@@ -2669,92 +2675,92 @@
     {
       "id": "move:acidspray",
       "present": 11654,
-      "exercised": 454,
-      "equal": 454,
+      "exercised": 398,
+      "equal": 398,
       "differing": 0
     },
     {
       "id": "move:acrobatics",
       "present": 25366,
-      "exercised": 1000,
-      "equal": 1000,
+      "exercised": 956,
+      "equal": 956,
       "differing": 0
     },
     {
       "id": "move:acupressure",
       "present": 5011,
-      "exercised": 236,
-      "equal": 236,
+      "exercised": 109,
+      "equal": 109,
       "differing": 0
     },
     {
       "id": "move:aerialace",
       "present": 35910,
-      "exercised": 2801,
-      "equal": 2801,
+      "exercised": 2384,
+      "equal": 2384,
       "differing": 0
     },
     {
       "id": "move:afteryou",
       "present": 4720,
-      "exercised": 119,
-      "equal": 119,
+      "exercised": 49,
+      "equal": 49,
       "differing": 0
     },
     {
       "id": "move:agility",
       "present": 32211,
-      "exercised": 1562,
-      "equal": 1562,
+      "exercised": 894,
+      "equal": 894,
       "differing": 0
     },
     {
       "id": "move:aircutter",
       "present": 13284,
-      "exercised": 1804,
-      "equal": 1804,
+      "exercised": 1463,
+      "equal": 1463,
       "differing": 0
     },
     {
       "id": "move:airslash",
       "present": 14314,
-      "exercised": 2209,
-      "equal": 2209,
+      "exercised": 1741,
+      "equal": 1741,
       "differing": 0
     },
     {
       "id": "move:alluringvoice",
       "present": 15649,
-      "exercised": 1353,
-      "equal": 1353,
+      "exercised": 1125,
+      "equal": 1125,
       "differing": 0
     },
     {
       "id": "move:allyswitch",
       "present": 15995,
-      "exercised": 731,
-      "equal": 731,
+      "exercised": 431,
+      "equal": 431,
       "differing": 0
     },
     {
       "id": "move:amnesia",
       "present": 10488,
-      "exercised": 335,
-      "equal": 335,
+      "exercised": 233,
+      "equal": 233,
       "differing": 0
     },
     {
       "id": "move:ancientpower",
       "present": 14164,
-      "exercised": 1409,
-      "equal": 1409,
+      "exercised": 829,
+      "equal": 829,
       "differing": 0
     },
     {
       "id": "move:aquajet",
       "present": 4145,
-      "exercised": 396,
-      "equal": 396,
+      "exercised": 267,
+      "equal": 267,
       "differing": 0
     },
     {
@@ -2767,85 +2773,85 @@
     {
       "id": "move:aquatail",
       "present": 7056,
-      "exercised": 1123,
-      "equal": 1123,
+      "exercised": 1020,
+      "equal": 1020,
       "differing": 0
     },
     {
       "id": "move:aromaticmist",
       "present": 1891,
-      "exercised": 116,
-      "equal": 116,
+      "exercised": 86,
+      "equal": 86,
       "differing": 0
     },
     {
       "id": "move:assurance",
       "present": 21155,
-      "exercised": 2537,
-      "equal": 2537,
+      "exercised": 2026,
+      "equal": 2026,
       "differing": 0
     },
     {
       "id": "move:attract",
       "present": 30830,
-      "exercised": 2328,
-      "equal": 2328,
+      "exercised": 1474,
+      "equal": 1474,
       "differing": 0
     },
     {
       "id": "move:aurasphere",
       "present": 3130,
-      "exercised": 408,
-      "equal": 408,
+      "exercised": 395,
+      "equal": 395,
       "differing": 0
     },
     {
       "id": "move:auroraveil",
       "present": 2191,
-      "exercised": 73,
-      "equal": 73,
+      "exercised": 37,
+      "equal": 37,
       "differing": 0
     },
     {
       "id": "move:avalanche",
       "present": 8450,
-      "exercised": 1144,
-      "equal": 1144,
+      "exercised": 890,
+      "equal": 890,
       "differing": 0
     },
     {
       "id": "move:babydolleyes",
       "present": 3883,
-      "exercised": 292,
-      "equal": 292,
+      "exercised": 156,
+      "equal": 156,
       "differing": 0
     },
     {
       "id": "move:batonpass",
       "present": 8672,
-      "exercised": 626,
-      "equal": 626,
+      "exercised": 532,
+      "equal": 532,
       "differing": 0
     },
     {
       "id": "move:beatup",
       "present": 2008,
-      "exercised": 269,
-      "equal": 269,
+      "exercised": 256,
+      "equal": 256,
       "differing": 0
     },
     {
       "id": "move:belch",
       "present": 8990,
-      "exercised": 1187,
-      "equal": 1187,
+      "exercised": 743,
+      "equal": 743,
       "differing": 0
     },
     {
       "id": "move:bellydrum",
       "present": 539,
-      "exercised": 38,
-      "equal": 38,
+      "exercised": 24,
+      "equal": 24,
       "differing": 0
     },
     {
@@ -2858,36 +2864,36 @@
     {
       "id": "move:bite",
       "present": 17629,
-      "exercised": 2547,
-      "equal": 2547,
+      "exercised": 2097,
+      "equal": 2097,
       "differing": 0
     },
     {
       "id": "move:bittermalice",
       "present": 3113,
-      "exercised": 431,
-      "equal": 431,
+      "exercised": 372,
+      "equal": 372,
       "differing": 0
     },
     {
       "id": "move:blastburn",
       "present": 3048,
-      "exercised": 336,
-      "equal": 336,
+      "exercised": 183,
+      "equal": 183,
       "differing": 0
     },
     {
       "id": "move:blazekick",
       "present": 2429,
-      "exercised": 357,
-      "equal": 357,
+      "exercised": 261,
+      "equal": 261,
       "differing": 0
     },
     {
       "id": "move:blizzard",
       "present": 7706,
-      "exercised": 1098,
-      "equal": 1098,
+      "exercised": 987,
+      "equal": 987,
       "differing": 0
     },
     {
@@ -2900,15 +2906,15 @@
     {
       "id": "move:bodypress",
       "present": 26088,
-      "exercised": 3321,
-      "equal": 3321,
+      "exercised": 2445,
+      "equal": 2445,
       "differing": 0
     },
     {
       "id": "move:bodyslam",
       "present": 33850,
-      "exercised": 4768,
-      "equal": 4768,
+      "exercised": 3980,
+      "equal": 3980,
       "differing": 0
     },
     {
@@ -2921,85 +2927,85 @@
     {
       "id": "move:bounce",
       "present": 5211,
-      "exercised": 808,
-      "equal": 808,
+      "exercised": 605,
+      "equal": 605,
       "differing": 0
     },
     {
       "id": "move:bravebird",
       "present": 3508,
-      "exercised": 627,
-      "equal": 627,
+      "exercised": 609,
+      "equal": 609,
       "differing": 0
     },
     {
       "id": "move:breakingswipe",
       "present": 3345,
-      "exercised": 424,
-      "equal": 424,
+      "exercised": 323,
+      "equal": 323,
       "differing": 0
     },
     {
       "id": "move:brickbreak",
       "present": 29623,
-      "exercised": 4574,
-      "equal": 4574,
+      "exercised": 3680,
+      "equal": 3680,
       "differing": 0
     },
     {
       "id": "move:brutalswing",
       "present": 11008,
-      "exercised": 1546,
-      "equal": 1546,
+      "exercised": 1267,
+      "equal": 1267,
       "differing": 0
     },
     {
       "id": "move:bugbite",
       "present": 7554,
-      "exercised": 1241,
-      "equal": 1241,
+      "exercised": 953,
+      "equal": 953,
       "differing": 0
     },
     {
       "id": "move:bugbuzz",
       "present": 4312,
-      "exercised": 677,
-      "equal": 677,
+      "exercised": 563,
+      "equal": 563,
       "differing": 0
     },
     {
       "id": "move:bulkup",
       "present": 11370,
-      "exercised": 848,
-      "equal": 848,
+      "exercised": 372,
+      "equal": 372,
       "differing": 0
     },
     {
       "id": "move:bulldoze",
       "present": 24728,
-      "exercised": 3595,
-      "equal": 3595,
+      "exercised": 3432,
+      "equal": 3432,
       "differing": 0
     },
     {
       "id": "move:bulletpunch",
       "present": 1120,
-      "exercised": 146,
-      "equal": 146,
+      "exercised": 137,
+      "equal": 137,
       "differing": 0
     },
     {
       "id": "move:bulletseed",
       "present": 5108,
-      "exercised": 805,
-      "equal": 805,
+      "exercised": 713,
+      "equal": 713,
       "differing": 0
     },
     {
       "id": "move:burningjealousy",
       "present": 6930,
-      "exercised": 824,
-      "equal": 824,
+      "exercised": 643,
+      "equal": 643,
       "differing": 0
     },
     {
@@ -3012,64 +3018,64 @@
     {
       "id": "move:calmmind",
       "present": 23923,
-      "exercised": 1762,
-      "equal": 1762,
+      "exercised": 819,
+      "equal": 819,
       "differing": 0
     },
     {
       "id": "move:charge",
       "present": 2231,
-      "exercised": 89,
-      "equal": 89,
+      "exercised": 57,
+      "equal": 57,
       "differing": 0
     },
     {
       "id": "move:chargebeam",
       "present": 16624,
-      "exercised": 2345,
-      "equal": 2345,
+      "exercised": 1627,
+      "equal": 1627,
       "differing": 0
     },
     {
       "id": "move:charm",
       "present": 19679,
-      "exercised": 1618,
-      "equal": 1618,
+      "exercised": 692,
+      "equal": 692,
       "differing": 0
     },
     {
       "id": "move:chillingwater",
       "present": 26143,
-      "exercised": 3968,
-      "equal": 3968,
+      "exercised": 3111,
+      "equal": 3111,
       "differing": 0
     },
     {
       "id": "move:chillyreception",
       "present": 6030,
-      "exercised": 329,
-      "equal": 329,
+      "exercised": 0,
+      "equal": 0,
       "differing": 0
     },
     {
       "id": "move:clearsmog",
       "present": 2017,
-      "exercised": 282,
-      "equal": 282,
+      "exercised": 184,
+      "equal": 184,
       "differing": 0
     },
     {
       "id": "move:closecombat",
       "present": 18703,
-      "exercised": 2620,
-      "equal": 2620,
+      "exercised": 2011,
+      "equal": 2011,
       "differing": 0
     },
     {
       "id": "move:coaching",
       "present": 3887,
-      "exercised": 253,
-      "equal": 253,
+      "exercised": 225,
+      "equal": 225,
       "differing": 0
     },
     {
@@ -3089,15 +3095,15 @@
     {
       "id": "move:confuseray",
       "present": 10496,
-      "exercised": 947,
-      "equal": 947,
+      "exercised": 477,
+      "equal": 477,
       "differing": 0
     },
     {
       "id": "move:copycat",
       "present": 5241,
-      "exercised": 340,
-      "equal": 340,
+      "exercised": 324,
+      "equal": 324,
       "differing": 0
     },
     {
@@ -3110,29 +3116,29 @@
     {
       "id": "move:cosmicpower",
       "present": 2705,
-      "exercised": 189,
-      "equal": 189,
+      "exercised": 53,
+      "equal": 53,
       "differing": 0
     },
     {
       "id": "move:cottonguard",
       "present": 2183,
-      "exercised": 128,
-      "equal": 128,
+      "exercised": 48,
+      "equal": 48,
       "differing": 0
     },
     {
       "id": "move:cottonspore",
       "present": 1262,
-      "exercised": 84,
-      "equal": 84,
+      "exercised": 72,
+      "equal": 72,
       "differing": 0
     },
     {
       "id": "move:counter",
       "present": 21422,
-      "exercised": 379,
-      "equal": 379,
+      "exercised": 3,
+      "equal": 3,
       "differing": 0
     },
     {
@@ -3145,8 +3151,8 @@
     {
       "id": "move:covet",
       "present": 7179,
-      "exercised": 988,
-      "equal": 988,
+      "exercised": 686,
+      "equal": 686,
       "differing": 0
     },
     {
@@ -3159,50 +3165,50 @@
     {
       "id": "move:crosschop",
       "present": 3037,
-      "exercised": 282,
-      "equal": 282,
+      "exercised": 132,
+      "equal": 132,
       "differing": 0
     },
     {
       "id": "move:crosspoison",
       "present": 1340,
-      "exercised": 194,
-      "equal": 194,
+      "exercised": 156,
+      "equal": 156,
       "differing": 0
     },
     {
       "id": "move:crunch",
       "present": 18189,
-      "exercised": 2883,
-      "equal": 2883,
+      "exercised": 2332,
+      "equal": 2332,
       "differing": 0
     },
     {
       "id": "move:curse",
       "present": 19171,
-      "exercised": 1458,
-      "equal": 1458,
+      "exercised": 881,
+      "equal": 881,
       "differing": 0
     },
     {
       "id": "move:darkpulse",
       "present": 21302,
-      "exercised": 3428,
-      "equal": 3428,
+      "exercised": 2634,
+      "equal": 2634,
       "differing": 0
     },
     {
       "id": "move:dazzlinggleam",
       "present": 12561,
-      "exercised": 1698,
-      "equal": 1698,
+      "exercised": 1393,
+      "equal": 1393,
       "differing": 0
     },
     {
       "id": "move:decorate",
       "present": 5131,
-      "exercised": 428,
-      "equal": 428,
+      "exercised": 169,
+      "equal": 169,
       "differing": 0
     },
     {
@@ -3215,78 +3221,78 @@
     {
       "id": "move:destinybond",
       "present": 5862,
-      "exercised": 397,
-      "equal": 397,
+      "exercised": 243,
+      "equal": 243,
       "differing": 0
     },
     {
       "id": "move:detect",
       "present": 8236,
-      "exercised": 710,
-      "equal": 710,
+      "exercised": 582,
+      "equal": 582,
       "differing": 0
     },
     {
       "id": "move:dig",
       "present": 22730,
-      "exercised": 3290,
-      "equal": 3290,
+      "exercised": 2834,
+      "equal": 2834,
       "differing": 0
     },
     {
       "id": "move:direclaw",
       "present": 619,
-      "exercised": 99,
-      "equal": 99,
+      "exercised": 51,
+      "equal": 51,
       "differing": 0
     },
     {
       "id": "move:disable",
       "present": 9160,
-      "exercised": 781,
-      "equal": 781,
+      "exercised": 601,
+      "equal": 601,
       "differing": 0
     },
     {
       "id": "move:discharge",
       "present": 8197,
-      "exercised": 992,
-      "equal": 992,
+      "exercised": 662,
+      "equal": 662,
       "differing": 0
     },
     {
       "id": "move:dive",
       "present": 2778,
-      "exercised": 453,
-      "equal": 453,
+      "exercised": 415,
+      "equal": 415,
       "differing": 0
     },
     {
       "id": "move:doubleedge",
       "present": 39268,
-      "exercised": 5953,
-      "equal": 5953,
+      "exercised": 4613,
+      "equal": 4613,
       "differing": 0
     },
     {
       "id": "move:doublehit",
       "present": 7380,
-      "exercised": 1248,
-      "equal": 1248,
+      "exercised": 1024,
+      "equal": 1024,
       "differing": 0
     },
     {
       "id": "move:doubleteam",
       "present": 7134,
-      "exercised": 499,
-      "equal": 499,
+      "exercised": 427,
+      "equal": 427,
       "differing": 0
     },
     {
       "id": "move:dracometeor",
       "present": 3510,
-      "exercised": 548,
-      "equal": 548,
+      "exercised": 425,
+      "equal": 425,
       "differing": 0
     },
     {
@@ -3299,57 +3305,57 @@
     {
       "id": "move:dragonclaw",
       "present": 9213,
-      "exercised": 1348,
-      "equal": 1348,
+      "exercised": 1086,
+      "equal": 1086,
       "differing": 0
     },
     {
       "id": "move:dragondance",
       "present": 6366,
-      "exercised": 450,
-      "equal": 450,
+      "exercised": 440,
+      "equal": 440,
       "differing": 0
     },
     {
       "id": "move:dragondarts",
       "present": 1913,
-      "exercised": 256,
-      "equal": 256,
+      "exercised": 94,
+      "equal": 94,
       "differing": 0
     },
     {
       "id": "move:dragonpulse",
       "present": 11714,
-      "exercised": 1785,
-      "equal": 1785,
+      "exercised": 1504,
+      "equal": 1504,
       "differing": 0
     },
     {
       "id": "move:dragonrush",
       "present": 4362,
-      "exercised": 718,
-      "equal": 718,
+      "exercised": 608,
+      "equal": 608,
       "differing": 0
     },
     {
       "id": "move:dragontail",
       "present": 6870,
-      "exercised": 1041,
-      "equal": 1041,
+      "exercised": 789,
+      "equal": 789,
       "differing": 0
     },
     {
       "id": "move:drainingkiss",
       "present": 14081,
-      "exercised": 2035,
-      "equal": 2035,
+      "exercised": 1869,
+      "equal": 1869,
       "differing": 0
     },
     {
       "id": "move:drainpunch",
       "present": 13072,
-      "exercised": 2164,
-      "equal": 2164,
+      "exercised": 1997,
+      "equal": 1997,
       "differing": 0
     },
     {
@@ -3376,43 +3382,43 @@
     {
       "id": "move:dualwingbeat",
       "present": 14429,
-      "exercised": 2282,
-      "equal": 2282,
+      "exercised": 2166,
+      "equal": 2166,
       "differing": 0
     },
     {
       "id": "move:dynamicpunch",
       "present": 8586,
-      "exercised": 1074,
-      "equal": 1074,
+      "exercised": 675,
+      "equal": 675,
       "differing": 0
     },
     {
       "id": "move:earthpower",
       "present": 13664,
-      "exercised": 1931,
-      "equal": 1931,
+      "exercised": 1565,
+      "equal": 1565,
       "differing": 0
     },
     {
       "id": "move:earthquake",
       "present": 15242,
-      "exercised": 2042,
-      "equal": 2042,
+      "exercised": 1778,
+      "equal": 1778,
       "differing": 0
     },
     {
       "id": "move:eerieimpulse",
       "present": 4176,
-      "exercised": 363,
-      "equal": 363,
+      "exercised": 206,
+      "equal": 206,
       "differing": 0
     },
     {
       "id": "move:electricterrain",
       "present": 5564,
-      "exercised": 376,
-      "equal": 376,
+      "exercised": 144,
+      "equal": 144,
       "differing": 0
     },
     {
@@ -3425,50 +3431,50 @@
     {
       "id": "move:electroball",
       "present": 12177,
-      "exercised": 1797,
-      "equal": 1797,
+      "exercised": 1325,
+      "equal": 1325,
       "differing": 0
     },
     {
       "id": "move:electroweb",
       "present": 7044,
-      "exercised": 795,
-      "equal": 795,
+      "exercised": 532,
+      "equal": 532,
       "differing": 0
     },
     {
       "id": "move:encore",
       "present": 15435,
-      "exercised": 1419,
-      "equal": 1419,
+      "exercised": 1000,
+      "equal": 1000,
       "differing": 0
     },
     {
       "id": "move:endeavor",
       "present": 30982,
-      "exercised": 4463,
-      "equal": 4463,
+      "exercised": 3466,
+      "equal": 3466,
       "differing": 0
     },
     {
       "id": "move:endure",
       "present": 65038,
-      "exercised": 6015,
-      "equal": 6015,
+      "exercised": 4515,
+      "equal": 4515,
       "differing": 0
     },
     {
       "id": "move:energyball",
       "present": 20943,
-      "exercised": 3203,
-      "equal": 3203,
+      "exercised": 2629,
+      "equal": 2629,
       "differing": 0
     },
     {
       "id": "move:entrainment",
       "present": 5144,
-      "exercised": 405,
-      "equal": 405,
+      "exercised": 305,
+      "equal": 305,
       "differing": 0
     },
     {
@@ -3481,64 +3487,64 @@
     {
       "id": "move:expandingforce",
       "present": 13057,
-      "exercised": 2012,
-      "equal": 2012,
+      "exercised": 1295,
+      "equal": 1295,
       "differing": 0
     },
     {
       "id": "move:explosion",
       "present": 1954,
-      "exercised": 254,
-      "equal": 254,
+      "exercised": 202,
+      "equal": 202,
       "differing": 0
     },
     {
       "id": "move:extrasensory",
       "present": 3601,
-      "exercised": 520,
-      "equal": 520,
+      "exercised": 420,
+      "equal": 420,
       "differing": 0
     },
     {
       "id": "move:facade",
       "present": 76659,
-      "exercised": 12357,
-      "equal": 12357,
+      "exercised": 10047,
+      "equal": 10047,
       "differing": 0
     },
     {
       "id": "move:fairylock",
       "present": 550,
-      "exercised": 34,
-      "equal": 34,
+      "exercised": 14,
+      "equal": 14,
       "differing": 0
     },
     {
       "id": "move:fakeout",
       "present": 16958,
-      "exercised": 1435,
-      "equal": 1435,
+      "exercised": 1242,
+      "equal": 1242,
       "differing": 0
     },
     {
       "id": "move:faketears",
       "present": 18602,
-      "exercised": 1550,
-      "equal": 1550,
+      "exercised": 891,
+      "equal": 891,
       "differing": 0
     },
     {
       "id": "move:featherdance",
       "present": 4729,
-      "exercised": 384,
-      "equal": 384,
+      "exercised": 300,
+      "equal": 300,
       "differing": 0
     },
     {
       "id": "move:feint",
       "present": 10651,
-      "exercised": 1488,
-      "equal": 1488,
+      "exercised": 1069,
+      "equal": 1069,
       "differing": 0
     },
     {
@@ -3558,71 +3564,71 @@
     {
       "id": "move:fireblast",
       "present": 18806,
-      "exercised": 2728,
-      "equal": 2728,
+      "exercised": 2208,
+      "equal": 2208,
       "differing": 0
     },
     {
       "id": "move:firefang",
       "present": 12862,
-      "exercised": 1884,
-      "equal": 1884,
+      "exercised": 1542,
+      "equal": 1542,
       "differing": 0
     },
     {
       "id": "move:firepunch",
       "present": 9550,
-      "exercised": 1318,
-      "equal": 1318,
+      "exercised": 924,
+      "equal": 924,
       "differing": 0
     },
     {
       "id": "move:firespin",
       "present": 17503,
-      "exercised": 2716,
-      "equal": 2716,
+      "exercised": 2265,
+      "equal": 2265,
       "differing": 0
     },
     {
       "id": "move:firstimpression",
       "present": 2012,
-      "exercised": 157,
-      "equal": 157,
+      "exercised": 143,
+      "equal": 143,
       "differing": 0
     },
     {
       "id": "move:flail",
       "present": 12927,
-      "exercised": 1901,
-      "equal": 1901,
+      "exercised": 1527,
+      "equal": 1527,
       "differing": 0
     },
     {
       "id": "move:flamecharge",
       "present": 3581,
-      "exercised": 558,
-      "equal": 558,
+      "exercised": 546,
+      "equal": 546,
       "differing": 0
     },
     {
       "id": "move:flamethrower",
       "present": 15109,
-      "exercised": 2413,
-      "equal": 2413,
+      "exercised": 2067,
+      "equal": 2067,
       "differing": 0
     },
     {
       "id": "move:flareblitz",
       "present": 5833,
-      "exercised": 934,
-      "equal": 934,
+      "exercised": 741,
+      "equal": 741,
       "differing": 0
     },
     {
       "id": "move:flashcannon",
       "present": 10594,
-      "exercised": 1482,
-      "equal": 1482,
+      "exercised": 1075,
+      "equal": 1075,
       "differing": 0
     },
     {
@@ -3635,22 +3641,22 @@
     {
       "id": "move:fling",
       "present": 40807,
-      "exercised": 5810,
-      "equal": 5810,
+      "exercised": 4687,
+      "equal": 4687,
       "differing": 0
     },
     {
       "id": "move:flipturn",
       "present": 3631,
-      "exercised": 461,
-      "equal": 461,
+      "exercised": 313,
+      "equal": 313,
       "differing": 0
     },
     {
       "id": "move:fly",
       "present": 15195,
-      "exercised": 2069,
-      "equal": 2069,
+      "exercised": 1546,
+      "equal": 1546,
       "differing": 0
     },
     {
@@ -3663,22 +3669,22 @@
     {
       "id": "move:focusblast",
       "present": 27315,
-      "exercised": 4417,
-      "equal": 4417,
+      "exercised": 3400,
+      "equal": 3400,
       "differing": 0
     },
     {
       "id": "move:focusenergy",
       "present": 29001,
-      "exercised": 1864,
-      "equal": 1864,
+      "exercised": 1255,
+      "equal": 1255,
       "differing": 0
     },
     {
       "id": "move:focuspunch",
       "present": 14997,
-      "exercised": 1319,
-      "equal": 1319,
+      "exercised": 1053,
+      "equal": 1053,
       "differing": 0
     },
     {
@@ -3691,36 +3697,36 @@
     {
       "id": "move:foulplay",
       "present": 19053,
-      "exercised": 2829,
-      "equal": 2829,
+      "exercised": 1920,
+      "equal": 1920,
       "differing": 0
     },
     {
       "id": "move:freezedry",
       "present": 2303,
-      "exercised": 374,
-      "equal": 374,
+      "exercised": 234,
+      "equal": 234,
       "differing": 0
     },
     {
       "id": "move:frenzyplant",
       "present": 1996,
-      "exercised": 314,
-      "equal": 314,
+      "exercised": 296,
+      "equal": 296,
       "differing": 0
     },
     {
       "id": "move:frostbreath",
       "present": 2113,
-      "exercised": 354,
-      "equal": 354,
+      "exercised": 320,
+      "equal": 320,
       "differing": 0
     },
     {
       "id": "move:futuresight",
       "present": 11724,
-      "exercised": 1109,
-      "equal": 1109,
+      "exercised": 930,
+      "equal": 930,
       "differing": 0
     },
     {
@@ -3733,22 +3739,22 @@
     {
       "id": "move:gigadrain",
       "present": 13524,
-      "exercised": 1992,
-      "equal": 1992,
+      "exercised": 1613,
+      "equal": 1613,
       "differing": 0
     },
     {
       "id": "move:gigaimpact",
       "present": 65039,
-      "exercised": 9317,
-      "equal": 9317,
+      "exercised": 7392,
+      "equal": 7392,
       "differing": 0
     },
     {
       "id": "move:gigatonhammer",
       "present": 842,
-      "exercised": 76,
-      "equal": 76,
+      "exercised": 46,
+      "equal": 46,
       "differing": 0
     },
     {
@@ -3761,50 +3767,50 @@
     {
       "id": "move:grassknot",
       "present": 22853,
-      "exercised": 3277,
-      "equal": 3277,
+      "exercised": 2452,
+      "equal": 2452,
       "differing": 0
     },
     {
       "id": "move:grassyglide",
       "present": 8234,
-      "exercised": 1148,
-      "equal": 1148,
+      "exercised": 1064,
+      "equal": 1064,
       "differing": 0
     },
     {
       "id": "move:grassyterrain",
       "present": 6539,
-      "exercised": 430,
-      "equal": 430,
+      "exercised": 230,
+      "equal": 230,
       "differing": 0
     },
     {
       "id": "move:gravity",
       "present": 4311,
-      "exercised": 281,
-      "equal": 281,
+      "exercised": 199,
+      "equal": 199,
       "differing": 0
     },
     {
       "id": "move:growth",
       "present": 4401,
-      "exercised": 305,
-      "equal": 305,
+      "exercised": 201,
+      "equal": 201,
       "differing": 0
     },
     {
       "id": "move:guardsplit",
       "present": 4244,
-      "exercised": 384,
-      "equal": 384,
+      "exercised": 119,
+      "equal": 119,
       "differing": 0
     },
     {
       "id": "move:guardswap",
       "present": 10467,
-      "exercised": 809,
-      "equal": 809,
+      "exercised": 471,
+      "equal": 471,
       "differing": 0
     },
     {
@@ -3817,8 +3823,8 @@
     {
       "id": "move:gunkshot",
       "present": 9111,
-      "exercised": 1289,
-      "equal": 1289,
+      "exercised": 1053,
+      "equal": 1053,
       "differing": 0
     },
     {
@@ -3831,99 +3837,99 @@
     {
       "id": "move:hammerarm",
       "present": 10443,
-      "exercised": 1582,
-      "equal": 1582,
+      "exercised": 1063,
+      "equal": 1063,
       "differing": 0
     },
     {
       "id": "move:hardpress",
       "present": 4784,
-      "exercised": 723,
-      "equal": 723,
+      "exercised": 536,
+      "equal": 536,
       "differing": 0
     },
     {
       "id": "move:haze",
       "present": 9871,
-      "exercised": 730,
-      "equal": 730,
+      "exercised": 527,
+      "equal": 527,
       "differing": 0
     },
     {
       "id": "move:headlongrush",
       "present": 1943,
-      "exercised": 302,
-      "equal": 302,
+      "exercised": 256,
+      "equal": 256,
       "differing": 0
     },
     {
       "id": "move:headsmash",
       "present": 2653,
-      "exercised": 387,
-      "equal": 387,
+      "exercised": 319,
+      "equal": 319,
       "differing": 0
     },
     {
       "id": "move:healbell",
       "present": 742,
-      "exercised": 49,
-      "equal": 49,
+      "exercised": 2,
+      "equal": 2,
       "differing": 0
     },
     {
       "id": "move:healingwish",
       "present": 1128,
-      "exercised": 111,
-      "equal": 111,
+      "exercised": 48,
+      "equal": 48,
       "differing": 0
     },
     {
       "id": "move:healpulse",
       "present": 4106,
-      "exercised": 388,
-      "equal": 388,
+      "exercised": 84,
+      "equal": 84,
       "differing": 0
     },
     {
       "id": "move:heatcrash",
       "present": 2974,
-      "exercised": 477,
-      "equal": 477,
+      "exercised": 459,
+      "equal": 459,
       "differing": 0
     },
     {
       "id": "move:heatwave",
       "present": 6608,
-      "exercised": 910,
-      "equal": 910,
+      "exercised": 848,
+      "equal": 848,
       "differing": 0
     },
     {
       "id": "move:heavyslam",
       "present": 6559,
-      "exercised": 984,
-      "equal": 984,
+      "exercised": 921,
+      "equal": 921,
       "differing": 0
     },
     {
       "id": "move:helpinghand",
       "present": 34115,
-      "exercised": 2417,
-      "equal": 2417,
+      "exercised": 1745,
+      "equal": 1745,
       "differing": 0
     },
     {
       "id": "move:hex",
       "present": 11687,
-      "exercised": 1842,
-      "equal": 1842,
+      "exercised": 1634,
+      "equal": 1634,
       "differing": 0
     },
     {
       "id": "move:highhorsepower",
       "present": 10374,
-      "exercised": 1662,
-      "equal": 1662,
+      "exercised": 1336,
+      "equal": 1336,
       "differing": 0
     },
     {
@@ -3950,64 +3956,64 @@
     {
       "id": "move:howl",
       "present": 3383,
-      "exercised": 204,
-      "equal": 204,
+      "exercised": 158,
+      "equal": 158,
       "differing": 0
     },
     {
       "id": "move:hurricane",
       "present": 17536,
-      "exercised": 2381,
-      "equal": 2381,
+      "exercised": 1779,
+      "equal": 1779,
       "differing": 0
     },
     {
       "id": "move:hydrocannon",
       "present": 2697,
-      "exercised": 294,
-      "equal": 294,
+      "exercised": 119,
+      "equal": 119,
       "differing": 0
     },
     {
       "id": "move:hydropump",
       "present": 15116,
-      "exercised": 2099,
-      "equal": 2099,
+      "exercised": 1498,
+      "equal": 1498,
       "differing": 0
     },
     {
       "id": "move:hyperbeam",
       "present": 66921,
-      "exercised": 9688,
-      "equal": 9688,
+      "exercised": 7944,
+      "equal": 7944,
       "differing": 0
     },
     {
       "id": "move:hypervoice",
       "present": 14719,
-      "exercised": 1959,
-      "equal": 1959,
+      "exercised": 1715,
+      "equal": 1715,
       "differing": 0
     },
     {
       "id": "move:hypnosis",
       "present": 4407,
-      "exercised": 363,
-      "equal": 363,
+      "exercised": 99,
+      "equal": 99,
       "differing": 0
     },
     {
       "id": "move:icebeam",
       "present": 20766,
-      "exercised": 2907,
-      "equal": 2907,
+      "exercised": 2271,
+      "equal": 2271,
       "differing": 0
     },
     {
       "id": "move:icefang",
       "present": 10807,
-      "exercised": 1517,
-      "equal": 1517,
+      "exercised": 988,
+      "equal": 988,
       "differing": 0
     },
     {
@@ -4020,8 +4026,8 @@
     {
       "id": "move:icepunch",
       "present": 21320,
-      "exercised": 3171,
-      "equal": 3171,
+      "exercised": 2463,
+      "equal": 2463,
       "differing": 0
     },
     {
@@ -4034,8 +4040,8 @@
     {
       "id": "move:icespinner",
       "present": 7810,
-      "exercised": 1127,
-      "equal": 1127,
+      "exercised": 668,
+      "equal": 668,
       "differing": 0
     },
     {
@@ -4048,22 +4054,22 @@
     {
       "id": "move:iciclespear",
       "present": 2121,
-      "exercised": 324,
-      "equal": 324,
+      "exercised": 300,
+      "equal": 300,
       "differing": 0
     },
     {
       "id": "move:icywind",
       "present": 15924,
-      "exercised": 2384,
-      "equal": 2384,
+      "exercised": 2156,
+      "equal": 2156,
       "differing": 0
     },
     {
       "id": "move:imprison",
       "present": 7190,
-      "exercised": 490,
-      "equal": 490,
+      "exercised": 218,
+      "equal": 218,
       "differing": 0
     },
     {
@@ -4076,29 +4082,29 @@
     {
       "id": "move:ingrain",
       "present": 2480,
-      "exercised": 196,
-      "equal": 196,
+      "exercised": 106,
+      "equal": 106,
       "differing": 0
     },
     {
       "id": "move:irondefense",
       "present": 17770,
-      "exercised": 1229,
-      "equal": 1229,
+      "exercised": 712,
+      "equal": 712,
       "differing": 0
     },
     {
       "id": "move:ironhead",
       "present": 13973,
-      "exercised": 1966,
-      "equal": 1966,
+      "exercised": 1795,
+      "equal": 1795,
       "differing": 0
     },
     {
       "id": "move:irontail",
       "present": 38699,
-      "exercised": 5566,
-      "equal": 5566,
+      "exercised": 3862,
+      "equal": 3862,
       "differing": 0
     },
     {
@@ -4111,15 +4117,15 @@
     {
       "id": "move:knockoff",
       "present": 23614,
-      "exercised": 3557,
-      "equal": 3557,
+      "exercised": 2921,
+      "equal": 2921,
       "differing": 0
     },
     {
       "id": "move:lashout",
       "present": 13544,
-      "exercised": 2164,
-      "equal": 2164,
+      "exercised": 1713,
+      "equal": 1713,
       "differing": 0
     },
     {
@@ -4132,8 +4138,8 @@
     {
       "id": "move:lastrespects",
       "present": 7335,
-      "exercised": 999,
-      "equal": 999,
+      "exercised": 864,
+      "equal": 864,
       "differing": 0
     },
     {
@@ -4146,36 +4152,36 @@
     {
       "id": "move:leafblade",
       "present": 2490,
-      "exercised": 311,
-      "equal": 311,
+      "exercised": 153,
+      "equal": 153,
       "differing": 0
     },
     {
       "id": "move:leafstorm",
       "present": 3115,
-      "exercised": 496,
-      "equal": 496,
+      "exercised": 416,
+      "equal": 416,
       "differing": 0
     },
     {
       "id": "move:leechlife",
       "present": 2104,
-      "exercised": 363,
-      "equal": 363,
+      "exercised": 343,
+      "equal": 343,
       "differing": 0
     },
     {
       "id": "move:leechseed",
       "present": 2830,
-      "exercised": 242,
-      "equal": 242,
+      "exercised": 122,
+      "equal": 122,
       "differing": 0
     },
     {
       "id": "move:lifedew",
       "present": 2150,
-      "exercised": 105,
-      "equal": 105,
+      "exercised": 95,
+      "equal": 95,
       "differing": 0
     },
     {
@@ -4188,36 +4194,36 @@
     {
       "id": "move:lightscreen",
       "present": 26392,
-      "exercised": 1781,
-      "equal": 1781,
+      "exercised": 1096,
+      "equal": 1096,
       "differing": 0
     },
     {
       "id": "move:liquidation",
       "present": 6463,
-      "exercised": 1109,
-      "equal": 1109,
+      "exercised": 905,
+      "equal": 905,
       "differing": 0
     },
     {
       "id": "move:lowkick",
       "present": 15572,
-      "exercised": 2350,
-      "equal": 2350,
+      "exercised": 1990,
+      "equal": 1990,
       "differing": 0
     },
     {
       "id": "move:lowsweep",
       "present": 12267,
-      "exercised": 1619,
-      "equal": 1619,
+      "exercised": 1150,
+      "equal": 1150,
       "differing": 0
     },
     {
       "id": "move:lunge",
       "present": 4936,
-      "exercised": 847,
-      "equal": 847,
+      "exercised": 735,
+      "equal": 735,
       "differing": 0
     },
     {
@@ -4230,64 +4236,64 @@
     {
       "id": "move:magicroom",
       "present": 3350,
-      "exercised": 220,
-      "equal": 220,
+      "exercised": 200,
+      "equal": 200,
       "differing": 0
     },
     {
       "id": "move:magnetrise",
       "present": 1693,
-      "exercised": 117,
-      "equal": 117,
+      "exercised": 50,
+      "equal": 50,
       "differing": 0
     },
     {
       "id": "move:meanlook",
       "present": 4137,
-      "exercised": 384,
-      "equal": 384,
+      "exercised": 211,
+      "equal": 211,
       "differing": 0
     },
     {
       "id": "move:megahorn",
       "present": 5957,
-      "exercised": 747,
-      "equal": 747,
+      "exercised": 412,
+      "equal": 412,
       "differing": 0
     },
     {
       "id": "move:megakick",
       "present": 10963,
-      "exercised": 1749,
-      "equal": 1749,
+      "exercised": 1466,
+      "equal": 1466,
       "differing": 0
     },
     {
       "id": "move:memento",
       "present": 1538,
-      "exercised": 171,
-      "equal": 171,
+      "exercised": 77,
+      "equal": 77,
       "differing": 0
     },
     {
       "id": "move:metalburst",
       "present": 3441,
-      "exercised": 247,
-      "equal": 247,
+      "exercised": 167,
+      "equal": 167,
       "differing": 0
     },
     {
       "id": "move:metalsound",
       "present": 5732,
-      "exercised": 383,
-      "equal": 383,
+      "exercised": 302,
+      "equal": 302,
       "differing": 0
     },
     {
       "id": "move:meteorbeam",
       "present": 7492,
-      "exercised": 1205,
-      "equal": 1205,
+      "exercised": 1075,
+      "equal": 1075,
       "differing": 0
     },
     {
@@ -4307,15 +4313,15 @@
     {
       "id": "move:minimize",
       "present": 2536,
-      "exercised": 167,
-      "equal": 167,
+      "exercised": 115,
+      "equal": 115,
       "differing": 0
     },
     {
       "id": "move:mirrorcoat",
       "present": 9517,
-      "exercised": 53,
-      "equal": 53,
+      "exercised": 7,
+      "equal": 7,
       "differing": 0
     },
     {
@@ -4328,22 +4334,22 @@
     {
       "id": "move:mistyterrain",
       "present": 5601,
-      "exercised": 361,
-      "equal": 361,
+      "exercised": 295,
+      "equal": 295,
       "differing": 0
     },
     {
       "id": "move:moonblast",
       "present": 3010,
-      "exercised": 454,
-      "equal": 454,
+      "exercised": 358,
+      "equal": 358,
       "differing": 0
     },
     {
       "id": "move:moonlight",
       "present": 1265,
-      "exercised": 94,
-      "equal": 94,
+      "exercised": 82,
+      "equal": 82,
       "differing": 0
     },
     {
@@ -4356,43 +4362,43 @@
     {
       "id": "move:mortalspin",
       "present": 782,
-      "exercised": 103,
-      "equal": 103,
+      "exercised": 69,
+      "equal": 69,
       "differing": 0
     },
     {
       "id": "move:muddywater",
       "present": 2642,
-      "exercised": 314,
-      "equal": 314,
+      "exercised": 228,
+      "equal": 228,
       "differing": 0
     },
     {
       "id": "move:mudshot",
       "present": 14620,
-      "exercised": 2395,
-      "equal": 2395,
+      "exercised": 2210,
+      "equal": 2210,
       "differing": 0
     },
     {
       "id": "move:mudslap",
       "present": 19542,
-      "exercised": 2795,
-      "equal": 2795,
+      "exercised": 2253,
+      "equal": 2253,
       "differing": 0
     },
     {
       "id": "move:mysticalfire",
       "present": 5621,
-      "exercised": 895,
-      "equal": 895,
+      "exercised": 759,
+      "equal": 759,
       "differing": 0
     },
     {
       "id": "move:nastyplot",
       "present": 14019,
-      "exercised": 811,
-      "equal": 811,
+      "exercised": 604,
+      "equal": 604,
       "differing": 0
     },
     {
@@ -4405,15 +4411,15 @@
     {
       "id": "move:nightshade",
       "present": 23711,
-      "exercised": 3353,
-      "equal": 3353,
+      "exercised": 2577,
+      "equal": 2577,
       "differing": 0
     },
     {
       "id": "move:nightslash",
       "present": 11254,
-      "exercised": 1594,
-      "equal": 1594,
+      "exercised": 1229,
+      "equal": 1229,
       "differing": 0
     },
     {
@@ -4447,29 +4453,29 @@
     {
       "id": "move:outrage",
       "present": 19914,
-      "exercised": 2653,
-      "equal": 2653,
+      "exercised": 2127,
+      "equal": 2127,
       "differing": 0
     },
     {
       "id": "move:overheat",
       "present": 10781,
-      "exercised": 1570,
-      "equal": 1570,
+      "exercised": 1319,
+      "equal": 1319,
       "differing": 0
     },
     {
       "id": "move:painsplit",
       "present": 19086,
-      "exercised": 1567,
-      "equal": 1567,
+      "exercised": 783,
+      "equal": 783,
       "differing": 0
     },
     {
       "id": "move:paraboliccharge",
       "present": 744,
-      "exercised": 93,
-      "equal": 93,
+      "exercised": 69,
+      "equal": 69,
       "differing": 0
     },
     {
@@ -4482,36 +4488,36 @@
     {
       "id": "move:payback",
       "present": 22025,
-      "exercised": 3295,
-      "equal": 3295,
+      "exercised": 2838,
+      "equal": 2838,
       "differing": 0
     },
     {
       "id": "move:perishsong",
       "present": 480,
-      "exercised": 34,
-      "equal": 34,
+      "exercised": 12,
+      "equal": 12,
       "differing": 0
     },
     {
       "id": "move:petalblizzard",
       "present": 6236,
-      "exercised": 789,
-      "equal": 789,
+      "exercised": 593,
+      "equal": 593,
       "differing": 0
     },
     {
       "id": "move:petaldance",
       "present": 3086,
-      "exercised": 473,
-      "equal": 473,
+      "exercised": 326,
+      "equal": 326,
       "differing": 0
     },
     {
       "id": "move:phantomforce",
       "present": 14344,
-      "exercised": 1872,
-      "equal": 1872,
+      "exercised": 1259,
+      "equal": 1259,
       "differing": 0
     },
     {
@@ -4524,8 +4530,8 @@
     {
       "id": "move:playrough",
       "present": 13798,
-      "exercised": 1925,
-      "equal": 1925,
+      "exercised": 1510,
+      "equal": 1510,
       "differing": 0
     },
     {
@@ -4538,36 +4544,36 @@
     {
       "id": "move:poisonfang",
       "present": 1473,
-      "exercised": 235,
-      "equal": 235,
+      "exercised": 229,
+      "equal": 229,
       "differing": 0
     },
     {
       "id": "move:poisonjab",
       "present": 12954,
-      "exercised": 1957,
-      "equal": 1957,
+      "exercised": 1530,
+      "equal": 1530,
       "differing": 0
     },
     {
       "id": "move:poisonpowder",
       "present": 6360,
-      "exercised": 565,
-      "equal": 565,
+      "exercised": 257,
+      "equal": 257,
       "differing": 0
     },
     {
       "id": "move:pollenpuff",
       "present": 5402,
-      "exercised": 875,
-      "equal": 875,
+      "exercised": 815,
+      "equal": 815,
       "differing": 0
     },
     {
       "id": "move:poltergeist",
       "present": 19054,
-      "exercised": 2691,
-      "equal": 2691,
+      "exercised": 1862,
+      "equal": 1862,
       "differing": 0
     },
     {
@@ -4580,15 +4586,15 @@
     {
       "id": "move:pounce",
       "present": 8934,
-      "exercised": 1294,
-      "equal": 1294,
+      "exercised": 1093,
+      "equal": 1093,
       "differing": 0
     },
     {
       "id": "move:powergem",
       "present": 5688,
-      "exercised": 839,
-      "equal": 839,
+      "exercised": 695,
+      "equal": 695,
       "differing": 0
     },
     {
@@ -4601,8 +4607,8 @@
     {
       "id": "move:powerswap",
       "present": 3948,
-      "exercised": 369,
-      "equal": 369,
+      "exercised": 199,
+      "equal": 199,
       "differing": 0
     },
     {
@@ -4615,8 +4621,8 @@
     {
       "id": "move:powertrip",
       "present": 4618,
-      "exercised": 484,
-      "equal": 484,
+      "exercised": 339,
+      "equal": 339,
       "differing": 0
     },
     {
@@ -4629,99 +4635,99 @@
     {
       "id": "move:protect",
       "present": 55417,
-      "exercised": 5221,
-      "equal": 5221,
+      "exercised": 4029,
+      "equal": 4029,
       "differing": 0
     },
     {
       "id": "move:psychic",
       "present": 30775,
-      "exercised": 4821,
-      "equal": 4821,
+      "exercised": 3988,
+      "equal": 3988,
       "differing": 0
     },
     {
       "id": "move:psychicfangs",
       "present": 7460,
-      "exercised": 1029,
-      "equal": 1029,
+      "exercised": 719,
+      "equal": 719,
       "differing": 0
     },
     {
       "id": "move:psychicnoise",
       "present": 5393,
-      "exercised": 869,
-      "equal": 869,
+      "exercised": 703,
+      "equal": 703,
       "differing": 0
     },
     {
       "id": "move:psychicterrain",
       "present": 2818,
-      "exercised": 207,
-      "equal": 207,
+      "exercised": 107,
+      "equal": 107,
       "differing": 0
     },
     {
       "id": "move:psychocut",
       "present": 4644,
-      "exercised": 734,
-      "equal": 734,
+      "exercised": 586,
+      "equal": 586,
       "differing": 0
     },
     {
       "id": "move:psychup",
       "present": 25123,
-      "exercised": 2139,
-      "equal": 2139,
+      "exercised": 1216,
+      "equal": 1216,
       "differing": 0
     },
     {
       "id": "move:psyshock",
       "present": 8522,
-      "exercised": 1419,
-      "equal": 1419,
+      "exercised": 1359,
+      "equal": 1359,
       "differing": 0
     },
     {
       "id": "move:quash",
       "present": 3483,
-      "exercised": 305,
-      "equal": 305,
+      "exercised": 179,
+      "equal": 179,
       "differing": 0
     },
     {
       "id": "move:quickattack",
       "present": 13064,
-      "exercised": 2129,
-      "equal": 2129,
+      "exercised": 1936,
+      "equal": 1936,
       "differing": 0
     },
     {
       "id": "move:quickguard",
       "present": 5274,
-      "exercised": 521,
-      "equal": 521,
+      "exercised": 491,
+      "equal": 491,
       "differing": 0
     },
     {
       "id": "move:quiverdance",
       "present": 1447,
-      "exercised": 97,
-      "equal": 97,
+      "exercised": 71,
+      "equal": 71,
       "differing": 0
     },
     {
       "id": "move:ragefist",
       "present": 1403,
-      "exercised": 184,
-      "equal": 184,
+      "exercised": 122,
+      "equal": 122,
       "differing": 0
     },
     {
       "id": "move:ragepowder",
       "present": 1549,
-      "exercised": 92,
-      "equal": 92,
+      "exercised": 74,
+      "equal": 74,
       "differing": 0
     },
     {
@@ -4734,15 +4740,15 @@
     {
       "id": "move:raindance",
       "present": 46070,
-      "exercised": 3248,
-      "equal": 3248,
+      "exercised": 1896,
+      "equal": 1896,
       "differing": 0
     },
     {
       "id": "move:rapidspin",
       "present": 3115,
-      "exercised": 531,
-      "equal": 531,
+      "exercised": 425,
+      "equal": 425,
       "differing": 0
     },
     {
@@ -4755,22 +4761,22 @@
     {
       "id": "move:recover",
       "present": 2529,
-      "exercised": 171,
-      "equal": 171,
+      "exercised": 136,
+      "equal": 136,
       "differing": 0
     },
     {
       "id": "move:recycle",
       "present": 3760,
-      "exercised": 282,
-      "equal": 282,
+      "exercised": 160,
+      "equal": 160,
       "differing": 0
     },
     {
       "id": "move:reflect",
       "present": 34834,
-      "exercised": 2323,
-      "equal": 2323,
+      "exercised": 1418,
+      "equal": 1418,
       "differing": 0
     },
     {
@@ -4783,36 +4789,36 @@
     {
       "id": "move:rest",
       "present": 86146,
-      "exercised": 6525,
-      "equal": 6525,
+      "exercised": 2397,
+      "equal": 2397,
       "differing": 0
     },
     {
       "id": "move:reversal",
       "present": 17070,
-      "exercised": 2659,
-      "equal": 2659,
+      "exercised": 2264,
+      "equal": 2264,
       "differing": 0
     },
     {
       "id": "move:risingvoltage",
       "present": 6739,
-      "exercised": 1006,
-      "equal": 1006,
+      "exercised": 700,
+      "equal": 700,
       "differing": 0
     },
     {
       "id": "move:roar",
       "present": 22681,
-      "exercised": 1701,
-      "equal": 1701,
+      "exercised": 1046,
+      "equal": 1046,
       "differing": 0
     },
     {
       "id": "move:rockblast",
       "present": 8077,
-      "exercised": 1120,
-      "equal": 1120,
+      "exercised": 788,
+      "equal": 788,
       "differing": 0
     },
     {
@@ -4825,15 +4831,15 @@
     {
       "id": "move:rockslide",
       "present": 21480,
-      "exercised": 2869,
-      "equal": 2869,
+      "exercised": 2482,
+      "equal": 2482,
       "differing": 0
     },
     {
       "id": "move:rocktomb",
       "present": 40947,
-      "exercised": 5476,
-      "equal": 5476,
+      "exercised": 4079,
+      "equal": 4079,
       "differing": 0
     },
     {
@@ -4846,15 +4852,15 @@
     {
       "id": "move:roost",
       "present": 8859,
-      "exercised": 524,
-      "equal": 524,
+      "exercised": 436,
+      "equal": 436,
       "differing": 0
     },
     {
       "id": "move:round",
       "present": 70576,
-      "exercised": 12273,
-      "equal": 12273,
+      "exercised": 10345,
+      "equal": 10345,
       "differing": 0
     },
     {
@@ -4867,64 +4873,64 @@
     {
       "id": "move:safeguard",
       "present": 16299,
-      "exercised": 1168,
-      "equal": 1168,
+      "exercised": 743,
+      "equal": 743,
       "differing": 0
     },
     {
       "id": "move:sandstorm",
       "present": 18894,
-      "exercised": 1329,
-      "equal": 1329,
+      "exercised": 736,
+      "equal": 736,
       "differing": 0
     },
     {
       "id": "move:sandtomb",
       "present": 6006,
-      "exercised": 976,
-      "equal": 976,
+      "exercised": 902,
+      "equal": 902,
       "differing": 0
     },
     {
       "id": "move:scald",
       "present": 5650,
-      "exercised": 768,
-      "equal": 768,
+      "exercised": 636,
+      "equal": 636,
       "differing": 0
     },
     {
       "id": "move:scaleshot",
       "present": 10109,
-      "exercised": 1359,
-      "equal": 1359,
+      "exercised": 1089,
+      "equal": 1089,
       "differing": 0
     },
     {
       "id": "move:scaryface",
       "present": 33800,
-      "exercised": 2933,
-      "equal": 2933,
+      "exercised": 2126,
+      "equal": 2126,
       "differing": 0
     },
     {
       "id": "move:scorchingsands",
       "present": 8091,
-      "exercised": 1294,
-      "equal": 1294,
+      "exercised": 1238,
+      "equal": 1238,
       "differing": 0
     },
     {
       "id": "move:screech",
       "present": 14846,
-      "exercised": 1358,
-      "equal": 1358,
+      "exercised": 718,
+      "equal": 718,
       "differing": 0
     },
     {
       "id": "move:seedbomb",
       "present": 15997,
-      "exercised": 2015,
-      "equal": 2015,
+      "exercised": 1419,
+      "equal": 1419,
       "differing": 0
     },
     {
@@ -4937,29 +4943,29 @@
     {
       "id": "move:selfdestruct",
       "present": 1739,
-      "exercised": 243,
-      "equal": 243,
+      "exercised": 237,
+      "equal": 237,
       "differing": 0
     },
     {
       "id": "move:shadowball",
       "present": 35837,
-      "exercised": 5882,
-      "equal": 5882,
+      "exercised": 4714,
+      "equal": 4714,
       "differing": 0
     },
     {
       "id": "move:shadowclaw",
       "present": 16297,
-      "exercised": 2429,
-      "equal": 2429,
+      "exercised": 2075,
+      "equal": 2075,
       "differing": 0
     },
     {
       "id": "move:shadowsneak",
       "present": 4120,
-      "exercised": 592,
-      "equal": 592,
+      "exercised": 478,
+      "equal": 478,
       "differing": 0
     },
     {
@@ -4972,8 +4978,8 @@
     {
       "id": "move:sheercold",
       "present": 3109,
-      "exercised": 353,
-      "equal": 353,
+      "exercised": 331,
+      "equal": 331,
       "differing": 0
     },
     {
@@ -4986,99 +4992,99 @@
     {
       "id": "move:shellsmash",
       "present": 1582,
-      "exercised": 120,
-      "equal": 120,
+      "exercised": 92,
+      "equal": 92,
       "differing": 0
     },
     {
       "id": "move:simplebeam",
       "present": 1293,
-      "exercised": 106,
-      "equal": 106,
+      "exercised": 74,
+      "equal": 74,
       "differing": 0
     },
     {
       "id": "move:sing",
       "present": 1609,
-      "exercised": 129,
-      "equal": 129,
+      "exercised": 66,
+      "equal": 66,
       "differing": 0
     },
     {
       "id": "move:skillswap",
       "present": 11654,
-      "exercised": 1047,
-      "equal": 1047,
+      "exercised": 285,
+      "equal": 285,
       "differing": 0
     },
     {
       "id": "move:skittersmack",
       "present": 11327,
-      "exercised": 1779,
-      "equal": 1779,
+      "exercised": 1473,
+      "equal": 1473,
       "differing": 0
     },
     {
       "id": "move:skyattack",
       "present": 2594,
-      "exercised": 436,
-      "equal": 436,
+      "exercised": 378,
+      "equal": 378,
       "differing": 0
     },
     {
       "id": "move:slackoff",
       "present": 2125,
-      "exercised": 123,
-      "equal": 123,
+      "exercised": 79,
+      "equal": 79,
       "differing": 0
     },
     {
       "id": "move:slash",
       "present": 8117,
-      "exercised": 1257,
-      "equal": 1257,
+      "exercised": 947,
+      "equal": 947,
       "differing": 0
     },
     {
       "id": "move:sleeppowder",
       "present": 6366,
-      "exercised": 502,
-      "equal": 502,
+      "exercised": 105,
+      "equal": 105,
       "differing": 0
     },
     {
       "id": "move:sleeptalk",
       "present": 52607,
-      "exercised": 3693,
-      "equal": 3693,
+      "exercised": 2568,
+      "equal": 2568,
       "differing": 0
     },
     {
       "id": "move:sludgebomb",
       "present": 11140,
-      "exercised": 1664,
-      "equal": 1664,
+      "exercised": 1230,
+      "equal": 1230,
       "differing": 0
     },
     {
       "id": "move:sludgewave",
       "present": 5898,
-      "exercised": 689,
-      "equal": 689,
+      "exercised": 357,
+      "equal": 357,
       "differing": 0
     },
     {
       "id": "move:smackdown",
       "present": 7258,
-      "exercised": 922,
-      "equal": 922,
+      "exercised": 616,
+      "equal": 616,
       "differing": 0
     },
     {
       "id": "move:smartstrike",
       "present": 1326,
-      "exercised": 169,
-      "equal": 169,
+      "exercised": 154,
+      "equal": 154,
       "differing": 0
     },
     {
@@ -5091,22 +5097,22 @@
     {
       "id": "move:snarl",
       "present": 9442,
-      "exercised": 1276,
-      "equal": 1276,
+      "exercised": 1193,
+      "equal": 1193,
       "differing": 0
     },
     {
       "id": "move:snore",
       "present": 58753,
-      "exercised": 8795,
-      "equal": 8795,
+      "exercised": 7108,
+      "equal": 7108,
       "differing": 0
     },
     {
       "id": "move:snowscape",
       "present": 5682,
-      "exercised": 394,
-      "equal": 394,
+      "exercised": 348,
+      "equal": 348,
       "differing": 0
     },
     {
@@ -5119,22 +5125,22 @@
     {
       "id": "move:solarbeam",
       "present": 25721,
-      "exercised": 3966,
-      "equal": 3966,
+      "exercised": 3248,
+      "equal": 3248,
       "differing": 0
     },
     {
       "id": "move:solarblade",
       "present": 5084,
-      "exercised": 824,
-      "equal": 824,
+      "exercised": 633,
+      "equal": 633,
       "differing": 0
     },
     {
       "id": "move:spikes",
       "present": 2363,
-      "exercised": 144,
-      "equal": 144,
+      "exercised": 108,
+      "equal": 108,
       "differing": 0
     },
     {
@@ -5147,36 +5153,36 @@
     {
       "id": "move:spiritbreak",
       "present": 520,
-      "exercised": 77,
-      "equal": 77,
+      "exercised": 45,
+      "equal": 45,
       "differing": 0
     },
     {
       "id": "move:spite",
       "present": 12277,
-      "exercised": 1080,
-      "equal": 1080,
+      "exercised": 799,
+      "equal": 799,
       "differing": 0
     },
     {
       "id": "move:spitup",
       "present": 3312,
-      "exercised": 501,
-      "equal": 501,
+      "exercised": 401,
+      "equal": 401,
       "differing": 0
     },
     {
       "id": "move:stealthrock",
       "present": 12121,
-      "exercised": 845,
-      "equal": 845,
+      "exercised": 684,
+      "equal": 684,
       "differing": 0
     },
     {
       "id": "move:steelbeam",
       "present": 5207,
-      "exercised": 704,
-      "equal": 704,
+      "exercised": 557,
+      "equal": 557,
       "differing": 0
     },
     {
@@ -5189,43 +5195,43 @@
     {
       "id": "move:steelwing",
       "present": 12913,
-      "exercised": 1853,
-      "equal": 1853,
+      "exercised": 1335,
+      "equal": 1335,
       "differing": 0
     },
     {
       "id": "move:stickyweb",
       "present": 841,
-      "exercised": 62,
-      "equal": 62,
+      "exercised": 56,
+      "equal": 56,
       "differing": 0
     },
     {
       "id": "move:stockpile",
       "present": 6856,
-      "exercised": 432,
-      "equal": 432,
+      "exercised": 230,
+      "equal": 230,
       "differing": 0
     },
     {
       "id": "move:stompingtantrum",
       "present": 18632,
-      "exercised": 2702,
-      "equal": 2702,
+      "exercised": 2253,
+      "equal": 2253,
       "differing": 0
     },
     {
       "id": "move:stoneedge",
       "present": 16835,
-      "exercised": 2413,
-      "equal": 2413,
+      "exercised": 1757,
+      "equal": 1757,
       "differing": 0
     },
     {
       "id": "move:storedpower",
       "present": 19523,
-      "exercised": 2919,
-      "equal": 2919,
+      "exercised": 2088,
+      "equal": 2088,
       "differing": 0
     },
     {
@@ -5238,29 +5244,29 @@
     {
       "id": "move:strengthsap",
       "present": 5126,
-      "exercised": 395,
-      "equal": 395,
+      "exercised": 342,
+      "equal": 342,
       "differing": 0
     },
     {
       "id": "move:stringshot",
       "present": 3706,
-      "exercised": 256,
-      "equal": 256,
+      "exercised": 84,
+      "equal": 84,
       "differing": 0
     },
     {
       "id": "move:struggle",
       "present": 59,
-      "exercised": 49,
-      "equal": 49,
+      "exercised": 27,
+      "equal": 27,
       "differing": 0
     },
     {
       "id": "move:strugglebug",
       "present": 4418,
-      "exercised": 594,
-      "equal": 594,
+      "exercised": 464,
+      "equal": 464,
       "differing": 0
     },
     {
@@ -5273,120 +5279,120 @@
     {
       "id": "move:stunspore",
       "present": 2185,
-      "exercised": 199,
-      "equal": 199,
+      "exercised": 81,
+      "equal": 81,
       "differing": 0
     },
     {
       "id": "move:substitute",
       "present": 58642,
-      "exercised": 4389,
-      "equal": 4389,
+      "exercised": 2867,
+      "equal": 2867,
       "differing": 0
     },
     {
       "id": "move:suckerpunch",
       "present": 17771,
-      "exercised": 2765,
-      "equal": 2765,
+      "exercised": 2058,
+      "equal": 2058,
       "differing": 0
     },
     {
       "id": "move:sunnyday",
       "present": 43292,
-      "exercised": 3046,
-      "equal": 3046,
+      "exercised": 2036,
+      "equal": 2036,
       "differing": 0
     },
     {
       "id": "move:supercellslam",
       "present": 4759,
-      "exercised": 729,
-      "equal": 729,
+      "exercised": 491,
+      "equal": 491,
       "differing": 0
     },
     {
       "id": "move:superfang",
       "present": 1547,
-      "exercised": 259,
-      "equal": 259,
+      "exercised": 229,
+      "equal": 229,
       "differing": 0
     },
     {
       "id": "move:superpower",
       "present": 8451,
-      "exercised": 1248,
-      "equal": 1248,
+      "exercised": 1016,
+      "equal": 1016,
       "differing": 0
     },
     {
       "id": "move:surf",
       "present": 15247,
-      "exercised": 1914,
-      "equal": 1914,
+      "exercised": 1343,
+      "equal": 1343,
       "differing": 0
     },
     {
       "id": "move:swagger",
       "present": 19386,
-      "exercised": 1509,
-      "equal": 1509,
+      "exercised": 937,
+      "equal": 937,
       "differing": 0
     },
     {
       "id": "move:sweetkiss",
       "present": 6545,
-      "exercised": 559,
-      "equal": 559,
+      "exercised": 349,
+      "equal": 349,
       "differing": 0
     },
     {
       "id": "move:sweetscent",
       "present": 2928,
-      "exercised": 192,
-      "equal": 192,
+      "exercised": 186,
+      "equal": 186,
       "differing": 0
     },
     {
       "id": "move:switcheroo",
       "present": 2569,
-      "exercised": 187,
-      "equal": 187,
+      "exercised": 130,
+      "equal": 130,
       "differing": 0
     },
     {
       "id": "move:swordsdance",
       "present": 14657,
-      "exercised": 1023,
-      "equal": 1023,
+      "exercised": 456,
+      "equal": 456,
       "differing": 0
     },
     {
       "id": "move:synthesis",
       "present": 5086,
-      "exercised": 344,
-      "equal": 344,
+      "exercised": 210,
+      "equal": 210,
       "differing": 0
     },
     {
       "id": "move:tailslap",
       "present": 4585,
-      "exercised": 701,
-      "equal": 701,
+      "exercised": 449,
+      "equal": 449,
       "differing": 0
     },
     {
       "id": "move:tailwind",
       "present": 23331,
-      "exercised": 1666,
-      "equal": 1666,
+      "exercised": 850,
+      "equal": 850,
       "differing": 0
     },
     {
       "id": "move:taunt",
       "present": 26190,
-      "exercised": 2153,
-      "equal": 2153,
+      "exercised": 1501,
+      "equal": 1501,
       "differing": 0
     },
     {
@@ -5399,85 +5405,85 @@
     {
       "id": "move:teeterdance",
       "present": 1567,
-      "exercised": 137,
-      "equal": 137,
+      "exercised": 34,
+      "equal": 34,
       "differing": 0
     },
     {
       "id": "move:temperflare",
       "present": 4798,
-      "exercised": 786,
-      "equal": 786,
+      "exercised": 705,
+      "equal": 705,
       "differing": 0
     },
     {
       "id": "move:terrainpulse",
       "present": 5496,
-      "exercised": 787,
-      "equal": 787,
+      "exercised": 394,
+      "equal": 394,
       "differing": 0
     },
     {
       "id": "move:thief",
       "present": 45046,
-      "exercised": 6528,
-      "equal": 6528,
+      "exercised": 4843,
+      "equal": 4843,
       "differing": 0
     },
     {
       "id": "move:thrash",
       "present": 7423,
-      "exercised": 1001,
-      "equal": 1001,
+      "exercised": 899,
+      "equal": 899,
       "differing": 0
     },
     {
       "id": "move:throatchop",
       "present": 39579,
-      "exercised": 5890,
-      "equal": 5890,
+      "exercised": 4839,
+      "equal": 4839,
       "differing": 0
     },
     {
       "id": "move:thunder",
       "present": 26969,
-      "exercised": 3970,
-      "equal": 3970,
+      "exercised": 3363,
+      "equal": 3363,
       "differing": 0
     },
     {
       "id": "move:thunderbolt",
       "present": 21967,
-      "exercised": 3223,
-      "equal": 3223,
+      "exercised": 2471,
+      "equal": 2471,
       "differing": 0
     },
     {
       "id": "move:thunderfang",
       "present": 5741,
-      "exercised": 934,
-      "equal": 934,
+      "exercised": 847,
+      "equal": 847,
       "differing": 0
     },
     {
       "id": "move:thunderpunch",
       "present": 29617,
-      "exercised": 4388,
-      "equal": 4388,
+      "exercised": 3311,
+      "equal": 3311,
       "differing": 0
     },
     {
       "id": "move:thunderwave",
       "present": 18233,
-      "exercised": 1619,
-      "equal": 1619,
+      "exercised": 972,
+      "equal": 972,
       "differing": 0
     },
     {
       "id": "move:tickle",
       "present": 7509,
-      "exercised": 736,
-      "equal": 736,
+      "exercised": 285,
+      "equal": 285,
       "differing": 0
     },
     {
@@ -5490,22 +5496,22 @@
     {
       "id": "move:torment",
       "present": 14114,
-      "exercised": 1127,
-      "equal": 1127,
+      "exercised": 929,
+      "equal": 929,
       "differing": 0
     },
     {
       "id": "move:toxic",
       "present": 13292,
-      "exercised": 1091,
-      "equal": 1091,
+      "exercised": 880,
+      "equal": 880,
       "differing": 0
     },
     {
       "id": "move:toxicspikes",
       "present": 4912,
-      "exercised": 356,
-      "equal": 356,
+      "exercised": 315,
+      "equal": 315,
       "differing": 0
     },
     {
@@ -5518,64 +5524,64 @@
     {
       "id": "move:trailblaze",
       "present": 30915,
-      "exercised": 4574,
-      "equal": 4574,
+      "exercised": 3595,
+      "equal": 3595,
       "differing": 0
     },
     {
       "id": "move:transform",
       "present": 7156,
-      "exercised": 110,
-      "equal": 110,
+      "exercised": 74,
+      "equal": 74,
       "differing": 0
     },
     {
       "id": "move:triattack",
       "present": 10229,
-      "exercised": 1503,
-      "equal": 1503,
+      "exercised": 1263,
+      "equal": 1263,
       "differing": 0
     },
     {
       "id": "move:trick",
       "present": 11712,
-      "exercised": 1115,
-      "equal": 1115,
+      "exercised": 558,
+      "equal": 558,
       "differing": 0
     },
     {
       "id": "move:trickortreat",
       "present": 1831,
-      "exercised": 136,
-      "equal": 136,
+      "exercised": 118,
+      "equal": 118,
       "differing": 0
     },
     {
       "id": "move:trickroom",
       "present": 19008,
-      "exercised": 1448,
-      "equal": 1448,
+      "exercised": 916,
+      "equal": 916,
       "differing": 0
     },
     {
       "id": "move:upperhand",
       "present": 9525,
-      "exercised": 1543,
-      "equal": 1543,
+      "exercised": 1248,
+      "equal": 1248,
       "differing": 0
     },
     {
       "id": "move:uproar",
       "present": 21072,
-      "exercised": 2745,
-      "equal": 2745,
+      "exercised": 2322,
+      "equal": 2322,
       "differing": 0
     },
     {
       "id": "move:uturn",
       "present": 12123,
-      "exercised": 1855,
-      "equal": 1855,
+      "exercised": 1519,
+      "equal": 1519,
       "differing": 0
     },
     {
@@ -5588,15 +5594,15 @@
     {
       "id": "move:venoshock",
       "present": 11487,
-      "exercised": 1691,
-      "equal": 1691,
+      "exercised": 1363,
+      "equal": 1363,
       "differing": 0
     },
     {
       "id": "move:voltswitch",
       "present": 3545,
-      "exercised": 535,
-      "equal": 535,
+      "exercised": 380,
+      "equal": 380,
       "differing": 0
     },
     {
@@ -5609,15 +5615,15 @@
     {
       "id": "move:waterfall",
       "present": 2734,
-      "exercised": 396,
-      "equal": 396,
+      "exercised": 372,
+      "equal": 372,
       "differing": 0
     },
     {
       "id": "move:waterpulse",
       "present": 17391,
-      "exercised": 2535,
-      "equal": 2535,
+      "exercised": 1978,
+      "equal": 1978,
       "differing": 0
     },
     {
@@ -5630,64 +5636,64 @@
     {
       "id": "move:wavecrash",
       "present": 1728,
-      "exercised": 264,
-      "equal": 264,
+      "exercised": 258,
+      "equal": 258,
       "differing": 0
     },
     {
       "id": "move:weatherball",
       "present": 12748,
-      "exercised": 1902,
-      "equal": 1902,
+      "exercised": 1629,
+      "equal": 1629,
       "differing": 0
     },
     {
       "id": "move:whirlpool",
       "present": 7660,
-      "exercised": 1270,
-      "equal": 1270,
+      "exercised": 1036,
+      "equal": 1036,
       "differing": 0
     },
     {
       "id": "move:whirlwind",
       "present": 14107,
-      "exercised": 1125,
-      "equal": 1125,
+      "exercised": 697,
+      "equal": 697,
       "differing": 0
     },
     {
       "id": "move:wideguard",
       "present": 8144,
-      "exercised": 607,
-      "equal": 607,
+      "exercised": 350,
+      "equal": 350,
       "differing": 0
     },
     {
       "id": "move:wildcharge",
       "present": 7166,
-      "exercised": 985,
-      "equal": 985,
+      "exercised": 761,
+      "equal": 761,
       "differing": 0
     },
     {
       "id": "move:willowisp",
       "present": 11807,
-      "exercised": 998,
-      "equal": 998,
+      "exercised": 711,
+      "equal": 711,
       "differing": 0
     },
     {
       "id": "move:wish",
       "present": 9347,
-      "exercised": 604,
-      "equal": 604,
+      "exercised": 360,
+      "equal": 360,
       "differing": 0
     },
     {
       "id": "move:wonderroom",
       "present": 7748,
-      "exercised": 599,
-      "equal": 599,
+      "exercised": 383,
+      "equal": 383,
       "differing": 0
     },
     {
@@ -5700,36 +5706,36 @@
     {
       "id": "move:wrap",
       "present": 5620,
-      "exercised": 720,
-      "equal": 720,
+      "exercised": 448,
+      "equal": 448,
       "differing": 0
     },
     {
       "id": "move:xscissor",
       "present": 8349,
-      "exercised": 1411,
-      "equal": 1411,
+      "exercised": 1137,
+      "equal": 1137,
       "differing": 0
     },
     {
       "id": "move:yawn",
       "present": 56645,
-      "exercised": 4774,
-      "equal": 4774,
+      "exercised": 1254,
+      "equal": 1254,
       "differing": 0
     },
     {
       "id": "move:zapcannon",
       "present": 4367,
-      "exercised": 621,
-      "equal": 621,
+      "exercised": 421,
+      "equal": 421,
       "differing": 0
     },
     {
       "id": "move:zenheadbutt",
       "present": 34773,
-      "exercised": 4850,
-      "equal": 4850,
+      "exercised": 3702,
+      "equal": 3702,
       "differing": 0
     },
     {
