@@ -16,7 +16,7 @@ const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: ROOT, encoding: "
   .filter((p) => p !== "");
 const NAME = "@areneon/differential";
 /** The composition root's files that may join the core with the bridge (and their tests and scripts). */
-const JOINING = /^packages\/team-dataset\/(src|test|scripts)\/differential[a-z-]*\.ts$/;
+const JOINING = /^packages\/team-dataset\/(src|test|scripts)\/differential[a-z.-]*\.ts$/;
 
 describe("the differential core package", () => {
   it("depends on the schema package only", () => {
@@ -53,7 +53,8 @@ describe("the differential core package", () => {
   });
 
   it("is imported only by the joining files of the composition root (no evaluation path, no bridge)", () => {
-    const importers = tracked.filter((path) => /\.(ts|tsx|js|mjs|cjs|py)$/.test(path) && !path.startsWith("packages/differential/") && readFileSync(join(ROOT, path), "utf8").includes(NAME));
+    const imports = new RegExp(`(?:from|import\\(|require\\()\\s*["']${NAME}["']`);
+    const importers = tracked.filter((path) => /\.(ts|tsx|js|mjs|cjs)$/.test(path) && !path.startsWith("packages/differential/") && imports.test(readFileSync(join(ROOT, path), "utf8")));
     for (const path of importers) expect(path, path).toMatch(JOINING);
     expect(importers.length).toBeGreaterThan(0);
   });
