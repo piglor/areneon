@@ -118,6 +118,7 @@ One or two sentences per area; each links to its doc under `docs/architecture/`.
 - [`opponent-sheet.md`](docs/architecture/opponent-sheet.md): ADR-027: opponent sheet block, builders, open/closed sheet regimes.
 - [`damage-aware.md`](docs/architecture/damage-aware.md): `damage-aware@v1` to `v7`: inputs, actor, v2 over belief worlds, v3 engine choice location, v4 to v7 situational and success-chance scoring, identity and the opponent wiring.
 - [`search.md`](docs/architecture/search.md): World facts, world builder and writers, fidelity oracle, search worlds, `SearchConfig`, the search actor.
+- [`battle-state-tensors.md`](docs/architecture/battle-state-tensors.md): `battle-state-spec.ts`, `config/engine-state/`: the `BattleStateSpec` (ADR-030 step 5 groundwork): battle-state tensor fields with engine sources, visibility classes, projection rules and the encoder/reducer map; no engine yet.
 - [`search-distillation.md`](docs/architecture/search-distillation.md): ADR-026 E2: search labellers, label stream, distillation.
 - [`population.md`](docs/architecture/population.md): ADR-021: population loop, ladder, Bradley-Terry rating, copy and explore, health, PFSP.
 - [`team-preview.md`](docs/architecture/team-preview.md): ADR-029: solver, hypothetical preview battle, payoff table, best-response gain.
