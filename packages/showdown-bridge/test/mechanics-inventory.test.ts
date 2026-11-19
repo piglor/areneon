@@ -86,7 +86,7 @@ describe("the golden inventory", () => {
   });
 });
 
-describe("the inventory reproduces the narrower exports as filters", () => {
+describe("the inventory reproduces koCandidates and four move classes exactly, two move classes as subsets", () => {
   it("koCandidates (#1166): the KO hooks the roster's abilities and items define at their top level", () => {
     const candidates = koCandidates(engine, GOLDEN_FORMAT, vocabulary);
     for (const [kind, list] of [["abilities", golden.abilities], ["items", golden.items]] as const) {

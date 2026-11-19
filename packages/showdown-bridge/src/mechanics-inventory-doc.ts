@@ -77,7 +77,7 @@ export function renderInventoryDoc(inv: MechanicsInventory, weights: WeightsRepo
       }),
     ),
     "",
-    `The order has ${weights.coverage.teams.order.length} damage-relevant entities held by at least one dataset team and ${weights.damage.length} in the roster.`,
+    `The order has ${weights.coverage.teams.order.length} damage-relevant entities held by at least one dataset team and ${weights.damage.length} in the roster. Of the ${inv.damage_handler_names.length} damage handler names, ${weights.coverage.handler_names.order.length} are held by at least one dataset team (the handler-name column counts names among those; the rest appear only on roster entities no dataset team holds).`,
     "",
     "## Top entities by dataset teams",
     "",

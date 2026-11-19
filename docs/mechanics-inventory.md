@@ -62,7 +62,7 @@ A backend that implements the top N damage-relevant entities covers a team when 
 | 50 | 1.66% | 0.02% | 67.95% |
 | 100 | 34.16% | 11.67% | 95.40% |
 
-The order has 162 damage-relevant entities held by at least one dataset team and 200 in the roster.
+The order has 162 damage-relevant entities held by at least one dataset team and 200 in the roster. Of the 17 damage handler names, 16 are held by at least one dataset team (the handler-name column counts names among those; the rest appear only on roster entities no dataset team holds).
 
 ## Top entities by dataset teams
 
