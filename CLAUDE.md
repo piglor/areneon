@@ -16,6 +16,7 @@ make check          # every offline CI gate: python + ts + guards
 make showdown       # rebuild vendor/pokemon-showdown (needed before any TS test)
 make ts             # pnpm lint && pnpm typecheck && pnpm test (vitest, coverage) + check-rules.ts
 make python         # ruff check, ruff format --check, mypy, pytest (coverage)
+make migrate-check  # the migration parity suite (#1466, docs/runbooks/migration.md): every golden, parity and differential check in dependency order, a summary of what drifted; never rewrites a golden (`MIGRATE_ARGS=--recapture` rewrites and lists changed files; `--only ID`, `--list`); run green on the current pin before a pin bump (#1103) or a new backend (#1457)
 make contracts      # contract schemas fit their ADR-008 profile; generated TS types and pydantic models have no drift
 make contracts-update  # regenerate the TS types and pydantic models after a schema change (commit the result)
 make guards         # team guards (PokePaste text, JSON data_class) + production licence allowlist
