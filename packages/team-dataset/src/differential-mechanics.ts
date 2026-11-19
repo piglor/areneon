@@ -216,15 +216,17 @@ export function differentialCorpus(
   backend: Backend<ParsedMechanicsQuery, MechanicsResult>,
   corpus: { id: string; dir: string },
   limit?: number,
-  batchSize = 256,
+  options: { batchSize?: number; oracle?: () => ProbeBackend } = {},
 ): { tally: CorpusTally; builds: number; refused: Record<string, number> } {
+  const batchSize = options.batchSize ?? 256;
+  const makeOracle = options.oracle ?? (() => remembering(probeBackend(engine, { config: configs.oracle, snapshot: configs.snapshot })));
   const level = mechanicsHarnessLevel(engine);
   const tally = newTally({ id: corpus.id, kind: "regression", seed: corpusHash(corpus.dir, limit) });
   const seen = new Set<string>();
   const refused: Record<string, number> = {};
   let builds = 0;
   for (const battle of corpusBattles(corpus.dir, limit)) {
-    const oracle = remembering(probeBackend(engine, { config: configs.oracle, snapshot: configs.snapshot }));
+    const oracle = makeOracle();
     const found = collectQueries(engine, configs, [battle], oracle);
     builds += found.builds;
     for (const [code, n] of Object.entries(found.refused)) refused[code] = (refused[code] ?? 0) + n;

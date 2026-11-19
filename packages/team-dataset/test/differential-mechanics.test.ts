@@ -3,7 +3,8 @@
 //    first battle of each committed corpus gives zero differences, and the committed full report is fresh and says the same.
 // 2. Five deliberately broken backends are each caught with the right reason, entity and field.
 // 3. A ledger from a fresh corpus drawn by the backend's seed admits, routes and is refused at another pin.
-import { readFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   admissionRouter,
@@ -23,9 +24,9 @@ import {
   shadowSize,
   type DifferentialReport,
 } from "@areneon/differential";
-import { jcs as bridgeJcs, loadEngine, type MechanicsResult, mechanicsQueryHash, type ParsedMechanicsQuery, probeBackend, RANDOM_DIR, sampleTarget, type Settled } from "@areneon/showdown-bridge";
+import { jcs as bridgeJcs, loadEngine, MechanicsProbeError, type MechanicsResult, mechanicsQueryHash, type ParsedMechanicsQuery, probeBackend, RANDOM_DIR, sampleTarget, type Settled } from "@areneon/showdown-bridge";
 import { beforeAll, describe, expect, it } from "vitest";
-import { collectQueries, corpusBattles, harnessConfigs, mechanicsHarnessLevel, remembering, reportInputs, SELF_REPORT_DIR, SELF_REPORT_TITLE, selfDifferential } from "../src/differential-mechanics.ts";
+import { collectQueries, corpusBattles, differentialCorpus, harnessConfigs, secondProbe, mechanicsHarnessLevel, remembering, reportInputs, SELF_REPORT_DIR, SELF_REPORT_TITLE, selfDifferential } from "../src/differential-mechanics.ts";
 
 const engine = loadEngine();
 const second = loadEngine();
@@ -206,4 +207,30 @@ describe("a ledger from a fresh corpus drawn by the backend's own seed", () => {
     expect(router.route(["kind:damage"])).toBeNull();
     expect(() => readBackendAdmission(ledger, { showdown_commit: "0".repeat(40) })).toThrow("another pinned engine");
   });
+});
+
+// ---------------------------------------------------------------- the composition root's own paths
+
+describe("differentialCorpus", () => {
+  it("counts the builder's refusals, compares a query once per corpus, and passes any other error through", () => {
+    const dir = mkdtempSync(join(tmpdir(), "differential-"));
+    try {
+      copyFileSync(join(RANDOM_DIR, "b00.json"), join(dir, "b00.json"));
+      copyFileSync(join(RANDOM_DIR, "b00.json"), join(dir, "b01.json"));
+      const refusing = (): Backend<ParsedMechanicsQuery, MechanicsResult> & { id: string } => {
+        const inner = remembering(probeBackend(engine, { config: configs.oracle, snapshot: configs.snapshot }));
+        return { ...inner, run: (batch) => batch.map((q) => (q.query.kind === "stats" ? { ok: false as const, error: new MechanicsProbeError("refused") } : (inner.run([q])[0] as never))) };
+      };
+      const run = differentialCorpus(engine, configs, secondProbe(second, configs), { id: "twice", dir }, undefined, { oracle: refusing as never, batchSize: 64 });
+      expect(run.refused["probe_refused"]).toBeGreaterThan(1);
+      // The second battle is the first again: every query it asks was compared already.
+      const once = differentialCorpus(engine, configs, secondProbe(second, configs), { id: "once", dir }, 1, { oracle: refusing as never });
+      expect(run.tally.items).toBe(once.tally.items);
+      expect(run.builds).toBe(2 * once.builds);
+      const failing = { id: "f", backend_format: 1, backend_commit: "f".repeat(40), run: (batch: readonly ParsedMechanicsQuery[]) => batch.map(() => ({ ok: false as const, error: new Error("boom") })) };
+      expect(() => collectQueries(engine, configs, corpusBattles(dir, 1), failing as never)).toThrow("boom");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 300_000);
 });
