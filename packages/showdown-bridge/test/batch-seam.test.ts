@@ -5,7 +5,10 @@ import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { actorRule } from "../src/actor-rule.ts";
 import { type Json, jcs } from "../src/canonical-json.ts";
-import { batchRunnerOf, createFeatureMemo, type FeatureConfigs, inlineProbe } from "../src/candidate-features.ts";
+import { BELIEF_THREATS_PER_FOE, batchRunnerOf, createFeatureMemo, type FeatureConfigs, inlineProbe } from "../src/candidate-features.ts";
+import { mechanicsConfigHash } from "../src/mechanics-config.ts";
+import { resolveFormat } from "../src/formats.ts";
+import { buildResult } from "../src/mechanics-result.ts";
 import { FEATURE_SET_OUTCOME } from "../src/candidate-features-outcome.ts";
 import { buildFeatures, buildFeaturesG } from "../src/feature-build.ts";
 import { GOLDEN_FORMAT } from "../src/golden.ts";
@@ -21,7 +24,7 @@ import type { PolicyQueryInput } from "../src/policy-protocol.ts";
 import { batchOf, driveSync, noteQueryHash, emptySeamStats, type Gen, SEAM_HOLD_MS, pure, SeamError, sumSeamStats, WaveSeam } from "../src/probe-batch.ts";
 import { SAMPLES_DIR } from "../src/samples.ts";
 import { readTrainingRunConfig, type TrainingRunConfig } from "../src/training-run-config.ts";
-import { capture, type Captured, config, corpus, engine, mechanics, snapshot, vocabulary } from "./damage-aware-support.ts";
+import { capture, type Captured, config, corpus, engine, mechanics, snapshot, stubProbe, vocabulary } from "./damage-aware-support.ts";
 import type { PokemonSet } from "../src/engine.ts";
 
 // ---------------------------------------------------------------- primitives
@@ -225,6 +228,41 @@ describe("WaveSeam policy queries", () => {
     expect(seam.stats().held_forced).toBe(1);
   });
 
+  it("arms the hold timer from the oldest query still inside the hold, not from an expired one", async () => {
+    const timers: { callback: () => void; ms: number }[] = [];
+    const flushes: (() => void)[] = [];
+    const clock = { t: 0 };
+    const seam = new WaveSeam({ batch: batchOf(() => result(0)), hold_ms: 100, now: () => clock.t, defer: (c) => void flushes.push(c), after: (callback, ms) => void timers.push({ callback, ms }) });
+    const settle = async (): Promise<void> => {
+      for (let guard = 0; guard < 20; guard++) {
+        await Promise.resolve();
+        const next = flushes.shift();
+        if (next === undefined) return;
+        next();
+      }
+    };
+    void seam.infer(() => new Promise<string>(() => undefined)); // issued at t = 0, never answered: expired by t = 150
+    await settle();
+    clock.t = 150;
+    void seam.infer(() => new Promise<string>(() => undefined)); // issued at t = 150: inside the hold until t = 250
+    await settle();
+    const built = seam.build(asking(0, 1));
+    await settle();
+    expect(timers.map((t) => t.ms)).toEqual([100]); // 150 + 100 - 150, not the 1 ms floor an expired query would give
+    clock.t = 260;
+    (timers[0] as { callback: () => void }).callback();
+    await settle();
+    await built;
+  });
+
+  it("a build nobody awaits any more does not stall the others", async () => {
+    const { seam, settle } = manual({ batch: () => result(0) });
+    void seam.build(asking(0, 2)); // its game was abandoned: nobody reads the answer
+    const other = seam.build(asking(10, 1));
+    await settle();
+    expect(await other).toEqual([0]);
+  });
+
   it("uses setImmediate and the wall clock by default, and its hold is five seconds", async () => {
     const seam = new WaveSeam({ batch: batchOf(() => result(3)) });
     expect(SEAM_HOLD_MS).toBe(5000);
@@ -296,6 +334,29 @@ describe("the feature builders through the wave", () => {
       expect(Object.keys(stats.queries_per_round).some((size) => Number(size) > 1)).toBe(true);
     }, 600_000);
   }
+
+  it("probe-damage/3: the wave equals the inline build, belief threats included", async () => {
+    const MOVES = ["closecombat", "earthquake", "icebeam", "thunderbolt", "flamethrower", "surf", "shadowball", "dracometeor", "moonblast", "hyperbeam"];
+    const port = {
+      identity_hash: "c".repeat(64),
+      moveInclusions: ({ opponent }: { opponent: { roster: unknown[] } }) => ({ slots: opponent.roster.map(() => MOVES.map((id, k) => ({ id, inclusion_ppm: 900_000 - k * 10_000 }))) }),
+    };
+    const stub = (context: Parameters<NonNullable<FeatureConfigs["probe"]>>[0], q: ParsedMechanicsQuery) => {
+      if (q.query.kind !== "speed_order") return stubProbe()(context, q);
+      const identity = { data_class: q.data_class, query_hash: mechanicsQueryHash(q), manifest: resolveFormat(engine, GOLDEN_FORMAT, snapshot).manifest, mechanics_config_hash: mechanicsConfigHash(mechanics), gap_ids: [] };
+      const actions = q.query.actions.map((a, i) => ({ ...a, order: a.move === null ? 103 : 200, priority: 0, speed: 1000 - i }));
+      return { result: buildResult(identity, { kind: "computed", answer: { kind: "speed_order", order_basis: "turn_start", actions, groups: actions.map((_, i) => [i]) } as never }), diagnostics: [] };
+    };
+    const cfg: FeatureConfigs = { ...configsFor("probe-damage/3"), probe: stub, belief_threats: { port: port as never, per_foe: BELIEF_THREATS_PER_FOE } };
+    const decisions = moveDecisions().slice(0, 8);
+    const inline = decisions.map((c) => buildFeatures(engine, cfg, channelOf(c), c.context.team as PokemonSet[], candidatesOf(c), createFeatureMemo(), "probe-damage/3"));
+    expect(inline.some((f) => ((f as { belief_threats?: unknown[] }).belief_threats?.length ?? 0) > 0)).toBe(true);
+    const { configs: wave, batch } = batchRunnerOf(engine, cfg);
+    const seam = new WaveSeam({ batch });
+    const built = await Promise.all(decisions.map((c) => seam.build(buildFeaturesG(engine, wave, channelOf(c), c.context.team as PokemonSet[], candidatesOf(c), createFeatureMemo(), "probe-damage/3"))));
+    built.forEach((features, i) => expect(jcs(features as unknown as Json)).toBe(jcs(inline[i] as unknown as Json)));
+    expect(seam.stats().rounds).toBeLessThan(seam.stats().queries);
+  }, 600_000);
 
   it("a request the builder refuses is refused with the same code from the wave as inline", async () => {
     const c = captured.find((x) => x.request.phase === "move") as Captured;
@@ -375,6 +436,29 @@ describe("a generation played with the seam", () => {
       expect(waves.length).toBeGreaterThan(0);
     }, 900_000);
   }
+
+  it("a policy query a game never gets answered (its seat forfeits on latency) stalls no other game, and the games that played are the bytes of the run without the seam", async () => {
+    const raw = structuredClone(tiny) as { generation: { latency_budget_ms: { preview_ms: number; battle_ms: number } }; model: { encoder: { options?: unknown } } };
+    raw.generation.latency_budget_ms = { preview_ms: 12_000, battle_ms: 12_000 }; // past the seam's 5 s hold
+    const hash = hashOf();
+    raw.model.encoder.options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: hash } };
+    const cfg = readTrainingRunConfig(raw);
+    const setup = featureSetup(engine, cfg) as NonNullable<ReturnType<typeof featureSetup>>;
+    const pool = trainingTeamPool(engine, cfg.generation.excluded_abilities);
+    /** The third query of the battle `game-1-p1` is never answered. */
+    const hanging = (): ReturnType<typeof standIn> => {
+      const inner = standIn(setup.statement);
+      let seen = 0;
+      const ask = inner.ask.bind(inner);
+      inner.ask = (battle, query) => (battle === "game-1-p1" && ++seen === 3 ? new Promise(() => undefined) : ask(battle, query));
+      return inner;
+    };
+    const plain = await playGeneration({ engine, config: cfg, generation: 1, policy_id: POLICY, client: hanging(), pool, features: setup.configs });
+    const seamed = await playGeneration({ engine, config: cfg, generation: 1, policy_id: POLICY, client: hanging(), pool, features: setup.configs, batch_seam: true });
+    expect(plain.games.some((g) => g.outcome === "forfeit")).toBe(true);
+    expect(seamed.stream).toBe(plain.stream);
+    expect(jcs(seamed.games as unknown as Json)).toBe(jcs(plain.games as unknown as Json));
+  }, 900_000);
 
   it("without a feature set only the policy queries are batched, and the stream is the same", async () => {
     const cfg = readTrainingRunConfig(tiny);

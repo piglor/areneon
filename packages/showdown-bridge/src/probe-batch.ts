@@ -141,6 +141,8 @@ export interface WaveSeamOptions {
   /** Test seams: the clock, and how the flush is scheduled after the microtasks (default `Date.now` and `setImmediate`). */
   now?: () => number;
   defer?: (callback: () => void) => void;
+  /** Runs `callback` after `ms` (default: an unref'd `setTimeout`); the hold timer. */
+  after?: (callback: () => void, ms: number) => void;
 }
 
 interface Build {
@@ -170,13 +172,14 @@ export class WaveSeam {
   readonly #hold: number;
   readonly #now: () => number;
   readonly #defer: (callback: () => void) => void;
+  readonly #after: (callback: () => void, ms: number) => void;
   readonly #builds: Build[] = [];
   readonly #asks: Ask[] = [];
   /** Policy queries issued and not yet answered, by the time they were issued. */
   readonly #outstanding = new Map<number, number>();
   #next = 0;
   #scheduled = false;
-  #timer: ReturnType<typeof setTimeout> | undefined;
+  #armed = false;
   readonly #stats = emptySeamStats();
 
   constructor(options: WaveSeamOptions = {}) {
@@ -184,6 +187,7 @@ export class WaveSeam {
     this.#hold = options.hold_ms ?? SEAM_HOLD_MS;
     this.#now = options.now ?? Date.now;
     this.#defer = options.defer ?? ((callback) => void setImmediate(callback));
+    this.#after = options.after ?? ((callback, ms) => setTimeout(callback, ms).unref());
   }
 
   /** What the seam did so far (a copy). */
@@ -240,13 +244,16 @@ export class WaveSeam {
 
   /** The builds wait for the outstanding policy queries; a timer lets them go ahead once the oldest has outlasted the hold. */
   #armHold(): void {
-    if (this.#timer !== undefined) return;
-    const oldest = Math.min(...this.#outstanding.values());
-    this.#timer = setTimeout(() => {
-      this.#timer = undefined;
+    if (this.#armed) return;
+    this.#armed = true;
+    // The oldest query still inside the hold: an expired one no longer blocks, and counting it would make the timer fire at once and again.
+    const now = this.#now();
+    let oldest = Infinity;
+    for (const issued of this.#outstanding.values()) if (now - issued < this.#hold) oldest = Math.min(oldest, issued);
+    this.#after(() => {
+      this.#armed = false;
       this.#schedule();
-    }, Math.max(1, oldest + this.#hold - this.#now()));
-    this.#timer.unref();
+    }, Math.max(1, oldest + this.#hold - now));
   }
 
   #issueAsks(): void {
