@@ -7,7 +7,7 @@ import { FORMAT_DIR, ROOT, fixtures, fullDex, loadInterpreter, readJson } from "
 
 const api = loadInterpreter();
 const dex = fullDex();
-const python = join(ROOT, ".venv", "bin", "python");
+const python = process.env.ARENEON_PYTHON ?? join(ROOT, ".venv", "bin", "python");
 const here = dirname(fileURLToPath(import.meta.url));
 
 /** The reducer's own fields, compared as they are. `hp_fraction` is derived and the page does not carry it; `item_received` and `ability_received` are the interpreter's (ADR-025), the reducer has no such field; `types` (the type a `typechange` gave, ADR-010 erratum A4 item 7) is the reducer's, the interpreter keeps the volatile alone; so are `recent` (per Pokemon), `condition_turns` (per side) and `elapsed` (the field), the recent-history fields of #1013 (state schema 2), which the interpreter does not carry (the world facts hold its own `active_turns`, `last_move`, `protect_streak` and condition start turns); and `history` (state schema 3, ADR-022 E-22.5.2), the history facts, which `history-facts.ts` derives and `history-facts-parity.test.ts` holds equal to the reducer's. */
@@ -109,6 +109,8 @@ describe.skipIf(!existsSync(python))("the interpreter against the reducer at req
     return [...new Set([...wanted, lines.length])].sort((a, b) => a - b);
   };
   const reference = (() => {
+    // The describe body runs at collection even when the suite is skipped: spawn only with an interpreter.
+    if (!existsSync(python)) return {} as Record<string, Record<string, any>>;
     const jobs = all.map((f) => ({ id: f.id, player: f.player, lines: f.lines, team: f.team, cuts: cutsOf(f.lines, f.id) }));
     const run = spawnSync(python, [join(here, "reduce_points.py")], {
       input: JSON.stringify({ engine_data: join(FORMAT_DIR, "engine-data.json"), jobs }),

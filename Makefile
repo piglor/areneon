@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
-.PHONY: setup showdown check python ts contracts contracts-update guards team-guard licences licences-selftest db-up db-down db-test db-bootstrap-test importer-image importer-e2e
+.PHONY: setup showdown migrate-check check python ts contracts contracts-update guards team-guard licences licences-selftest db-up db-down db-test db-bootstrap-test importer-image importer-e2e
 
 # One-time setup for a clean clone.
 setup: showdown
@@ -13,6 +13,13 @@ setup: showdown
 showdown:
 	git submodule update --init vendor/pokemon-showdown
 	cd vendor/pokemon-showdown && npm ci --ignore-scripts --no-audit --no-fund && node build
+
+# Migration parity suite (#1466, docs/runbooks/migration.md): every golden,
+# parity and differential check in dependency order, a summary of what drifted.
+# Never rewrites a golden; MIGRATE_ARGS=--recapture rewrites and lists them.
+# Needs the built engine (make showdown) and the installed toolchain.
+migrate-check:
+	uv run --locked python -m scripts.migrate_check $(MIGRATE_ARGS)
 
 # Every CI gate that works offline (gitleaks and osv-scanner run in CI).
 # CI calls the same targets, so the two cannot drift.
