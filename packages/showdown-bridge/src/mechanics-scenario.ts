@@ -74,14 +74,98 @@ export function checkScenario(engine: Engine, config: MechanicsConfig): string {
 export const SCENARIO_SEED = "sodium,00000000000000000000000000000000";
 
 /**
+ * Switches for the probe caches below. They never change a result (a cached value is a pure function of its key and every
+ * caller builds from the kept serialisation, never from a live object), so the switch is a test seam: the caches-off path
+ * is the reference the equality tests compare with.
+ */
+export const probeCaches = { enabled: true };
+
+/** At most this many resolved scenario formats and kept starts are held per engine; a table past it is emptied (forgetting only costs time). */
+const FORMAT_LIMIT = 16;
+const START_LIMIT = 256;
+
+type FormatGet = (name: string, isTrusted?: boolean) => SimFormat;
+const formatTables = new WeakMap<Engine, Map<string, SimFormat>>();
+const startTables = new WeakMap<Engine, Map<string, string>>();
+/** Diagnostics, like `scenarioStartStats` of the damage probe. */
+export const scenarioCacheStats = { format_resolved: 0, format_reused: 0, start_built: 0, start_reused: 0 };
+
+/** Empty this engine's kept formats and kept starts (a test seam: the next probe is a cold one). */
+export function clearProbeCaches(engine: Engine): void {
+  formatTables.get(engine)?.clear();
+  startTables.get(engine)?.clear();
+}
+
+/**
+ * Run `fn` with the engine's trusted format lookup (`formats.get(id, true)`, which `new Battle` and `Battle.fromJSON` call) answered
+ * from a per-engine table. A format with custom rules (the scenario's `@@@!rule` id) is a new object every lookup, so the engine
+ * rebuilt its rule table for every battle; the kept object carries the table the engine caches on it. The patch is scoped to the call.
+ */
+function withKeptFormats<T>(engine: Engine, fn: () => T): T {
+  if (!probeCaches.enabled) return fn();
+  const formats = engine.sim.Dex.formats as unknown as { get: FormatGet };
+  const original = formats.get;
+  const table = formatTables.get(engine) ?? new Map<string, SimFormat>();
+  formatTables.set(engine, table);
+  formats.get = function (this: unknown, name: string, isTrusted?: boolean): SimFormat {
+    if (isTrusted !== true) return original.call(this, name, isTrusted);
+    const kept = table.get(name);
+    if (kept !== undefined) {
+      scenarioCacheStats.format_reused++;
+      return kept;
+    }
+    const format = original.call(this, name, true);
+    scenarioCacheStats.format_resolved++;
+    if (table.size >= FORMAT_LIMIT) table.clear();
+    table.set(name, format);
+    return format;
+  };
+  try {
+    return fn();
+  } finally {
+    formats.get = original;
+  }
+}
+
+/**
  * A scenario battle of `scenarioFormatId` with the two teams as declared (no
  * validation: the caller has judged each set), started at once.
  */
 export function startScenario(engine: Engine, scenarioId: string, teams: { p1: PokemonSet[]; p2: PokemonSet[] }): SimBattle {
-  const battle = new engine.sim.Battle({ formatid: scenarioId, seed: SCENARIO_SEED });
-  battle.setPlayer("p1", { name: "p1", team: engine.sim.Teams.pack(teams.p1) });
-  battle.setPlayer("p2", { name: "p2", team: engine.sim.Teams.pack(teams.p2) });
-  return battle;
+  return withKeptFormats(engine, () => {
+    const battle = new engine.sim.Battle({ formatid: scenarioId, seed: SCENARIO_SEED });
+    battle.setPlayer("p1", { name: "p1", team: engine.sim.Teams.pack(teams.p1) });
+    battle.setPlayer("p2", { name: "p2", team: engine.sim.Teams.pack(teams.p2) });
+    return battle;
+  });
+}
+
+/**
+ * A battle rebuilt from a kept serialisation (the damage probe's kept start, below): the resolved format is the kept one too.
+ */
+export function restoreScenario(engine: Engine, json: string): SimBattle {
+  return withKeptFormats(engine, () => engine.sim.Battle.fromJSON(json));
+}
+
+/**
+ * The started scenario of two declared teams, before any declared state. The engine starts it once per
+ * (scenario format, teams) and the serialised start is kept; every caller, the first included, gets its own battle from that
+ * serialisation, so no result depends on the table's contents. With the caches off it starts the scenario itself every time.
+ */
+export function keptScenario(engine: Engine, scenarioId: string, teams: { p1: PokemonSet[]; p2: PokemonSet[] }): SimBattle {
+  if (!probeCaches.enabled) return startScenario(engine, scenarioId, teams);
+  const table = startTables.get(engine) ?? new Map<string, string>();
+  startTables.set(engine, table);
+  // The sets are the validated, canonical ones, which serialise the same way every time; a different order of keys would only miss.
+  const key = JSON.stringify([scenarioId, teams.p1, teams.p2]);
+  let json = table.get(key);
+  if (json === undefined) {
+    scenarioCacheStats.start_built++;
+    json = JSON.stringify(startScenario(engine, scenarioId, teams).toJSON());
+    if (table.size >= START_LIMIT) table.clear();
+    table.set(key, json);
+  } else scenarioCacheStats.start_reused++;
+  return restoreScenario(engine, json);
 }
 
 /** The engine's Pokemon at `index` of a side, as the probe reads it. */
