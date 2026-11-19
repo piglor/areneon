@@ -2,7 +2,7 @@
 // policy worker with the real probe, trains, and a run resumed after generation 1 reaches the learner state of an
 // uninterrupted one. Needs the project's Python environment, like training-loop.python.test.ts (skipped without it).
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -66,5 +66,20 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     expect(sharded.learner_state_hash).toBe(whole.learner_state_hash);
     expect(sharded.checkpoints).toEqual(whole.checkpoints);
     expect(readFileSync(join(base, "sharded", "generations", "g000002", "stream.jsonl"), "utf8")).toBe(stream);
-  }, 900_000); // two generations of six games with the real probe, played three times, for each set
+    // The batch seam (ADR-030 step 1, #1455): the games of a wave advance in lockstep, their feature builds through one batched mechanics
+    // call. Operational only: every file of every generation is the bytes of the run without it, with one game process and with two.
+    for (const [label, flags] of [["seamed", ["--batch-seam"]], ["seamed-sharded", ["--batch-seam", "--game-processes", "2"]]] as const) {
+      const seamed = run(config, join(base, label), 2, ...flags);
+      expect(seamed.learner_state_hash).toBe(whole.learner_state_hash);
+      expect(seamed.checkpoints).toEqual(whole.checkpoints);
+      for (const g of ["g000001", "g000002"]) {
+        const names = readdirSync(join(base, "whole", "generations", g), { recursive: true, encoding: "utf8" }).sort();
+        expect(readdirSync(join(base, label, "generations", g), { recursive: true, encoding: "utf8" }).sort()).toEqual(names);
+        for (const name of names) {
+          if (!/\.[a-z]+$/.test(name)) continue; // a directory
+          expect(readFileSync(join(base, label, "generations", g, name)).equals(readFileSync(join(base, "whole", "generations", g, name))), `${label}/${g}/${name}`).toBe(true);
+        }
+      }
+    }
+  }, 900_000); // two generations of six games with the real probe, played five times, for each set
 });

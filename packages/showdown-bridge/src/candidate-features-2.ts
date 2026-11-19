@@ -23,7 +23,7 @@
 // candidate strings; no opponent team, hidden verdict, `BattleRecord` or seed is a parameter of anything here.
 import type { PublicFlag, PublicState } from "@areneon/public-state";
 import type { HistoryDeclarer } from "./candidate-history.ts";
-import { type CandidateFeatures, createFeatureMemo, damageRows, damageValuesOf, type DamageValues, type FeatureConfigs, type FeatureMemo, type FeatureRow, FEATURE_SET_OUTCOME, featureSetHash, featureSetIdentity, lastRequest, openRequest, refusing } from "./candidate-features.ts";
+import { type CandidateFeatures, createFeatureMemo, damageRowsG, damageValuesOfG, type DamageValues, type FeatureConfigs, type FeatureMemo, type FeatureRow, FEATURE_SET_OUTCOME, featureSetHash, featureSetIdentity, inlineProbe, lastRequest, openRequest, refusingG } from "./candidate-features.ts";
 import type { Candidate } from "./choices.ts";
 import { parseJointChoice, type SlotPart } from "./damage-aware-choice.ts";
 import type { SpeedOrderAnswer } from "./damage-aware-score.ts";
@@ -32,6 +32,7 @@ import type { Engine, PokemonSet } from "./engine.ts";
 import type { MechanicsQuery } from "./mechanics-query.ts";
 import { type PlainReason } from "./mechanics-result.ts";
 import type { PlayerChannel } from "./observation.ts";
+import { driveSync, type Gen, pure } from "./probe-batch.ts";
 import { loadRulesSnapshot } from "./rules-load.ts";
 
 /** The feature set this module builds. A change of what any array holds is a new id. */
@@ -113,9 +114,9 @@ export interface ArrayContext {
   body: Record<string, unknown>;
   parsed: readonly SlotPart[][];
   /** Run `part` and add what it asked of the probe and its time to the cost trace under `name` (a no-op without a trace). */
-  measured: <T>(name: keyof CostTrace, part: () => T) => T;
+  measured: <T>(name: keyof CostTrace, part: () => Gen<T>) => Gen<T>;
 }
-export type ExtraArrays<X> = (context: ArrayContext) => X;
+export type ExtraArrays<X> = (context: ArrayContext) => Gen<X>;
 
 /**
  * The features of one decision under `probe-damage/2`. `memo` is this game's: with or without it the arrays are the same
@@ -131,14 +132,28 @@ export function candidateFeatures2(
   memo: FeatureMemo = createFeatureMemo(),
   trace?: CostTrace,
 ): CandidateFeatures2 {
-  return buildArrays(engine, configs, channel, team, candidates, memo, trace, FEATURE_SET_2, () => ({}));
+  const inline = inlineProbe(engine, configs);
+  return driveSync(candidateFeatures2G(engine, inline.configs, channel, team, candidates, memo, trace), inline.run);
+}
+
+/** `candidateFeatures2` as a generator: its mechanics queries are yielded (see `probe-batch.ts`). */
+export function candidateFeatures2G(
+  engine: Engine,
+  configs: FeatureConfigs,
+  channel: PlayerChannel,
+  team: readonly Readonly<PokemonSet>[],
+  candidates: readonly Pick<Candidate, "choice" | "pending">[],
+  memo: FeatureMemo = createFeatureMemo(),
+  trace?: CostTrace,
+): Gen<CandidateFeatures2> {
+  return buildArrays(engine, configs, channel, team, candidates, memo, trace, FEATURE_SET_2, () => pure({}));
 }
 
 /**
  * The shared builder of the sets that carry `/2`'s four arrays: `set` names the identity, `extra` the arrays a set adds (none
  * for `/2`). `extra` is not called for a request with nothing to score; the caller supplies its empty value through `empty`.
  */
-export function buildArrays<S extends typeof FEATURE_SET_2 | "probe-damage/3" | typeof FEATURE_SET_OUTCOME, X extends object>(
+export function* buildArrays<S extends typeof FEATURE_SET_2 | "probe-damage/3" | typeof FEATURE_SET_OUTCOME, X extends object>(
   engine: Engine,
   configs: FeatureConfigs,
   channel: PlayerChannel,
@@ -150,7 +165,7 @@ export function buildArrays<S extends typeof FEATURE_SET_2 | "probe-damage/3" | 
   extra: ExtraArrays<X>,
   empty: X = {} as X,
   history?: HistoryDeclarer,
-): Omit<CandidateFeatures2, "feature_set"> & { feature_set: S } & X {
+): Gen<Omit<CandidateFeatures2, "feature_set"> & { feature_set: S } & X> {
   const snapshot = configs.snapshot ?? loadRulesSnapshot(engine.commit);
   const identity = featureSetIdentity(engine, { ...configs, snapshot }, set);
   type Out = Omit<CandidateFeatures2, "feature_set"> & { feature_set: S } & X;
@@ -173,12 +188,12 @@ export function buildArrays<S extends typeof FEATURE_SET_2 | "probe-damage/3" | 
   const { view, state, allFlags } = openRequest(engine, configs, snapshot, channel, memo, history);
 
   /** Run `part`, adding what it asked of the probe and how long it took to `trace` (when one is given). */
-  const measured = <T>(name: keyof CostTrace, part: () => T): T => {
-    if (trace === undefined) return part();
+  const measured = function* <T>(name: keyof CostTrace, part: () => Gen<T>): Gen<T> {
+    if (trace === undefined) return yield* part();
     const before = { ...memo.counts };
     const started = performance.now();
     try {
-      return part();
+      return yield* part();
     } finally {
       const cost = (trace[name] ??= emptyCost());
       cost.queries += memo.counts.queries - before.queries;
@@ -187,7 +202,7 @@ export function buildArrays<S extends typeof FEATURE_SET_2 | "probe-damage/3" | 
     }
   };
 
-  return refusing(() => {
+  return yield* refusingG(function* () {
     const side = object(body.side, "side");
     const pokemon = array(side.pokemon, "side.pokemon").map((member) => object(member, "a side Pokemon"));
     const slots = moveRequest ? array(body.active, "active").length : array(body.forceSwitch, "forceSwitch").length;
@@ -198,10 +213,12 @@ export function buildArrays<S extends typeof FEATURE_SET_2 | "probe-damage/3" | 
     });
 
     let foes: Foe[] | null = null;
-    const foesNow = (): Foe[] => (foes ??= view.foesOf(state, (mon) => view.assumedFor(mon, state)));
+    const foesNow = function* (): Gen<Foe[]> {
+      return (foes ??= yield* view.foesOfG(state, (mon) => view.assumedForG(mon, state)));
+    };
     const own: OwnSlot[] = moveRequest ? view.ownSlots(body, state, team) : [];
-    const living = measured("setup", foesNow); // every array but the rows needs the foes
-    const rows: FeatureRow[] = moveRequest ? measured("rows", () => damageRows(view, state, body, own, foesNow, candidates)) : [];
+    const living = yield* measured("setup", foesNow); // every array but the rows needs the foes
+    const rows: FeatureRow[] = moveRequest ? yield* measured("rows", () => damageRowsG(view, state, body, own, foesNow, candidates)) : [];
 
     // The own Pokemon the arrays are about: the living actives of a move request, and every benched Pokemon a `switch N` candidate names.
     const entries: Entry[] = [];
@@ -220,21 +237,19 @@ export function buildArrays<S extends typeof FEATURE_SET_2 | "probe-damage/3" | 
     const variants = (entry: Entry): boolean[] => (entry.slot !== null && megaSlots.has(entry.slot) ? [false, true] : [false]);
     const asMega = (entry: Entry, mega: boolean): Fighter => ({ ...entry.fighter, mega: entry.fighter.mega || mega });
 
-    const threats = measured("threats", () => threatRows(view, state, entries, variants, asMega, living));
-    return out({
-      rows,
-      threats,
-      speeds: measured("speeds", () => speedRows(view, state, entries, variants, living)),
-      ...measured("priorities", () => priorityRows(view, state, body, parsed, entries, living)),
-      ...extra({ view, state, entries, variants, asMega, foes: living, threats, flags: allFlags, body, parsed, measured }),
-    });
+    const threats = yield* measured("threats", () => threatRows(view, state, entries, variants, asMega, living));
+    // The parts are read one after another, in this order: each is a generator of its own, so an object literal's `yield*` order is the source order.
+    const speeds = yield* measured("speeds", () => speedRows(view, state, entries, variants, living));
+    const priorities = yield* measured("priorities", () => priorityRows(view, state, body, parsed, entries, living));
+    const more = yield* extra({ view, state, entries, variants, asMega, foes: living, threats, flags: allFlags, body, parsed, measured });
+    return out({ rows, threats, speeds, ...priorities, ...more });
   });
 }
 
 // ---------------------------------------------------------------- threats
 
 /** One damage query per (own Pokemon and variant, foe, revealed damaging move that reaches an opposing Pokemon). */
-function threatRows(view: DamageView, state: PublicState, entries: readonly Entry[], variants: (entry: Entry) => boolean[], asMega: (entry: Entry, mega: boolean) => Fighter, foes: readonly Foe[]): ThreatRow[] {
+function* threatRows(view: DamageView, state: PublicState, entries: readonly Entry[], variants: (entry: Entry) => boolean[], asMega: (entry: Entry, mega: boolean) => Fighter, foes: readonly Foe[]): Gen<ThreatRow[]> {
   const out: ThreatRow[] = [];
   for (const entry of entries) {
     for (const mega of variants(entry)) {
@@ -242,7 +257,7 @@ function threatRows(view: DamageView, state: PublicState, entries: readonly Entr
         for (const move of new Set(foe.assumed.revealed_moves)) {
           const data = view.dex.moves.get(move);
           if (!data.exists || data.category === "Status" || foeTargetKind(data.target) === "none") continue;
-          out.push({ own: entry.position, mega, foe: foe.loc, move, ...damageValuesOf(view, () => view.damageResult(foe.fighter, asMega(entry, mega), move, state, false)) });
+          out.push({ own: entry.position, mega, foe: foe.loc, move, ...(yield* damageValuesOfG(view, () => view.damageResultG(foe.fighter, asMega(entry, mega), move, state, false))) });
         }
       }
     }
@@ -253,12 +268,12 @@ function threatRows(view: DamageView, state: PublicState, entries: readonly Entr
 // ---------------------------------------------------------------- speed orders
 
 /** One `speed_order` query: `own` and `foes` declared, the given actions asked, the field declared with the own side first. */
-function ask(view: DamageView, state: PublicState, own: readonly Fighter[], foes: readonly Fighter[], actions: OrderAction[]): Asked {
+function* ask(view: DamageView, state: PublicState, own: readonly Fighter[], foes: readonly Fighter[], actions: OrderAction[]): Gen<Asked> {
   const { sides: declared, history } = view.declared([own, foes], []); // no foe's own move is asked: a queued action's success is not read
   const sides = declared as unknown as Sides;
   let result: ReturnType<DamageView["queryLimited"]>;
   try {
-    result = view.queryLimited({ kind: "speed_order", sides, actions, state: view.field(state, true), ...(history === undefined ? {} : { history }) } as SpeedOrderQuery);
+    result = yield* view.queryLimitedG({ kind: "speed_order", sides, actions, state: view.field(state, true), ...(history === undefined ? {} : { history }) } as SpeedOrderQuery);
   } catch (error) {
     if (!(error instanceof ProbeRefusal)) throw error;
     view.noteRefused(); // #1246: a refused declared state makes these rows unsupported, not the request
@@ -275,7 +290,7 @@ function ask(view: DamageView, state: PublicState, own: readonly Fighter[], foes
  * engine orders them by its action speed alone. At most two own positions share a query (a Mega variant is a query of its own,
  * its Pokemon declared Mega Evolved); a query the probe does not answer is asked again for each own Pokemon alone.
  */
-function speedRows(view: DamageView, state: PublicState, entries: readonly Entry[], variants: (entry: Entry) => boolean[], foes: readonly Foe[]): SpeedRow[] {
+function* speedRows(view: DamageView, state: PublicState, entries: readonly Entry[], variants: (entry: Entry) => boolean[], foes: readonly Foe[]): Gen<SpeedRow[]> {
   if (foes.length === 0) return [];
   const foeFighters = foes.map((foe) => foe.fighter);
   const switches = (ownCount: number): OrderAction[] => [
@@ -293,15 +308,17 @@ function speedRows(view: DamageView, state: PublicState, entries: readonly Entry
         return { ...key, kind: "computed", relation: mine < theirs ? "own_first" : mine === theirs ? "tie" : "foe_first" };
       }),
     );
-  const askGroup = (owns: { entry: Entry; mega: boolean }[]): SpeedRow[] => {
+  const askGroup = function* (owns: { entry: Entry; mega: boolean }[]): Gen<SpeedRow[]> {
     const fighters = (list: typeof owns): Fighter[] => list.map(({ entry, mega }) => ({ ...entry.fighter, mega: entry.fighter.mega || mega }));
-    const asked = ask(view, state, fighters(owns), foeFighters, switches(owns.length));
+    const asked = yield* ask(view, state, fighters(owns), foeFighters, switches(owns.length));
     if (asked.kind === "answer" || owns.length === 1) return rowsOf(owns, asked);
-    return owns.flatMap((single) => rowsOf([single], ask(view, state, fighters([single]), foeFighters, switches(1))));
+    const each: SpeedRow[] = [];
+    for (const single of owns) each.push(...rowsOf([single], yield* ask(view, state, fighters([single]), foeFighters, switches(1))));
+    return each;
   };
   const out: SpeedRow[] = [];
-  for (let at = 0; at < entries.length; at += 2) out.push(...askGroup(entries.slice(at, at + 2).map((entry) => ({ entry, mega: false }))));
-  for (const entry of entries) if (variants(entry).includes(true)) out.push(...askGroup([{ entry, mega: true }]));
+  for (let at = 0; at < entries.length; at += 2) out.push(...(yield* askGroup(entries.slice(at, at + 2).map((entry) => ({ entry, mega: false })))));
+  for (const entry of entries) if (variants(entry).includes(true)) out.push(...(yield* askGroup([{ entry, mega: true }])));
   return out.sort((a, b) => a.own - b.own || Number(a.mega) - Number(b.mega) || a.foe - b.foe);
 }
 
@@ -318,14 +335,14 @@ interface Pending {
  * (round k asks the k-th move of every combatant, one action per combatant). A batch the probe does not answer is asked again
  * one action at a time, so only the offending row is `unsupported` and no row depends on how the moves were batched.
  */
-function priorityRows(
+function* priorityRows(
   view: DamageView,
   state: PublicState,
   body: Record<string, unknown>,
   parsed: readonly SlotPart[][],
   entries: readonly Entry[],
   foes: readonly Foe[],
-): { own_priorities: OwnPriorityRow[]; foe_priorities: FoePriorityRow[] } {
+): Gen<{ own_priorities: OwnPriorityRow[]; foe_priorities: FoePriorityRow[] }> {
   const none = { own_priorities: [], foe_priorities: [] };
   const active = Array.isArray(body.active) ? (body.active as unknown[]) : null;
   if (active === null) return none; // a forced switch asks no move
@@ -354,13 +371,13 @@ function priorityRows(
   const foeFighters = foes.length > 0 ? foes.map((foe) => foe.fighter) : [ownFighters[0] as Fighter]; // the order never reads the foe side's identity; a side must hold a Pokemon
 
   /** Ask `pending` (at most one action per combatant), batched, then one by one if the batch is not answered. */
-  const resolve = (own: readonly Fighter[], pending: Pending[]): void => {
+  const resolve = function* (own: readonly Fighter[], pending: Pending[]): Gen<void> {
     if (pending.length === 0) return;
-    const asked = ask(view, state, own, foeFighters, pending.map((p) => p.action));
+    const asked = yield* ask(view, state, own, foeFighters, pending.map((p) => p.action));
     const apply = (list: Pending[], result: Asked): void =>
       list.forEach((p, index) => (result.kind === "unsupported" ? p.set({ kind: "unsupported", reason: result.reason }) : p.set({ kind: "computed", priority: (result.answer.actions[index] as { priority: number }).priority })));
     if (asked.kind === "answer" || pending.length === 1) return apply(pending, asked);
-    for (const single of pending) apply([single], ask(view, state, own, foeFighters, [single.action]));
+    for (const single of pending) apply([single], yield* ask(view, state, own, foeFighters, [single.action]));
   };
 
   // Rounds of the non-Mega variant: the k-th move of every own active and every foe.
@@ -380,13 +397,13 @@ function priorityRows(
       if (move === undefined) return;
       pending.push({ action: { side: 1, position: index, move, mega: false }, set: (value) => void foeRows.push({ foe: (foes[index] as Foe).loc, move, ...value }) });
     });
-    resolve(ownFighters, pending);
+    yield* resolve(ownFighters, pending);
   }
   // The Mega variant of a slot: its Pokemon alone, each move asked with the Mega Evolution this turn.
   for (const entry of actives) {
     const queue = queued.filter((part) => part.slot === entry.slot && part.mega).sort((a, b) => a.move - b.move);
     for (const part of queue) {
-      resolve([entry.fighter], [{ action: { side: 0, position: 0, move: part.id, mega: true }, set: (value) => void ownRows.push({ slot: part.slot, move: part.move, mega: true, ...value }) }]);
+      yield* resolve([entry.fighter], [{ action: { side: 0, position: 0, move: part.id, mega: true }, set: (value) => void ownRows.push({ slot: part.slot, move: part.move, mega: true, ...value }) }]);
     }
   }
   return {

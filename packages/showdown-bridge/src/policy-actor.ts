@@ -10,7 +10,8 @@ import type { PolicyQuery } from "@areneon/schema/types/v1/policy-query.ts";
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
 import { NoCandidateError } from "./actor-rule.ts";
 import { type Json, jcs } from "./canonical-json.ts";
-import { type AnyCandidateFeatures, buildFeatures, isFeatureSetId } from "./feature-build.ts";
+import { type AnyCandidateFeatures, buildFeatures, buildFeaturesG, isFeatureSetId } from "./feature-build.ts";
+import type { WaveSeam } from "./probe-batch.ts";
 import { sheetForChannel, type SheetBuilder } from "./belief-features.ts";
 import type { OpponentSheet } from "@areneon/schema/types/v1/opponent-sheet.ts";
 import { createFeatureMemo, type FeatureBuildCode, FeatureBuildError, type FeatureConfigs, type FeatureMemo } from "./candidate-features.ts";
@@ -137,6 +138,13 @@ export interface PolicyActorOptions {
    * player's own request, whose legal choice set the engine judged; the worker is never asked for the Preview.
    */
   preview_actor?: Actor;
+  /**
+   * The wave this game plays in (the batch seam, ADR-030 step 1): the seat's feature build is answered through the wave's one batched
+   * mechanics call and its policy query is issued with the wave's other queries. The values built and the answers are exactly those of a
+   * seat without a seam; only the order of work across the games of the wave differs. The `features.configs` of a seat with a seam should be the
+   * ones `batchRunnerOf` returned (one rules snapshot for every query).
+   */
+  seam?: WaveSeam;
 }
 
 /**
@@ -146,7 +154,7 @@ export interface PolicyActorOptions {
  * request the adapter cannot observe is a harness incident.
  */
 export function policyActor(options: PolicyActorOptions): Actor {
-  const { client, battle, player, team, manifest, channel_class, seed, game, policy_id, sampling, play, engine, preview_actor, features, sheet, on_answer } = options;
+  const { client, battle, player, team, manifest, channel_class, seed, game, policy_id, sampling, play, engine, preview_actor, features, sheet, on_answer, seam } = options;
   // The channel is judged against the team-sheet regime of the format its manifest names (ADR-027 section 5).
   const regime = sheetRegimeOf(manifest.showdown_commit, manifest.format_id);
   const memo = features?.memo ?? createFeatureMemo();
@@ -196,7 +204,10 @@ export function policyActor(options: PolicyActorOptions): Actor {
       try {
         if (!isFeatureSetId(stated.feature_set)) throw new PolicyProtocolError("the worker stated a candidate feature set this side cannot build");
         const featureSet = stated.feature_set;
-        candidate_features = timed("e_probe", () => buildFeatures(engine ?? pinnedEngine(), features.configs, channel, team.team, candidates, memo, featureSet));
+        candidate_features =
+          seam === undefined
+            ? timed("e_probe", () => buildFeatures(engine ?? pinnedEngine(), features.configs, channel, team.team, candidates, memo, featureSet))
+            : await timedAsync("e_probe", () => seam.build(buildFeaturesG(engine ?? pinnedEngine(), features.configs, channel, team.team, candidates, memo, featureSet)));
       } catch (error) {
         if (error instanceof FeatureBuildError) throw new ForfeitSignal("crash", `no candidate features: ${error.code satisfies FeatureBuildCode}`);
         throw error;
@@ -232,7 +243,7 @@ export function policyActor(options: PolicyActorOptions): Actor {
       policy_id,
     } as Omit<PolicyQuery, "query_id">;
     try {
-      const choice = (await timedAsync("ipc_wait", () => client.ask(battle, query))).choice;
+      const choice = (await timedAsync("ipc_wait", () => (seam === undefined ? client.ask(battle, query) : seam.infer(() => client.ask(battle, query))))).choice;
       on_answer?.(query, choice);
       return choice;
     } catch (error) {
@@ -257,6 +268,8 @@ export interface PolicySeat {
   sheet?: ActorSheet;
   /** Observes each decision's query and answer (see `PolicyActorOptions.on_answer`). */
   on_answer?: (query: PolicyQueryInput, choice: string) => void;
+  /** The wave this seat's game plays in (see `PolicyActorOptions.seam`). */
+  seam?: WaveSeam;
   /** Play the Team Preview uniformly at random among the legal Preview choices (the Preview ablation), seeded per seat. */
   random_preview?: true;
   /**
