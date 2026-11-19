@@ -172,8 +172,12 @@ CHECKS: tuple[Check, ...] = (
     ),
     Check(
         "battle-state-spec-oracle",
-        "battle-state spec oracle",
-        absent="no battle-state spec oracle is on main at this pin; add it here when it lands",
+        "battle-state spec oracle (ADR-030): engine fields, reducer map and encoder map agree",
+        (
+            vitest("battle-state-spec.test.ts"),
+            (*PYTEST, "tests/ml/model/test_battle_state_spec.py"),
+        ),
+        ("config/engine-state/*", "fixtures/contracts/v1/battle-state-spec/*"),
     ),
     Check(
         "encoder-golden",

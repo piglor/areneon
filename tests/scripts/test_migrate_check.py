@@ -148,6 +148,7 @@ def test_manifest_is_in_dependency_order_and_references_real_files() -> None:
     assert ids[0] == "pin-and-rules"
     assert ids.index("engine-tables") < ids.index("mechanics-probe") < ids.index("contract-corpus")
     assert len(ids) == len(set(ids))
+    assert all(not c.absent for c in mc.CHECKS)  # every ticketed check is wired
     for c in mc.CHECKS:
         for argv in c.commands:
             for a in argv:

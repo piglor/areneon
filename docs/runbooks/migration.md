@@ -27,7 +27,7 @@ drifted:
 | `DRIFT` | a command failed; the lines name the failing tests, which name the golden |
 | `REWRITTEN` | the check passed but a golden file changed while comparing (a defect in the check) |
 | `ERROR` | the check could not run (tool missing, timeout, a recapture command failed) |
-| `ABSENT` | listed by the ticket, not on main yet (the battle-state spec oracle) |
+| `ABSENT` | a check listed but not built yet (none at present) |
 
 The exit code is 1 on any `DRIFT`, `REWRITTEN` or `ERROR`. A diff is a review item: the
 compare run never writes a golden. `--recapture` runs each check's recapture commands (the
@@ -50,7 +50,7 @@ bytes changed so each diff can be reviewed with `git diff` before it is committe
 6. `calc-differential`: the probe against `@smogon/calc`.
 7. `reader-parity`: shared reader against the Python reducer, world facts and history facts
    parity, reduced goldens.
-8. `battle-state-spec-oracle`: not on main at this pin; reported `ABSENT` until it lands.
+8. `battle-state-spec-oracle`: the `BattleStateSpec` (ADR-030) against the engine, the reducer map and the encoder map.
 9. `encoder-golden`: encoder golden digests and `encoder_version`.
 10. `a1-a2-equality`: A1 and A2 channels and observations equal, encoder pairs.
 11. `fidelity-corpus`: the targeted fidelity corpus replays and its committed report is fresh.
