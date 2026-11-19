@@ -24,7 +24,8 @@ import type { TrainingExample } from "@areneon/schema/types/v1/training-example.
 import type { Candidate } from "./choices.ts";
 import { type CandidateFeatures2, buildArrays, type CostTrace, type ArrayContext } from "./candidate-features-2.ts";
 import { BELIEF_REFUSAL_CODES, type BeliefMoveInclusion } from "./belief-features.ts";
-import { type BeliefThreatsSetup, createFeatureMemo, emptyBeliefCounts, type DamageValues, damageValuesOf, FEATURE_SET_3, type FeatureConfigs, type FeatureMemo } from "./candidate-features.ts";
+import { type BeliefThreatsSetup, createFeatureMemo, emptyBeliefCounts, type DamageValues, damageValuesOfG, FEATURE_SET_3, type FeatureConfigs, type FeatureMemo, inlineProbe } from "./candidate-features.ts";
+import { driveSync, type Gen } from "./probe-batch.ts";
 import { assumedWithMove } from "./damage-aware-assumed-set.ts";
 import { DamageAwareError, type Foe, foeTargetKind } from "./damage-aware-view.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
@@ -61,12 +62,26 @@ export function candidateFeatures3(
   memo: FeatureMemo = createFeatureMemo(),
   trace?: CostTrace,
 ): CandidateFeatures3 {
+  const inline = inlineProbe(engine, configs);
+  return driveSync(candidateFeatures3G(engine, inline.configs, channel, team, candidates, memo, trace), inline.run);
+}
+
+/** `candidateFeatures3` as a generator: its mechanics queries are yielded (see `probe-batch.ts`). */
+export function candidateFeatures3G(
+  engine: Engine,
+  configs: FeatureConfigs,
+  channel: PlayerChannel,
+  team: readonly Readonly<PokemonSet>[],
+  candidates: readonly Pick<Candidate, "choice" | "pending">[],
+  memo: FeatureMemo = createFeatureMemo(),
+  trace?: CostTrace,
+): Gen<CandidateFeatures3> {
   const setup = configs.belief_threats;
   if (setup === undefined) throw new DamageAwareError("probe-damage/3 needs the belief threats port");
   return buildArrays(engine, configs, channel, team, candidates, memo, trace, FEATURE_SET_3, (context) => beliefThreatRows(engine, configs, setup, memo, context), { belief_threats: [] as BeliefThreatRow[] } as { belief_threats: BeliefThreatRow[]; belief_threats_refused?: BeliefRefusal });
 }
 
-function beliefThreatRows(engine: Engine, configs: FeatureConfigs, setup: BeliefThreatsSetup, memo: FeatureMemo, { view, state, entries, variants, asMega, foes, threats, flags }: ArrayContext): { belief_threats: BeliefThreatRow[]; belief_threats_refused?: BeliefRefusal } {
+function* beliefThreatRows(engine: Engine, configs: FeatureConfigs, setup: BeliefThreatsSetup, memo: FeatureMemo, { view, state, entries, variants, asMega, foes, threats, flags }: ArrayContext): Gen<{ belief_threats: BeliefThreatRow[]; belief_threats_refused?: BeliefRefusal }> {
   const answer = setup.port.moveInclusions({ opponent: state.opponent, flags });
   // Counted like the belief-world set's requests, so the share of refused decisions can be read per game (`feature_belief`).
   const counts = (memo.belief ??= emptyBeliefCounts());
@@ -107,7 +122,7 @@ function beliefThreatRows(engine: Engine, configs: FeatureConfigs, setup: Belief
     for (const mega of variants(entry)) {
       for (const foe of foes) {
         for (const { move, inclusion_ppm, paste } of kept.get(foe) as Kept[]) {
-          out.push({ own: entry.position, mega, foe: foe.loc, move, inclusion_ppm, ...damageValuesOf(view, () => view.damageResult({ ...foe.fighter, paste }, asMega(entry, mega), move, state, false)) });
+          out.push({ own: entry.position, mega, foe: foe.loc, move, inclusion_ppm, ...(yield* damageValuesOfG(view, () => view.damageResultG({ ...foe.fighter, paste }, asMega(entry, mega), move, state, false))) });
         }
       }
     }

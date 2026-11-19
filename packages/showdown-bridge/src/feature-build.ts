@@ -3,14 +3,15 @@
 // same bytes wherever they are made. `probe-damage/1` is `candidateFeatures`, `probe-damage/2` is `candidateFeatures2`, `probe-damage/3` is `candidateFeatures3`,
 // `probe-damage-belief/1` is `candidateFeaturesBelief`, `probe-outcome/1` is `candidateFeaturesOutcome`. The wire carries `probe-outcome/1` since E-22.5 slice H4 and the run config enums name it since the encoder
 // that reads it (slice H5).
-import { candidateFeatures, type CandidateFeatures, type FeatureConfigs, type FeatureMemo, featureSetHash, featureSetIdentity, type FeatureSetId, FEATURE_SET, FEATURE_SET_3, FEATURE_SET_BELIEF, FEATURE_SET_OUTCOME } from "./candidate-features.ts";
+import { candidateFeatures, candidateFeaturesG, type CandidateFeatures, type FeatureConfigs, type FeatureMemo, featureSetHash, featureSetIdentity, type FeatureSetId, FEATURE_SET, FEATURE_SET_3, FEATURE_SET_BELIEF, FEATURE_SET_OUTCOME } from "./candidate-features.ts";
 import { candidateFeaturesBelief, type CandidateFeaturesBelief } from "./candidate-features-belief.ts";
-import { candidateFeatures2, type CandidateFeatures2 } from "./candidate-features-2.ts";
-import { candidateFeatures3, type CandidateFeatures3 } from "./candidate-features-3.ts";
-import { candidateFeaturesOutcome, type CandidateFeaturesOutcome } from "./candidate-features-outcome.ts";
+import { candidateFeatures2, candidateFeatures2G, type CandidateFeatures2 } from "./candidate-features-2.ts";
+import { candidateFeatures3, candidateFeatures3G, type CandidateFeatures3 } from "./candidate-features-3.ts";
+import { candidateFeaturesOutcome, candidateFeaturesOutcomeG, type CandidateFeaturesOutcome } from "./candidate-features-outcome.ts";
 import type { Candidate } from "./choices.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import type { PlayerChannel } from "./observation.ts";
+import type { Gen } from "./probe-batch.ts";
 
 /** The object a decision carries under either set. */
 export type AnyCandidateFeatures = CandidateFeatures | CandidateFeatures2 | CandidateFeatures3 | CandidateFeaturesBelief | CandidateFeaturesOutcome;
@@ -39,4 +40,25 @@ export function buildFeatures(
   if (set === FEATURE_SET_OUTCOME) return candidateFeaturesOutcome(engine, configs, channel, team, candidates, memo);
   if (set === FEATURE_SET_BELIEF) return candidateFeaturesBelief(engine, configs, channel, team, candidates, memo);
   return candidateFeatures(engine, configs, channel, team, candidates, memo);
+}
+
+/**
+ * `buildFeatures` as a generator: the same builders, with their mechanics queries yielded to the batch seam (`probe-batch.ts`)
+ * instead of asked in line. The belief-world set (`probe-damage-belief/1`) asks the probe inside closures of its own and runs inline:
+ * the wave's batch has no query of it. `configs` should be the ones `batchRunnerOf` returned, so every query uses one rules snapshot.
+ */
+export function* buildFeaturesG(
+  engine: Engine,
+  configs: FeatureConfigs,
+  channel: PlayerChannel,
+  team: readonly Readonly<PokemonSet>[],
+  candidates: readonly Pick<Candidate, "choice" | "pending">[],
+  memo: FeatureMemo,
+  set: FeatureSetId = featureSetOf(configs),
+): Gen<AnyCandidateFeatures> {
+  if (set === "probe-damage/2") return yield* candidateFeatures2G(engine, configs, channel, team, candidates, memo);
+  if (set === FEATURE_SET_3) return yield* candidateFeatures3G(engine, configs, channel, team, candidates, memo);
+  if (set === FEATURE_SET_OUTCOME) return yield* candidateFeaturesOutcomeG(engine, configs, channel, team, candidates, memo);
+  if (set === FEATURE_SET_BELIEF) return candidateFeaturesBelief(engine, configs, channel, team, candidates, memo);
+  return yield* candidateFeaturesG(engine, configs, channel, team, candidates, memo);
 }

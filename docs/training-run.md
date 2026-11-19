@@ -1218,6 +1218,18 @@ but a game process's `cpu_ms` still includes Node and engine start-up, which sta
 operating system did not schedule them, which an idle machine keeps small; the load split is summed
 over the load workers, so it can exceed the load phase's wall time.
 
+### The batch seam (`--batch-seam`, ADR-030 step 1)
+
+`python -m areneon_ml.loop run ... --batch-seam` advances the games of each wave in lockstep: a wave's
+pending feature builds are answered through one batched mechanics call per round (the pinned engine's
+probe, in query order) and its policy queries are issued together, instead of each decision calling the
+probe and the worker by itself. It is operational like `--game-processes` (not in the config, no hash,
+id or file byte moves: `training-loop.python.test.ts` compares every file of every generation with and
+without it) and every game process writes one stderr line `batch seam: {...}` with the batch sizes
+(`queries_per_round`, `builds_per_flush`, `asks_per_issue`; counts only). A population run refuses it.
+It is the interface the damage kernel (step 3) and the GPU worker (step 4) plug into; on its own it
+runs the same engine work in another order.
+
 ## 10. The C1/C6 sources registry (provenance)
 
 `python -m areneon_ml.checkpoint classify|independent --run-dir R ...` derives the records and the

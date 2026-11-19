@@ -15,6 +15,7 @@ import type { HistoryDeclarer } from "./candidate-history.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { DECLARED_FACT } from "./mechanics-error.ts";
 import { type MechanicsContext, MechanicsProbeError, type ProbeOutcome } from "./mechanics-probe.ts";
+import { driveSync, type Gen, pure } from "./probe-batch.ts";
 import { type MechanicsQuery, mechanicsQueryHash, type ParsedMechanicsQuery, readMechanicsQuery } from "./mechanics-query.ts";
 import type { MechanicsConfig } from "./mechanics-config.ts";
 import { type MechanicsResult, type PlainReason, plainReason } from "./mechanics-result.ts";
@@ -205,6 +206,18 @@ export function foesHit(type: string | undefined, target: number | null, foes: (
   return [];
 }
 
+/** `foesHit` for foes whose building asks the probe: `foes` is a generator, read only for the target types that need foes. */
+export function* foesHitG(type: string | undefined, target: number | null, foes: () => Gen<readonly Foe[]>): Gen<Foe[]> {
+  if (type === undefined) return [];
+  if (SINGLE.has(type)) {
+    if (target === null) throw new DamageAwareError("a move that needs a target has none");
+    return (yield* foes()).filter((foe) => foe.loc === target);
+  }
+  if (EVERY_FOE.has(type) || RANDOM_FOE.has(type)) return [...(yield* foes())];
+  if (!NO_FOE.has(type)) throw new DamageAwareError("a move target type the baseline does not know");
+  return [];
+}
+
 /** What a move's request target type hits among the foes: one by location, a random one, every one, or none (the baseline's sets). */
 export function foeTargetKind(type: string | undefined): "single" | "random" | "every" | "none" {
   if (type === undefined) return "none";
@@ -227,7 +240,7 @@ export function damageView(options: DamageViewOptions) {
    * queues more than a move and a Mega Evolution, as Focus Punch does, or one with a fractional priority): counted as `unsupported`.
    * Any other `MechanicsProbeError` throws `ProbeRefusal` (the request falls back); every other failure is a defect and propagates.
    */
-  function askLimited(value: MechanicsQuery): MechanicsResult | { limit: SpeedLimit } {
+  function* askLimitedG(value: MechanicsQuery): Gen<MechanicsResult | { limit: SpeedLimit }> {
     const query = readMechanicsQuery(value);
     // A marked query is another question than the same bytes unmarked: its memo key says so.
     const marked = options.history !== undefined && value.query.kind !== "stats" && value.query.history !== undefined && UNKNOWN_HISTORIES.has(value.query.history);
@@ -247,7 +260,7 @@ export function damageView(options: DamageViewOptions) {
       if (marked) note("history_unknown:marked");
       try {
         // A marked query is asked without the facts that name engine ids and answered `history_unknown`: the question cannot be settled.
-        result = marked ? unknownVolatiles(probe({ engine, config: mechanics, snapshot }, readMechanicsQuery(withoutVolatiles(value))).result) : probe({ engine, config: mechanics, snapshot }, query).result;
+        result = marked ? unknownVolatiles(yield readMechanicsQuery(withoutVolatiles(value))) : yield query;
       } catch (error) {
         if (!(error instanceof MechanicsProbeError) || error.message.startsWith(CONFIG_DEFECT)) throw error; // a wrong config is a defect of the run, not of a state
         if (query.query.kind === "speed_order" && error.message.startsWith(UNQUEUEABLE)) result = { limit: "unqueueable" };
@@ -257,7 +270,7 @@ export function damageView(options: DamageViewOptions) {
           // unknown, not dropped, so the answer is `history_unknown` (ADR-022 E-22.5.3); the rest of the request is unaffected.
           note(`history_unknown:declared_fact_refused:${error.message.slice(0, 100) ?? ""}`);
           try {
-            result = unknownVolatiles(probe({ engine, config: mechanics, snapshot }, readMechanicsQuery(withoutVolatiles(value))).result);
+            result = unknownVolatiles(yield readMechanicsQuery(withoutVolatiles(value)));
           } catch (again) {
             if (!(again instanceof MechanicsProbeError)) throw again;
             note(`refused:${/^[^0-9:]*/.exec(again.message)?.[0].trim().slice(0, 70) ?? ""}`);
@@ -275,7 +288,7 @@ export function damageView(options: DamageViewOptions) {
       // engine-id facts is computed, the volatile is what could not be declared, so the answer is `history_unknown` (ADR-022 E-22.5.3).
       if (options.history !== undefined && "kind" in result && result.kind === "unsupported" && result.reason === "random_effect" && declaresIds(value)) {
         try {
-          const stripped = probe({ engine, config: mechanics, snapshot }, readMechanicsQuery(withoutVolatiles(value))).result;
+          const stripped = yield readMechanicsQuery(withoutVolatiles(value));
           if (stripped.kind === "computed") {
             result = unknownVolatiles(stripped);
             note("history_unknown:declared_draw");
@@ -296,37 +309,43 @@ export function damageView(options: DamageViewOptions) {
     if (result.kind === "unsupported") counts.unsupported_queries += 1;
     return result;
   }
-  /** `askLimited` with a speed-order limit as `null` (no discount is applied). */
-  function ask(value: MechanicsQuery): MechanicsResult | null {
-    const result = askLimited(value);
+  /** Run `gen` with the probe called inline for each query it yields: the generator forms below as plain calls. */
+  const run = <T>(gen: Gen<T>): T => driveSync(gen, (query) => probe({ engine, config: mechanics, snapshot }, query).result);
+  /** `askLimitedG` with a speed-order limit as `null` (no discount is applied). */
+  function* askG(value: MechanicsQuery): Gen<MechanicsResult | null> {
+    const result = yield* askLimitedG(value);
     return "limit" in result ? null : result;
   }
   const wrap = (body: MechanicsQuery["query"]): MechanicsQuery => ({ schema_version: 1, data_class, format_id: config.format_id, query: body }) as MechanicsQuery;
-  const query = (body: MechanicsQuery["query"]): MechanicsResult | null => ask(wrap(body));
-  /** As `query`, with the probe's speed-order limit named instead of `null`. */
-  const queryLimited = (body: MechanicsQuery["query"]): MechanicsResult | { limit: SpeedLimit } => askLimited(wrap(body));
+  const queryG = (body: MechanicsQuery["query"]): Gen<MechanicsResult | null> => askG(wrap(body));
+  /** As `queryG`, with the probe's speed-order limit named instead of `null`. */
+  const queryLimitedG = (body: MechanicsQuery["query"]): Gen<MechanicsResult | { limit: SpeedLimit }> => askLimitedG(wrap(body));
+  const query = (body: MechanicsQuery["query"]): MechanicsResult | null => run(queryG(body));
+  const queryLimited = (body: MechanicsQuery["query"]): MechanicsResult | { limit: SpeedLimit } => run(queryLimitedG(body));
 
   /** The probe's whole answer to one damage query (a `computed` or `unsupported` result); a memoised refusal throws `ProbeRefusal`. */
-  const damageResult = (attacker: Fighter, defender: Fighter, move: string, state: PublicState, attackerIsOwn: boolean): MechanicsResult | null => {
+  function* damageResultG(attacker: Fighter, defender: Fighter, move: string, state: PublicState, attackerIsOwn: boolean): Gen<MechanicsResult | null> {
     const { sides, history } = declared([[attacker], [defender]], [attacker]);
-    return query({ kind: "damage", attacker: sides[0]?.[0] as Combatant, defender: sides[1]?.[0] as Combatant, move, state: field(state, attackerIsOwn), ...(history === undefined ? {} : { history }) });
-  };
+    return yield* queryG({ kind: "damage", attacker: sides[0]?.[0] as Combatant, defender: sides[1]?.[0] as Combatant, move, state: field(state, attackerIsOwn), ...(history === undefined ? {} : { history }) });
+  }
+  const damageResult = (attacker: Fighter, defender: Fighter, move: string, state: PublicState, attackerIsOwn: boolean): MechanicsResult | null => run(damageResultG(attacker, defender, move, state, attackerIsOwn));
 
-  const damageOf = (attacker: Fighter, defender: Fighter, move: string, state: PublicState, attackerIsOwn: boolean): DamageAnswer | null => {
-    const result = damageResult(attacker, defender, move, state, attackerIsOwn);
+  function* damageOfG(attacker: Fighter, defender: Fighter, move: string, state: PublicState, attackerIsOwn: boolean): Gen<DamageAnswer | null> {
+    const result = yield* damageResultG(attacker, defender, move, state, attackerIsOwn);
     return result?.kind === "computed" && result.answer.kind === "damage" ? result.answer : null;
-  };
+  }
+  const damageOf = (attacker: Fighter, defender: Fighter, move: string, state: PublicState, attackerIsOwn: boolean): DamageAnswer | null => run(damageOfG(attacker, defender, move, state, attackerIsOwn));
   const maxHp = new Map<string, number>();
-  const maxHpOf = (paste: string): number => {
+  function* maxHpOfG(paste: string): Gen<number> {
     let hp = maxHp.get(paste);
     if (hp === undefined) {
-      const result = query({ kind: "stats", set: paste });
+      const result = yield* queryG({ kind: "stats", set: paste });
       if (result?.kind !== "computed" || result.answer.kind !== "stats") throw new DamageAwareError("the probe could not give an assumed set's maximum hit points");
       hp = result.answer.stats.hp;
       maxHp.set(paste, hp);
     }
     return hp;
-  };
+  }
 
   /**
    * The query's Pokemon (`sides`, each side's declared fighters) as combatants and, when the view declares history, with their
@@ -415,56 +434,60 @@ export function damageView(options: DamageViewOptions) {
    * next ability is refused alike and the request ends in the `assumed_set_fallbacks` count, never a crash.
    * Its probe queries add to `queries` and `probe_runs` for every request with a statused foe.
    */
-  function assumedFor(mon: PublicMon, state: PublicState): AssumedSet {
+  function* assumedForG(mon: PublicMon, state: PublicState): Gen<AssumedSet> {
     const record = v1 as DamageAwareConfig;
     const assume = options.assume ?? ((shown: PublicMon) => buildAssumedSet({ engine, vocabulary, config: record }, shown));
     let set = assume(mon);
     if (mon.status === null || mon.ability !== null || options.assume !== undefined) return set;
     const ruledOut: string[] = [];
-    while (statusBlocked(set, mon, state)) {
+    while (yield* statusBlockedG(set, mon, state)) {
       ruledOut.push(set.set.ability);
       set = buildAssumedSet({ engine, vocabulary, config: record }, mon, ruledOut);
     }
     return set;
   }
+  const assumedFor = (mon: PublicMon, state: PublicState): AssumedSet => run(assumedForG(mon, state));
 
   /**
    * True when the engine refuses the Pokemon's public status on this assumed set (its ability blocks it): the
    * status is a fact the player saw, so such a set cannot be the Pokemon. Any other refusal is not about the ability:
    * scoring meets it and falls back.
    */
-  function statusBlocked(set: AssumedSet, mon: PublicMon, state: PublicState): boolean {
+  function* statusBlockedG(set: AssumedSet, mon: PublicMon, state: PublicState): Gen<boolean> {
     const fighter: Fighter = { paste: set.paste, hp: null, status: null, boosts: boostsOf(mon), mega: set.mega };
     const move = dex.moves.get(set.set.moves[0] as string).id;
     try {
-      damageOf(fighter, { ...fighter, status: mon.status }, move, state, false);
+      yield* damageOfG(fighter, { ...fighter, status: mon.status }, move, state, false);
       return false;
     } catch (error) {
       return error instanceof ProbeRefusal && error.message.startsWith(STATUS_REFUSED);
     }
   }
+  const statusBlocked = (set: AssumedSet, mon: PublicMon, state: PublicState): boolean => run(statusBlockedG(set, mon, state));
 
   /**
    * The opposing active Pokemon with their assumed sets, by choice location. `assumedOf` gives the set of the
    * Pokemon at a roster position: v1's field rules, or a sampled world's set. Throws `AssumedSetError` when none can be built.
    */
-  function foesOf(state: PublicState, assumedOf: (mon: PublicMon, position: number) => AssumedSet): Foe[] {
+  function* foesOfG(state: PublicState, assumedOf: (mon: PublicMon, position: number) => Gen<AssumedSet>): Gen<Foe[]> {
     const letters = Object.keys(state.opponent.slots).sort();
     const out: Foe[] = [];
-    letters.forEach((letter, position) => {
+    for (const [position, letter] of letters.entries()) {
       const index = state.opponent.slots[letter];
       const mon = index === null || index === undefined ? undefined : state.opponent.roster[index];
-      if (mon === undefined || mon.fainted) return;
-      const assumed = assumedOf(mon, index as number);
+      if (mon === undefined || mon.fainted) continue;
+      const assumed = yield* assumedOf(mon, index as number);
       const percent = assumed.shown_hp_percent;
-      if (percent === null || percent === 0) return;
-      const max = maxHpOf(assumed.paste);
+      if (percent === null || percent === 0) continue;
+      const max = yield* maxHpOfG(assumed.paste);
       const hp = assumedHp(percent, max, config.hp_rounding);
       const fighter: Fighter = { paste: assumed.paste, hp: hp === max ? null : hp, status: mon.status, boosts: boostsOf(mon), mega: assumed.mega, at: { own: false, letter, name: mon.name ?? "" }, revealed: [...new Set(assumed.revealed_moves)].sort() };
       out.push({ mon, assumed, fighter, loc: options.engine_targets === true ? position + 1 : letters.length - position });
-    });
+    }
     return out;
   }
+  const foesOf = (state: PublicState, assumedOf: (mon: PublicMon, position: number) => AssumedSet): Foe[] =>
+    run(foesOfG(state, (mon, position) => pure(assumedOf(mon, position))));
 
   /**
    * The reason of an `unsupported` answer as a row's reason. `history_unknown` answers only a query that declares an unknown history
@@ -475,7 +498,7 @@ export function damageView(options: DamageViewOptions) {
   /** A caller turned a `ProbeRefusal` into an `unsupported` row instead of refusing the request. */
   const noteRefused = (): void => void (counts.probe_refusals = (counts.probe_refusals ?? 0) + 1);
 
-  return { dex, noteRefused, reasonOf, query, queryLimited, damageResult, damageOf, combatant, declared, field, boostsOf, ownSlots, ownBench, assumedFor, statusBlocked, foesOf };
+  return { dex, noteRefused, reasonOf, run, query, queryLimited, damageResult, damageOf, combatant, declared, field, boostsOf, ownSlots, ownBench, assumedFor, statusBlocked, foesOf, queryG, queryLimitedG, damageResultG, damageOfG, assumedForG, statusBlockedG, foesOfG };
 }
 
 export type DamageView = ReturnType<typeof damageView>;

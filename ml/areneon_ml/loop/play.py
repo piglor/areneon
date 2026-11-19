@@ -121,6 +121,10 @@ class NodePlayer:
     #: #1191). Operational: the generation's files do not depend on it, and the timings come
     #: back as one more output line, never into a file the manifest hashes.
     profile: bool = False
+    #: Advance the games of a wave in lockstep, answering their feature builds through one
+    #: batched mechanics call and issuing their policy queries together (ADR-030 step 1,
+    #: #1455). Operational: every file the generation writes is the same with it and without it.
+    batch_seam: bool = False
     #: The wall-clock limit of one ``play`` call, in seconds (#1100). Past it the driver kills
     #: the Node process group (the game processes and the policy workers with it) and the
     #: generation fails with a ``PlayError``: nothing is committed. Operational: the
@@ -225,6 +229,7 @@ class NodePlayer:
             *(("--policy-workers", str(self.policy_workers)) if self.policy_workers != 1 else ()),
             *(("--game-processes", str(self.game_processes)) if self.game_processes != 1 else ()),
             *(("--profile",) if self.profile else ()),
+            *(("--batch-seam",) if self.batch_seam else ()),
             *self._starts(),
             heap_mb=self.node_heap_mb,
             timeout_s=self.generation_timeout_s,

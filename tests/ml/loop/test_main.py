@@ -331,6 +331,17 @@ def test_a_population_run_cannot_be_profiled_and_says_so(
     assert "--profile does not apply to a population run" in capsys.readouterr().err
 
 
+def test_a_population_run_cannot_use_the_batch_seam_and_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = population_config()
+    path = tmp_path / "pop.json"
+    path.write_text(json.dumps(config.raw))
+    fake_node(monkeypatch, FakePopulationPlayer(config))  # type: ignore[arg-type]
+    assert main(run(path, tmp_path / "r", 1, "--batch-seam")) == EXIT_REFUSED
+    assert "--batch-seam does not apply to a population run" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("value", ["0", "1048577"])
 def test_the_learner_micro_batch_is_bounded_at_parse_time(value: str) -> None:
     with pytest.raises(SystemExit) as loop_exit:
