@@ -63,6 +63,8 @@ export interface BattleStateBinding {
 
 const validSpec = ajvFor("contract").compile(specSchema);
 
+const isFlag = (field: Field): boolean => field.visibility === "seat" && field.value.kind === "range" && field.value.min === 0 && field.value.max === 1;
+
 const ordered = <T>(rows: readonly T[], key: (row: T) => string, what: string): void => {
   rows.forEach((row, index) => {
     const before = rows[index - 1];
@@ -110,15 +112,24 @@ export function coveredKeys(spec: BattleStateSpec): Set<string> {
   return out;
 }
 
+/** Who reads a field: whether its side is the reader's own, and whether a seat field's seat index is the reader's. */
+export interface Viewer {
+  owner: boolean;
+  seat: boolean;
+}
+
 /**
  * What a seat sees of a field (the projection rules, by visibility class alone). `owner` is whether the field's
- * side is the seat's own (a field without a side is nobody's: it is read as another seat's). A seat field is read
- * only at its own seat index and is its own derivation. `hidden` is never projected; `own-exact` is exact for the
- * owner and its `projection` otherwise (`none`: nothing); `revealed-only` is the value where the seat's reveal mask
- * is set and the unknown marker elsewhere (`masked`).
+ * side is the reader's own (a field without a side is nobody's: it is read as another seat's); `seat` is whether a
+ * seat field is read at the reader's own seat index. `seat` fields are exact only there; `hidden` is never
+ * projected; `own-exact` is exact for the owner and its `projection` otherwise (`none`: nothing); `revealed-only`
+ * is the value where the reader's own reveal mask is set and the unknown marker elsewhere (`masked`). A group's
+ * `gate` (a roster entry the reader has not seen) masks every field of the entry for another seat in addition.
  */
-export function seatView(field: Field, owner: boolean): "exact" | "percent" | "masked" | "none" {
+export function seatView(field: Field, viewer: Viewer): "exact" | "percent" | "masked" | "none" {
   switch (field.visibility) {
+    case "seat":
+      return viewer.seat ? "exact" : "none";
     case "hidden":
       return "none";
     case "public":
@@ -126,7 +137,7 @@ export function seatView(field: Field, owner: boolean): "exact" | "percent" | "m
     case "revealed-only":
       return "masked";
     case "own-exact":
-      return owner ? "exact" : field.projection === "hp_percent" ? "percent" : "none";
+      return viewer.owner ? "exact" : field.projection === "hp_percent" ? "percent" : "none";
   }
 }
 
@@ -165,7 +176,8 @@ export function readBattleStateSpec(value: unknown, binding?: BattleStateBinding
       const root = field.source.path.split(/[.[{]/)[0] as string;
       if (!ROOTS[field.group as GroupId].includes(root)) throw new BattleStateSpecError(`${where}: a ${field.group} field cannot read the engine root ${root}`);
     }
-    if (seat && field.visibility !== "public") throw new BattleStateSpecError(`${where}: a seat field is its own seat's derivation, so its class is public`);
+    if (seat !== (field.visibility === "seat")) throw new BattleStateSpecError(`${where}: the class seat is exactly for a seat field (its own seat's derivation)`);
+    if (field.masks !== undefined && !seat) throw new BattleStateSpecError(`${where}: only a seat field masks another`);
     if ((field.projection !== undefined) !== (field.visibility === "own-exact")) throw new BattleStateSpecError(`${where}: a projection exactly for an own-exact field`);
     if ((field.reveal !== undefined) !== (field.visibility === "revealed-only")) throw new BattleStateSpecError(`${where}: a reveal mask exactly for a revealed-only field`);
   }
@@ -173,9 +185,16 @@ export function readBattleStateSpec(value: unknown, binding?: BattleStateBinding
     if (field.reveal === undefined) continue;
     const mask = fields.get(field.reveal);
     if (mask === undefined) throw new BattleStateSpecError(`fields: ${field.id}: its mask ${field.reveal} is not a field`);
-    const range = mask.value;
-    if (mask.group !== `seat_${field.group}` || mask.extra.join() !== field.extra.join() || range.kind !== "range" || range.min !== 0 || range.max !== 1) {
+    if (!isFlag(mask) || mask.group !== `seat_${field.group}` || mask.extra.join() !== field.extra.join()) {
       throw new BattleStateSpecError(`fields: ${field.id}: its mask must be a 0/1 seat field of the same entity and extra dimensions`);
+    }
+    if (mask.masks !== field.id) throw new BattleStateSpecError(`fields: ${field.id}: its mask ${mask.id} masks ${mask.masks ?? "nothing"}, not this field`);
+  }
+  for (const group of spec.groups) {
+    if (group.gate === undefined) continue;
+    const gate = fields.get(group.gate);
+    if (group.id.startsWith("seat_") || gate === undefined || !isFlag(gate) || gate.group !== `seat_${group.id}` || gate.extra.length > 0) {
+      throw new BattleStateSpecError(`groups: ${group.id}: its gate must be a 0/1 seat field of the group's entity`);
     }
   }
   for (const dim of spec.dims) if (!used.has(dim.symbol)) throw new BattleStateSpecError(`dims: ${dim.symbol} is not used`);
@@ -184,13 +203,14 @@ export function readBattleStateSpec(value: unknown, binding?: BattleStateBinding
   const covered = coveredKeys(spec);
   for (const o of spec.omitted) if (covered.has(`${o.level}.${o.key}`)) throw new BattleStateSpecError(`omitted: ${o.level}.${o.key} is read by a field`);
 
+  // A mapping is read by one seat at its own seat index: the own half as the owner, the rest as another seat.
   const refs = (list: readonly string[], what: string, opponent: boolean): void => {
     ordered(list, (r) => r, what);
     for (const ref of list) {
       const field = fields.get(ref);
       if (field === undefined) throw new BattleStateSpecError(`${what}: ${ref} is not a field`);
       if (field.visibility === "hidden") throw new BattleStateSpecError(`${what}: ${ref} is hidden: no seat may read it`);
-      if (opponent && seatView(field, false) === "none") throw new BattleStateSpecError(`${what}: ${ref} is not projectable to another seat`);
+      if (seatView(field, { owner: !opponent, seat: true }) === "none") throw new BattleStateSpecError(`${what}: ${ref} is not projectable to another seat`);
     }
   };
   ordered(spec.encoder, (c) => `${c.group}:${c.column}`, "encoder");
@@ -243,14 +263,14 @@ export function bindingFor(engine: Engine, formatId: string, dir: string = GOLDE
   const format = engine.sim.Dex.formats.get(formatId);
   const rules = engine.sim.Dex.formats.getRuleTable(format);
   if (rules.maxMoveCount === undefined) throw new BattleStateSpecError(`the rule table of ${formatId} has no move count`);
-  const battle = new engine.sim.Battle({ formatid: formatId, seed: `sodium,${"0".repeat(31)}1` }) as unknown as { activePerHalf: number; prng: { getSeed(): string } };
+  const battle = new engine.sim.Battle({ formatid: formatId, seed: `sodium,${"0".repeat(31)}1` }) as unknown as { activePerHalf: number; sides: unknown[]; prng: { getSeed(): string } };
   const seed = battle.prng.getSeed().split(",")[1] as string;
   const vocabulary = JSON.parse(readFileSync(join(dir, "team-vocabulary.summary.json"), "utf8")) as { vocabulary_hash: string };
   return {
     engine_data: JSON.parse(readFileSync(join(dir, "engine-data-2.json"), "utf8")) as VocabularyTable,
     vocabulary_hash: vocabulary.vocabulary_hash,
     counts: {
-      players: 2,
+      players: battle.sides.length,
       max_team_size: rules.maxTeamSize,
       picked_team_size: rules.pickedTeamSize ?? rules.maxTeamSize,
       active_per_side: battle.activePerHalf,

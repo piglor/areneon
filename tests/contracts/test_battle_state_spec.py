@@ -30,7 +30,7 @@ FORMAT = "gen9championsvgc2026regmc"
 COMMITTED = ROOT / f"config/engine-state/{FORMAT}/battle-state-spec.v1.json"
 TABLE = json.loads((ROOT / f"fixtures/showdown/{FORMAT}/engine-data-2.json").read_text())
 # Pinned by the TS test too (`battle-state-spec.test.ts`): a change of the record is a new record.
-HASH = "22735303afd5a636ff68ad5941749da2a7dbf938c991a24329603d77e4720d41"
+HASH = "9be74a26764ab9c7d9c7a5ee1b56762af70a989b1eca15295898360d39593247"
 
 
 def load(path: Path) -> Any:
@@ -44,17 +44,22 @@ def committed() -> Any:
 READER_INVALID = {
     "encoder-reads-hidden": "battle.prng is hidden",
     "encoder-unknown-field": "battle.turns is not a field",
+    "gate-not-seat": "its gate must be a 0/1 seat field",
     "group-mismatch": "battle.turn: the id does not start with its group",
     "groups-out-of-order": "groups: every group exactly once",
+    "mask-of-another-field": "masks active.volatile_present, not this field",
+    "masks-on-engine-field": "only a seat field masks another",
     "omitted-but-read": "battle.turn is read by a field",
+    "opponent-reads-exact-hp": "roster.hp is not projectable to another seat",
     "opponent-reads-unprojectable": "roster.stats is not projectable to another seat",
     "projection-on-public": "a projection exactly for an own-exact field",
     "range-overflows-dtype": "the range does not fit int8",
     "range-reversed": "min exceeds max",
     "reveal-missing": "a reveal mask exactly for a revealed-only field",
     "reveal-wrong-mask": "its mask must be a 0/1 seat field",
+    "seat-class-on-engine-field": "the class seat is exactly for a seat field",
     "seat-engine-source": "a seat field is a derivation",
-    "seat-not-public": "its class is public",
+    "seat-not-seat-class": "the class seat is exactly for a seat field",
     "unknown-dim": "MOVES is not a dimension",
     "unsorted-fields": "is repeated or out of order",
     "unsorted-out-of-scope": "out_of_scope",
@@ -106,18 +111,18 @@ def test_the_table_binds_the_vocabulary_sizes() -> None:
 
 def test_other_refusals_the_corpus_does_not_hold() -> None:
     lists = committed()
-    next(f for f in lists["fields"] if f["id"] == "battle.last_move")["value"]["lists"] = [
-        "moves",
+    next(f for f in lists["fields"] if f["id"] == "roster.item")["value"]["lists"] = [
+        "items",
         "abilities",
     ]
-    with pytest.raises(BattleStateSpecError, match=r"battle\.last_move: lists"):
+    with pytest.raises(BattleStateSpecError, match=r"roster\.item: lists"):
         read_battle_state_spec(lists)
     dims = committed()
     next(d for d in dims["dims"] if d["symbol"] == "VOLATILE")["lists"].reverse()
     with pytest.raises(BattleStateSpecError, match="dims: VOLATILE"):
         read_battle_state_spec(dims)
     mask = committed()
-    next(f for f in mask["fields"] if f["id"] == "roster.item")["reveal"] = "seat_roster.nothing"
+    next(f for f in mask["fields"] if f["id"] == "roster.species")["reveal"] = "seat_roster.nothing"
     with pytest.raises(BattleStateSpecError, match="is not a field"):
         read_battle_state_spec(mask)
     held = committed()
@@ -133,19 +138,51 @@ def test_other_refusals_the_corpus_does_not_hold() -> None:
 
 
 def test_the_projection_rules() -> None:
-    def field(visibility: str, projection: str | None = None) -> dict[str, Any]:
-        out: dict[str, Any] = {"visibility": visibility}
+    def views(visibility: str, projection: str | None = None) -> list[str]:
+        field: dict[str, Any] = {"visibility": visibility}
         if projection is not None:
-            out["projection"] = projection
-        return out
+            field["projection"] = projection
+        return [seat_view(field, o, s) for o in (True, False) for s in (True, False)]
 
-    assert [seat_view(field("public"), o) for o in (True, False)] == ["exact", "exact"]
-    assert [seat_view(field("hidden"), o) for o in (True, False)] == ["none", "none"]
-    assert [seat_view(field("revealed-only"), o) for o in (True, False)] == ["masked", "masked"]
-    pct = field("own-exact", "hp_percent")
-    assert [seat_view(pct, o) for o in (True, False)] == ["exact", "percent"]
-    none = field("own-exact", "none")
-    assert [seat_view(none, o) for o in (True, False)] == ["exact", "none"]
+    assert views("public") == ["exact"] * 4
+    assert views("hidden") == ["none"] * 4
+    assert views("revealed-only") == ["masked"] * 4
+    assert views("own-exact", "hp_percent") == ["exact", "exact", "percent", "percent"]
+    assert views("own-exact", "none") == ["exact", "exact", "none", "none"]
+    # a seat field is exact only at the reader's own seat index
+    assert views("seat") == ["exact", "none", "exact", "none"]
+
+
+def test_the_count_binding_is_checked_as_the_ts_reader_does() -> None:
+    vocab = load(ROOT / f"fixtures/showdown/{FORMAT}/team-vocabulary.json")["rules"]
+    counts = {
+        "players": 2,
+        "max_team_size": vocab["max_team_size"],
+        "picked_team_size": vocab["picked_team_size"],
+        "active_per_side": 2,
+        "max_move_count": 4,
+        "stored_stat_ids": 5,
+        "boost_ids": 7,
+        "prng_words": 8,
+    }
+    read_battle_state_spec(committed(), TABLE, counts)
+    with pytest.raises(BattleStateSpecError, match="MOVE has size 4, the max_move_count is 6"):
+        read_battle_state_spec(committed(), TABLE, {**counts, "max_move_count": 6})
+    with pytest.raises(BattleStateSpecError, match="ROSTER has size 6, the max_team_size is None"):
+        read_battle_state_spec(
+            committed(), TABLE, {k: v for k, v in counts.items() if k != "max_team_size"}
+        )
+
+
+def test_a_gate_must_be_a_seat_flag_of_its_entity() -> None:
+    gate = committed()
+    next(g for g in gate["groups"] if g["id"] == "roster")["gate"] = "seat_active.volatile_shown"
+    with pytest.raises(BattleStateSpecError, match="its gate must be"):
+        read_battle_state_spec(gate)
+    mask = committed()
+    next(f for f in mask["fields"] if f["id"] == "seat_roster.species_shown").pop("masks")
+    with pytest.raises(BattleStateSpecError, match="masks nothing, not this field"):
+        read_battle_state_spec(mask)
 
 
 def test_engine_paths_name_their_levels() -> None:

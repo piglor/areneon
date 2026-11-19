@@ -264,6 +264,13 @@
           },
           "description": "The group's leading dimensions."
         },
+        "gate": {
+          "description": "A 0/1 seat field of seat_<group> (class seat): for another seat, an entry of this group whose gate is not set packs as the unknown entry, so an unseen entry is indistinguishable from an absent one.",
+          "type": "string",
+          "pattern": "^(active|battle|field|roster|seat_active|seat_field|seat_roster|seat_side|side)\\.[a-z0-9_]+$",
+          "minLength": 3,
+          "maxLength": 96
+        },
         "description": {
           "$ref": "#/$defs/Note"
         }
@@ -334,12 +341,13 @@
           }
         },
         "visibility": {
-          "description": "public: every seat sees it exactly; own-exact: the owner exactly, another seat its projection; revealed-only: a seat sees it only where its reveal mask is set; hidden: no seat.",
+          "description": "public: every seat sees it exactly; own-exact: the owner exactly, another seat its projection; revealed-only: a seat sees it only where its reveal mask is set; hidden: no seat; seat: a seat field, exact only at the owning seat index (the seat's own derivation).",
           "enum": [
             "public",
             "own-exact",
             "revealed-only",
-            "hidden"
+            "hidden",
+            "seat"
           ]
         },
         "projection": {
@@ -351,6 +359,13 @@
         },
         "reveal": {
           "description": "The seat mask field that gates a revealed-only field (reader rule: present exactly for revealed-only).",
+          "type": "string",
+          "pattern": "^(active|battle|field|roster|seat_active|seat_field|seat_roster|seat_side|side)\\.[a-z0-9_]+$",
+          "minLength": 3,
+          "maxLength": 96
+        },
+        "masks": {
+          "description": "For a seat mask: the field whose value it gates (reader rule: a revealed-only field's reveal mask masks exactly that field).",
           "type": "string",
           "pattern": "^(active|battle|field|roster|seat_active|seat_field|seat_roster|seat_side|side)\\.[a-z0-9_]+$",
           "minLength": 3,

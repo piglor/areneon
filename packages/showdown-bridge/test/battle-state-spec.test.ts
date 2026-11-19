@@ -3,26 +3,28 @@
 // every committed corpus. Each battle is replayed with a spy on the engine's BattleStream (as the fork oracle and
 // `world-writers-live.test.ts` do) and `Battle.toJSON()` is read at every request of both seats. The gate: every
 // key of the engine's state is a field or an omitted key with a reason; every field's source resolves on real
-// states; vocabulary values resolve in the engine-data table; the display rule is what the shared reader shows;
-// and the projection rules let no hidden or unprojectable value reach another seat (a canary with a negative control).
+// states; vocabulary values resolve in the engine-data table; every field another seat may see (public, or
+// revealed-only where its mask is set) equals what that seat's own shared reader or world facts show (an
+// independent oracle, with the Illusion and roster-gate rules); and a canary with planted markers.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { interpretChannel } from "@areneon/public-state";
+import { interpretChannel, ownChannel, type PublicMon, type PublicState, toId, type WorldFacts, worldFacts } from "@areneon/public-state";
 import { beforeAll, describe, expect, it } from "vitest";
 import { type BattleStateBinding, type BattleStateSpec, BattleStateSpecError, BOOST_IDS, battleStateSpecHash, bindingFor, coveredKeys, ENGINE_LEVELS, type Field, GROUPS, loadBattleStateSpec, pathKeys, readBattleStateSpec, resolvePath, seatView, vocabularyIds } from "../src/battle-state-spec.ts";
 import { type Engine, loadEngine, STAT_IDS } from "../src/engine.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT } from "../src/golden.ts";
-import { shownPercent } from "../src/hp-display.ts";
 import { loadRandomCorpus, pendingFirstActor, RANDOM_MAX_TURNS, type RandomBattleFile } from "../src/random-corpus.ts";
 import { randomLegalActor } from "../src/random-legal.ts";
 import { type Actor, runBattle } from "../src/runner.ts";
-import { STATE_ITEM_IDS } from "../src/world-writers.ts";
+import { loadWorldWriters, STATE_ITEM_IDS } from "../src/world-writers.ts";
+import { readWorldFactsData } from "./world-facts-data.ts";
 
-// Replaying every committed corpus (about 250 battles, 8,500 requests) takes about 40 s on an idle machine.
-const CORPUS_TIMEOUT_MS = 300_000;
+// Replaying every committed corpus (about 250 battles, 8,500 requests) takes about a minute on an idle machine.
+const CORPUS_TIMEOUT_MS = 400_000;
 const SPEC_PATH = new URL(`../../../config/engine-state/${GOLDEN_FORMAT}/battle-state-spec.v1.json`, import.meta.url);
 const committedSpec = (): any => JSON.parse(readFileSync(SPEC_PATH, "utf8"));
+const SPEC_HASH = "9be74a26764ab9c7d9c7a5ee1b56762af70a989b1eca15295898360d39593247";
 
 let engine: Engine;
 let spec: BattleStateSpec;
@@ -35,6 +37,7 @@ beforeAll(() => {
 
 type Player = "p1" | "p2";
 interface Point {
+  id: string;
   player: Player;
   json: any;
   channel: string[];
@@ -77,7 +80,7 @@ async function points(visit: (point: Point) => void): Promise<number> {
       return (request, ctx) => {
         if (ctx !== undefined && captured?.battle != null) {
           count++;
-          visit({ player, json: JSON.parse(JSON.stringify(captured.battle.toJSON())), channel: [...ctx.channel] });
+          visit({ id: file.id, player, json: JSON.parse(JSON.stringify(captured.battle.toJSON())), channel: [...ctx.channel] });
         }
         return inner(request, ctx);
       };
@@ -91,8 +94,10 @@ const isMap = (v: unknown): v is Record<string, any> => typeof v === "object" &&
 const engineId = (value: unknown): string => {
   const text = String(value ?? "");
   const ref = /^\[[A-Za-z]+:(.*)\]$/.exec(text);
-  return (ref === null ? text : (ref[1] as string)).toLowerCase().replace(/[^a-z0-9]/g, "");
+  return toId(ref === null ? text : (ref[1] as string));
 };
+const nameOf = (mon: any): string => (mon.set.name || mon.set.species) as string;
+const levelOf = (details: string): number => Number(/, L(\d+)/.exec(details)?.[1] ?? 100);
 
 /** The keys of every classified level of one engine state, as `level.key`. */
 function stateKeys(json: any, into: Set<string>): void {
@@ -117,36 +122,170 @@ function stateKeys(json: any, into: Set<string>): void {
   }
 }
 
-/** The ids a vocabulary-valued engine field holds in one state (for a map, its keys). */
+/** The ids a vocabulary-valued engine field holds in one state. */
 function engineIds(field: Field, json: any): string[] {
-  if (field.source.kind !== "engine") return [];
+  if (field.source.kind !== "engine" || field.source.read !== "id") return [];
   const path = field.source.path;
-  const read = field.source.read;
-  const out: string[] = [];
   const sides = json.sides as any[];
   const mons = sides.flatMap((s) => s.pokemon);
   const actives = sides.flatMap((s) => s.pokemon.filter((m: any) => m.isActive === true));
-  const pick = (values: unknown[]): void => {
-    // A fainted Pokemon's engine status is the marker fnt: roster.fainted holds it, so the status reads as none (the field's description).
-    for (const v of values) if (v !== null && v !== undefined && v !== "" && !(field.id === "roster.status" && v === "fnt")) out.push(engineId(v));
-  };
   const keys = path.split(".").slice(1);
   const at = (value: any): unknown => keys.reduce((v: any, k) => (isMap(v) ? v[k] : undefined), value);
-  if (read === "id" && path.startsWith("pokemon.moveSlots") ) pick(mons.flatMap((m) => m.moveSlots.map((s: any) => s.id)));
-  else if (read === "id" && path.startsWith("pokemon.baseMoveSlots")) pick(mons.flatMap((m) => (m.baseMoveSlots ?? []).map((s: any) => s.id)));
-  else if (read === "id" && path.startsWith("pokemon.")) pick(mons.map(at));
-  else if (read === "id" && path.startsWith("active.")) pick(actives.map(at));
-  else if (read === "id" && path.startsWith("battle.")) pick([at(json)]);
-  else if (read === "id" && path.startsWith("field.")) pick([at(json.field)]);
+  const values: unknown[] = path.startsWith("pokemon.moveSlots")
+    ? mons.flatMap((m) => m.moveSlots.map((s: any) => s.id))
+    : path.startsWith("pokemon.baseMoveSlots")
+      ? mons.flatMap((m) => (m.baseMoveSlots ?? []).map((s: any) => s.id))
+      : path.startsWith("pokemon.")
+        ? mons.map(at)
+        : path.startsWith("active.")
+          ? actives.map(at)
+          : path.startsWith("battle.")
+            ? [at(json)]
+            : [at(json.field)];
+  // A fainted Pokemon's engine status is the marker fnt: roster.fainted holds it (the field's description).
+  return values.filter((v) => v !== null && v !== undefined && v !== "" && !(field.id === "roster.status" && v === "fnt")).map(engineId);
+}
+
+// ---- the oracle: what another seat may see equals what its own reader shows ----
+
+/** One opponent entry as the viewing seat reads it, with the engine Pokemon packed at it (the Illusion rule). */
+interface Packed {
+  entry: PublicMon;
+  /** The Pokemon whose battle state is packed at the entry (a disguised Pokemon in play is packed at its disguise's entry). */
+  state: any;
+  /** The Pokemon whose identity the entry shows (the disguise's target while one is in play). */
+  identity: any;
+}
+
+/** The engine Pokemon packed at each opponent entry the seat has seen (the roster gate), by the Illusion rule. */
+function packOpponent(foe: any, state: PublicState): Packed[] {
+  const byName = new Map<string, { state: any; identity: any }>();
+  for (const mon of foe.pokemon) if (!byName.has(nameOf(mon))) byName.set(nameOf(mon), { state: mon, identity: mon });
+  // A disguised Pokemon in play is packed at its disguise's entry; its own entry holds what the seat last saw of
+  // it, which the engine's current state does not: the engine packs nothing there until the |replace|.
+  const hidden = new Set<string>();
+  for (const mon of foe.pokemon) {
+    if (mon.illusion == null || mon.isActive !== true) continue;
+    const letter = /\[Pokemon:p\d([a-z])\]/.exec(String(mon.illusion))?.[1] as string;
+    const target = foe.pokemon[letter.charCodeAt(0) - 97];
+    byName.set(nameOf(target), { state: mon, identity: target });
+    hidden.add(nameOf(mon));
+  }
+  const out: Packed[] = [];
+  for (const entry of state.opponent.roster) {
+    if (entry.phantom === true || entry.hp_num === null) continue; // the roster gate: an unseen entry packs as unknown
+    if (hidden.has(entry.name as string)) continue;
+    const packed = byName.get(entry.name as string);
+    if (packed === undefined) throw new Error(`seen entry ${entry.name} has no engine Pokemon`);
+    out.push({ entry, ...packed });
+  }
   return out;
 }
+
+interface Context {
+  json: any;
+  foe: any;
+  state: PublicState;
+  facts: WorldFacts | null;
+  packed: Packed[];
+  vocab: (symbol: string) => Set<string>;
+  /** The ids a -start shows that are no engine volatile (the world writers' slot_conditions and illusion_transform rows). */
+  slotIds: Set<string>;
+}
+
+type Compare = (ctx: Context) => string[];
+const one = (miss: string | null): string[] => (miss === null ? [] : [miss]);
+const each =
+  (check: (p: Packed) => string | null): Compare =>
+  (ctx) =>
+    ctx.packed.flatMap((p) => {
+      const miss = check(p);
+      return miss === null ? [] : [`${miss} (${p.entry.name}, ${p.entry.species})`];
+    });
+const same = (what: string, a: unknown, b: unknown): string | null => (JSON.stringify(a) === JSON.stringify(b) ? null : `${what}: engine ${JSON.stringify(a)}, seat ${JSON.stringify(b)}`);
+const GENDER: Record<string, string | null> = { M: "M", F: "F", N: null, "": null };
+
+/** How each field another seat may see is shown to that seat. A field classed public or revealed-only with no entry here fails the gate. */
+const COMPARE: Record<string, Compare> = {
+  "battle.turn": (c) => one(same("turn", c.json.turn, c.state.turn)),
+  "battle.ended": (c) => one(same("ended", c.json.ended, c.state.winner !== null)),
+  "field.weather": (c) => one(same("weather", toId(c.json.field.weather), toId(c.state.weather ?? ""))),
+  "field.terrain": (c) => one(same("terrain", toId(c.json.field.terrain), toId(c.state.terrain ?? ""))),
+  "field.pseudo_present": (c) => one(same("field conditions", Object.keys(c.json.field.pseudoWeather).sort(), c.state.field_conditions.map(toId).sort())),
+  "side.condition_present": (c) => one(same("side conditions", Object.keys(c.foe.sideConditions).sort(), Object.keys(c.state.opponent.conditions).map(toId).sort())),
+  "side.condition_layers": (c) =>
+    Object.entries(c.foe.sideConditions as Record<string, any>).flatMap(([id, v]) => one(same(`layers ${id}`, v.layers ?? 1, Object.entries(c.state.opponent.conditions).find(([k]) => toId(k) === id)?.[1]))),
+  // The faint lines the seat saw (a revived Pokemon fainted once and counts).
+  "side.total_fainted": (c) => (c.facts === null ? [] : one(same("total fainted", c.foe.totalFainted, c.facts.opponent.total_fainted))),
+  // A temporary forme (Castform's weather forme) is the reader's temp_species.
+  "roster.species": each((p) => (p.entry.species === null ? null : same("species", engineId(p.identity.species), toId(p.entry.temp_species ?? p.entry.species)))),
+  "roster.level": each((p) => same("level", levelOf(p.identity.details), p.entry.level)),
+  "roster.gender": each((p) => same("gender", GENDER[p.identity.gender as string] ?? null, p.entry.gender)),
+  "roster.shiny": each((p) => same("shiny", String(p.identity.details).includes(", shiny"), p.entry.shiny)),
+  "roster.boosts": each((p) => same("boosts", p.state.boosts, p.entry.boosts)),
+  "roster.fainted": each((p) => same("fainted", p.state.fainted, p.entry.fainted)),
+  "roster.is_active": each((p) => same("in play", p.state.isActive === true, p.entry.active_slot !== null)),
+  "roster.transformed": each((p) => same("transformed", p.state.transformed, p.entry.volatiles.includes("transform"))),
+  "active.volatile_present": (c) => {
+    const known = c.vocab("VOLATILE");
+    const out: string[] = [];
+    for (const p of c.packed) {
+      if (p.state.isActive !== true) continue;
+      for (const shown of p.entry.volatiles) {
+        const id = [toId(shown), toId(shown).replace(/\d+$/, ""), toId(shown).replace(/(atk|def|spa|spd|spe)$/, "")].find((x) => known.has(x) && !c.slotIds.has(x));
+        if (id !== undefined && !(id in p.state.volatiles)) out.push(`volatile ${id} shown but not in the engine`);
+      }
+    }
+    return out;
+  },
+  "active.active_turns": (c) => activeFacts(c, (fact, mon) => same("active turns", mon.activeTurns, fact.active_turns)),
+  // Only a deliberately misclassified record reaches these: another seat sees no exact hit points, and the current
+  // item can differ from the one it was shown.
+  "roster.hp": each((p) => same("exact hp", p.state.hp, p.entry.hp_num)),
+  "roster.item": each((p) => (p.entry.item_known ? same("item", engineId(p.state.item), p.entry.item_lost ? "" : (p.entry.item ?? "")) : null)),
+};
+
+function activeFacts(c: Context, check: (fact: { active_turns: number; move_actions: number }, mon: any) => string | null): string[] {
+  if (c.facts === null) return [];
+  const out: string[] = [];
+  for (const [letter, fact] of Object.entries(c.facts.opponent.active)) {
+    const mon = c.foe.pokemon.find((m: any) => m.isActive === true && m.position === letter.charCodeAt(0) - 97);
+    if (fact === null || mon === undefined) continue;
+    out.push(...one(check(fact, mon)));
+  }
+  return out;
+}
+
+/** Every field another seat may see, compared at one point; a field with no comparison fails. */
+function oracle(record: BattleStateSpec, ctx: Context): string[] {
+  const out: string[] = [];
+  for (const field of record.fields) {
+    if (field.visibility !== "public" && field.visibility !== "revealed-only") continue;
+    const compare = COMPARE[field.id];
+    if (compare === undefined) out.push(`${field.id}: no derivation of another seat shows it`);
+    else for (const miss of compare(ctx)) out.push(`${field.id}: ${miss}`);
+  }
+  return out;
+}
+
+function factsOf(player: Player, channel: string[], data: ReturnType<typeof readWorldFactsData>): WorldFacts | null {
+  try {
+    return worldFacts({ channel: ownChannel(player, channel), data });
+  } catch {
+    return null;
+  }
+}
+
+const SAMPLES = new URL("../../../fixtures/contracts/v1/battle-state-spec/", import.meta.url);
+const sample = (kind: string, name: string): unknown => JSON.parse(readFileSync(new URL(`${kind}/${name}.json`, SAMPLES), "utf8"));
 
 describe("the committed battle-state spec", () => {
   it("reads against the pinned engine, and its hash is pinned (a change is a new record)", () => {
     expect(spec.format_id).toBe(GOLDEN_FORMAT);
-    expect(battleStateSpecHash(spec)).toBe("22735303afd5a636ff68ad5941749da2a7dbf938c991a24329603d77e4720d41");
+    expect(battleStateSpecHash(spec)).toBe(SPEC_HASH);
     expect(spec.groups.map((g) => g.id)).toEqual([...GROUPS]);
     expect(spec.world_items.map((w) => w.id)).toEqual(STATE_ITEM_IDS);
+    expect(binding.counts.players).toBe(2);
   });
 
   it("binds the vocabulary sizes to the engine-data table: a doctored table or count is refused", () => {
@@ -154,18 +293,15 @@ describe("the committed battle-state spec", () => {
     expect(() => readBattleStateSpec(committedSpec(), { ...binding, engine_data: table })).toThrow("engine_data_hash is not the table's");
     expect(() => readBattleStateSpec(committedSpec(), { ...binding, counts: { ...binding.counts, max_move_count: 6 } })).toThrow("MOVE has size 4, the max_move_count is 6");
     expect(() => readBattleStateSpec(committedSpec(), { ...binding, vocabulary_hash: "0".repeat(64) })).toThrow("vocabulary_hash");
-    // Sizes are the table's, never the record's: the union of the volatile lists is large and fits int16.
     expect(vocabularyIds(binding.engine_data, ["abilities", "conditions", "items", "moves"]).length).toBeGreaterThan(1000);
     expect(() => vocabularyIds(binding.engine_data, ["nosuchlist"])).toThrow("no list nosuchlist");
   });
 
-  it("refuses a vocabulary field whose indices the table makes too many for its dtype, and an empty vocabulary dimension", () => {
+  it("refuses a vocabulary field whose indices the table makes too many for its dtype", () => {
     const doctored = committedSpec();
-    const species = doctored.fields.find((f: any) => f.id === "roster.base_species");
-    species.dtype = "int8";
+    doctored.fields.find((f: any) => f.id === "roster.base_species").dtype = "int8";
     expect(() => readBattleStateSpec(doctored, binding)).toThrow("roster.base_species: 401 indices do not fit int8");
-    const empty = readBattleStateSpec(committedSpec());
-    expect(() => readBattleStateSpec(empty, { ...binding, engine_data: { ...binding.engine_data, types: [] } })).toThrow();
+    expect(() => readBattleStateSpec(committedSpec(), { ...binding, engine_data: { ...binding.engine_data, types: [] } })).toThrow();
   });
 
   it("refuses a record of another format", () => {
@@ -175,24 +311,26 @@ describe("the committed battle-state spec", () => {
   });
 });
 
-const SAMPLES = new URL("../../../fixtures/contracts/v1/battle-state-spec/", import.meta.url);
-const sample = (kind: string, name: string): unknown => JSON.parse(readFileSync(new URL(`${kind}/${name}.json`, SAMPLES), "utf8"));
-
 describe("the reader", () => {
   it.each([
     ["encoder-reads-hidden", "battle.prng is hidden"],
     ["encoder-unknown-field", "battle.turns is not a field"],
+    ["gate-not-seat", "its gate must be a 0/1 seat field"],
     ["group-mismatch", "battle.turn: the id does not start with its group"],
     ["groups-out-of-order", "groups: every group exactly once"],
+    ["mask-of-another-field", "masks active.volatile_present, not this field"],
+    ["masks-on-engine-field", "only a seat field masks another"],
     ["omitted-but-read", "battle.turn is read by a field"],
+    ["opponent-reads-exact-hp", "roster.hp is not projectable to another seat"],
     ["opponent-reads-unprojectable", "roster.stats is not projectable to another seat"],
     ["projection-on-public", "a projection exactly for an own-exact field"],
     ["range-overflows-dtype", "the range does not fit int8"],
     ["range-reversed", "min exceeds max"],
     ["reveal-missing", "a reveal mask exactly for a revealed-only field"],
     ["reveal-wrong-mask", "its mask must be a 0/1 seat field"],
+    ["seat-class-on-engine-field", "the class seat is exactly for a seat field"],
     ["seat-engine-source", "a seat field is a derivation"],
-    ["seat-not-public", "its class is public"],
+    ["seat-not-seat-class", "the class seat is exactly for a seat field"],
     ["unknown-dim", "MOVES is not a dimension"],
     ["unsorted-fields", "is repeated or out of order"],
     ["unsorted-out-of-scope", "out_of_scope"],
@@ -215,13 +353,13 @@ describe("the reader", () => {
 
   it("refuses an unsorted vocabulary list of a field and of a dimension, and a reveal mask that is no field", () => {
     const lists = committedSpec();
-    lists.fields.find((f: any) => f.id === "battle.last_move").value.lists = ["moves", "abilities"];
-    expect(() => readBattleStateSpec(lists)).toThrow("battle.last_move: lists");
+    lists.fields.find((f: any) => f.id === "roster.item").value.lists = ["items", "abilities"];
+    expect(() => readBattleStateSpec(lists)).toThrow("roster.item: lists");
     const dims = committedSpec();
     dims.dims.find((d: any) => d.symbol === "VOLATILE").lists.reverse();
     expect(() => readBattleStateSpec(dims)).toThrow("dims: VOLATILE");
     const mask = committedSpec();
-    mask.fields.find((f: any) => f.id === "roster.item").reveal = "seat_roster.nothing";
+    mask.fields.find((f: any) => f.id === "roster.species").reveal = "seat_roster.nothing";
     expect(() => readBattleStateSpec(mask)).toThrow("its mask seat_roster.nothing is not a field");
     const unsorted = committedSpec();
     unsorted.world_items.find((w: any) => w.kind === "held" && w.fields.length > 1).fields.reverse();
@@ -254,21 +392,23 @@ describe("engine paths", () => {
 
 describe("the projection rules (privacy by construction)", () => {
   const field = (visibility: Field["visibility"], projection?: Field["projection"]): Field => ({ id: "roster.x", group: "roster", extra: [], dtype: "int8", value: { kind: "range", min: 0, max: 1 }, source: { kind: "derived", from: "reducer", name: "x" }, visibility, ...(projection === undefined ? {} : { projection }), description: "x" }) as Field;
-  it("gives each class its view, for the owner and for another seat", () => {
-    expect([seatView(field("public"), true), seatView(field("public"), false)]).toEqual(["exact", "exact"]);
-    expect([seatView(field("hidden"), true), seatView(field("hidden"), false)]).toEqual(["none", "none"]);
-    expect([seatView(field("revealed-only"), true), seatView(field("revealed-only"), false)]).toEqual(["masked", "masked"]);
-    expect([seatView(field("own-exact", "hp_percent"), true), seatView(field("own-exact", "hp_percent"), false)]).toEqual(["exact", "percent"]);
-    expect([seatView(field("own-exact", "none"), true), seatView(field("own-exact", "none"), false)]).toEqual(["exact", "none"]);
+  const views = (f: Field): string[] => [true, false].flatMap((owner) => [true, false].map((seat) => seatView(f, { owner, seat })));
+  it("gives each class its view, for the owner and another seat, at the reader's own seat index and another's", () => {
+    expect(views(field("public"))).toEqual(["exact", "exact", "exact", "exact"]);
+    expect(views(field("hidden"))).toEqual(["none", "none", "none", "none"]);
+    expect(views(field("revealed-only"))).toEqual(["masked", "masked", "masked", "masked"]);
+    expect(views(field("own-exact", "hp_percent"))).toEqual(["exact", "exact", "percent", "percent"]);
+    expect(views(field("own-exact", "none"))).toEqual(["exact", "exact", "none", "none"]);
+    // A seat field is exact only at the reader's own seat index: seat 1 never reads seat 0's hp_shown or request.
+    expect(views(field("seat"))).toEqual(["exact", "none", "exact", "none"]);
   });
 
-  it("no encoder or reducer mapping reads a hidden field, and no opponent mapping reads a field another seat cannot see", () => {
+  it("no mapping reads a hidden field, and no opponent mapping a field another seat cannot see", () => {
     const fields = new Map(spec.fields.map((f) => [f.id, f]));
     for (const row of [...spec.encoder, ...spec.reducer]) {
       for (const ref of [...row.own, ...row.opponent, ...row.shared]) expect((fields.get(ref) as Field).visibility, ref).not.toBe("hidden");
-      for (const ref of [...row.opponent, ...row.shared]) expect(seatView(fields.get(ref) as Field, false), ref).not.toBe("none");
+      for (const ref of [...row.opponent, ...row.shared]) expect(seatView(fields.get(ref) as Field, { owner: false, seat: true }), ref).not.toBe("none");
     }
-    // Negative controls: the reader refuses an opponent column that reads the exact stats, and any mapping of the PRNG.
     const leak = committedSpec();
     leak.encoder.find((c: any) => c.column === "stat_*").opponent = ["roster.stats"];
     expect(() => readBattleStateSpec(leak)).toThrow("roster.stats is not projectable to another seat");
@@ -278,19 +418,40 @@ describe("the projection rules (privacy by construction)", () => {
   });
 });
 
-describe("the spec against every committed corpus (the drift gate)", () => {
+describe("the spec against every committed corpus (the drift gate and the independent oracle)", () => {
   const keys = new Set<string>();
   const resolved = new Map<string, { parents: number; found: number }>();
   const vocab = new Map<string, Set<string>>();
+  const dimIds = new Map<string, Set<string>>();
   const unknownIds: string[] = [];
-  const hp = { compared: 0, own: 0, mismatches: [] as string[] };
+  const failures: string[] = [];
+  const doctored: Record<string, number> = {};
+  const compared = { points: 0, skipped: 0, entries: 0, disguised: 0, unseen: 0, sources: new Set<string>() };
+  const gate = { states: 0, differs: 0 };
   const canary = { states: 0, leaks: [] as string[], control: 0 };
   let requests = 0;
+  const data = readWorldFactsData();
+  let slotIds = new Set<string>();
+
+  /** A doctored record: one field moved to class public, which the oracle must refuse. */
+  const misclassified = (id: string): BattleStateSpec => {
+    const copy = structuredClone(spec);
+    const f = copy.fields.find((x) => x.id === id) as Field;
+    f.visibility = "public";
+    delete f.projection;
+    return copy;
+  };
+  const DOCTORED = ["roster.hp", "roster.status", "roster.move_pp", "roster.item"];
 
   beforeAll(async () => {
     for (const f of spec.fields) if (f.value.kind === "vocabulary") vocab.set(f.id, new Set(vocabularyIds(binding.engine_data, f.value.lists)));
-    const dimIds = new Map(spec.dims.filter((d) => d.kind === "vocabulary").map((d) => [d.symbol, new Set(vocabularyIds(binding.engine_data, (d as { lists: string[] }).lists))]));
-    requests = await points(({ player, json, channel }) => {
+    for (const d of spec.dims) if (d.kind === "vocabulary") dimIds.set(d.symbol, new Set(vocabularyIds(binding.engine_data, d.lists)));
+    // The world writers' rows name the ids a -start shows that are no engine volatile: a delayed move's is a slot
+    // condition, Transform's is roster.transformed.
+    const rows = loadWorldWriters(engine, GOLDEN_FORMAT).items;
+    slotIds = new Set(rows.filter((i) => i.id === "slot_conditions" || i.id === "illusion_transform").flatMap((i) => i.ids ?? []));
+    const variants = DOCTORED.map((id) => [id, misclassified(id)] as const);
+    requests = await points(({ id: battle, player, json, channel }) => {
       stateKeys(json, keys);
       for (const f of spec.fields) {
         if (f.source.kind !== "engine") continue;
@@ -300,7 +461,6 @@ describe("the spec against every committed corpus (the drift gate)", () => {
         const known = vocab.get(f.id);
         if (known !== undefined) for (const id of engineIds(f, json)) if (!known.has(id)) unknownIds.push(`${f.id}=${id}`);
       }
-      // map-keyed vocabulary dimensions: volatiles, side, field and slot conditions
       const check = (symbol: string, ids: string[]): void => {
         for (const id of ids) if (!(dimIds.get(symbol) as Set<string>).has(id)) unknownIds.push(`${symbol}=${id}`);
       };
@@ -318,28 +478,36 @@ describe("the spec against every committed corpus (the drift gate)", () => {
         }
         expect(side.active.length).toBe(binding.counts.active_per_side);
       }
+      expect(json.sides.length).toBe(binding.counts.players);
       expect(String(json.prng).split(",")[1]?.length).toBe((binding.counts.prng_words as number) * 8);
 
-      // The display rule: what the seat's shared reader shows of another seat's hit points is the projection of the exact value.
-      const run = interpretChannel(player, channel);
-      const own = json.sides.find((s: any) => s.id === player);
-      const other = json.sides.find((s: any) => s.id !== player);
-      if (run.flags.length === 0 && run.frames.length > 0) {
-        const state = run.frames.at(-1)?.state;
-        const byName = (side: any, name: string | null): any[] => side.pokemon.filter((m: any) => (m.set.name || m.set.species) === name && m.illusion == null);
-        for (const mon of state?.opponent.roster ?? []) {
-          const real = byName(other, mon.name);
-          // In play only: a benched Pokemon's shown value is the last display, and the engine changes some silently (seat_roster.hp_shown).
-          if (real.length !== 1 || real[0].isActive !== true || mon.hp_num === null || mon.hp_den !== 100 || other.pokemon.some((m: any) => m.illusion != null)) continue;
-          hp.compared++;
-          const shown = shownPercent(real[0].hp, real[0].maxhp, "floor");
-          if (shown !== mon.hp_num) hp.mismatches.push(`${mon.name}: shown ${mon.hp_num}, rule ${shown}`);
-        }
-        for (const mon of state?.own.roster ?? []) {
-          const real = byName(own, mon.name);
-          if (real.length !== 1 || mon.hp_num === null) continue;
-          hp.own++;
-          if (mon.hp_num !== real[0].hp) hp.mismatches.push(`own ${mon.name}: shown ${mon.hp_num}, exact ${real[0].hp}`);
+      // The oracle: every field another seat may see, against that seat's own shared reader and world facts.
+      const run = interpretChannel(player, channel, { terrains: [...data.terrains] });
+      const state = run.frames.at(-1)?.state;
+      const foe = json.sides.find((s: any) => s.id !== player);
+      if (state === undefined || run.flags.length > 0 || state.request_kind === "preview") {
+        compared.skipped++; // a flagged channel (the reader's Illusion twin) or Team Preview, before any entry is seen
+      } else {
+        // The world facts refuse an Illusion |replace|: the facts' fields are not compared there.
+        const facts = factsOf(player, channel, data);
+        const packed = packOpponent(foe, state);
+        compared.points++;
+        compared.entries += packed.length;
+        compared.disguised += packed.filter((p) => p.state !== p.identity).length;
+        compared.unseen += state.opponent.roster.filter((m) => m.hp_num === null && m.phantom !== true).length;
+        const ctx: Context = { json, foe, state, facts, packed, vocab: (s) => dimIds.get(s) as Set<string>, slotIds };
+        for (const miss of oracle(spec, ctx)) failures.push(`${miss} @ ${battle} ${player} turn ${json.turn}`);
+        for (const [id, record] of variants) if (oracle(record, ctx).some((m) => m.startsWith(`${id}:`))) doctored[id] = (doctored[id] ?? 0) + 1;
+        for (const f of spec.fields) if (f.source.kind === "derived" && f.source.from === "shared_reader") resolveReader(f.source.name, state, compared.sources);
+
+        // The roster gate: an unseen brought entry and a non-brought one pack alike (both unknown), though the engine
+        // holds only the first. An unseen entry has no nickname yet: it is known by its preview species.
+        const brought = new Set(foe.pokemon.map((m: any) => toId(m.set.species)));
+        const unseen = state.opponent.roster.filter((m) => m.hp_num === null && m.phantom !== true);
+        if (unseen.some((m) => brought.has(m.base_species)) && unseen.some((m) => !brought.has(m.base_species))) {
+          gate.states++;
+          const ungated = unseen.map((m) => (brought.has(m.base_species) ? "engine" : "absent"));
+          if (new Set(ungated).size > 1) gate.differs++;
         }
       }
 
@@ -347,22 +515,26 @@ describe("the spec against every committed corpus (the drift gate)", () => {
       const planted = structuredClone(json);
       planted.prng = "sodium,7777000077770000777700007777000077770000777700007777000077770000";
       planted.quickClawRoll = 77771;
-      const foe = planted.sides.find((s: any) => s.id !== player);
-      for (const mon of foe.pokemon) {
-        mon.maxhp = Math.max(mon.maxhp, mon.hp) + 77772;
-        mon.storedStats = { atk: 77773, def: 77773, spa: 77773, spd: 77773, spe: 77773 };
-        for (const slot of mon.moveSlots) Object.assign(slot, { pp: 77774, maxpp: 77774 });
-        for (const v of Object.values(mon.volatiles) as any[]) Object.assign(v, { duration: 77775, counter: 77775, hp: 77775 });
-        if (isMap(mon.statusState)) Object.assign(mon.statusState, { time: 77776, startTime: 77776 });
-        mon.position = 77777;
-      }
-      for (const v of Object.values(foe.sideConditions) as any[]) v.duration = 77778;
       if (isMap(planted.field.weatherState)) planted.field.weatherState.duration = 77779;
-      const projected = JSON.stringify(project(planted, player, seatView));
+      if (isMap(planted.field.terrainState)) planted.field.terrainState.duration = 77786;
+      for (const v of Object.values(planted.field.pseudoWeather) as any[]) v.duration = 77785;
+      const target = planted.sides.find((s: any) => s.id !== player);
+      for (const mon of target.pokemon) {
+        mon.hp = 77770;
+        mon.maxhp = 77772;
+        mon.storedStats = { atk: 77773, def: 77773, spa: 77773, spd: 77773, spe: 77773 };
+        for (const slot of mon.moveSlots) Object.assign(slot, { pp: 77774, maxpp: 77774, id: "m77787", disabled: 77782, used: 77783 });
+        for (const v of Object.values(mon.volatiles) as any[]) Object.assign(v, { duration: 77775, counter: 77775, hp: 77775, layers: 77775 });
+        if (isMap(mon.statusState)) Object.assign(mon.statusState, { time: 77776, startTime: 77776, stage: 77776 });
+        Object.assign(mon, { position: 77777, illusion: "[Pokemon:77780]", canMegaEvo: "77781", status: "s77788", lastItem: "i77789", timesAttacked: 77790, item: "i77791", ability: "a77792", baseAbility: "a77793", activeMoveActions: 77794 });
+      }
+      for (const v of Object.values(target.sideConditions) as any[]) v.duration = 77778;
+      for (const slot of target.slotConditions) for (const v of Object.values(slot) as any[]) v.duration = 77784;
+      const projected = JSON.stringify(project(spec, planted, player, seatView));
       canary.states++;
       const found = projected.match(/7777\d/g);
       if (found !== null) canary.leaks.push([...new Set(found)].join());
-      if (/7777\d/.test(JSON.stringify(project(planted, player, () => "exact")))) canary.control++;
+      if (/7777\d/.test(JSON.stringify(project(spec, planted, player, () => "exact")))) canary.control++;
     });
   }, CORPUS_TIMEOUT_MS);
 
@@ -373,9 +545,7 @@ describe("the spec against every committed corpus (the drift gate)", () => {
   it("every key of the engine's state at a classified level is a field's or an omitted key with a reason", () => {
     const covered = coveredKeys(spec);
     const omitted = new Set(spec.omitted.map((o) => `${o.level}.${o.key}`));
-    const unknown = [...keys].filter((k) => !covered.has(k) && !omitted.has(k)).sort();
-    expect(unknown, "add a field or an omitted row with a reason").toEqual([]);
-    // No stale row: every omitted key occurs on some request (a pin bump shows what it removes as well as what it adds).
+    expect([...keys].filter((k) => !covered.has(k) && !omitted.has(k)).sort(), "add a field or an omitted row with a reason").toEqual([]);
     expect([...omitted].filter((k) => !keys.has(k)).sort()).toEqual([]);
     for (const level of new Set([...keys].map((k) => k.split(".")[0]))) expect(ENGINE_LEVELS).toContain(level);
   });
@@ -385,10 +555,8 @@ describe("the spec against every committed corpus (the drift gate)", () => {
       if (f.source.kind !== "engine") continue;
       const r = resolved.get(f.id) as { parents: number; found: number };
       expect(r.found, `${f.id} never resolves`).toBeGreaterThan(0);
-      // One key below the battle, a side or the field: the engine serialises it on every state (a Pokemon's keys such
-      // as lastMoveTargetLoc are set when first used, and a deeper path may cross a null).
-      const plain = /^(battle|side|field)\.[A-Za-z]+$/.test(f.source.path);
-      if (plain) expect(r.found, `${f.id} is missing on some state`).toBe(r.parents);
+      // A Pokemon's keys such as lastMoveTargetLoc are set when first used, and a deeper path may cross a null.
+      if (/^(battle|side|field)\.[A-Za-z]+$/.test(f.source.path)) expect(r.found, `${f.id} is missing on some state`).toBe(r.parents);
     }
   });
 
@@ -396,10 +564,31 @@ describe("the spec against every committed corpus (the drift gate)", () => {
     expect(unknownIds.slice(0, 20)).toEqual([]);
   });
 
-  it("the display projection is what the shared reader shows: floor of the share, exact for the owner", () => {
-    expect(hp.mismatches.slice(0, 10)).toEqual([]);
-    expect(hp.compared).toBeGreaterThan(5000);
-    expect(hp.own).toBeGreaterThan(5000);
+  it("every field another seat may see equals that seat's own reader and world facts, the Illusion users included (independent oracle)", () => {
+    const byField: Record<string, string> = {};
+    for (const miss of failures) {
+      const id = miss.split(":")[0] as string;
+      byField[id] ??= `${failures.filter((m) => m.startsWith(`${id}:`)).length}x ${miss}`;
+    }
+    expect(byField).toEqual({});
+    expect(compared.points).toBeGreaterThan(7000);
+    expect(compared.entries).toBeGreaterThan(20000);
+    expect(compared.disguised, "the Illusion battle's disguises are compared at their shown entry").toBeGreaterThan(0);
+    expect(compared.unseen, "unseen entries (brought or not) exist and are gated").toBeGreaterThan(1000);
+  });
+
+  it("a deliberately misclassified field fails the oracle (negative control)", () => {
+    for (const id of DOCTORED) expect(doctored[id] ?? 0, id).toBeGreaterThan(0);
+  });
+
+  it("every shared-reader derivation a seat field names exists in the seat's reader state", () => {
+    const named = new Set(spec.fields.flatMap((f) => (f.source.kind === "derived" && f.source.from === "shared_reader" ? [f.source.name] : [])));
+    expect([...named].filter((n) => !compared.sources.has(n)).sort()).toEqual([]);
+  });
+
+  it("the roster gate packs an unseen brought entry like a non-brought one; without it the engine would tell them apart", () => {
+    expect(gate.states).toBeGreaterThan(100);
+    expect(gate.differs).toBe(gate.states);
   });
 
   it("projects no hidden or unprojectable value to another seat (canary), and the scan has teeth (negative control)", () => {
@@ -409,36 +598,37 @@ describe("the spec against every committed corpus (the drift gate)", () => {
   });
 });
 
+/** Record which shared-reader names a seat field derives from exist in the seat's state (on a Pokemon, a side or the state). */
+function resolveReader(name: string, state: PublicState, into: Set<string>): void {
+  const mon = state.opponent.roster[0] as unknown as Record<string, unknown> | undefined;
+  if (name in state || name in state.opponent || (mon !== undefined && name in mon)) into.add(name);
+}
+
 /**
- * A reference projection of the engine-sourced fields of the side-bound groups for one seat: what the rules let the
- * seat read (a masked value stays unknown: this test has no reveal masks, so it is never read). The test's view, so
- * the canary checks the rules, not an implementation.
+ * A reference projection of the engine-sourced fields for one seat: what the rules let the seat read of the other
+ * side (a masked value stays unknown here: this test has no reveal masks, so it is never read). The test's own
+ * projection, so the canary checks the rules, not an implementation.
  */
-function project(json: any, seat: Player, view: (field: Field, owner: boolean) => string): Record<string, unknown> {
+function project(record: BattleStateSpec, json: any, seat: Player, view: (field: Field, viewer: { owner: boolean; seat: boolean }) => string): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const field of spec.fields) {
+  for (const field of record.fields) {
     if (field.source.kind !== "engine") continue;
     const path = field.source.path;
     const how = field.source.read;
     const read = (part: any): unknown[] => {
       const r: unknown[] = [];
       walk(part, path.match(/\.[A-Za-z]+|\[\]|\{\}/g) as string[], r);
-      // The value the field holds, not the engine object it is read from (a map entry is only "present").
       return r.map((v) => (how === "present" ? 1 : how === "bool" ? (v ? 1 : 0) : how === "length" ? (v as unknown[]).length : v));
     };
     if (field.group === "battle" || field.group === "field") {
-      if (view(field, false) === "exact") out[field.id] = read(field.group === "battle" ? json : json.field);
+      if (view(field, { owner: false, seat: true }) === "exact") out[field.id] = read(field.group === "battle" ? json : json.field);
       continue;
     }
     for (const side of json.sides) {
-      const owner = side.id === seat;
-      const shown = view(field, owner);
+      const shown = view(field, { owner: side.id === seat, seat: true });
       if (shown === "none" || shown === "masked") continue;
       const parts = path.startsWith("side") ? [side] : path.startsWith("active") ? side.pokemon.filter((m: any) => m.isActive === true) : side.pokemon;
-      out[`${field.id}:${side.id}`] = parts.map((part: any) => {
-        if (shown === "percent") return shownPercent(Math.min(part.hp, part.maxhp), part.maxhp, "floor");
-        return read(part);
-      });
+      out[`${field.id}:${side.id}`] = parts.map(read);
     }
   }
   return out;

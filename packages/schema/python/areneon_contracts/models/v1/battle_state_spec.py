@@ -103,6 +103,17 @@ class Group(BaseModel):
     """
     The group's leading dimensions.
     """
+    gate: Annotated[
+        StrictStr | MISSING,
+        Field(
+            max_length=96,
+            min_length=3,
+            pattern="^(active|battle|field|roster|seat_active|seat_field|seat_roster|seat_side|side)\\.[a-z0-9_]+$",
+        ),
+    ] = MISSING
+    """
+    A 0/1 seat field of seat_<group> (class seat): for another seat, an entry of this group whose gate is not set packs as the unknown entry, so an unseen entry is indistinguishable from an absent one.
+    """
     description: Note
 
 
@@ -246,9 +257,9 @@ class FieldModel(BaseModel):
     dtype: Literal["int8", "int16", "int32"]
     value: Annotated[RangeValue | VocabularyValue, Field(discriminator="kind")]
     source: Annotated[EngineSource | DerivedSource, Field(discriminator="kind")]
-    visibility: Literal["public", "own-exact", "revealed-only", "hidden"]
+    visibility: Literal["public", "own-exact", "revealed-only", "hidden", "seat"]
     """
-    public: every seat sees it exactly; own-exact: the owner exactly, another seat its projection; revealed-only: a seat sees it only where its reveal mask is set; hidden: no seat.
+    public: every seat sees it exactly; own-exact: the owner exactly, another seat its projection; revealed-only: a seat sees it only where its reveal mask is set; hidden: no seat; seat: a seat field, exact only at the owning seat index (the seat's own derivation).
     """
     projection: Literal["hp_percent", "none"] | MISSING = MISSING
     """
@@ -264,6 +275,17 @@ class FieldModel(BaseModel):
     ] = MISSING
     """
     The seat mask field that gates a revealed-only field (reader rule: present exactly for revealed-only).
+    """
+    masks: Annotated[
+        StrictStr | MISSING,
+        Field(
+            max_length=96,
+            min_length=3,
+            pattern="^(active|battle|field|roster|seat_active|seat_field|seat_roster|seat_side|side)\\.[a-z0-9_]+$",
+        ),
+    ] = MISSING
+    """
+    For a seat mask: the field whose value it gates (reader rule: a revealed-only field's reveal mask masks exactly that field).
     """
     description: Note
 

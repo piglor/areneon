@@ -42,10 +42,15 @@ export function battleStateSpecSamples(engine: Engine, formatId: string): { vali
       "battle-state-spec/range-overflows-dtype": change((c) => (field(c, "battle.turn").dtype = "int8")),
       "battle-state-spec/seat-engine-source": change((c) => (field(c, "seat_field.request_kind").source = { kind: "engine", path: "battle.requestState", read: "value" })),
       "battle-state-spec/wrong-engine-root": change((c) => (field(c, "roster.hp").source.path = "battle.turn")),
-      "battle-state-spec/seat-not-public": change((c) => (field(c, "seat_field.request_kind").visibility = "hidden")),
+      "battle-state-spec/seat-not-seat-class": change((c) => (field(c, "seat_field.request_kind").visibility = "public")),
+      "battle-state-spec/seat-class-on-engine-field": change((c) => (field(c, "battle.turn").visibility = "seat")),
+      "battle-state-spec/masks-on-engine-field": change((c) => (field(c, "battle.turn").masks = "roster.item")),
+      "battle-state-spec/mask-of-another-field": change((c) => (field(c, "seat_roster.species_shown").masks = "active.volatile_present")),
+      "battle-state-spec/gate-not-seat": change((c) => (c.groups.find((g: any) => g.id === "roster").gate = "roster.fainted")),
+      "battle-state-spec/opponent-reads-exact-hp": change((c) => (column(c, "hp_fraction").opponent = ["roster.hp"])),
       "battle-state-spec/projection-on-public": change((c) => (field(c, "battle.turn").projection = "none")),
-      "battle-state-spec/reveal-missing": change((c) => delete field(c, "roster.item").reveal),
-      "battle-state-spec/reveal-wrong-mask": change((c) => (field(c, "roster.item").reveal = "seat_roster.move_shown")),
+      "battle-state-spec/reveal-missing": change((c) => delete field(c, "roster.species").reveal),
+      "battle-state-spec/reveal-wrong-mask": change((c) => (field(c, "roster.species").reveal = "seat_roster.revealed_moves")),
       "battle-state-spec/omitted-but-read": change((c) => {
         c.omitted.push({ level: "battle", key: "turn", reason: "cosmetic" });
         c.omitted.sort((x: any, y: any) => (`${x.level}.${x.key}` < `${y.level}.${y.key}` ? -1 : 1));

@@ -230,10 +230,15 @@ def test_no_opponent_value_of_an_unprojectable_key() -> None:
         r["key"]
         for r in record["reducer"]
         if not r["opponent"]
-        and any(seat_view(fields[ref], owner=False) != "exact" for ref in r["own"])
+        and any(seat_view(fields[ref], owner=False, seat=True) != "exact" for ref in r["own"])
     ]
     # the exact own-side values the reducer's canary (`leaks`) refuses on an opponent are among them
-    for key in ("SIDE.roster[].stats", "SIDE.roster[].moves_own", "SIDE.roster[].pp.*"):
+    for key in (
+        "SIDE.roster[].stats",
+        "SIDE.roster[].moves_own",
+        "SIDE.roster[].pp.*",
+        "SIDE.roster[].can_mega_evo",
+    ):
         assert key in secret, key
     values = observed()["opponent"]
     full = [key for key in secret if any(v not in EMPTY for v in values.get(key, []))]

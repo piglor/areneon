@@ -119,7 +119,8 @@
         "SIDE",
         "ROSTER"
       ],
-      "description": "Per side and roster entry (Team Preview order): the Pokemon's engine state."
+      "gate": "seat_roster.seen",
+      "description": "Per side and roster entry (Team Preview order; the engine holds the brought four after it, each at the entry of its set): the Pokemon's engine state. Another seat reads an entry only where it has seen it, so an unseen brought entry and a non-brought one pack alike."
     },
     {
       "id": "seat_active",
@@ -178,8 +179,9 @@
         "path": "active.activeMoveActions",
         "read": "value"
       },
-      "visibility": "public",
-      "description": "Move actions since the switch-in (the world facts' move_actions)."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "Move actions since the switch-in. The world facts' count differs from the engine's on some turns, so another seat reads its own count (seat_active.move_actions)."
     },
     {
       "id": "active.active_turns",
@@ -214,7 +216,8 @@
         "path": "active.draggedIn",
         "read": "bool"
       },
-      "visibility": "public",
+      "visibility": "own-exact",
+      "projection": "none",
       "description": "Whether it was dragged in this turn."
     },
     {
@@ -233,8 +236,9 @@
         "path": "active.lastMove.move",
         "read": "id"
       },
-      "visibility": "public",
-      "description": "Its last move (Encore, Disable)."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "Its last move (Encore, Disable). Another seat reads its recent history."
     },
     {
       "id": "active.last_move_target",
@@ -251,7 +255,8 @@
         "path": "active.lastMoveTargetLoc",
         "read": "value"
       },
-      "visibility": "public",
+      "visibility": "own-exact",
+      "projection": "none",
       "description": "The location its last move aimed at."
     },
     {
@@ -270,7 +275,8 @@
         "path": "active.lastMoveUsed.move",
         "read": "id"
       },
-      "visibility": "public",
+      "visibility": "own-exact",
+      "projection": "none",
       "description": "Its last move used, called moves included."
     },
     {
@@ -346,7 +352,8 @@
         "path": "active.moveThisTurn",
         "read": "id"
       },
-      "visibility": "public",
+      "visibility": "own-exact",
+      "projection": "none",
       "description": "The move it used this turn."
     },
     {
@@ -364,7 +371,8 @@
         "path": "active.newlySwitched",
         "read": "bool"
       },
-      "visibility": "public",
+      "visibility": "own-exact",
+      "projection": "none",
       "description": "Whether it switched in this turn."
     },
     {
@@ -382,8 +390,9 @@
         "path": "side.active[]",
         "read": "pokemon_ref"
       },
-      "visibility": "public",
-      "description": "The roster index of the Pokemon in each active slot, -1 empty."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "The roster index of the Pokemon in each active slot, -1 empty. Another seat reads seat_active.shown_roster_index (an Illusion user is shown as another entry)."
     },
     {
       "id": "active.slot_condition_duration",
@@ -402,8 +411,8 @@
         "path": "side.slotConditions[]{}.duration",
         "read": "value"
       },
-      "visibility": "public",
-      "description": "Turns until a slot condition resolves (fixed by the condition, shown when it starts)."
+      "visibility": "hidden",
+      "description": "Turns until a slot condition resolves. Never projected."
     },
     {
       "id": "active.slot_condition_present",
@@ -422,8 +431,9 @@
         "path": "side.slotConditions[]{}",
         "read": "present"
       },
-      "visibility": "public",
-      "description": "Whether each slot condition (Wish, a delayed move) is pending at the slot."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "Whether each slot condition (Wish, a delayed move) is pending at the slot. Another seat reads its history facts' pending effects."
     },
     {
       "id": "active.switch_flag",
@@ -481,7 +491,7 @@
         "read": "value"
       },
       "visibility": "hidden",
-      "description": "A volatile's counter (the stall counter). Never projected (the seat's derived stall counter is its view)."
+      "description": "A volatile's counter (the stall counter). Never projected."
     },
     {
       "id": "active.volatile_duration",
@@ -501,7 +511,7 @@
         "read": "value"
       },
       "visibility": "hidden",
-      "description": "Turns left of a timed volatile; some are engine draws. Never projected (the seat's started turn is its view)."
+      "description": "Turns left of a timed volatile; some are engine draws. Never projected."
     },
     {
       "id": "active.volatile_hp",
@@ -540,9 +550,9 @@
         "path": "active.volatiles{}.layers",
         "read": "value"
       },
-      "visibility": "revealed-only",
-      "reveal": "seat_active.volatile_shown",
-      "description": "The layers of a stacking volatile (Stockpile)."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "The layers of a stacking volatile (Stockpile). Another seat reads seat_active.volatile_derived."
     },
     {
       "id": "active.volatile_present",
@@ -599,8 +609,9 @@
         "path": "battle.lastMove.move",
         "read": "id"
       },
-      "visibility": "public",
-      "description": "The last move used by anyone (Copycat's reference; the history facts' field_last_move)."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "The last move used by anyone (Copycat's reference). No seat's view is checked against it, so a seat reads its own history facts' field_last_move instead."
     },
     {
       "id": "battle.prng",
@@ -639,24 +650,6 @@
       },
       "visibility": "hidden",
       "description": "The engine's Quick Claw roll of the turn. Never projected."
-    },
-    {
-      "id": "battle.started",
-      "group": "battle",
-      "extra": [],
-      "dtype": "int8",
-      "value": {
-        "kind": "range",
-        "min": 0,
-        "max": 1
-      },
-      "source": {
-        "kind": "engine",
-        "path": "battle.started",
-        "read": "bool"
-      },
-      "visibility": "public",
-      "description": "Whether the battle has started (after Team Preview)."
     },
     {
       "id": "battle.turn",
@@ -806,9 +799,9 @@
         "path": "pokemon.ability",
         "read": "id"
       },
-      "visibility": "revealed-only",
-      "reveal": "seat_roster.ability_shown",
-      "description": "The current ability (after a Mega Evolution, the forme's)."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "The current ability (after a Mega Evolution, the forme's). A Mega Evolution or a swap changes it with no line naming the new one, so another seat reads seat_roster.shown_ability."
     },
     {
       "id": "roster.added_type",
@@ -826,8 +819,9 @@
         "path": "pokemon.addedType",
         "read": "id"
       },
-      "visibility": "public",
-      "description": "A type added by a move (Forest's Curse, Trick-or-Treat)."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "A type added by a move."
     },
     {
       "id": "roster.ate_berry",
@@ -844,8 +838,9 @@
         "path": "pokemon.ateBerry",
         "read": "bool"
       },
-      "visibility": "public",
-      "description": "Whether the Pokemon ate a berry."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "Whether the Pokemon ate a berry. Another seat reads seat_roster.ate_berry."
     },
     {
       "id": "roster.attacked_by",
@@ -865,7 +860,8 @@
         "path": "pokemon.attackedBy",
         "read": "pokemon_ref"
       },
-      "visibility": "public",
+      "visibility": "own-exact",
+      "projection": "none",
       "description": "Whether the Pokemon in each side and active slot hit it this turn."
     },
     {
@@ -884,9 +880,9 @@
         "path": "pokemon.baseAbility",
         "read": "id"
       },
-      "visibility": "revealed-only",
-      "reveal": "seat_roster.ability_shown",
-      "description": "The set's ability (before an Evolution or a change)."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "The set's ability (before an Evolution or a change). No seat derivation tells it apart from a swapped-in ability shown later, so no other seat reads it."
     },
     {
       "id": "roster.base_move",
@@ -906,9 +902,9 @@
         "path": "pokemon.baseMoveSlots[].id",
         "read": "id"
       },
-      "visibility": "revealed-only",
-      "reveal": "seat_roster.move_shown",
-      "description": "The set's move in each slot while Transform replaces the slots."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "The set's move in each slot while Transform replaces the slots (the copied moves a seat sees are not these)."
     },
     {
       "id": "roster.base_species",
@@ -926,8 +922,9 @@
         "path": "pokemon.baseSpecies",
         "read": "id"
       },
-      "visibility": "public",
-      "description": "The species shown at Team Preview (the set's species)."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "The engine's base species: a permanent forme change (Mega Evolution, a busted Disguise) moves it, so it is not the preview species another seat holds (seat_roster.preview_species)."
     },
     {
       "id": "roster.boosts",
@@ -1020,8 +1017,8 @@
         "read": "value"
       },
       "visibility": "own-exact",
-      "projection": "hp_percent",
-      "description": "Current hit points; another seat sees the display rule's percentage."
+      "projection": "none",
+      "description": "Current hit points. Another seat reads seat_roster.hp_shown: a benched Pokemon's hit points can change with no display the seat sees, so no projection of this field is its view."
     },
     {
       "id": "roster.hurt_this_turn",
@@ -1038,7 +1035,8 @@
         "path": "pokemon.hurtThisTurn",
         "read": "bool"
       },
-      "visibility": "public",
+      "visibility": "own-exact",
+      "projection": "none",
       "description": "Whether it was hurt this turn."
     },
     {
@@ -1094,9 +1092,9 @@
         "path": "pokemon.item",
         "read": "id"
       },
-      "visibility": "revealed-only",
-      "reveal": "seat_roster.item_shown",
-      "description": "The held item (a Mega Stone holder's stone is its item)."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "The held item (a Mega Stone holder's stone is its item). An item can change with no line another seat reads as its own, so no projection of the current item is that seat's view: it reads seat_roster.shown_item."
     },
     {
       "id": "roster.item_knocked_off",
@@ -1113,8 +1111,9 @@
         "path": "pokemon.itemKnockedOff",
         "read": "bool"
       },
-      "visibility": "public",
-      "description": "Whether the item was knocked off."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "Whether the item was knocked off. Another seat reads seat_roster.item_lost."
     },
     {
       "id": "roster.last_item",
@@ -1132,8 +1131,9 @@
         "path": "pokemon.lastItem",
         "read": "id"
       },
-      "visibility": "public",
-      "description": "The item last used up (shown by the line that uses it)."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "The item last used up. Another seat reads its history facts' last item."
     },
     {
       "id": "roster.level",
@@ -1151,7 +1151,7 @@
         "read": "details_level"
       },
       "visibility": "public",
-      "description": "The level shown in the details (the rule table's adjusted level)."
+      "description": "The level the details show (the rule table's adjusted level)."
     },
     {
       "id": "roster.max_hp",
@@ -1187,8 +1187,9 @@
         "path": "pokemon.species",
         "read": "species_mega"
       },
-      "visibility": "public",
-      "description": "Whether the current forme is a Mega Evolution (the engine data's isMega of the forme)."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "Whether the current forme is a Mega Evolution (the engine data's isMega of the forme; a Pokemon transformed into a Mega forme reads 1, which no seat is shown). Another seat reads seat_roster.mega_shown."
     },
     {
       "id": "roster.move",
@@ -1208,9 +1209,9 @@
         "path": "pokemon.moveSlots[].id",
         "read": "id"
       },
-      "visibility": "revealed-only",
-      "reveal": "seat_roster.move_shown",
-      "description": "The move in each slot."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "The move in each slot. Another seat reads seat_roster.revealed_moves (in reveal order: the slot order is not shown)."
     },
     {
       "id": "roster.move_disabled",
@@ -1248,7 +1249,8 @@
         "path": "pokemon.moveLastTurnResult",
         "read": "value"
       },
-      "visibility": "public",
+      "visibility": "own-exact",
+      "projection": "none",
       "description": "Last turn's move result: 0 none, 1 failed, 2 succeeded."
     },
     {
@@ -1308,7 +1310,8 @@
         "path": "pokemon.moveThisTurnResult",
         "read": "value"
       },
-      "visibility": "public",
+      "visibility": "own-exact",
+      "projection": "none",
       "description": "This turn's move result: 0 none, 1 failed, 2 succeeded."
     },
     {
@@ -1366,7 +1369,8 @@
         "path": "pokemon.previouslySwitchedIn",
         "read": "value"
       },
-      "visibility": "public",
+      "visibility": "own-exact",
+      "projection": "none",
       "description": "How often it switched in."
     },
     {
@@ -1385,7 +1389,7 @@
         "read": "details_shiny"
       },
       "visibility": "public",
-      "description": "Whether the details say shiny."
+      "description": "Whether the details say shiny (another seat: only for an entry it has seen, by the roster gate)."
     },
     {
       "id": "roster.species",
@@ -1405,7 +1409,7 @@
       },
       "visibility": "revealed-only",
       "reveal": "seat_roster.species_shown",
-      "description": "The current species forme (a Mega forme after the Evolution); a disguise hides it until it is shown."
+      "description": "The current species forme (a Mega forme after the Evolution)."
     },
     {
       "id": "roster.stats",
@@ -1443,7 +1447,8 @@
         "path": "pokemon.statsLoweredThisTurn",
         "read": "bool"
       },
-      "visibility": "public",
+      "visibility": "own-exact",
+      "projection": "none",
       "description": "Whether a stat fell this turn."
     },
     {
@@ -1461,7 +1466,8 @@
         "path": "pokemon.statsRaisedThisTurn",
         "read": "bool"
       },
-      "visibility": "public",
+      "visibility": "own-exact",
+      "projection": "none",
       "description": "Whether a stat rose this turn."
     },
     {
@@ -1480,8 +1486,9 @@
         "path": "pokemon.status",
         "read": "id"
       },
-      "visibility": "public",
-      "description": "The major status (the engine marks a fainted Pokemon fnt, which is roster.fainted and reads as none here)."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "The major status (the engine marks a fainted Pokemon fnt, which is roster.fainted and reads as none here). Another seat reads seat_roster.status_shown."
     },
     {
       "id": "roster.status_counter",
@@ -1516,8 +1523,9 @@
         "path": "pokemon.statusState.stage",
         "read": "value"
       },
-      "visibility": "public",
-      "description": "The bad-poison stage (the world facts count its ticks)."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "The bad-poison stage; it rises silently when the damage is prevented (Magic Guard), so no seat but the owner reads it."
     },
     {
       "id": "roster.status_start",
@@ -1552,8 +1560,9 @@
         "path": "pokemon.timesAttacked",
         "read": "value"
       },
-      "visibility": "public",
-      "description": "Hits taken (Rage Fist)."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "Hits taken (Rage Fist). Another seat reads its history facts."
     },
     {
       "id": "roster.transformed",
@@ -1571,7 +1580,7 @@
         "read": "bool"
       },
       "visibility": "public",
-      "description": "Whether it is transformed."
+      "description": "Whether it is transformed (the -transform line)."
     },
     {
       "id": "roster.truant_turn",
@@ -1588,7 +1597,8 @@
         "path": "pokemon.truantTurn",
         "read": "bool"
       },
-      "visibility": "public",
+      "visibility": "own-exact",
+      "projection": "none",
       "description": "Truant's loafing turn."
     },
     {
@@ -1608,8 +1618,9 @@
         "path": "pokemon.types",
         "read": "multi_hot"
       },
-      "visibility": "public",
-      "description": "Its current types, one flag per type of the vocabulary (the engine's typeless marker ??? sets none)."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "Its current types, one flag per type (the typeless marker ??? sets none). Another seat reads the typechange types it was shown."
     },
     {
       "id": "roster.used_item_this_turn",
@@ -1626,8 +1637,102 @@
         "path": "pokemon.usedItemThisTurn",
         "read": "bool"
       },
-      "visibility": "public",
+      "visibility": "own-exact",
+      "projection": "none",
       "description": "Whether it used its item this turn."
+    },
+    {
+      "id": "seat_active.attackers",
+      "group": "seat_active",
+      "extra": [
+        "SIDE",
+        "ACTIVE"
+      ],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 2
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer_history",
+        "name": "active.attackers_this_turn"
+      },
+      "visibility": "seat",
+      "description": "Whether the Pokemon in each side and slot hit it this turn: 0 no, 1 unknown, 2 yes."
+    },
+    {
+      "id": "seat_active.hurt_this_turn",
+      "group": "seat_active",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer_history",
+        "name": "active.hurt_this_turn"
+      },
+      "visibility": "seat",
+      "description": "Whether the seat saw it hurt this turn."
+    },
+    {
+      "id": "seat_active.last_move_failed",
+      "group": "seat_active",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 2
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer_history",
+        "name": "active.last_move_failed"
+      },
+      "visibility": "seat",
+      "description": "Whether its last move failed: 0 no, 1 unknown, 2 yes."
+    },
+    {
+      "id": "seat_active.move_actions",
+      "group": "seat_active",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 127
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer_history",
+        "name": "active.move_actions"
+      },
+      "visibility": "seat",
+      "description": "Move actions since the switch-in, as the seat counts them."
+    },
+    {
+      "id": "seat_active.shown_roster_index",
+      "group": "seat_active",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": -1,
+        "max": 63
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "slots"
+      },
+      "visibility": "seat",
+      "description": "The roster entry the seat was shown in each active slot, -1 empty (an Illusion user is its disguise's entry until |replace|)."
     },
     {
       "id": "seat_active.slot_pending_remaining",
@@ -1646,7 +1751,7 @@
         "from": "reducer_history",
         "name": "pending_slot.remaining"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "Turns until each pending slot condition resolves, as the seat counts them."
     },
     {
@@ -1664,8 +1769,62 @@
         "from": "reducer_history",
         "name": "active.stall_counter"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "The stall counter the seat derives from the shown stalling uses (0 none)."
+    },
+    {
+      "id": "seat_active.stats_lowered",
+      "group": "seat_active",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer_history",
+        "name": "active.stats_lowered_this_turn"
+      },
+      "visibility": "seat",
+      "description": "Whether the seat saw a stat fall this turn."
+    },
+    {
+      "id": "seat_active.stats_raised",
+      "group": "seat_active",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer_history",
+        "name": "active.stats_raised_this_turn"
+      },
+      "visibility": "seat",
+      "description": "Whether the seat saw a stat rise this turn."
+    },
+    {
+      "id": "seat_active.times_attacked",
+      "group": "seat_active",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 127
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer_history",
+        "name": "active.times_attacked"
+      },
+      "visibility": "seat",
+      "description": "Hits it took, as the seat counts them."
     },
     {
       "id": "seat_active.volatile_derived",
@@ -1684,7 +1843,7 @@
         "from": "reducer",
         "name": "derived"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "The derived suffix the seat was shown (stockpile2, perish3; a stat for Protosynthesis), as a number or a stat index."
     },
     {
@@ -1704,8 +1863,9 @@
         "from": "shared_reader",
         "name": "volatiles"
       },
-      "visibility": "public",
-      "description": "Mask: the seat was shown each volatile (a line started it and none ended it)."
+      "visibility": "seat",
+      "masks": "active.volatile_present",
+      "description": "Mask: the seat was shown each volatile (a line started it and none ended it). An id the world writers' slot_conditions or illusion_transform rows name sets no bit: a delayed move's -start (Future Sight, Doom Desire) is a slot condition, and Transform's is roster.transformed."
     },
     {
       "id": "seat_active.volatile_started",
@@ -1724,7 +1884,7 @@
         "from": "world_facts",
         "name": "volatiles.started_turn"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "The turn each volatile began as the seat saw it, -1 none."
     },
     {
@@ -1742,8 +1902,27 @@
         "from": "reducer_history",
         "name": "refused"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "Whether the seat's history facts are available (no tracker refused a line)."
+    },
+    {
+      "id": "seat_field.history_last_move",
+      "group": "seat_field",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "moves"
+        ]
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer_history",
+        "name": "field_last_move"
+      },
+      "visibility": "seat",
+      "description": "The last move the seat saw used (its history facts)."
     },
     {
       "id": "seat_field.pseudo_elapsed",
@@ -1762,7 +1941,7 @@
         "from": "world_facts",
         "name": "field_conditions.started_turn"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "Turns since each field condition began, -1 none."
     },
     {
@@ -1780,8 +1959,26 @@
         "from": "engine_request",
         "name": "kind"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "The seat's own request: 0 none, 1 preview, 2 move, 3 forced switch."
+    },
+    {
+      "id": "seat_field.started",
+      "group": "seat_field",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "started"
+      },
+      "visibility": "seat",
+      "description": "Whether the seat saw the battle start (the |start| line)."
     },
     {
       "id": "seat_field.terrain_elapsed",
@@ -1798,7 +1995,7 @@
         "from": "world_facts",
         "name": "terrain.started_turn"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "Turns since the terrain began, -1 none."
     },
     {
@@ -1816,11 +2013,11 @@
         "from": "world_facts",
         "name": "weather.started_turn"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "Turns since the weather began, -1 none (the reducer's elapsed.weather)."
     },
     {
-      "id": "seat_roster.ability_shown",
+      "id": "seat_roster.ate_berry",
       "group": "seat_roster",
       "extra": [],
       "dtype": "int8",
@@ -1831,11 +2028,11 @@
       },
       "source": {
         "kind": "derived",
-        "from": "shared_reader",
-        "name": "ability"
+        "from": "reducer_history",
+        "name": "roster.ate_berry"
       },
-      "visibility": "public",
-      "description": "Mask: the seat knows the ability."
+      "visibility": "seat",
+      "description": "Whether the seat saw it eat a berry."
     },
     {
       "id": "seat_roster.brought",
@@ -1852,7 +2049,7 @@
         "from": "reducer",
         "name": "brought"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "What the seat knows of whether it was brought: 0 unknown, 1 not brought, 2 brought."
     },
     {
@@ -1870,7 +2067,7 @@
         "from": "reducer_history",
         "name": "roster.ate_berry"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "Whether the seat can settle the Pokemon's own facts: 0 no entry, 1 unknown, 2 known."
     },
     {
@@ -1888,7 +2085,7 @@
         "from": "reducer_history",
         "name": "active.unknown"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "Whether the seat can settle the facts of the Pokemon's position: 0 not in play, 1 unknown, 2 known."
     },
     {
@@ -1906,11 +2103,11 @@
         "from": "shared_reader",
         "name": "hp_num"
       },
-      "visibility": "public",
-      "description": "The hit points the seat was last shown, -1 never: exact for its own Pokemon, the display percentage for another's. A benched Pokemon's value is the last display (a silent change, such as a switch-out heal, is not shown)."
+      "visibility": "seat",
+      "description": "The hit points the seat was last shown, -1 never: exact for its own Pokemon, the display percentage for another's. A benched Pokemon's value is the last display."
     },
     {
-      "id": "seat_roster.item_shown",
+      "id": "seat_roster.item_known",
       "group": "seat_roster",
       "extra": [],
       "dtype": "int8",
@@ -1922,17 +2119,15 @@
       "source": {
         "kind": "derived",
         "from": "shared_reader",
-        "name": "item"
+        "name": "item_known"
       },
-      "visibility": "public",
-      "description": "Mask: the seat knows the held item (an own Pokemon: its request; another: a line showed it)."
+      "visibility": "seat",
+      "description": "Whether the seat knows the held item (own: its request; another's: a line showed it)."
     },
     {
-      "id": "seat_roster.move_shown",
+      "id": "seat_roster.item_lost",
       "group": "seat_roster",
-      "extra": [
-        "MOVE"
-      ],
+      "extra": [],
       "dtype": "int8",
       "value": {
         "kind": "range",
@@ -1942,10 +2137,66 @@
       "source": {
         "kind": "derived",
         "from": "shared_reader",
-        "name": "moves_revealed"
+        "name": "item_lost"
       },
-      "visibility": "public",
-      "description": "Mask: the seat knows the move in each slot."
+      "visibility": "seat",
+      "description": "Whether the seat saw the item used up or removed."
+    },
+    {
+      "id": "seat_roster.last_item_used",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "items"
+        ]
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer_history",
+        "name": "roster.last_item"
+      },
+      "visibility": "seat",
+      "description": "The item the seat saw it use up last."
+    },
+    {
+      "id": "seat_roster.mega_shown",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "mega"
+      },
+      "visibility": "seat",
+      "description": "Whether the seat saw it Mega Evolve."
+    },
+    {
+      "id": "seat_roster.mega_stone_shown",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "items"
+        ]
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "mega_stone"
+      },
+      "visibility": "seat",
+      "description": "The stone the seat saw it Mega Evolve with."
     },
     {
       "id": "seat_roster.name_shown",
@@ -1962,7 +2213,7 @@
         "from": "shared_reader",
         "name": "name"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "Mask: the seat was shown the nickname."
     },
     {
@@ -1980,8 +2231,63 @@
         "from": "reducer",
         "name": "phantom"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "An extra entry the seat's channel forced (Illusion)."
+    },
+    {
+      "id": "seat_roster.preview_gender",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 3
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "gender"
+      },
+      "visibility": "seat",
+      "description": "The gender the seat was shown: 0 none, 1 M, 2 F, 3 N."
+    },
+    {
+      "id": "seat_roster.preview_level",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 100
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "level"
+      },
+      "visibility": "seat",
+      "description": "The level the seat was shown (preview or details)."
+    },
+    {
+      "id": "seat_roster.preview_species",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "species"
+        ]
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "base_species"
+      },
+      "visibility": "seat",
+      "description": "The species the seat was shown at Team Preview for the entry."
     },
     {
       "id": "seat_roster.recent_hp_dealt_last_turn",
@@ -1998,7 +2304,7 @@
         "from": "reducer",
         "name": "recent.hp_dealt_last_turn"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "Damage dealt last turn in the target's units as the seat sees them."
     },
     {
@@ -2016,7 +2322,7 @@
         "from": "reducer",
         "name": "recent.hp_dealt_this_turn"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "Damage dealt this turn in the target's units as the seat sees them."
     },
     {
@@ -2034,7 +2340,7 @@
         "from": "reducer",
         "name": "recent.hp_taken_last_turn"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "Damage taken last turn in the units the seat sees."
     },
     {
@@ -2052,7 +2358,7 @@
         "from": "reducer",
         "name": "recent.hp_taken_this_turn"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "Damage taken this turn in the units the seat sees."
     },
     {
@@ -2070,7 +2376,7 @@
         "from": "reducer",
         "name": "recent.last_action_order"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "Its place among that turn's actions."
     },
     {
@@ -2088,7 +2394,7 @@
         "from": "reducer",
         "name": "recent.last_action_turn"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "The turn of its latest action, -1 none."
     },
     {
@@ -2107,7 +2413,7 @@
         "from": "reducer",
         "name": "recent.last_move"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "The last move the seat saw it choose."
     },
     {
@@ -2125,7 +2431,7 @@
         "from": "reducer",
         "name": "recent.last_move_turn"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "The turn of that move, -1 none."
     },
     {
@@ -2143,7 +2449,7 @@
         "from": "reducer",
         "name": "recent.last_target"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "Its last target as shown: 0 none, else 1 + side * 3 + slot letter."
     },
     {
@@ -2161,8 +2467,85 @@
         "from": "reducer",
         "name": "recent.protect_streak"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "Consecutive turns of successful stalling uses."
+    },
+    {
+      "id": "seat_roster.revealed_moves",
+      "group": "seat_roster",
+      "extra": [
+        "MOVE"
+      ],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "moves"
+        ]
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "moves_revealed"
+      },
+      "visibility": "seat",
+      "description": "The moves the seat saw it choose, in reveal order (the owner: its request's slots)."
+    },
+    {
+      "id": "seat_roster.seen",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "hp_num"
+      },
+      "visibility": "seat",
+      "description": "Gate: the seat has seen the entry in play (it showed hit points). Another seat's view of an unseen entry, brought or not, is the unknown entry."
+    },
+    {
+      "id": "seat_roster.shown_ability",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "abilities"
+        ]
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "ability"
+      },
+      "visibility": "seat",
+      "description": "The ability the seat was last shown (none once a swap leaves it unknown)."
+    },
+    {
+      "id": "seat_roster.shown_item",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "items"
+        ]
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "item"
+      },
+      "visibility": "seat",
+      "description": "The item the seat was last shown it holding."
     },
     {
       "id": "seat_roster.shown_species",
@@ -2180,8 +2563,8 @@
         "from": "shared_reader",
         "name": "species"
       },
-      "visibility": "public",
-      "description": "The species forme the seat was shown at this roster entry (a disguise until it breaks)."
+      "visibility": "seat",
+      "description": "The species forme the seat was shown at this entry (a disguise until it breaks)."
     },
     {
       "id": "seat_roster.species_shown",
@@ -2198,8 +2581,28 @@
         "from": "shared_reader",
         "name": "species"
       },
-      "visibility": "public",
-      "description": "Mask: the seat was shown the Pokemon's real species forme (not a disguise)."
+      "visibility": "seat",
+      "masks": "roster.species",
+      "description": "Mask: the seat was shown the entry's species forme."
+    },
+    {
+      "id": "seat_roster.status_shown",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "vocabulary",
+        "lists": [
+          "statuses"
+        ]
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "status"
+      },
+      "visibility": "seat",
+      "description": "The major status the seat was last shown."
     },
     {
       "id": "seat_roster.temp_species",
@@ -2217,7 +2620,7 @@
         "from": "reducer",
         "name": "temp_species"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "A temporary forme the seat was shown."
     },
     {
@@ -2237,8 +2640,44 @@
         "from": "reducer",
         "name": "types"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "The types a typechange line showed, one flag per type."
+    },
+    {
+      "id": "seat_roster.types_known",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer",
+        "name": "types"
+      },
+      "visibility": "seat",
+      "description": "Whether a typechange line set the types (exact_volatiles' types_known)."
+    },
+    {
+      "id": "seat_roster.types_typeless",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer",
+        "name": "types"
+      },
+      "visibility": "seat",
+      "description": "Whether that line made it typeless (???, exact_volatiles' types_typeless)."
     },
     {
       "id": "seat_side.condition_elapsed",
@@ -2257,8 +2696,26 @@
         "from": "world_facts",
         "name": "conditions.started_turn"
       },
-      "visibility": "public",
+      "visibility": "seat",
       "description": "Turns since each side condition began, -1 none."
+    },
+    {
+      "id": "seat_side.team_size",
+      "group": "seat_side",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 64
+      },
+      "source": {
+        "kind": "derived",
+        "from": "shared_reader",
+        "name": "teamsize"
+      },
+      "visibility": "seat",
+      "description": "The team size the seat was shown (|teamsize|)."
     },
     {
       "id": "side.condition_duration",
@@ -2278,7 +2735,7 @@
         "read": "value"
       },
       "visibility": "hidden",
-      "description": "Turns left of a timed side condition; it can depend on the source's item, so no seat is shown it (the seat's elapsed turns are its view)."
+      "description": "Turns left of a timed side condition; it can depend on the source's item. Never projected (the seat's elapsed turns are its view)."
     },
     {
       "id": "side.condition_layers",
@@ -2335,7 +2792,8 @@
         "path": "side.faintedLastTurn",
         "read": "pokemon_ref"
       },
-      "visibility": "public",
+      "visibility": "own-exact",
+      "projection": "none",
       "description": "The Pokemon that fainted last turn: 0 none, else 1 + its roster index."
     },
     {
@@ -2353,7 +2811,8 @@
         "path": "side.faintedThisTurn",
         "read": "pokemon_ref"
       },
-      "visibility": "public",
+      "visibility": "own-exact",
+      "projection": "none",
       "description": "The Pokemon that fainted this turn: 0 none, else 1 + its roster index."
     },
     {
@@ -2371,7 +2830,8 @@
         "path": "side.pokemonLeft",
         "read": "value"
       },
-      "visibility": "public",
+      "visibility": "own-exact",
+      "projection": "none",
       "description": "Pokemon of the side not fainted."
     },
     {
@@ -2389,8 +2849,9 @@
         "path": "side.pokemon",
         "read": "length"
       },
-      "visibility": "public",
-      "description": "Pokemon the side brought (after Team Preview) or showed (at it)."
+      "visibility": "own-exact",
+      "projection": "none",
+      "description": "Pokemon the engine holds for the side: six at Team Preview, the brought four after it."
     },
     {
       "id": "side.total_fainted",
@@ -2408,7 +2869,7 @@
         "read": "value"
       },
       "visibility": "public",
-      "description": "Pokemon of the side that have fainted."
+      "description": "Pokemon of the side that have fainted (every faint is a line)."
     }
   ],
   "omitted": [
@@ -2590,6 +3051,11 @@
     {
       "level": "battle",
       "key": "speedOrder",
+      "reason": "internal"
+    },
+    {
+      "level": "battle",
+      "key": "started",
       "reason": "internal"
     },
     {
@@ -3110,7 +3576,7 @@
       "option": "candidate_matchup",
       "own": [],
       "opponent": [
-        "active.roster_index",
+        "seat_active.shown_roster_index",
         "seat_roster.shown_species"
       ],
       "shared": [],
@@ -3195,8 +3661,8 @@
       "own": [],
       "opponent": [],
       "shared": [
-        "battle.last_move",
-        "seat_field.history_available"
+        "seat_field.history_available",
+        "seat_field.history_last_move"
       ],
       "query": false
     },
@@ -3262,7 +3728,6 @@
       "option": "history_facts",
       "own": [],
       "opponent": [
-        "active.slot_condition_present",
         "seat_active.slot_pending_remaining"
       ],
       "shared": [
@@ -3275,7 +3740,6 @@
       "column": "hist_pending_own_*_*",
       "option": "history_facts",
       "own": [
-        "active.slot_condition_present",
         "seat_active.slot_pending_remaining"
       ],
       "opponent": [],
@@ -3365,7 +3829,7 @@
       "own": [],
       "opponent": [],
       "shared": [
-        "battle.started"
+        "seat_field.started"
       ],
       "query": false
     },
@@ -3407,12 +3871,10 @@
       "column": "ability",
       "option": "base",
       "own": [
-        "roster.ability",
-        "seat_roster.ability_shown"
+        "roster.ability"
       ],
       "opponent": [
-        "roster.ability",
-        "seat_roster.ability_shown"
+        "seat_roster.shown_ability"
       ],
       "shared": [],
       "query": false
@@ -3425,7 +3887,7 @@
         "active.roster_index"
       ],
       "opponent": [
-        "active.roster_index"
+        "seat_active.shown_roster_index"
       ],
       "shared": [],
       "query": false
@@ -3438,7 +3900,7 @@
         "roster.base_species"
       ],
       "opponent": [
-        "roster.base_species"
+        "seat_roster.preview_species"
       ],
       "shared": [],
       "query": false
@@ -3451,7 +3913,7 @@
         "roster.gender"
       ],
       "opponent": [
-        "roster.gender"
+        "seat_roster.preview_gender"
       ],
       "shared": [],
       "query": false
@@ -3461,12 +3923,12 @@
       "column": "history_last_item",
       "option": "history_facts",
       "own": [
-        "roster.last_item",
-        "seat_roster.history_roster_state"
+        "seat_roster.history_roster_state",
+        "seat_roster.last_item_used"
       ],
       "opponent": [
-        "roster.last_item",
-        "seat_roster.history_roster_state"
+        "seat_roster.history_roster_state",
+        "seat_roster.last_item_used"
       ],
       "shared": [],
       "query": false
@@ -3502,12 +3964,10 @@
       "column": "item",
       "option": "base",
       "own": [
-        "roster.item",
-        "seat_roster.item_shown"
+        "roster.item"
       ],
       "opponent": [
-        "roster.item",
-        "seat_roster.item_shown"
+        "seat_roster.shown_item"
       ],
       "shared": [],
       "query": false
@@ -3531,13 +3991,10 @@
       "option": "base",
       "own": [
         "roster.item",
-        "roster.mega",
-        "seat_roster.item_shown"
+        "roster.mega"
       ],
       "opponent": [
-        "roster.item",
-        "roster.mega",
-        "seat_roster.item_shown"
+        "seat_roster.mega_stone_shown"
       ],
       "shared": [],
       "query": false
@@ -3547,12 +4004,10 @@
       "column": "move_#",
       "option": "base",
       "own": [
-        "roster.move",
-        "seat_roster.move_shown"
+        "roster.move"
       ],
       "opponent": [
-        "roster.move",
-        "seat_roster.move_shown"
+        "seat_roster.revealed_moves"
       ],
       "shared": [],
       "query": false
@@ -3579,7 +4034,7 @@
         "roster.status"
       ],
       "opponent": [
-        "roster.status"
+        "seat_roster.status_shown"
       ],
       "shared": [],
       "query": false
@@ -3706,11 +4161,11 @@
       "column": "hist_ate_berry",
       "option": "history_facts",
       "own": [
-        "roster.ate_berry",
+        "seat_roster.ate_berry",
         "seat_roster.history_roster_state"
       ],
       "opponent": [
-        "roster.ate_berry",
+        "seat_roster.ate_berry",
         "seat_roster.history_roster_state"
       ],
       "shared": [],
@@ -3721,11 +4176,11 @@
       "column": "hist_attacked_by_*_*",
       "option": "history_facts",
       "own": [
-        "roster.attacked_by",
+        "seat_active.attackers",
         "seat_roster.history_state"
       ],
       "opponent": [
-        "roster.attacked_by",
+        "seat_active.attackers",
         "seat_roster.history_state"
       ],
       "shared": [],
@@ -3736,11 +4191,11 @@
       "column": "hist_attackers_unknown",
       "option": "history_facts",
       "own": [
-        "roster.attacked_by",
+        "seat_active.attackers",
         "seat_roster.history_state"
       ],
       "opponent": [
-        "roster.attacked_by",
+        "seat_active.attackers",
         "seat_roster.history_state"
       ],
       "shared": [],
@@ -3751,11 +4206,11 @@
       "column": "hist_hurt_this_turn",
       "option": "history_facts",
       "own": [
-        "roster.hurt_this_turn",
+        "seat_active.hurt_this_turn",
         "seat_roster.history_state"
       ],
       "opponent": [
-        "roster.hurt_this_turn",
+        "seat_active.hurt_this_turn",
         "seat_roster.history_state"
       ],
       "shared": [],
@@ -3766,13 +4221,11 @@
       "column": "hist_last_move_failed",
       "option": "history_facts",
       "own": [
-        "roster.move_last_turn_result",
-        "roster.move_this_turn_result",
+        "seat_active.last_move_failed",
         "seat_roster.history_state"
       ],
       "opponent": [
-        "roster.move_last_turn_result",
-        "roster.move_this_turn_result",
+        "seat_active.last_move_failed",
         "seat_roster.history_state"
       ],
       "shared": [],
@@ -3783,13 +4236,11 @@
       "column": "hist_last_move_failed_unknown",
       "option": "history_facts",
       "own": [
-        "roster.move_last_turn_result",
-        "roster.move_this_turn_result",
+        "seat_active.last_move_failed",
         "seat_roster.history_state"
       ],
       "opponent": [
-        "roster.move_last_turn_result",
-        "roster.move_this_turn_result",
+        "seat_active.last_move_failed",
         "seat_roster.history_state"
       ],
       "shared": [],
@@ -3800,11 +4251,11 @@
       "column": "hist_move_actions",
       "option": "history_facts",
       "own": [
-        "active.active_move_actions",
+        "seat_active.move_actions",
         "seat_roster.history_state"
       ],
       "opponent": [
-        "active.active_move_actions",
+        "seat_active.move_actions",
         "seat_roster.history_state"
       ],
       "shared": [],
@@ -3857,11 +4308,11 @@
       "column": "hist_stats_lowered",
       "option": "history_facts",
       "own": [
-        "roster.stats_lowered_this_turn",
+        "seat_active.stats_lowered",
         "seat_roster.history_state"
       ],
       "opponent": [
-        "roster.stats_lowered_this_turn",
+        "seat_active.stats_lowered",
         "seat_roster.history_state"
       ],
       "shared": [],
@@ -3872,11 +4323,11 @@
       "column": "hist_stats_raised",
       "option": "history_facts",
       "own": [
-        "roster.stats_raised_this_turn",
+        "seat_active.stats_raised",
         "seat_roster.history_state"
       ],
       "opponent": [
-        "roster.stats_raised_this_turn",
+        "seat_active.stats_raised",
         "seat_roster.history_state"
       ],
       "shared": [],
@@ -3887,11 +4338,11 @@
       "column": "hist_times_attacked",
       "option": "history_facts",
       "own": [
-        "roster.times_attacked",
+        "seat_active.times_attacked",
         "seat_roster.history_state"
       ],
       "opponent": [
-        "roster.times_attacked",
+        "seat_active.times_attacked",
         "seat_roster.history_state"
       ],
       "shared": [],
@@ -4037,10 +4488,10 @@
       "column": "item_known",
       "option": "base",
       "own": [
-        "seat_roster.item_shown"
+        "seat_roster.item_known"
       ],
       "opponent": [
-        "seat_roster.item_shown"
+        "seat_roster.item_known"
       ],
       "shared": [],
       "query": false
@@ -4055,9 +4506,7 @@
         "roster.last_item"
       ],
       "opponent": [
-        "roster.item",
-        "roster.item_knocked_off",
-        "roster.last_item"
+        "seat_roster.item_lost"
       ],
       "shared": [],
       "query": false
@@ -4139,7 +4588,7 @@
         "roster.level"
       ],
       "opponent": [
-        "roster.level"
+        "seat_roster.preview_level"
       ],
       "shared": [],
       "query": false
@@ -4152,7 +4601,7 @@
         "roster.mega"
       ],
       "opponent": [
-        "roster.mega"
+        "seat_roster.mega_shown"
       ],
       "shared": [],
       "query": false
@@ -4243,10 +4692,10 @@
       "column": "types_known",
       "option": "exact_volatiles",
       "own": [
-        "seat_roster.types_changed"
+        "seat_roster.types_known"
       ],
       "opponent": [
-        "seat_roster.types_changed"
+        "seat_roster.types_known"
       ],
       "shared": [],
       "query": false
@@ -4256,10 +4705,10 @@
       "column": "types_typeless",
       "option": "exact_volatiles",
       "own": [
-        "seat_roster.types_changed"
+        "seat_roster.types_typeless"
       ],
       "opponent": [
-        "seat_roster.types_changed"
+        "seat_roster.types_typeless"
       ],
       "shared": [],
       "query": false
@@ -4318,7 +4767,7 @@
       "own": [],
       "opponent": [],
       "shared": [
-        "battle.started"
+        "seat_field.started"
       ]
     },
     {
@@ -4368,7 +4817,7 @@
       "own": [],
       "opponent": [],
       "shared": [
-        "battle.last_move"
+        "seat_field.history_last_move"
       ]
     },
     {
@@ -4384,31 +4833,29 @@
     {
       "key": "history.SIDE.roster.*.last_item",
       "own": [
-        "roster.last_item"
+        "seat_roster.last_item_used"
       ],
       "opponent": [
-        "roster.last_item"
+        "seat_roster.last_item_used"
       ],
       "shared": []
     },
     {
       "key": "history.SIDE.roster.*.ate_berry",
       "own": [
-        "roster.ate_berry"
+        "seat_roster.ate_berry"
       ],
       "opponent": [
-        "roster.ate_berry"
+        "seat_roster.ate_berry"
       ],
       "shared": []
     },
     {
       "key": "history.SIDE.pending_slot.*.*.started_turn",
       "own": [
-        "active.slot_condition_present",
         "seat_active.slot_pending_remaining"
       ],
       "opponent": [
-        "active.slot_condition_present",
         "seat_active.slot_pending_remaining"
       ],
       "shared": []
@@ -4416,11 +4863,9 @@
     {
       "key": "history.SIDE.pending_slot.*.*.remaining",
       "own": [
-        "active.slot_condition_present",
         "seat_active.slot_pending_remaining"
       ],
       "opponent": [
-        "active.slot_condition_present",
         "seat_active.slot_pending_remaining"
       ],
       "shared": []
@@ -4428,11 +4873,9 @@
     {
       "key": "history.SIDE.pending_slot.*.*.after_residual",
       "own": [
-        "active.slot_condition_present",
         "seat_active.slot_pending_remaining"
       ],
       "opponent": [
-        "active.slot_condition_present",
         "seat_active.slot_pending_remaining"
       ],
       "shared": []
@@ -4470,30 +4913,30 @@
     {
       "key": "history.SIDE.active.*.times_attacked",
       "own": [
-        "roster.times_attacked"
+        "seat_active.times_attacked"
       ],
       "opponent": [
-        "roster.times_attacked"
+        "seat_active.times_attacked"
       ],
       "shared": []
     },
     {
       "key": "history.SIDE.active.*.stats_raised_this_turn",
       "own": [
-        "roster.stats_raised_this_turn"
+        "seat_active.stats_raised"
       ],
       "opponent": [
-        "roster.stats_raised_this_turn"
+        "seat_active.stats_raised"
       ],
       "shared": []
     },
     {
       "key": "history.SIDE.active.*.stats_lowered_this_turn",
       "own": [
-        "roster.stats_lowered_this_turn"
+        "seat_active.stats_lowered"
       ],
       "opponent": [
-        "roster.stats_lowered_this_turn"
+        "seat_active.stats_lowered"
       ],
       "shared": []
     },
@@ -4513,7 +4956,7 @@
         "active.roster_index"
       ],
       "opponent": [
-        "active.roster_index"
+        "seat_active.shown_roster_index"
       ],
       "shared": []
     },
@@ -4528,42 +4971,40 @@
     {
       "key": "history.SIDE.active.*.move_actions",
       "own": [
-        "active.active_move_actions"
+        "seat_active.move_actions"
       ],
       "opponent": [
-        "active.active_move_actions"
+        "seat_active.move_actions"
       ],
       "shared": []
     },
     {
       "key": "history.SIDE.active.*.last_move_failed",
       "own": [
-        "roster.move_last_turn_result",
-        "roster.move_this_turn_result"
+        "seat_active.last_move_failed"
       ],
       "opponent": [
-        "roster.move_last_turn_result",
-        "roster.move_this_turn_result"
+        "seat_active.last_move_failed"
       ],
       "shared": []
     },
     {
       "key": "history.SIDE.active.*.hurt_this_turn",
       "own": [
-        "roster.hurt_this_turn"
+        "seat_active.hurt_this_turn"
       ],
       "opponent": [
-        "roster.hurt_this_turn"
+        "seat_active.hurt_this_turn"
       ],
       "shared": []
     },
     {
       "key": "history.SIDE.active.*.attackers_this_turn",
       "own": [
-        "roster.attacked_by"
+        "seat_active.attackers"
       ],
       "opponent": [
-        "roster.attacked_by"
+        "seat_active.attackers"
       ],
       "shared": []
     },
@@ -4574,7 +5015,7 @@
         "seat_roster.history_state"
       ],
       "opponent": [
-        "active.roster_index",
+        "seat_active.shown_roster_index",
         "seat_roster.history_state"
       ],
       "shared": []
@@ -4632,10 +5073,10 @@
     {
       "key": "SIDE.teamsize",
       "own": [
-        "side.team_size"
+        "seat_side.team_size"
       ],
       "opponent": [
-        "side.team_size"
+        "seat_side.team_size"
       ],
       "shared": []
     },
@@ -4645,7 +5086,7 @@
         "active.roster_index"
       ],
       "opponent": [
-        "active.roster_index"
+        "seat_active.shown_roster_index"
       ],
       "shared": []
     },
@@ -4664,10 +5105,14 @@
     {
       "key": "SIDE.roster[].types",
       "own": [
-        "seat_roster.types_changed"
+        "seat_roster.types_changed",
+        "seat_roster.types_known",
+        "seat_roster.types_typeless"
       ],
       "opponent": [
-        "seat_roster.types_changed"
+        "seat_roster.types_changed",
+        "seat_roster.types_known",
+        "seat_roster.types_typeless"
       ],
       "shared": []
     },
@@ -4687,7 +5132,7 @@
         "roster.status"
       ],
       "opponent": [
-        "roster.status"
+        "seat_roster.status_shown"
       ],
       "shared": []
     },
@@ -4869,11 +5314,10 @@
       "key": "SIDE.roster[].moves_revealed",
       "own": [
         "roster.move",
-        "seat_roster.move_shown"
+        "seat_roster.revealed_moves"
       ],
       "opponent": [
-        "roster.move",
-        "seat_roster.move_shown"
+        "seat_roster.revealed_moves"
       ],
       "shared": []
     },
@@ -4889,13 +5333,10 @@
       "key": "SIDE.roster[].mega_stone",
       "own": [
         "roster.item",
-        "roster.mega",
-        "seat_roster.item_shown"
+        "roster.mega"
       ],
       "opponent": [
-        "roster.item",
-        "roster.mega",
-        "seat_roster.item_shown"
+        "seat_roster.mega_stone_shown"
       ],
       "shared": []
     },
@@ -4905,7 +5346,7 @@
         "roster.mega"
       ],
       "opponent": [
-        "roster.mega"
+        "seat_roster.mega_shown"
       ],
       "shared": []
     },
@@ -4915,7 +5356,7 @@
         "roster.level"
       ],
       "opponent": [
-        "roster.level"
+        "seat_roster.preview_level"
       ],
       "shared": []
     },
@@ -4927,31 +5368,27 @@
         "roster.last_item"
       ],
       "opponent": [
-        "roster.item",
-        "roster.item_knocked_off",
-        "roster.last_item"
+        "seat_roster.item_lost"
       ],
       "shared": []
     },
     {
       "key": "SIDE.roster[].item_known",
       "own": [
-        "seat_roster.item_shown"
+        "seat_roster.item_known"
       ],
       "opponent": [
-        "seat_roster.item_shown"
+        "seat_roster.item_known"
       ],
       "shared": []
     },
     {
       "key": "SIDE.roster[].item",
       "own": [
-        "roster.item",
-        "seat_roster.item_shown"
+        "roster.item"
       ],
       "opponent": [
-        "roster.item",
-        "seat_roster.item_shown"
+        "seat_roster.shown_item"
       ],
       "shared": []
     },
@@ -4992,7 +5429,7 @@
         "roster.gender"
       ],
       "opponent": [
-        "roster.gender"
+        "seat_roster.preview_gender"
       ],
       "shared": []
     },
@@ -5040,7 +5477,7 @@
         "roster.base_species"
       ],
       "opponent": [
-        "roster.base_species"
+        "seat_roster.preview_species"
       ],
       "shared": []
     },
@@ -5050,7 +5487,7 @@
         "active.roster_index"
       ],
       "opponent": [
-        "active.roster_index"
+        "seat_active.shown_roster_index"
       ],
       "shared": []
     },
@@ -5069,12 +5506,10 @@
     {
       "key": "SIDE.roster[].ability",
       "own": [
-        "roster.ability",
-        "seat_roster.ability_shown"
+        "roster.ability"
       ],
       "opponent": [
-        "roster.ability",
-        "seat_roster.ability_shown"
+        "seat_roster.shown_ability"
       ],
       "shared": []
     },

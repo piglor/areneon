@@ -3,7 +3,7 @@
 The schema is closed and integer-only; this reader adds what the contract profile cannot say, as
 the TS reader (``packages/showdown-bridge/src/battle-state-spec.ts``) does: sorted and unique
 rows, every group exactly once, field ids that start with their group, dimensions that exist and
-are used, ranges that fit their dtype, a seat field that is a public derivation, a projection
+are used, ranges that fit their dtype, a seat field that is of class seat, a projection
 exactly for an own-exact field and a reveal mask exactly for a revealed-only one (a 0/1 seat
 field of the same entity), no omitted engine key that a field reads, mappings that read no
 hidden field and, on the opponent side, nothing another seat cannot see, and every world-writer
@@ -87,9 +87,14 @@ def vocabulary_ids(table: Mapping[str, Any], lists: Sequence[str]) -> list[str]:
     return sorted(ids)
 
 
-def seat_view(field: Mapping[str, Any], owner: bool) -> str:
-    """What a seat sees of a field (the projection rules): exact, percent, masked or none."""
+def seat_view(field: Mapping[str, Any], owner: bool, seat: bool = True) -> str:
+    """What a seat sees of a field (the projection rules): exact, percent, masked or none.
+
+    ``owner``: the field's side is the reader's own; ``seat``: a seat field is read at the reader's
+    own seat index (a seat field is exact only there)."""
     visibility = field["visibility"]
+    if visibility == "seat":
+        return "exact" if seat else "none"
     if visibility == "hidden":
         return "none"
     if visibility == "public":
@@ -101,6 +106,15 @@ def seat_view(field: Mapping[str, Any], owner: bool) -> str:
     return "percent" if field.get("projection") == "hp_percent" else "none"
 
 
+def _is_flag(field: Mapping[str, Any]) -> bool:
+    value = field["value"]
+    return bool(
+        field["visibility"] == "seat"
+        and value["kind"] == "range"
+        and (value["min"], value["max"]) == (0, 1)
+    )
+
+
 def _ordered(rows: Sequence[Any], key: Callable[[Any], str], what: str) -> None:
     for before, after in itertools.pairwise(rows):
         if not key(before) < key(after):
@@ -108,7 +122,9 @@ def _ordered(rows: Sequence[Any], key: Callable[[Any], str], what: str) -> None:
 
 
 def read_battle_state_spec(
-    value: object, engine_data: Mapping[str, Any] | None = None
+    value: object,
+    engine_data: Mapping[str, Any] | None = None,
+    counts: Mapping[str, int] | None = None,
 ) -> dict[str, Any]:
     """Validate a record and add what the profile cannot say; with a table, its binding."""
     try:
@@ -142,6 +158,7 @@ def read_battle_state_spec(
         _check_field(field, shape)
     for field in spec["fields"]:
         _check_mask(field, fields)
+    _check_gates(spec, fields)
     for dim in spec["dims"]:
         if dim["symbol"] not in used:
             raise BattleStateSpecError(f"dims: {dim['symbol']} is not used")
@@ -158,9 +175,29 @@ def read_battle_state_spec(
             raise BattleStateSpecError(f"omitted: {row['level']}.{row['key']} is read by a field")
 
     _check_maps(spec, fields)
+    _check_bindings(spec, engine_data, counts)
+    return spec
+
+
+def _check_bindings(
+    spec: Mapping[str, Any],
+    engine_data: Mapping[str, Any] | None,
+    counts: Mapping[str, int] | None,
+) -> None:
     if engine_data is not None:
         _check_table(spec, engine_data)
-    return spec
+    if counts is not None:
+        _check_counts(spec, counts)
+
+
+def _check_counts(spec: Mapping[str, Any], counts: Mapping[str, int]) -> None:
+    """Each count dimension's size against the binding's count of its source (TS ``bindingFor``)."""
+    for dim in spec["dims"]:
+        if dim["kind"] == "count" and counts.get(dim["source"]) != dim["size"]:
+            raise BattleStateSpecError(
+                f"dims: {dim['symbol']} has size {dim['size']}, the {dim['source']} is "
+                f"{counts.get(dim['source'])}"
+            )
 
 
 def _check_maps(spec: Mapping[str, Any], fields: Mapping[str, Mapping[str, Any]]) -> None:
@@ -212,10 +249,12 @@ def _check_field(field: Mapping[str, Any], shape: Callable[[Sequence[str], str],
             raise BattleStateSpecError(
                 f"{where}: a {group} field cannot read the engine root {root}"
             )
-    if seat and field["visibility"] != "public":
+    if seat != (field["visibility"] == "seat"):
         raise BattleStateSpecError(
-            f"{where}: a seat field is its own seat's derivation, so its class is public"
+            f"{where}: the class seat is exactly for a seat field (its own seat's derivation)"
         )
+    if "masks" in field and not seat:
+        raise BattleStateSpecError(f"{where}: only a seat field masks another")
     if ("projection" in field) != (field["visibility"] == "own-exact"):
         raise BattleStateSpecError(f"{where}: a projection exactly for an own-exact field")
     if ("reveal" in field) != (field["visibility"] == "revealed-only"):
@@ -230,17 +269,37 @@ def _check_mask(field: Mapping[str, Any], fields: Mapping[str, Mapping[str, Any]
         raise BattleStateSpecError(
             f"fields: {field['id']}: its mask {field['reveal']} is not a field"
         )
-    value = mask["value"]
     if (
-        mask["group"] != f"seat_{field['group']}"
+        not _is_flag(mask)
+        or mask["group"] != f"seat_{field['group']}"
         or mask["extra"] != field["extra"]
-        or value["kind"] != "range"
-        or (value["min"], value["max"]) != (0, 1)
     ):
         raise BattleStateSpecError(
             f"fields: {field['id']}: its mask must be a 0/1 seat field of the same entity and "
             "extra dimensions"
         )
+    if mask.get("masks") != field["id"]:
+        raise BattleStateSpecError(
+            f"fields: {field['id']}: its mask {mask['id']} masks "
+            f"{mask.get('masks', 'nothing')}, not this field"
+        )
+
+
+def _check_gates(spec: Mapping[str, Any], fields: Mapping[str, Mapping[str, Any]]) -> None:
+    for group in spec["groups"]:
+        if "gate" not in group:
+            continue
+        gate = fields.get(group["gate"])
+        if (
+            group["id"].startswith("seat_")
+            or gate is None
+            or not _is_flag(gate)
+            or gate["group"] != f"seat_{group['id']}"
+            or gate["extra"]
+        ):
+            raise BattleStateSpecError(
+                f"groups: {group['id']}: its gate must be a 0/1 seat field of the group's entity"
+            )
 
 
 def _check_refs(row: Mapping[str, Any], fields: Mapping[str, Mapping[str, Any]], what: str) -> None:
@@ -253,7 +312,7 @@ def _check_refs(row: Mapping[str, Any], fields: Mapping[str, Mapping[str, Any]],
                 raise BattleStateSpecError(f"{what} {side}: {ref} is not a field")
             if field["visibility"] == "hidden":
                 raise BattleStateSpecError(f"{what} {side}: {ref} is hidden: no seat may read it")
-            if opponent and seat_view(field, owner=False) == "none":
+            if seat_view(field, owner=not opponent) == "none":
                 raise BattleStateSpecError(
                     f"{what} {side}: {ref} is not projectable to another seat"
                 )

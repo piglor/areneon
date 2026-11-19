@@ -209,6 +209,10 @@ export interface Group {
    * @maxItems 4
    */
   shape: Symbol[];
+  /**
+   * A 0/1 seat field of seat_<group> (class seat): for another seat, an entry of this group whose gate is not set packs as the unknown entry, so an unseen entry is indistinguishable from an absent one.
+   */
+  gate?: string;
   description: Note;
 }
 /**
@@ -229,9 +233,9 @@ export interface Field {
   value: RangeValue | VocabularyValue;
   source: EngineSource | DerivedSource;
   /**
-   * public: every seat sees it exactly; own-exact: the owner exactly, another seat its projection; revealed-only: a seat sees it only where its reveal mask is set; hidden: no seat.
+   * public: every seat sees it exactly; own-exact: the owner exactly, another seat its projection; revealed-only: a seat sees it only where its reveal mask is set; hidden: no seat; seat: a seat field, exact only at the owning seat index (the seat's own derivation).
    */
-  visibility: "public" | "own-exact" | "revealed-only" | "hidden";
+  visibility: "public" | "own-exact" | "revealed-only" | "hidden" | "seat";
   /**
    * What another seat sees of an own-exact field (reader rule: present exactly for own-exact).
    */
@@ -240,6 +244,10 @@ export interface Field {
    * The seat mask field that gates a revealed-only field (reader rule: present exactly for revealed-only).
    */
   reveal?: string;
+  /**
+   * For a seat mask: the field whose value it gates (reader rule: a revealed-only field's reveal mask masks exactly that field).
+   */
+  masks?: string;
   description: Note;
 }
 /**
