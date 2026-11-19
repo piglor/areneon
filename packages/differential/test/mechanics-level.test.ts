@@ -46,7 +46,9 @@ describe("mechanicsExercised", () => {
   it("reads only the kind on a refusal or a refused result, and the used moves on unsupported", () => {
     expect(mechanicsExercised(damage, { ok: false, error: new Error("x") })).toEqual(["kind:damage"]);
     expect(mechanicsExercised(damage, of("refused"))).toEqual(["kind:damage"]);
-    expect(mechanicsExercised(damage, of("unsupported"))).toEqual(["kind:damage", "move:earthquake"]);
+    const unsupported = (reason: string) => ({ ok: true as const, result: { kind: "unsupported", reason } as unknown as MechanicsResult });
+    expect(mechanicsExercised(damage, unsupported("query_kind"))).toEqual(["kind:damage", "move:earthquake"]);
+    for (const reason of ["random_effect", "history_unknown", "scenario_rule_table"]) expect(mechanicsExercised(damage, unsupported(reason))).toEqual(["kind:damage"]);
   });
   it("reads a damage answer's move, both Pokemon, the field and sides, never an unused set move or a volatile", () => {
     const read = mechanicsExercised(damage, computed("damage"));
@@ -75,6 +77,7 @@ describe("mechanicsLevel", () => {
     expect(level.entities(input)).toContain("kind:damage");
     expect(level.exercised(input, of("refused"))).toEqual(["kind:damage"]);
     expect(calls).toBe(1);
+    expect(level.key(input)).toBe("h1");
     expect(level.answers(input, { query_hash: "h1" } as MechanicsResult)).toBe(true);
     expect(level.answers(input, { query_hash: "h2" } as MechanicsResult)).toBe(false);
     expect(level.bytes({ query_hash: "h1" } as MechanicsResult)).toEqual({ query_hash: "h1" });

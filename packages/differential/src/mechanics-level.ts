@@ -10,7 +10,9 @@
 // Exercising (ADR-026 slice F's rule: present AND read by the answer), from the ORACLE's outcome:
 // - always the query kind;
 // - a refusal (the probe threw) or a `refused` result exercises nothing else;
-// - an `unsupported` result also exercises the moves the actions use (the probe read them to decide);
+// - an `unsupported` result whose reason the move itself decides (`query_kind`: a status, fixed-damage or multi-hit move) also
+//   exercises the moves the actions use; any other reason (a random effect an item or ability may cause, an unknown history fact,
+//   the scenario's rule table) exercises the query kind alone;
 // - a computed `stats` answer: the set's species forme;
 // - a computed `damage` answer: the used move, both Pokemon's species forme, ability, item and status, the declared field and
 //   side conditions;
@@ -88,7 +90,7 @@ export function mechanicsExercised(d: MechanicsDescriptor, oracle: Settled<Mecha
   const kind = id("kind", d.kind);
   if (!oracle.ok || oracle.result.kind === "refused") return [kind];
   const moves = d.used_moves.map((m) => id("move", m));
-  if (oracle.result.kind === "unsupported") return sorted([kind, ...moves]);
+  if (oracle.result.kind === "unsupported") return oracle.result.reason === "query_kind" ? sorted([kind, ...moves]) : [kind];
   if (d.kind === "stats") return sorted([kind, ...d.mons.map((mon) => id("species", mon.species))]);
   const read = [kind, ...moves, ...d.mons.flatMap(monCore), ...fieldOf(d)];
   if (d.kind === "move_outcome") read.push(...d.mons.flatMap((mon) => mon.volatiles.map((v) => id("volatile", v))), ...d.slot_conditions.map((s) => id("slot", s)));
@@ -118,6 +120,7 @@ export function mechanicsLevel<In extends object>(facts: MechanicsFacts<In>): Le
     name: "mechanics-query",
     entities: (input) => mechanicsEntities(describe(input)),
     exercised: (input, oracle) => mechanicsExercised(describe(input), oracle),
+    key: (input) => facts.queryHash(input),
     answers: (input, output) => output.query_hash === facts.queryHash(input),
     bytes: (output) => output as unknown as Json,
     errorKey: (error) => facts.errorKey(error),

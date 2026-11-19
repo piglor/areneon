@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { key64 } from "../src/hash.ts";
 import { LEVEL_1_RULE, LEVEL_2_RULE, ShadowDivergence, shadowCheck, shadowKey, shadowSample, shadowSize } from "../src/shadow.ts";
-import { backendOf, oracle, type ToyIn, toyLevel, truth } from "./support.ts";
+import { oracle, type ToyIn, toyLevel, truth } from "./support.ts";
 
 describe("shadowSize", () => {
   it("is max(1% of the answers, 256) at level 1 and max(5% of the games, 64) at level 2, never above n", () => {
@@ -35,25 +35,32 @@ describe("shadowSample", () => {
 describe("shadowCheck", () => {
   const inputs: ToyIn[] = Array.from({ length: 50 }, (_, n) => ({ n, entities: [`move:m${n}`], reads: [] }));
   const key = (input: ToyIn) => input.n;
-  it("passes when the backend equals the oracle on the sample", () => {
-    expect(shadowCheck(toyLevel, oracle, oracle, inputs, key, { share_ppm: 0, min: 8 })).toHaveLength(8);
+  it("passes when the recorded answers equal the oracle on the sample", () => {
+    expect(shadowCheck(toyLevel, oracle, inputs, inputs.map(truth), key, { share_ppm: 0, min: 8 })).toHaveLength(8);
+  });
+  it("compares the recorded answers, never asking a backend again", () => {
+    // The recorded answer of an item outside the sample is wrong: the check never sees it.
+    const sample = shadowSample(inputs.map(key), { share_ppm: 0, min: 8 });
+    const outside = inputs.findIndex((_, i) => !sample.includes(i));
+    const recorded = inputs.map((input, i) => (i === outside ? { ok: true as const, result: { for: input.n, value: 0 } } : truth(input)));
+    expect(shadowCheck(toyLevel, oracle, inputs, recorded, key, { share_ppm: 0, min: 8 })).toEqual(sample);
   });
   it("throws a typed divergence that names the entities to revoke and the corpus positions", () => {
     const sample = shadowSample(inputs.map(key), { share_ppm: 0, min: 8 });
     const bad = sample[3] as number;
-    const backend = backendOf("bad", (batch) => batch.map((input) => (input.n === bad ? { ok: true as const, result: { for: input.n, value: 0 } } : truth(input))));
+    const recorded = inputs.map((input) => (input.n === bad ? { ok: true as const, result: { for: input.n, value: 0 } } : truth(input)));
     let caught: unknown;
     try {
-      shadowCheck(toyLevel, oracle, backend, inputs, key, { share_ppm: 0, min: 8 });
+      shadowCheck(toyLevel, oracle, inputs, recorded, key, { share_ppm: 0, min: 8 });
     } catch (error) {
       caught = error;
     }
     expect(caught).toBeInstanceOf(ShadowDivergence);
     expect((caught as ShadowDivergence).entities).toEqual([`move:m${bad}`]);
     expect((caught as ShadowDivergence).differences.map((d) => d.position)).toEqual([bad]);
+    expect((caught as ShadowDivergence).whole_backend).toBe(false);
   });
-  it("throws on an extra result too", () => {
-    const extra = backendOf("extra", (batch) => [...batch.map(truth), { ok: true, result: { for: -1, value: 0 } }]);
-    expect(() => shadowCheck(toyLevel, oracle, extra, inputs, key, LEVEL_1_RULE)).toThrow(ShadowDivergence);
+  it("revokes the whole backend when a recorded answer is missing", () => {
+    expect(() => shadowCheck(toyLevel, oracle, inputs, inputs.slice(1).map(truth), key, LEVEL_1_RULE)).toThrow("revoke the backend");
   });
 });

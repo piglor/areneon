@@ -26,6 +26,8 @@ export interface Level<In, Out> {
   readonly name: "mechanics-query" | "battle-step";
   entities(input: In): string[];
   exercised(input: In, oracle: Settled<Out>): string[];
+  /** A stable key of an input (level 1: its query hash): what a corpus's content hash and the shadow sample are keyed by. */
+  key(input: In): string;
   /** Whether `output` is an answer to `input` at all (it names it): a misattributed or reordered answer fails this. */
   answers(input: In, output: Out): boolean;
   /** The comparable form of an output (compared by its JCS bytes). */

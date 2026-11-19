@@ -25,6 +25,9 @@ import {
   buildFeaturesG,
   createFeatureMemo,
   damageAwareConfigHash,
+  featureSetHash,
+  featureSetIdentity,
+  MECHANICS_ADAPTER_FORMAT,
   decodeRequest,
   driveSync,
   type Engine,
@@ -181,12 +184,30 @@ export function corpusHash(dir: string, limit?: number): string {
   return sha256Jcs(names.map((name) => [name, createHash("sha256").update(readFileSync(join(dir, name))).digest("hex")]));
 }
 
+const BRIDGE_SRC = fileURLToPath(new URL("../../showdown-bridge/src/", import.meta.url));
+const CORE_SRC = fileURLToPath(new URL("../../differential/src/", import.meta.url));
+/** The bridge sources the probe answers and the builders' queries depend on (a file of these changes a query or an answer). */
+const PROBE_AND_BUILDER = /^(mechanics-|candidate-features|damage-aware-(view|score|assumed-set)|feature-(build|rows)|probe-batch|differential-probe|outcome-|history-facts)[a-z0-9-]*\.ts$/;
+
+/** SHA-256 over the names and bytes of the probe, builder and harness sources (the bridge's probe and builders, the core, this module). */
+export function sourcesHash(): string {
+  const files = [
+    ...readdirSync(BRIDGE_SRC).filter((name) => PROBE_AND_BUILDER.test(name)).map((name) => join(BRIDGE_SRC, name)),
+    ...readdirSync(CORE_SRC).filter((name) => name.endsWith(".ts")).map((name) => join(CORE_SRC, name)),
+    fileURLToPath(import.meta.url),
+  ];
+  return sha256Jcs(files.map((path) => [path.slice(path.indexOf("packages/")), createHash("sha256").update(readFileSync(path)).digest("hex")]).sort((a, b) => ((a[0] as string) < (b[0] as string) ? -1 : 1)));
+}
+
 /** The inputs a self-differential report is a function of (a test recomputes them: a stale report fails). */
 export function reportInputs(engine: Engine, configs: HarnessConfigs, limit?: number): Json {
   return {
     harness_format: HARNESS_FORMAT,
     showdown_commit: engine.commit,
+    mechanics_adapter_format: MECHANICS_ADAPTER_FORMAT,
     feature_sets: [...DIFFERENTIAL_FEATURE_SETS],
+    feature_set_hashes: Object.fromEntries(DIFFERENTIAL_FEATURE_SETS.map((set) => [set, featureSetHash(featureSetIdentity(engine, configs.sets[set], set))])),
+    sources_sha256: sourcesHash(),
     mechanics_config_hash: mechanicsConfigHash(configs.oracle),
     damage_aware_config_hash: damageAwareConfigHash(configs.sets["probe-damage/2"].config),
     outcome_config_hash: outcomeConfigHash((configs.sets[FEATURE_SET_OUTCOME].outcome as { config: Parameters<typeof outcomeConfigHash>[0] }).config),
@@ -221,7 +242,8 @@ export function differentialCorpus(
   const batchSize = options.batchSize ?? 256;
   const makeOracle = options.oracle ?? (() => remembering(probeBackend(engine, { config: configs.oracle, snapshot: configs.snapshot })));
   const level = mechanicsHarnessLevel(engine);
-  const tally = newTally({ id: corpus.id, kind: "regression", seed: corpusHash(corpus.dir, limit) });
+  const source = corpusHash(corpus.dir, limit);
+  const tally = newTally({ id: corpus.id, kind: "regression", seed: source, pool: source });
   const seen = new Set<string>();
   const refused: Record<string, number> = {};
   let builds = 0;

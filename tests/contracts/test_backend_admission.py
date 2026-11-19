@@ -31,7 +31,11 @@ def load(path: str) -> Any:
 
 
 READER_INVALID = {
+    "count-mismatch": "count mismatch",
     "counts-not-nested": "must nest",
+    "fresh-below-minimum": "minimum size",
+    "kinds-not-query-kind": "sorted and unique",
+    "kinds-on-query-kind": "only an entity the fresh corpus holds",
     "missing-revocation": "revoked exactly when",
     "nineteen-exercising": "admitted flag",
     "other-pin": "another pinned engine",
@@ -119,6 +123,10 @@ def _entity(ledger: dict[str, Any], entity_id: str) -> dict[str, Any]:
         ),
         (lambda lg: lg["pairs"].append(dict(lg["pairs"][0])), "sorted and unique"),
         (lambda lg: lg["pairs"][0].update(co_equal=30), "must nest"),
+        (
+            lambda lg: _entity(lg, "species:garchomp")["kinds"][0].update(co_exercised=22),
+            "kind counts must nest",
+        ),
     ],
 )
 def test_doctored_ledgers_are_refused(change: Any, message: str) -> None:

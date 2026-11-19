@@ -2,8 +2,12 @@
 import { type Json, jcs } from "./canonical.ts";
 import type { Backend, Level, Settled } from "./backend.ts";
 
-/** Why an item differs: `value` (bytes differ), `refusal` (both refused, differently), `settled` (one answered, one refused), `answer` (the backend's output answers another input), `missing` (the backend returned no outcome for it). */
-export type DifferenceReason = "value" | "refusal" | "settled" | "answer" | "missing";
+/**
+ * Why an item differs: `value` (bytes differ), `refusal` (both refused, differently), `settled` (one answered, one refused),
+ * `answer` (the backend's output answers another input), `missing` (the backend returned no outcome for it), `count` (its batch
+ * came back with another number of outcomes than inputs: an extra or a dropped result taints every item of the batch).
+ */
+export type DifferenceReason = "value" | "refusal" | "settled" | "answer" | "missing" | "count";
 
 export interface Difference {
   /** The item's index in its corpus. */
@@ -18,6 +22,8 @@ export interface Difference {
 /** One compared item: its entities, which the oracle's answer exercised, and its difference if any. */
 export interface ItemResult {
   position: number;
+  /** The level's stable key of the input. */
+  key: string;
   entities: string[];
   exercised: string[];
   difference: Difference | null;
@@ -59,17 +65,19 @@ export function compareItem<In, Out>(level: Level<In, Out>, input: In, position:
   if (oracle.ok && !level.answers(input, oracle.result)) throw new HarnessError(`the oracle's outcome of item ${position} does not answer it`);
   const entities = level.entities(input);
   const exercised = level.exercised(input, oracle);
-  const differ = (reason: DifferenceReason, field: string): ItemResult => ({ position, entities, exercised, difference: { position, reason, field, entities } });
+  const key = level.key(input);
+  const equal: ItemResult = { position, key, entities, exercised, difference: null };
+  const differ = (reason: DifferenceReason, field: string): ItemResult => ({ ...equal, difference: { position, reason, field, entities } });
   if (backend === undefined) return differ("missing", "$");
   if (oracle.ok !== backend.ok) return differ("settled", "$");
   if (!oracle.ok || !backend.ok) {
     const same = level.errorKey((oracle as { error: unknown }).error) === level.errorKey((backend as { error: unknown }).error);
-    return same ? { position, entities, exercised, difference: null } : differ("refusal", "$error");
+    return same ? equal : differ("refusal", "$error");
   }
   if (!level.answers(input, backend.result)) return differ("answer", "$");
   const expected = level.bytes(oracle.result);
   const got = level.bytes(backend.result);
-  if (jcs(expected) === jcs(got)) return { position, entities, exercised, difference: null };
+  if (jcs(expected) === jcs(got)) return equal;
   return differ("value", firstDifference(expected, got) as string);
 }
 
@@ -83,12 +91,16 @@ export interface BatchComparison {
 /**
  * Run `inputs` through both backends and compare. `first` is the corpus position of `inputs[0]`. The oracle must return one
  * outcome per input; the backend's are compared positionally, so a dropped result shows as answers to the wrong inputs from the
- * dropped item on (and the last as `missing`), a reordered batch as `answer` differences.
+ * dropped item on (and the last as `missing`), a reordered batch as `answer` differences. A batch that comes back with another
+ * number of outcomes than inputs (an extra or a dropped result) cannot be trusted item by item: every item of it that compared
+ * equal is a `count` difference, so all their entities are revoked, and the tally's count mismatch blocks any admission.
  */
 export function compareBatch<In, Out>(level: Level<In, Out>, oracle: Backend<In, Out>, backend: Backend<In, Out>, inputs: readonly In[], first = 0): BatchComparison {
   const expected = oracle.run(inputs);
   if (expected.length !== inputs.length) throw new HarnessError("the oracle returned another number of outcomes than inputs");
   const got = backend.run(inputs);
   const items = inputs.map((input, i) => compareItem(level, input, first + i, expected[i] as Settled<Out>, got[i]));
-  return { items, count_mismatch: got.length !== inputs.length };
+  const count_mismatch = got.length !== inputs.length;
+  if (count_mismatch) for (const item of items) item.difference ??= { position: item.position, reason: "count", field: "$", entities: item.entities };
+  return { items, count_mismatch };
 }

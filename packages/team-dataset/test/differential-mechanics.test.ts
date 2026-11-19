@@ -11,6 +11,7 @@ import {
   type Backend,
   buildLedger,
   compareBatch,
+  verifyLedger,
   freshCorpus,
   jcs,
   type Json,
@@ -26,7 +27,7 @@ import {
 } from "@areneon/differential";
 import { jcs as bridgeJcs, loadEngine, MechanicsProbeError, type MechanicsResult, mechanicsQueryHash, type ParsedMechanicsQuery, probeBackend, RANDOM_DIR, sampleTarget, type Settled } from "@areneon/showdown-bridge";
 import { beforeAll, describe, expect, it } from "vitest";
-import { collectQueries, corpusBattles, differentialCorpus, harnessConfigs, secondProbe, mechanicsHarnessLevel, remembering, reportInputs, SELF_REPORT_DIR, SELF_REPORT_TITLE, selfDifferential } from "../src/differential-mechanics.ts";
+import { collectQueries, corpusBattles, corpusHash, differentialCorpus, harnessConfigs, secondProbe, mechanicsHarnessLevel, remembering, reportInputs, SELF_REPORT_DIR, SELF_REPORT_TITLE, selfDifferential } from "../src/differential-mechanics.ts";
 
 const engine = loadEngine();
 const second = loadEngine();
@@ -97,7 +98,7 @@ describe("gate 2: five broken backends, each caught with the right reason, entit
         return c;
       }),
     );
-    const tally = runCorpus(level, oracle, backend, { id: "control", kind: "regression", seed: "0".repeat(64) }, damaging);
+    const tally = runCorpus(level, oracle, backend, { id: "control", kind: "regression", seed: "0".repeat(64), pool: "0".repeat(64) }, damaging);
     expect(tally.differences.length).toBeGreaterThan(0);
     for (const d of tally.differences) {
       expect(d.reason).toBe("value");
@@ -160,16 +161,33 @@ describe("gate 2: five broken backends, each caught with the right reason, entit
     const backend = broken("drop", (_, answers) => answers.filter((_, i) => i !== 5));
     const result = compareBatch(level, oracle, backend, batch);
     expect(result.count_mismatch).toBe(true);
-    expect(result.items.slice(0, 5).every((i) => i.difference === null)).toBe(true);
+    // The items before the drop answered right, but their batch cannot be trusted: a count difference revokes their entities too.
+    expect(result.items.slice(0, 5).map((i) => i.difference?.reason)).toEqual(["count", "count", "count", "count", "count"]);
     expect(result.items[5]?.difference).toMatchObject({ reason: "answer", entities: level.entities(batch[5] as ParsedMechanicsQuery) });
     expect(result.items[15]?.difference?.reason).toBe("missing");
   });
 
-  it("the shadow check catches a broken backend and passes the probe", () => {
+  it("a backend that returns an extra trailing result (review B1)", () => {
+    const batch = queries.slice(0, 16);
+    const backend = broken("extra", (_, answers) => [...answers, answers[0] as Settled]);
+    const result = compareBatch(level, oracle, backend, batch);
+    expect(result.count_mismatch).toBe(true);
+    expect(result.items.map((i) => i.difference?.reason)).toEqual(batch.map(() => "count"));
+    expect(result.items[3]?.difference?.entities).toEqual(level.entities(batch[3] as ParsedMechanicsQuery));
+    // Its tally admits nothing, whatever the corpus size: every item differs and the count mismatch blocks all evidence.
+    const tally = runCorpus(level, oracle, backend, { id: "extra", kind: "regression", seed: "0".repeat(64), pool: "0".repeat(64) }, batch);
+    expect(tally.count_mismatches).toBe(1);
+    expect([...tally.entities.values()].every((e) => e.differing === e.present)).toBe(true);
+  });
+
+  it("the shadow check compares the answers a generation recorded: a wrong one is caught, the probe's pass", () => {
     const stable = (q: ParsedMechanicsQuery): Json => mechanicsQueryHash(q);
-    const backend = broken("bad-first", (batch, answers) => answers.map((s, i) => (i === 0 ? { ok: false, error: new Error(`broken ${batch.length}`) } : s)));
-    expect(() => shadowCheck(level, oracle, backend, queries.slice(0, 600), stable, LEVEL_1_RULE)).toThrow(ShadowDivergence);
-    expect(shadowCheck(level, oracle, oracle, queries.slice(0, 600), stable, LEVEL_1_RULE)).toHaveLength(256);
+    const inputs = queries.slice(0, 600);
+    const recorded = oracle.run(inputs) as Settled[];
+    const sample = shadowSample(inputs.map(stable), LEVEL_1_RULE);
+    const wrong = recorded.map((s, i) => (i === sample[0] ? { ok: false as const, error: new Error("broken") } : s));
+    expect(() => shadowCheck(level, oracle, inputs, wrong as never, stable, LEVEL_1_RULE)).toThrow(ShadowDivergence);
+    expect(shadowCheck(level, oracle, inputs, recorded as never, stable, LEVEL_1_RULE)).toHaveLength(256);
   });
 });
 
@@ -189,22 +207,18 @@ describe("the core reuses the bridge's rules", () => {
 describe("a ledger from a fresh corpus drawn by the backend's own seed", () => {
   const backendId = { kind: "probe-second", backend_format: 1, backend_commit: "d".repeat(40) };
   const backend = probeBackend(second, { config: configs.oracle, snapshot: configs.snapshot }) as Backend<ParsedMechanicsQuery, MechanicsResult>;
-  it("admits what at least 20 equal exercising items show, routes by it, and is refused at another pin", () => {
-    const fresh = freshCorpus(backendId, (seed) => shadowSample(queries.map((q, i) => `${seed}:${i}`), { share_ppm: 500_000, min: 0 }).map((p) => queries[p] as ParsedMechanicsQuery));
+  it("from half a battle admits nothing (below the 200,000-query minimum), routes nothing, verifies, and is refused at another pin", () => {
+    const pool = corpusHash(RANDOM_DIR, 1);
+    const fresh = freshCorpus(backendId, pool, (seed) => shadowSample(queries.map((q, i) => `${seed}:${i}`), { share_ppm: 500_000, min: 0 }).map((p) => queries[p] as ParsedMechanicsQuery));
     const tally = runCorpus(level, oracle, backend, fresh.spec, fresh.items);
+    expect(tally.differences).toEqual([]);
     const ledger = buildLedger({ level: "mechanics-query", backend: backendId, showdown_commit: engine.commit, tallies: [tally] });
-    const admitted = ledger.entities.filter((e) => e.admitted).map((e) => e.id);
-    expect(admitted).toContain("kind:damage");
-    expect(ledger.revoked).toEqual([]);
+    expect(ledger.corpora[0]?.items).toBeLessThan(200_000);
+    expect(ledger.entities.filter((e) => e.admitted)).toEqual([]);
+    expect(ledger.entities.find((e) => e.id === "kind:damage")?.counts[0]?.exercised).toBeGreaterThanOrEqual(20);
     const router = admissionRouter(ledger);
-    // A query goes to the backend only when every entity it holds is admitted (an unused set move too: ADR-030 rule 2).
-    const admittedSet = new Set(admitted);
-    for (const q of fresh.items.slice(0, 200)) {
-      const entities = level.entities(q);
-      const refusal = router.route(entities);
-      expect(refusal === null).toBe(entities.every((e) => admittedSet.has(e)) && ledger.pairs.every((p) => p.admitted || !entities.includes(p.a) || !entities.includes(p.b)));
-    }
-    expect(router.route(["kind:damage"])).toBeNull();
+    for (const q of fresh.items.slice(0, 50)) expect(router.route(level.entities(q))).not.toBeNull();
+    expect(() => verifyLedger(ledger, [tally])).not.toThrow();
     expect(() => readBackendAdmission(ledger, { showdown_commit: "0".repeat(40) })).toThrow("another pinned engine");
   });
 });

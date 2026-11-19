@@ -14,13 +14,21 @@
       "id": "committed-random",
       "kind": "regression",
       "seed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "items": 300
+      "pool_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "content_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "tally_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "items": 300,
+      "count_mismatches": 0
     },
     {
       "id": "fresh-01ca26162a3a73fc",
       "kind": "fresh",
       "seed": "01ca26162a3a73fc5e8df8956f2d82db7b3bdcb9d2526087ed4a8f4e26a9d76c",
-      "items": 40
+      "pool_hash": "9999999999999999999999999999999999999999999999999999999999999999",
+      "content_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+      "tally_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+      "items": 200000,
+      "count_mismatches": 0
     }
   ],
   "entities": [
@@ -42,6 +50,13 @@
           "equal": 25,
           "differing": 0
         }
+      ],
+      "kinds": [
+        {
+          "kind": "kind:damage",
+          "co_exercised": 25,
+          "co_equal": 25
+        }
       ]
     },
     {
@@ -55,7 +70,8 @@
           "equal": 300,
           "differing": 0
         }
-      ]
+      ],
+      "kinds": []
     },
     {
       "id": "kind:damage",
@@ -75,7 +91,8 @@
           "equal": 40,
           "differing": 0
         }
-      ]
+      ],
+      "kinds": []
     },
     {
       "id": "move:earthquake",
@@ -87,6 +104,13 @@
           "exercised": 19,
           "equal": 19,
           "differing": 0
+        }
+      ],
+      "kinds": [
+        {
+          "kind": "kind:damage",
+          "co_exercised": 19,
+          "co_equal": 19
         }
       ]
     },
@@ -100,6 +124,13 @@
           "exercised": 0,
           "equal": 0,
           "differing": 0
+        }
+      ],
+      "kinds": [
+        {
+          "kind": "kind:damage",
+          "co_exercised": 0,
+          "co_equal": 0
         }
       ]
     },
@@ -120,6 +151,13 @@
           "exercised": 21,
           "equal": 21,
           "differing": 0
+        }
+      ],
+      "kinds": [
+        {
+          "kind": "kind:damage",
+          "co_exercised": 21,
+          "co_equal": 21
         }
       ]
     }

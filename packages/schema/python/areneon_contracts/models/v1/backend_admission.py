@@ -74,9 +74,25 @@ class Corpus(BaseModel):
     """
     For fresh, the backend's fresh seed (reader rule); otherwise the hash that names the corpus's content.
     """
+    pool_hash: Hash
+    """
+    The identity of what the items were drawn from: the generator pool of a fresh corpus, the files of a committed one.
+    """
+    content_hash: Hash
+    """
+    SHA-256 over the JCS of the pool hash and the sorted item keys (level 1: query hashes); checked against the corpus by verifyLedger.
+    """
+    tally_hash: Hash
+    """
+    SHA-256 over the JCS of every count of the corpus (entities, pairs, items, count mismatches); checked against the tally by verifyLedger.
+    """
     items: Count
     """
     Items compared.
+    """
+    count_mismatches: Count
+    """
+    Batches the backend returned another number of outcomes than inputs for (reader rule: any one admits nothing).
     """
 
 
@@ -142,6 +158,15 @@ class Revoked(BaseModel):
     """
 
 
+class KindCount(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: EntityId
+    co_exercised: Count
+    co_equal: Count
+
+
 class Entity(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -155,11 +180,15 @@ class Entity(BaseModel):
     """
     One row per corpus the entity was present in, ascending by corpus.
     """
+    kinds: Annotated[list[KindCount], Field(max_length=16)]
+    """
+    Per query kind (a kind: entity), the fresh items that exercised this entity with it, ascending by kind (reader rule: none for a query kind or an entity the fresh corpus lacks).
+    """
 
 
 class BackendAdmission(BaseModel):
     """
-    The admission ledger of one non-Showdown backend version (ADR-030 common rules 2, 4 and 7; ADR-028 section 5): which entities (species forme, move, ability, item, status, volatile, weather, terrain, field and side condition, query kind) it may answer for training games, from byte-equal comparisons with the pinned engine (the oracle). Per entity and corpus: the items it was present in, the items whose answer read it (exercising), how many of those were equal, and the items with a difference. An entity is admitted only with at least 20 exercising items of the FRESH corpus, all equal, no difference in any corpus, and no revocation; the fresh corpus's seed is SHA-256 over the JCS of {backend_commit, backend_format, purpose: differential-fresh/1}, so it cannot exist before the backend version is frozen, and regression (debugging) and shadow corpora never count as admission evidence. Pairs of admitted entities present together in at least 1 in 10^4 fresh items are listed and admitted only with at least 5 co-exercised items, all equal; a listed pair that is not admitted routes to the engine. Bound to one showdown_commit: a ledger of another pin is refused, so every query routes to the engine. Integers only; its RFC 8785 SHA-256 is admission_hash. Reader rules (sorted and unique lists, the recomputed admission, the fresh seed) are in both readers.
+    The admission ledger of one non-Showdown backend version (ADR-030 common rules 2, 4 and 7; ADR-028 section 5): which entities (species forme, move, ability, item, status, volatile, weather, terrain, field and side condition, query kind) it may answer for training games, from byte-equal comparisons with the pinned engine (the oracle). Per entity and corpus: the items it was present in, the items whose answer read it (exercising), how many of those were equal, and the items with a difference. Nothing is admitted without one fresh corpus of at least 200,000 items (both levels; ADR-030 step 3 gate 3, ADR-028 section 5) or with a count mismatch in any corpus. An entity is admitted only with at least 20 exercising items of the FRESH corpus, all equal, no difference in any corpus, and no revocation; the fresh corpus's seed is SHA-256 over the JCS of {backend_commit, backend_format, purpose: differential-fresh/1}, so it cannot exist before the backend version is frozen, and regression (debugging) and shadow corpora never count as admission evidence. Entities are not scoped by query kind, so each lists per query kind its co-exercised fresh items; a query routes to the backend only if each entity was co-exercised at least 5 times, all equal, with the query's kind. Every corpus names its draw pool, a hash of its content (the sorted item keys) and a hash of its tally. Pairs of admitted entities present together in at least 1 in 10^4 fresh items are listed and admitted only with at least 5 co-exercised items, all equal; a listed pair that is not admitted routes to the engine. Bound to one showdown_commit: a ledger of another pin is refused, so every query routes to the engine. Integers only; its RFC 8785 SHA-256 is admission_hash. Reader rules (sorted and unique lists, the recomputed admission, the fresh seed) are in both readers.
     """
 
     model_config = ConfigDict(

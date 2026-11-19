@@ -15,7 +15,11 @@ const load = (path: string): unknown => JSON.parse(readFileSync(join(SAMPLES, pa
 const names = (kind: string): string[] => readdirSync(join(SAMPLES, DIR, kind)).sort();
 
 const READER_INVALID: Record<string, string> = {
+  "count-mismatch": "count mismatch",
   "counts-not-nested": "must nest",
+  "fresh-below-minimum": "minimum size",
+  "kinds-not-query-kind": "sorted and unique",
+  "kinds-on-query-kind": "only an entity the fresh corpus holds",
   "missing-revocation": "revoked exactly when",
   "nineteen-exercising": "admitted flag",
   "other-pin": "another pinned engine",

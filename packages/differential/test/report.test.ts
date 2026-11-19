@@ -12,7 +12,7 @@ describe("the report", () => {
     expect(report.corpora[0]).toMatchObject({ differences: 55, by_reason: { value: 55 }, by_field: { "$.x": 55 }, pairs: null });
     expect(report.corpora[1]?.pairs).toEqual({ present: 1, frequent: 1, co_exercised_enough: 1 });
     expect(report.entities.find((e) => e.id === "move:a")).toEqual({ id: "move:a", present: 78, exercised: 75, equal: 20, differing: 55 });
-    expect(report.kinds).toEqual({ ability: 1, item: 1, move: 1 });
+    expect(report.kinds).toEqual({ ability: 1, filler: 1, item: 1, move: 1 });
     expect(report.differences).toHaveLength(LISTED_DIFFERENCES);
     const md = renderReport(report, "Self differential");
     expect(md).toContain("# Self differential");

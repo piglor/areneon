@@ -1,7 +1,9 @@
 // Counts of one corpus: per entity (present, exercised, equal, differing, the first difference that named it), per pair
 // (present together, exercised together, equal), and the differences by reason and first-differing field. A tally is all the
 // ledger and the report need of a corpus; items are added one at a time, so a corpus never has to be held in memory.
+import type { Json } from "./canonical.ts";
 import type { Difference, ItemResult } from "./compare.ts";
+import { sha256Jcs } from "./hash.ts";
 
 export type CorpusKind = "fresh" | "regression" | "shadow";
 
@@ -9,8 +11,10 @@ export type CorpusKind = "fresh" | "regression" | "shadow";
 export interface CorpusSpec {
   id: string;
   kind: CorpusKind;
-  /** Fresh: the backend's fresh seed; otherwise the hash naming the corpus's content (64 hex). */
+  /** Fresh: the backend's fresh seed; otherwise the hash naming the corpus's source (64 hex). */
   seed: string;
+  /** The identity of what the items were drawn from (64 hex): the generator pool of a fresh corpus, the files of a committed one. */
+  pool: string;
 }
 
 export interface EntityTally {
@@ -36,8 +40,10 @@ export interface CorpusTally {
   pairs: Map<string, PairTally>;
   /** Every difference, in item order (fixed words: reason, field, entities, position). */
   differences: Difference[];
-  /** The backend returned another number of outcomes than inputs in some batch. */
+  /** The batches the backend returned another number of outcomes than inputs for. */
   count_mismatches: number;
+  /** The items' stable keys, in item order (the content hash is over them, sorted). */
+  keys: string[];
 }
 
 const ID = /^[a-z0-9][a-z0-9._-]*$/;
@@ -49,8 +55,8 @@ export class TallyError extends Error {
 
 export function newTally(spec: CorpusSpec): CorpusTally {
   if (!ID.test(spec.id) || spec.id.length > 64) throw new TallyError("a corpus id is a lower-case token");
-  if (!HEX64.test(spec.seed)) throw new TallyError("a corpus seed is 64 hex digits");
-  return { spec: { ...spec }, items: 0, entities: new Map(), pairs: new Map(), differences: [], count_mismatches: 0 };
+  if (!HEX64.test(spec.seed) || !HEX64.test(spec.pool)) throw new TallyError("a corpus seed and pool are 64 hex digits");
+  return { spec: { ...spec }, items: 0, entities: new Map(), pairs: new Map(), differences: [], count_mismatches: 0, keys: [] };
 }
 
 export const pairKey = (a: string, b: string): string => (a < b ? `${a}|${b}` : `${b}|${a}`);
@@ -79,6 +85,7 @@ export function addItem(tally: CorpusTally, item: ItemResult): void {
   const exercised = new Set(item.exercised);
   for (const id of exercised) if (!item.entities.includes(id)) throw new TallyError("an exercised entity must be present");
   tally.items += 1;
+  tally.keys.push(item.key);
   const equal = item.difference === null;
   if (item.difference !== null) tally.differences.push(item.difference);
   for (const id of item.entities) {
@@ -114,4 +121,16 @@ export function addItem(tally: CorpusTally, item: ItemResult): void {
 export function addBatch(tally: CorpusTally, batch: { items: readonly ItemResult[]; count_mismatch: boolean }): void {
   for (const item of batch.items) addItem(tally, item);
   if (batch.count_mismatch) tally.count_mismatches += 1;
+}
+
+const byKey = <T>(entries: Iterable<[string, T]>): [string, T][] => [...entries].sort(([a], [b]) => (a < b ? -1 : 1));
+
+/** `content_hash`: what the corpus holds, SHA-256 over the JCS of its pool and the sorted keys of its items. */
+export const contentHash = (tally: Pick<CorpusTally, "spec" | "keys">): string => sha256Jcs({ keys: [...tally.keys].sort(), pool: tally.spec.pool });
+
+/** `tally_hash`: every count of the corpus (entities, pairs, items, count mismatches), so a ledger edited by hand (a pair dropped) no longer matches its tally. */
+export function tallyHash(tally: CorpusTally): string {
+  const entities = byKey(tally.entities).map(([id, r]) => [id, r.present, r.exercised, r.equal, r.differing, r.first_difference]);
+  const pairs = byKey(tally.pairs).map(([key, r]) => [key, r.co_present, r.co_exercised, r.co_equal]);
+  return sha256Jcs({ count_mismatches: tally.count_mismatches, entities, items: tally.items, pairs } as unknown as Json);
 }

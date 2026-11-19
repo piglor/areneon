@@ -92,7 +92,11 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
   it("holds every reader-invalid sample under its contract's directory, and each is refused above", () => {
     const readerInvalid = Object.keys(fresh).filter((f) => f.includes("/reader-invalid/"));
     expect(readerInvalid.sort()).toEqual([
+      "v1/backend-admission/reader-invalid/count-mismatch.json",
       "v1/backend-admission/reader-invalid/counts-not-nested.json",
+      "v1/backend-admission/reader-invalid/fresh-below-minimum.json",
+      "v1/backend-admission/reader-invalid/kinds-not-query-kind.json",
+      "v1/backend-admission/reader-invalid/kinds-on-query-kind.json",
       "v1/backend-admission/reader-invalid/missing-revocation.json",
       "v1/backend-admission/reader-invalid/nineteen-exercising.json",
       "v1/backend-admission/reader-invalid/other-pin.json",

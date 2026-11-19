@@ -8,7 +8,7 @@ export { key64, sha256Jcs } from "./hash.ts";
 export type { Backend, Level, Settled } from "./backend.ts";
 export { compareBatch, compareItem, firstDifference, HarnessError } from "./compare.ts";
 export type { BatchComparison, Difference, DifferenceReason, ItemResult } from "./compare.ts";
-export { addBatch, addItem, newTally, pairKey, TallyError } from "./tally.ts";
+export { addBatch, addItem, contentHash, newTally, pairKey, TallyError, tallyHash } from "./tally.ts";
 export type { CorpusKind, CorpusSpec, CorpusTally, EntityTally, PairTally } from "./tally.ts";
 export { runCorpus, RunError } from "./harness.ts";
 export {
@@ -19,15 +19,18 @@ export {
   admits,
   admitsPair,
   buildLedger,
+  evidenceHolds,
   FRESH_PURPOSE,
   freshCorpus,
   freshCorpusId,
   freshSeed,
   frequent,
+  MIN_FRESH_ITEMS,
   N_EXERCISED,
   N_PAIR,
   PAIR_ODDS,
   readBackendAdmission,
+  verifyLedger,
   withCorpus,
 } from "./admission.ts";
 export type { BackendAdmission, BackendIdentity, LedgerInput, Refusal } from "./admission.ts";

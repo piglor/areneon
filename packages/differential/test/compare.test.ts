@@ -66,7 +66,7 @@ describe("compareBatch and runCorpus", () => {
     const drop = backendOf("drop", (batch) => batch.map(truth).filter((_, i) => i !== 1));
     const result = compareBatch(toyLevel, oracle, drop, [1, 2, 3, 4].map(input));
     expect(result.count_mismatch).toBe(true);
-    expect(result.items.map((i) => i.difference?.reason ?? "equal")).toEqual(["equal", "answer", "answer", "missing"]);
+    expect(result.items.map((i) => i.difference?.reason ?? "equal")).toEqual(["count", "answer", "answer", "missing"]);
     const tally = newTally(REGRESSION);
     addBatch(tally, result);
     expect(tally.count_mismatches).toBe(1);
@@ -85,11 +85,13 @@ describe("compareBatch and runCorpus", () => {
 
 describe("tallies", () => {
   it("refuse a bad spec, an item out of order and an exercised entity that is not present", () => {
-    expect(() => newTally({ id: "Bad", kind: "regression", seed: "a".repeat(64) })).toThrow(TallyError);
-    expect(() => newTally({ id: "x".repeat(65), kind: "regression", seed: "a".repeat(64) })).toThrow(TallyError);
-    expect(() => newTally({ id: "ok", kind: "regression", seed: "A".repeat(64) })).toThrow("64 hex");
+    const hex = "a".repeat(64);
+    expect(() => newTally({ id: "Bad", kind: "regression", seed: hex, pool: hex })).toThrow(TallyError);
+    expect(() => newTally({ id: "x".repeat(65), kind: "regression", seed: hex, pool: hex })).toThrow(TallyError);
+    expect(() => newTally({ id: "ok", kind: "regression", seed: "A".repeat(64), pool: hex })).toThrow("64 hex");
+    expect(() => newTally({ id: "ok", kind: "regression", seed: hex, pool: "short" })).toThrow("64 hex");
     const tally = newTally(REGRESSION);
-    expect(() => addBatch(tally, { items: [{ position: 1, entities: [], exercised: [], difference: null }], count_mismatch: false })).toThrow("corpus order");
-    expect(() => addBatch(tally, { items: [{ position: 0, entities: ["a:b"], exercised: ["a:c"], difference: null }], count_mismatch: false })).toThrow("must be present");
+    expect(() => addBatch(tally, { items: [{ position: 1, key: "k", entities: [], exercised: [], difference: null }], count_mismatch: false })).toThrow("corpus order");
+    expect(() => addBatch(tally, { items: [{ position: 0, key: "k", entities: ["a:b"], exercised: ["a:c"], difference: null }], count_mismatch: false })).toThrow("must be present");
   });
 });

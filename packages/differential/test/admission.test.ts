@@ -13,13 +13,16 @@ import {
   freshCorpusId,
   freshSeed,
   frequent,
+  MIN_FRESH_ITEMS,
   N_EXERCISED,
+  PAIR_ODDS,
   readBackendAdmission,
+  verifyLedger,
   withCorpus,
 } from "../src/admission.ts";
 import { sha256Jcs } from "../src/hash.ts";
 import { type CorpusTally, newTally } from "../src/tally.ts";
-import { BACKEND, FRESH, PIN, REGRESSION, tallyOf } from "./support.ts";
+import { BACKEND, corpus, FRESH, PIN, POOL, REGRESSION, tallyOf } from "./support.ts";
 
 const ledgerOf = (...tallies: CorpusTally[]): BackendAdmission => buildLedger({ level: "mechanics-query", backend: BACKEND, showdown_commit: PIN, tallies });
 const entity = (ledger: BackendAdmission, id: string) => ledger.entities.find((e) => e.id === id);
@@ -38,12 +41,12 @@ describe("the fresh seed", () => {
   });
   it("is the only thing a fresh corpus's draw is given", () => {
     const seen: string[] = [];
-    const corpus = freshCorpus(BACKEND, (seed) => {
+    const corpus = freshCorpus(BACKEND, POOL, (seed) => {
       seen.push(seed);
       return [1, 2];
     });
     expect(seen).toEqual([freshSeed(BACKEND)]);
-    expect(corpus).toEqual({ spec: { id: freshCorpusId(BACKEND), kind: "fresh", seed: freshSeed(BACKEND) }, items: [1, 2] });
+    expect(corpus).toEqual({ spec: { id: freshCorpusId(BACKEND), kind: "fresh", seed: freshSeed(BACKEND), pool: POOL }, items: [1, 2] });
   });
 });
 
@@ -78,10 +81,12 @@ describe("entity admission", () => {
     expect(() => read(forged)).toThrow("admission evidence must come from the fresh corpus");
   });
   it("needs every exercising fresh item equal", () => {
-    expect(admits({ exercised: 20, equal: 19 }, 0, false)).toBe(false);
-    expect(admits({ exercised: 20, equal: 20 }, 1, false)).toBe(false);
-    expect(admits({ exercised: 20, equal: 20 }, 0, true)).toBe(false);
-    expect(admits(undefined, 0, false)).toBe(false);
+    expect(admits({ exercised: 20, equal: 20 }, 0, false, true)).toBe(true);
+    expect(admits({ exercised: 20, equal: 19 }, 0, false, true)).toBe(false);
+    expect(admits({ exercised: 20, equal: 20 }, 1, false, true)).toBe(false);
+    expect(admits({ exercised: 20, equal: 20 }, 0, true, true)).toBe(false);
+    expect(admits({ exercised: 20, equal: 20 }, 0, false, false)).toBe(false);
+    expect(admits(undefined, 0, false, true)).toBe(false);
   });
 });
 
@@ -91,15 +96,16 @@ describe("pairs", () => {
       { count: 20, entities: ["move:a"] },
       { count: 20, entities: ["move:b"] },
       { count: 20, entities: ["move:c"] },
-      { count: 5, entities: ["move:a", "move:b"] },
+      { count: 20, entities: ["move:a", "move:b"] },
       { count: 4, entities: ["move:a", "move:c"] },
-      { count: 6, entities: ["move:b", "move:c"], reads: ["move:b"] },
+      { count: 16, entities: ["move:a", "move:c"], reads: ["move:a"] },
+      { count: 21, entities: ["move:b", "move:c"], reads: ["move:b"] },
     ]);
     const ledger = ledgerOf(fresh);
     expect(ledger.pairs).toEqual([
-      { a: "move:a", b: "move:b", co_present: 5, co_exercised: 5, co_equal: 5, admitted: true },
-      { a: "move:a", b: "move:c", co_present: 4, co_exercised: 4, co_equal: 4, admitted: false },
-      { a: "move:b", b: "move:c", co_present: 6, co_exercised: 0, co_equal: 0, admitted: false },
+      { a: "move:a", b: "move:b", co_present: 20, co_exercised: 20, co_equal: 20, admitted: true },
+      { a: "move:a", b: "move:c", co_present: 20, co_exercised: 4, co_equal: 4, admitted: false },
+      { a: "move:b", b: "move:c", co_present: 21, co_exercised: 0, co_equal: 0, admitted: false },
     ]);
     const router = admissionRouter(ledger);
     expect(router.route(["move:b", "move:a", "move:a"])).toBeNull();
@@ -110,7 +116,7 @@ describe("pairs", () => {
     expect(frequent(1, 10_000)).toBe(true);
     expect(frequent(1, 10_001)).toBe(false);
     expect(frequent(0, 0)).toBe(false);
-    const fresh = tallyOf(FRESH, [{ count: 10_001, entities: ["kind:x"], reads: [] }, { count: 20, entities: ["move:a"] }, { count: 19, entities: ["move:b"] }, { count: 1, entities: ["move:a", "move:b"] }]);
+    const fresh = tallyOf(FRESH, [{ count: 20, entities: ["move:a"] }, { count: 19, entities: ["move:b"] }, { count: 19, entities: ["move:a", "move:b"] }]);
     const ledger = ledgerOf(fresh);
     expect(ledger.pairs).toEqual([]);
   });
@@ -124,7 +130,7 @@ describe("withCorpus (a shadow sample or another regression run)", () => {
   const base = ledgerOf(tallyOf(FRESH, [{ count: 20, entities: ["move:a", "move:b"] }, { count: 20, entities: ["move:c"] }]));
   it("revokes what the new corpus finds a difference in and drops its pairs", () => {
     expect(base.pairs.map((p) => `${p.a}|${p.b}`)).toEqual(["move:a|move:b"]);
-    const shadow = tallyOf({ id: "shadow-g1", kind: "shadow", seed: "d".repeat(64) }, [{ count: 2, entities: ["move:a"], differing: [1] }, { count: 1, entities: ["move:c"] }]);
+    const shadow = tallyOf(corpus("shadow-g1", "shadow", "d".repeat(64)), [{ count: 2, entities: ["move:a"], differing: [1] }, { count: 1, entities: ["move:c"] }]);
     const next = withCorpus(base, shadow);
     expect(entity(next, "move:a")).toMatchObject({ admitted: false, counts: [{ corpus: FRESH.id }, { corpus: "shadow-g1", differing: 1 }] });
     expect(entity(next, "move:b")?.admitted).toBe(true);
@@ -134,16 +140,16 @@ describe("withCorpus (a shadow sample or another regression run)", () => {
     expect(admissionHash(next)).not.toBe(admissionHash(base));
   });
   it("moves a revocation to an earlier corpus that found a difference, and keeps a later one's", () => {
-    const later = withCorpus(base, tallyOf({ id: "zz-shadow", kind: "shadow", seed: "d".repeat(64) }, [{ count: 1, entities: ["move:c"], differing: [0] }]));
+    const later = withCorpus(base, tallyOf(corpus("zz-shadow", "shadow", "d".repeat(64)), [{ count: 1, entities: ["move:c"], differing: [0] }]));
     expect(later.revoked).toEqual([{ id: "move:c", corpus: "zz-shadow", position: 0 }]);
-    const earlier = withCorpus(later, tallyOf({ id: "aa-regression", kind: "regression", seed: "e".repeat(64) }, [{ count: 2, entities: ["move:c"], differing: [1] }]));
+    const earlier = withCorpus(later, tallyOf(corpus("aa-regression", "regression", "e".repeat(64)), [{ count: 2, entities: ["move:c"], differing: [1] }]));
     expect(earlier.revoked).toEqual([{ id: "move:c", corpus: "aa-regression", position: 1 }]);
-    const after = withCorpus(earlier, tallyOf({ id: "zzz", kind: "regression", seed: "e".repeat(64) }, [{ count: 1, entities: ["move:c"], differing: [0] }]));
+    const after = withCorpus(earlier, tallyOf(corpus("zzz", "regression", "e".repeat(64)), [{ count: 1, entities: ["move:c"], differing: [0] }]));
     expect(after.revoked).toEqual(earlier.revoked);
   });
   it("adds an entity only the new corpus holds", () => {
     const next = withCorpus(base, tallyOf(REGRESSION, [{ count: 2, entities: ["item:new"] }]));
-    expect(entity(next, "item:new")).toEqual({ id: "item:new", admitted: false, counts: [{ corpus: REGRESSION.id, present: 2, exercised: 2, equal: 2, differing: 0 }] });
+    expect(entity(next, "item:new")).toEqual({ id: "item:new", admitted: false, counts: [{ corpus: REGRESSION.id, present: 2, exercised: 2, equal: 2, differing: 0 }], kinds: [] });
   });
   it("refuses a fresh corpus and a corpus it already holds", () => {
     expect(() => withCorpus(base, newTally(FRESH))).toThrow("never added later");
@@ -170,13 +176,13 @@ describe("the reader", () => {
     ["unknown corpus", (l) => void ((entityOf(l, "move:b").counts[0] as { corpus: string }).corpus = "nope"), "known corpora"],
     ["counts order", (l) => entityOf(l, "move:a").counts.reverse(), "known corpora"],
     ["present 0", (l) => void ((entityOf(l, "move:b").counts[0] as { present: number }).present = 0), "present in at least one"],
-    ["present over items", (l) => void ((entityOf(l, "move:b").counts[0] as { present: number }).present = 24), "present in at least one"],
+    ["present over items", (l) => void ((entityOf(l, "move:b").counts[0] as { present: number }).present = 200_001), "present in at least one"],
     ["nesting", (l) => void ((entityOf(l, "move:b").counts[0] as { equal: number }).equal = 21), "must nest"],
     ["unequal not differing", (l) => void ((entityOf(l, "move:b").counts[0] as { equal: number }).equal = 19), "unequal exercising item"],
     ["missing revocation", (l) => l.revoked.splice(0, 1), "revoked exactly when"],
     ["extra revocation", (l) => l.revoked.unshift({ id: "move:a", corpus: FRESH.id, position: 0 }), "revoked exactly when"],
     ["admitted flag", (l) => void (entityOf(l, "move:b").admitted = false), "admitted flag"],
-    ["revocation corpus", (l) => void ((l.revoked[0] as { position: number }).position = 23), "within its corpus"],
+    ["revocation corpus", (l) => void ((l.revoked[0] as { position: number }).position = 200_000), "within its corpus"],
   ])("refuses a doctored ledger: %s", (_, change, message) => {
     expect(() => read(doctor(ledger, change))).toThrow(message);
     expect(() => read(doctor(ledger, change))).toThrow(AdmissionError);
@@ -200,3 +206,45 @@ describe("the reader", () => {
 function entityOf(ledger: BackendAdmission, id: string) {
   return ledger.entities.find((e) => e.id === id) as BackendAdmission["entities"][number];
 }
+
+describe("the evidence rules of the review (PR #413)", () => {
+  const good = () => ledgerOf(tallyOf(FRESH, [{ count: 25, entities: ["kind:damage", "move:a"] }]));
+  it("the per-level minimum is at least three times the pair odds", () => {
+    for (const min of Object.values(MIN_FRESH_ITEMS)) expect(min).toBeGreaterThanOrEqual(3 * PAIR_ODDS);
+    expect(MIN_FRESH_ITEMS["mechanics-query"]).toBe(200_000);
+  });
+  it("lists per query kind the fresh items that exercised an entity, and routes by them", () => {
+    const ledger = good();
+    expect(entity(ledger, "move:a")?.kinds).toEqual([{ kind: "kind:damage", co_exercised: 25, co_equal: 25 }]);
+    expect(entity(ledger, "kind:damage")?.kinds).toEqual([]);
+    expect(admissionRouter(ledger).route(["kind:damage", "move:a"])).toBeNull();
+  });
+  it("refuses an admitted entity a small fresh corpus or a count mismatch cannot support", () => {
+    expect(() => read(doctor(good(), (l) => void ((l.corpora[0] as { items: number }).items = 199_999)))).toThrow("minimum size");
+    expect(() => read(doctor(good(), (l) => void ((l.corpora[0] as { count_mismatches: number }).count_mismatches = 1)))).toThrow("count mismatch");
+  });
+  it("refuses kinds that are unsorted, not query kinds, on a query kind, or above the fresh counts", () => {
+    const two = ledgerOf(tallyOf(FRESH, [{ count: 25, entities: ["kind:damage", "move:a"] }, { count: 25, entities: ["kind:stats", "move:a"] }]));
+    expect(() => read(doctor(two, (l) => entityOf(l, "move:a").kinds.reverse()))).toThrow("sorted and unique");
+    expect(() => read(doctor(two, (l) => void ((entityOf(l, "move:a").kinds[0] as { kind: string }).kind = "move:a")))).toThrow("sorted and unique");
+    expect(() => read(doctor(two, (l) => entityOf(l, "kind:damage").kinds.push({ kind: "kind:stats", co_exercised: 0, co_equal: 0 })))).toThrow("only an entity the fresh corpus holds");
+    expect(() => read(doctor(two, (l) => void ((entityOf(l, "move:a").kinds[0] as { co_exercised: number }).co_exercised = 51)))).toThrow("must nest within");
+  });
+  it("verifyLedger holds a ledger to its tallies: a dropped pair or a doctored corpus is refused", () => {
+    const tallies = [tallyOf(FRESH, [{ count: 25, entities: ["move:a", "move:b"] }])];
+    const ledger = ledgerOf(...tallies);
+    expect(ledger.pairs).toHaveLength(1);
+    expect(() => verifyLedger(ledger, tallies)).not.toThrow();
+    expect(() => verifyLedger(doctor(ledger, (l) => void (l.pairs = [])), tallies)).toThrow("not the one its corpora give");
+    expect(() => verifyLedger(doctor(ledger, (l) => void ((l.corpora[0] as { content_hash: string }).content_hash = "0".repeat(64))), tallies)).toThrow("content or tally");
+    expect(() => verifyLedger(ledger, [tallyOf(FRESH, [{ count: 26, entities: ["move:a", "move:b"] }])])).toThrow("content or tally");
+  });
+  it("withCorpus equals buildLedger over all the tallies", () => {
+    const fresh = tallyOf(FRESH, [{ count: 25, entities: ["move:a", "move:b"] }]);
+    const shadow = tallyOf(corpus("shadow-g2", "shadow", "d".repeat(64)), [{ count: 3, entities: ["move:a"], differing: [2] }]);
+    expect(admissionHash(withCorpus(ledgerOf(fresh), shadow))).toBe(admissionHash(ledgerOf(fresh, shadow)));
+  });
+  it("routes only by a ledger the reader returned", () => {
+    expect(() => admissionRouter(structuredClone(good()))).toThrow("readBackendAdmission");
+  });
+});
