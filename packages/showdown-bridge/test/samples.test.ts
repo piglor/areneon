@@ -92,6 +92,18 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
   it("holds every reader-invalid sample under its contract's directory, and each is refused above", () => {
     const readerInvalid = Object.keys(fresh).filter((f) => f.includes("/reader-invalid/"));
     expect(readerInvalid.sort()).toEqual([
+      "v1/backend-admission/reader-invalid/counts-not-nested.json",
+      "v1/backend-admission/reader-invalid/missing-revocation.json",
+      "v1/backend-admission/reader-invalid/nineteen-exercising.json",
+      "v1/backend-admission/reader-invalid/other-pin.json",
+      "v1/backend-admission/reader-invalid/pair-flag.json",
+      "v1/backend-admission/reader-invalid/pair-not-admitted-entity.json",
+      "v1/backend-admission/reader-invalid/rare-pair.json",
+      "v1/backend-admission/reader-invalid/regression-evidence.json",
+      "v1/backend-admission/reader-invalid/revocation-past-corpus.json",
+      "v1/backend-admission/reader-invalid/two-fresh.json",
+      "v1/backend-admission/reader-invalid/unsorted-entities.json",
+      "v1/backend-admission/reader-invalid/wrong-fresh-seed.json",
       "v1/belief-config/reader-invalid/damage-unknown-item.json",
       "v1/belief-config/reader-invalid/damage-unknown-lasting-move.json",
       "v1/belief-config/reader-invalid/damage-unknown-move.json",
