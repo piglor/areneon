@@ -1,0 +1,8677 @@
+{
+  "harness_format": 1,
+  "inputs": {
+    "harness_format": 1,
+    "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+    "feature_sets": [
+      "probe-damage/2",
+      "probe-outcome/1"
+    ],
+    "mechanics_config_hash": "34fc05a61649a3a9c02e9cbc78dea0e8ad86a248a8ab4131ba706a0903028420",
+    "damage_aware_config_hash": "1df63656d4747a06f3e8b47e18959c1f7763f83ac500d317e3ae0e4a5db9ec14",
+    "outcome_config_hash": "e3e124d891cb814e61621ea3e3e21a50b3aa13d1c9b5c40378aeda01b1431da1",
+    "corpora": {
+      "random": "3e9246cefdb8dcc6a2fcb5093a96ea1425193ce1d9c279b0223f58431a2ce5b6",
+      "search-fidelity": "69c91410cd7e9f0c4a5608817c7680117af54fd0207367363b1f08f421ece034",
+      "unavailable": "98baef25724188431c3508799be4b032b088c836a165b967aba2c80ce408f953"
+    },
+    "limit": null
+  },
+  "rule": {
+    "n_exercised": 20,
+    "n_pair": 5,
+    "pair_odds": 10000
+  },
+  "corpora": [
+    {
+      "id": "random",
+      "kind": "regression",
+      "items": 95718,
+      "differences": 0,
+      "count_mismatches": 0,
+      "by_reason": {},
+      "by_field": {},
+      "pairs": null
+    },
+    {
+      "id": "search-fidelity",
+      "kind": "regression",
+      "items": 407990,
+      "differences": 0,
+      "count_mismatches": 0,
+      "by_reason": {},
+      "by_field": {},
+      "pairs": null
+    },
+    {
+      "id": "unavailable",
+      "kind": "regression",
+      "items": 6029,
+      "differences": 0,
+      "count_mismatches": 0,
+      "by_reason": {},
+      "by_field": {},
+      "pairs": null
+    }
+  ],
+  "entities": [
+    {
+      "id": "ability:adaptability",
+      "present": 12435,
+      "exercised": 8493,
+      "equal": 8493,
+      "differing": 0
+    },
+    {
+      "id": "ability:aftermath",
+      "present": 174,
+      "exercised": 166,
+      "equal": 166,
+      "differing": 0
+    },
+    {
+      "id": "ability:analytic",
+      "present": 3435,
+      "exercised": 1951,
+      "equal": 1951,
+      "differing": 0
+    },
+    {
+      "id": "ability:angerpoint",
+      "present": 20333,
+      "exercised": 12834,
+      "equal": 12834,
+      "differing": 0
+    },
+    {
+      "id": "ability:anticipation",
+      "present": 5977,
+      "exercised": 4038,
+      "equal": 4038,
+      "differing": 0
+    },
+    {
+      "id": "ability:armortail",
+      "present": 2560,
+      "exercised": 1450,
+      "equal": 1450,
+      "differing": 0
+    },
+    {
+      "id": "ability:aromaveil",
+      "present": 24041,
+      "exercised": 16342,
+      "equal": 16342,
+      "differing": 0
+    },
+    {
+      "id": "ability:battlearmor",
+      "present": 10852,
+      "exercised": 6186,
+      "equal": 6186,
+      "differing": 0
+    },
+    {
+      "id": "ability:berserk",
+      "present": 8677,
+      "exercised": 5034,
+      "equal": 5034,
+      "differing": 0
+    },
+    {
+      "id": "ability:bigpecks",
+      "present": 2515,
+      "exercised": 1681,
+      "equal": 1681,
+      "differing": 0
+    },
+    {
+      "id": "ability:blaze",
+      "present": 50084,
+      "exercised": 32093,
+      "equal": 32093,
+      "differing": 0
+    },
+    {
+      "id": "ability:bulletproof",
+      "present": 6359,
+      "exercised": 4420,
+      "equal": 4420,
+      "differing": 0
+    },
+    {
+      "id": "ability:cheekpouch",
+      "present": 7600,
+      "exercised": 5187,
+      "equal": 5187,
+      "differing": 0
+    },
+    {
+      "id": "ability:chlorophyll",
+      "present": 19019,
+      "exercised": 12334,
+      "equal": 12334,
+      "differing": 0
+    },
+    {
+      "id": "ability:clearbody",
+      "present": 16057,
+      "exercised": 9043,
+      "equal": 9043,
+      "differing": 0
+    },
+    {
+      "id": "ability:cloudnine",
+      "present": 10208,
+      "exercised": 7406,
+      "equal": 7406,
+      "differing": 0
+    },
+    {
+      "id": "ability:competitive",
+      "present": 14077,
+      "exercised": 8557,
+      "equal": 8557,
+      "differing": 0
+    },
+    {
+      "id": "ability:compoundeyes",
+      "present": 27659,
+      "exercised": 17679,
+      "equal": 17679,
+      "differing": 0
+    },
+    {
+      "id": "ability:contrary",
+      "present": 7522,
+      "exercised": 6278,
+      "equal": 6278,
+      "differing": 0
+    },
+    {
+      "id": "ability:corrosion",
+      "present": 9534,
+      "exercised": 5400,
+      "equal": 5400,
+      "differing": 0
+    },
+    {
+      "id": "ability:cudchew",
+      "present": 2818,
+      "exercised": 1630,
+      "equal": 1630,
+      "differing": 0
+    },
+    {
+      "id": "ability:curiousmedicine",
+      "present": 8342,
+      "exercised": 3936,
+      "equal": 3936,
+      "differing": 0
+    },
+    {
+      "id": "ability:cursedbody",
+      "present": 16944,
+      "exercised": 12355,
+      "equal": 12355,
+      "differing": 0
+    },
+    {
+      "id": "ability:cutecharm",
+      "present": 16508,
+      "exercised": 11108,
+      "equal": 11108,
+      "differing": 0
+    },
+    {
+      "id": "ability:damp",
+      "present": 13172,
+      "exercised": 7667,
+      "equal": 7667,
+      "differing": 0
+    },
+    {
+      "id": "ability:defiant",
+      "present": 21523,
+      "exercised": 10726,
+      "equal": 10726,
+      "differing": 0
+    },
+    {
+      "id": "ability:disguise",
+      "present": 8438,
+      "exercised": 6146,
+      "equal": 6146,
+      "differing": 0
+    },
+    {
+      "id": "ability:drizzle",
+      "present": 1700,
+      "exercised": 1060,
+      "equal": 1060,
+      "differing": 0
+    },
+    {
+      "id": "ability:drought",
+      "present": 7243,
+      "exercised": 4540,
+      "equal": 4540,
+      "differing": 0
+    },
+    {
+      "id": "ability:dryskin",
+      "present": 4099,
+      "exercised": 2643,
+      "equal": 2643,
+      "differing": 0
+    },
+    {
+      "id": "ability:earlybird",
+      "present": 11274,
+      "exercised": 6994,
+      "equal": 6994,
+      "differing": 0
+    },
+    {
+      "id": "ability:eartheater",
+      "present": 2547,
+      "exercised": 1549,
+      "equal": 1549,
+      "differing": 0
+    },
+    {
+      "id": "ability:effectspore",
+      "present": 341,
+      "exercised": 319,
+      "equal": 319,
+      "differing": 0
+    },
+    {
+      "id": "ability:electricsurge",
+      "present": 1989,
+      "exercised": 1147,
+      "equal": 1147,
+      "differing": 0
+    },
+    {
+      "id": "ability:electromorphosis",
+      "present": 957,
+      "exercised": 425,
+      "equal": 425,
+      "differing": 0
+    },
+    {
+      "id": "ability:emergencyexit",
+      "present": 7237,
+      "exercised": 5457,
+      "equal": 5457,
+      "differing": 0
+    },
+    {
+      "id": "ability:filter",
+      "present": 2074,
+      "exercised": 947,
+      "equal": 947,
+      "differing": 0
+    },
+    {
+      "id": "ability:flamebody",
+      "present": 10062,
+      "exercised": 5588,
+      "equal": 5588,
+      "differing": 0
+    },
+    {
+      "id": "ability:flashfire",
+      "present": 20790,
+      "exercised": 13867,
+      "equal": 13867,
+      "differing": 0
+    },
+    {
+      "id": "ability:flowerveil",
+      "present": 16556,
+      "exercised": 9216,
+      "equal": 9216,
+      "differing": 0
+    },
+    {
+      "id": "ability:fluffy",
+      "present": 6861,
+      "exercised": 3179,
+      "equal": 3179,
+      "differing": 0
+    },
+    {
+      "id": "ability:forecast",
+      "present": 11998,
+      "exercised": 6917,
+      "equal": 6917,
+      "differing": 0
+    },
+    {
+      "id": "ability:forewarn",
+      "present": 2661,
+      "exercised": 1553,
+      "equal": 1553,
+      "differing": 0
+    },
+    {
+      "id": "ability:friendguard",
+      "present": 9670,
+      "exercised": 6126,
+      "equal": 6126,
+      "differing": 0
+    },
+    {
+      "id": "ability:frisk",
+      "present": 24128,
+      "exercised": 16849,
+      "equal": 16849,
+      "differing": 0
+    },
+    {
+      "id": "ability:furcoat",
+      "present": 4425,
+      "exercised": 2941,
+      "equal": 2941,
+      "differing": 0
+    },
+    {
+      "id": "ability:galewings",
+      "present": 1879,
+      "exercised": 1105,
+      "equal": 1105,
+      "differing": 0
+    },
+    {
+      "id": "ability:gluttony",
+      "present": 16607,
+      "exercised": 9752,
+      "equal": 9752,
+      "differing": 0
+    },
+    {
+      "id": "ability:goodasgold",
+      "present": 5201,
+      "exercised": 3577,
+      "equal": 3577,
+      "differing": 0
+    },
+    {
+      "id": "ability:gooey",
+      "present": 4291,
+      "exercised": 2797,
+      "equal": 2797,
+      "differing": 0
+    },
+    {
+      "id": "ability:grasspelt",
+      "present": 5057,
+      "exercised": 3389,
+      "equal": 3389,
+      "differing": 0
+    },
+    {
+      "id": "ability:grassysurge",
+      "present": 1663,
+      "exercised": 1507,
+      "equal": 1507,
+      "differing": 0
+    },
+    {
+      "id": "ability:guarddog",
+      "present": 1639,
+      "exercised": 1508,
+      "equal": 1508,
+      "differing": 0
+    },
+    {
+      "id": "ability:guts",
+      "present": 19586,
+      "exercised": 9758,
+      "equal": 9758,
+      "differing": 0
+    },
+    {
+      "id": "ability:harvest",
+      "present": 4248,
+      "exercised": 3146,
+      "equal": 3146,
+      "differing": 0
+    },
+    {
+      "id": "ability:healer",
+      "present": 8656,
+      "exercised": 6420,
+      "equal": 6420,
+      "differing": 0
+    },
+    {
+      "id": "ability:heatproof",
+      "present": 4574,
+      "exercised": 2577,
+      "equal": 2577,
+      "differing": 0
+    },
+    {
+      "id": "ability:heavymetal",
+      "present": 3640,
+      "exercised": 2084,
+      "equal": 2084,
+      "differing": 0
+    },
+    {
+      "id": "ability:hospitality",
+      "present": 2770,
+      "exercised": 1768,
+      "equal": 1768,
+      "differing": 0
+    },
+    {
+      "id": "ability:hugepower",
+      "present": 2030,
+      "exercised": 1700,
+      "equal": 1700,
+      "differing": 0
+    },
+    {
+      "id": "ability:hungerswitch",
+      "present": 13039,
+      "exercised": 9033,
+      "equal": 9033,
+      "differing": 0
+    },
+    {
+      "id": "ability:hustle",
+      "present": 7780,
+      "exercised": 5384,
+      "equal": 5384,
+      "differing": 0
+    },
+    {
+      "id": "ability:hydration",
+      "present": 3721,
+      "exercised": 1173,
+      "equal": 1173,
+      "differing": 0
+    },
+    {
+      "id": "ability:hypercutter",
+      "present": 14236,
+      "exercised": 8482,
+      "equal": 8482,
+      "differing": 0
+    },
+    {
+      "id": "ability:icebody",
+      "present": 13896,
+      "exercised": 8940,
+      "equal": 8940,
+      "differing": 0
+    },
+    {
+      "id": "ability:illuminate",
+      "present": 626,
+      "exercised": 392,
+      "equal": 392,
+      "differing": 0
+    },
+    {
+      "id": "ability:illusion",
+      "present": 9490,
+      "exercised": 8044,
+      "equal": 8044,
+      "differing": 0
+    },
+    {
+      "id": "ability:immunity",
+      "present": 1869,
+      "exercised": 531,
+      "equal": 531,
+      "differing": 0
+    },
+    {
+      "id": "ability:imposter",
+      "present": 4546,
+      "exercised": 3052,
+      "equal": 3052,
+      "differing": 0
+    },
+    {
+      "id": "ability:infiltrator",
+      "present": 12643,
+      "exercised": 6807,
+      "equal": 6807,
+      "differing": 0
+    },
+    {
+      "id": "ability:innerfocus",
+      "present": 35920,
+      "exercised": 20709,
+      "equal": 20709,
+      "differing": 0
+    },
+    {
+      "id": "ability:insomnia",
+      "present": 6716,
+      "exercised": 4775,
+      "equal": 4775,
+      "differing": 0
+    },
+    {
+      "id": "ability:intimidate",
+      "present": 69317,
+      "exercised": 51559,
+      "equal": 51559,
+      "differing": 0
+    },
+    {
+      "id": "ability:ironfist",
+      "present": 12517,
+      "exercised": 8131,
+      "equal": 8131,
+      "differing": 0
+    },
+    {
+      "id": "ability:justified",
+      "present": 8556,
+      "exercised": 5036,
+      "equal": 5036,
+      "differing": 0
+    },
+    {
+      "id": "ability:keeneye",
+      "present": 29706,
+      "exercised": 18116,
+      "equal": 18116,
+      "differing": 0
+    },
+    {
+      "id": "ability:klutz",
+      "present": 2496,
+      "exercised": 1732,
+      "equal": 1732,
+      "differing": 0
+    },
+    {
+      "id": "ability:leafguard",
+      "present": 11969,
+      "exercised": 8411,
+      "equal": 8411,
+      "differing": 0
+    },
+    {
+      "id": "ability:levitate",
+      "present": 38113,
+      "exercised": 20128,
+      "equal": 20128,
+      "differing": 0
+    },
+    {
+      "id": "ability:libero",
+      "present": 479,
+      "exercised": 347,
+      "equal": 347,
+      "differing": 0
+    },
+    {
+      "id": "ability:lightmetal",
+      "present": 4877,
+      "exercised": 3931,
+      "equal": 3931,
+      "differing": 0
+    },
+    {
+      "id": "ability:lightningrod",
+      "present": 22936,
+      "exercised": 13854,
+      "equal": 13854,
+      "differing": 0
+    },
+    {
+      "id": "ability:limber",
+      "present": 19096,
+      "exercised": 13505,
+      "equal": 13505,
+      "differing": 0
+    },
+    {
+      "id": "ability:liquidvoice",
+      "present": 968,
+      "exercised": 592,
+      "equal": 592,
+      "differing": 0
+    },
+    {
+      "id": "ability:longreach",
+      "present": 2500,
+      "exercised": 1538,
+      "equal": 1538,
+      "differing": 0
+    },
+    {
+      "id": "ability:magicbounce",
+      "present": 3636,
+      "exercised": 2998,
+      "equal": 2998,
+      "differing": 0
+    },
+    {
+      "id": "ability:magicguard",
+      "present": 9292,
+      "exercised": 5553,
+      "equal": 5553,
+      "differing": 0
+    },
+    {
+      "id": "ability:magician",
+      "present": 1410,
+      "exercised": 1033,
+      "equal": 1033,
+      "differing": 0
+    },
+    {
+      "id": "ability:magmaarmor",
+      "present": 2820,
+      "exercised": 2387,
+      "equal": 2387,
+      "differing": 0
+    },
+    {
+      "id": "ability:marvelscale",
+      "present": 707,
+      "exercised": 417,
+      "equal": 417,
+      "differing": 0
+    },
+    {
+      "id": "ability:megalauncher",
+      "present": 2184,
+      "exercised": 1720,
+      "equal": 1720,
+      "differing": 0
+    },
+    {
+      "id": "ability:merciless",
+      "present": 1673,
+      "exercised": 942,
+      "equal": 942,
+      "differing": 0
+    },
+    {
+      "id": "ability:mimicry",
+      "present": 2139,
+      "exercised": 1546,
+      "equal": 1546,
+      "differing": 0
+    },
+    {
+      "id": "ability:minus",
+      "present": 3295,
+      "exercised": 2324,
+      "equal": 2324,
+      "differing": 0
+    },
+    {
+      "id": "ability:mirrorarmor",
+      "present": 890,
+      "exercised": 886,
+      "equal": 886,
+      "differing": 0
+    },
+    {
+      "id": "ability:moldbreaker",
+      "present": 15624,
+      "exercised": 10696,
+      "equal": 10696,
+      "differing": 0
+    },
+    {
+      "id": "ability:moody",
+      "present": 1387,
+      "exercised": 1025,
+      "equal": 1025,
+      "differing": 0
+    },
+    {
+      "id": "ability:motordrive",
+      "present": 3236,
+      "exercised": 2401,
+      "equal": 2401,
+      "differing": 0
+    },
+    {
+      "id": "ability:moxie",
+      "present": 9406,
+      "exercised": 5059,
+      "equal": 5059,
+      "differing": 0
+    },
+    {
+      "id": "ability:multiscale",
+      "present": 4448,
+      "exercised": 2741,
+      "equal": 2741,
+      "differing": 0
+    },
+    {
+      "id": "ability:mummy",
+      "present": 4941,
+      "exercised": 4451,
+      "equal": 4451,
+      "differing": 0
+    },
+    {
+      "id": "ability:naturalcure",
+      "present": 6909,
+      "exercised": 4802,
+      "equal": 4802,
+      "differing": 0
+    },
+    {
+      "id": "ability:noguard",
+      "present": 1367,
+      "exercised": 1088,
+      "equal": 1088,
+      "differing": 0
+    },
+    {
+      "id": "ability:oblivious",
+      "present": 8252,
+      "exercised": 6846,
+      "equal": 6846,
+      "differing": 0
+    },
+    {
+      "id": "ability:opportunist",
+      "present": 1028,
+      "exercised": 997,
+      "equal": 997,
+      "differing": 0
+    },
+    {
+      "id": "ability:overcoat",
+      "present": 3941,
+      "exercised": 2444,
+      "equal": 2444,
+      "differing": 0
+    },
+    {
+      "id": "ability:overgrow",
+      "present": 25132,
+      "exercised": 16923,
+      "equal": 16923,
+      "differing": 0
+    },
+    {
+      "id": "ability:owntempo",
+      "present": 11916,
+      "exercised": 8147,
+      "equal": 8147,
+      "differing": 0
+    },
+    {
+      "id": "ability:pickpocket",
+      "present": 4020,
+      "exercised": 3448,
+      "equal": 3448,
+      "differing": 0
+    },
+    {
+      "id": "ability:pickup",
+      "present": 1908,
+      "exercised": 1184,
+      "equal": 1184,
+      "differing": 0
+    },
+    {
+      "id": "ability:pixilate",
+      "present": 125,
+      "exercised": 125,
+      "equal": 125,
+      "differing": 0
+    },
+    {
+      "id": "ability:plus",
+      "present": 5870,
+      "exercised": 3609,
+      "equal": 3609,
+      "differing": 0
+    },
+    {
+      "id": "ability:poisonheal",
+      "present": 975,
+      "exercised": 717,
+      "equal": 717,
+      "differing": 0
+    },
+    {
+      "id": "ability:poisonpoint",
+      "present": 10794,
+      "exercised": 8008,
+      "equal": 8008,
+      "differing": 0
+    },
+    {
+      "id": "ability:poisontouch",
+      "present": 3507,
+      "exercised": 1735,
+      "equal": 1735,
+      "differing": 0
+    },
+    {
+      "id": "ability:prankster",
+      "present": 4987,
+      "exercised": 3646,
+      "equal": 3646,
+      "differing": 0
+    },
+    {
+      "id": "ability:pressure",
+      "present": 29467,
+      "exercised": 14938,
+      "equal": 14938,
+      "differing": 0
+    },
+    {
+      "id": "ability:protean",
+      "present": 2979,
+      "exercised": 1836,
+      "equal": 1836,
+      "differing": 0
+    },
+    {
+      "id": "ability:psychicsurge",
+      "present": 2494,
+      "exercised": 1293,
+      "equal": 1293,
+      "differing": 0
+    },
+    {
+      "id": "ability:punkrock",
+      "present": 783,
+      "exercised": 519,
+      "equal": 519,
+      "differing": 0
+    },
+    {
+      "id": "ability:purepower",
+      "present": 9595,
+      "exercised": 5986,
+      "equal": 5986,
+      "differing": 0
+    },
+    {
+      "id": "ability:purifyingsalt",
+      "present": 1728,
+      "exercised": 765,
+      "equal": 765,
+      "differing": 0
+    },
+    {
+      "id": "ability:queenlymajesty",
+      "present": 1253,
+      "exercised": 1038,
+      "equal": 1038,
+      "differing": 0
+    },
+    {
+      "id": "ability:quickdraw",
+      "present": 903,
+      "exercised": 398,
+      "equal": 398,
+      "differing": 0
+    },
+    {
+      "id": "ability:quickfeet",
+      "present": 2554,
+      "exercised": 1852,
+      "equal": 1852,
+      "differing": 0
+    },
+    {
+      "id": "ability:raindish",
+      "present": 5408,
+      "exercised": 3844,
+      "equal": 3844,
+      "differing": 0
+    },
+    {
+      "id": "ability:rattled",
+      "present": 226,
+      "exercised": 226,
+      "equal": 226,
+      "differing": 0
+    },
+    {
+      "id": "ability:receiver",
+      "present": 482,
+      "exercised": 476,
+      "equal": 476,
+      "differing": 0
+    },
+    {
+      "id": "ability:reckless",
+      "present": 3355,
+      "exercised": 2463,
+      "equal": 2463,
+      "differing": 0
+    },
+    {
+      "id": "ability:refrigerate",
+      "present": 4882,
+      "exercised": 3058,
+      "equal": 3058,
+      "differing": 0
+    },
+    {
+      "id": "ability:regenerator",
+      "present": 14615,
+      "exercised": 5662,
+      "equal": 5662,
+      "differing": 0
+    },
+    {
+      "id": "ability:ripen",
+      "present": 592,
+      "exercised": 356,
+      "equal": 356,
+      "differing": 0
+    },
+    {
+      "id": "ability:rivalry",
+      "present": 2666,
+      "exercised": 2015,
+      "equal": 2015,
+      "differing": 0
+    },
+    {
+      "id": "ability:rockhead",
+      "present": 5574,
+      "exercised": 3859,
+      "equal": 3859,
+      "differing": 0
+    },
+    {
+      "id": "ability:roughskin",
+      "present": 13795,
+      "exercised": 6258,
+      "equal": 6258,
+      "differing": 0
+    },
+    {
+      "id": "ability:runaway",
+      "present": 2726,
+      "exercised": 2375,
+      "equal": 2375,
+      "differing": 0
+    },
+    {
+      "id": "ability:sandforce",
+      "present": 3850,
+      "exercised": 1693,
+      "equal": 1693,
+      "differing": 0
+    },
+    {
+      "id": "ability:sandrush",
+      "present": 6828,
+      "exercised": 3958,
+      "equal": 3958,
+      "differing": 0
+    },
+    {
+      "id": "ability:sandspit",
+      "present": 4313,
+      "exercised": 2638,
+      "equal": 2638,
+      "differing": 0
+    },
+    {
+      "id": "ability:sandstream",
+      "present": 6680,
+      "exercised": 4954,
+      "equal": 4954,
+      "differing": 0
+    },
+    {
+      "id": "ability:sandveil",
+      "present": 11813,
+      "exercised": 7494,
+      "equal": 7494,
+      "differing": 0
+    },
+    {
+      "id": "ability:sapsipper",
+      "present": 6629,
+      "exercised": 3930,
+      "equal": 3930,
+      "differing": 0
+    },
+    {
+      "id": "ability:scrappy",
+      "present": 5750,
+      "exercised": 2955,
+      "equal": 2955,
+      "differing": 0
+    },
+    {
+      "id": "ability:screencleaner",
+      "present": 355,
+      "exercised": 337,
+      "equal": 337,
+      "differing": 0
+    },
+    {
+      "id": "ability:seedsower",
+      "present": 4392,
+      "exercised": 2278,
+      "equal": 2278,
+      "differing": 0
+    },
+    {
+      "id": "ability:sharpness",
+      "present": 4014,
+      "exercised": 2886,
+      "equal": 2886,
+      "differing": 0
+    },
+    {
+      "id": "ability:shedskin",
+      "present": 1011,
+      "exercised": 883,
+      "equal": 883,
+      "differing": 0
+    },
+    {
+      "id": "ability:sheerforce",
+      "present": 9566,
+      "exercised": 6485,
+      "equal": 6485,
+      "differing": 0
+    },
+    {
+      "id": "ability:shellarmor",
+      "present": 4184,
+      "exercised": 2626,
+      "equal": 2626,
+      "differing": 0
+    },
+    {
+      "id": "ability:shielddust",
+      "present": 7399,
+      "exercised": 4694,
+      "equal": 4694,
+      "differing": 0
+    },
+    {
+      "id": "ability:skilllink",
+      "present": 907,
+      "exercised": 799,
+      "equal": 799,
+      "differing": 0
+    },
+    {
+      "id": "ability:slushrush",
+      "present": 1288,
+      "exercised": 785,
+      "equal": 785,
+      "differing": 0
+    },
+    {
+      "id": "ability:sniper",
+      "present": 8123,
+      "exercised": 5539,
+      "equal": 5539,
+      "differing": 0
+    },
+    {
+      "id": "ability:snowcloak",
+      "present": 4349,
+      "exercised": 2828,
+      "equal": 2828,
+      "differing": 0
+    },
+    {
+      "id": "ability:snowwarning",
+      "present": 11548,
+      "exercised": 6776,
+      "equal": 6776,
+      "differing": 0
+    },
+    {
+      "id": "ability:solarpower",
+      "present": 2553,
+      "exercised": 1311,
+      "equal": 1311,
+      "differing": 0
+    },
+    {
+      "id": "ability:solidrock",
+      "present": 3095,
+      "exercised": 1683,
+      "equal": 1683,
+      "differing": 0
+    },
+    {
+      "id": "ability:soundproof",
+      "present": 8142,
+      "exercised": 3708,
+      "equal": 3708,
+      "differing": 0
+    },
+    {
+      "id": "ability:speedboost",
+      "present": 4787,
+      "exercised": 2612,
+      "equal": 2612,
+      "differing": 0
+    },
+    {
+      "id": "ability:stakeout",
+      "present": 775,
+      "exercised": 672,
+      "equal": 672,
+      "differing": 0
+    },
+    {
+      "id": "ability:stall",
+      "present": 726,
+      "exercised": 547,
+      "equal": 547,
+      "differing": 0
+    },
+    {
+      "id": "ability:stalwart",
+      "present": 812,
+      "exercised": 750,
+      "equal": 750,
+      "differing": 0
+    },
+    {
+      "id": "ability:stamina",
+      "present": 2105,
+      "exercised": 1344,
+      "equal": 1344,
+      "differing": 0
+    },
+    {
+      "id": "ability:stancechange",
+      "present": 6395,
+      "exercised": 3659,
+      "equal": 3659,
+      "differing": 0
+    },
+    {
+      "id": "ability:static",
+      "present": 11180,
+      "exercised": 6714,
+      "equal": 6714,
+      "differing": 0
+    },
+    {
+      "id": "ability:steadfast",
+      "present": 10449,
+      "exercised": 5507,
+      "equal": 5507,
+      "differing": 0
+    },
+    {
+      "id": "ability:steelyspirit",
+      "present": 1478,
+      "exercised": 893,
+      "equal": 893,
+      "differing": 0
+    },
+    {
+      "id": "ability:stickyhold",
+      "present": 323,
+      "exercised": 265,
+      "equal": 265,
+      "differing": 0
+    },
+    {
+      "id": "ability:strongjaw",
+      "present": 813,
+      "exercised": 691,
+      "equal": 691,
+      "differing": 0
+    },
+    {
+      "id": "ability:sturdy",
+      "present": 7620,
+      "exercised": 4592,
+      "equal": 4592,
+      "differing": 0
+    },
+    {
+      "id": "ability:suctioncups",
+      "present": 1399,
+      "exercised": 702,
+      "equal": 702,
+      "differing": 0
+    },
+    {
+      "id": "ability:superluck",
+      "present": 677,
+      "exercised": 656,
+      "equal": 656,
+      "differing": 0
+    },
+    {
+      "id": "ability:supersweetsyrup",
+      "present": 3352,
+      "exercised": 1029,
+      "equal": 1029,
+      "differing": 0
+    },
+    {
+      "id": "ability:supremeoverlord",
+      "present": 827,
+      "exercised": 643,
+      "equal": 643,
+      "differing": 0
+    },
+    {
+      "id": "ability:surgesurfer",
+      "present": 5038,
+      "exercised": 3072,
+      "equal": 3072,
+      "differing": 0
+    },
+    {
+      "id": "ability:swarm",
+      "present": 9270,
+      "exercised": 6103,
+      "equal": 6103,
+      "differing": 0
+    },
+    {
+      "id": "ability:sweetveil",
+      "present": 10268,
+      "exercised": 6083,
+      "equal": 6083,
+      "differing": 0
+    },
+    {
+      "id": "ability:swiftswim",
+      "present": 8634,
+      "exercised": 4620,
+      "equal": 4620,
+      "differing": 0
+    },
+    {
+      "id": "ability:symbiosis",
+      "present": 1365,
+      "exercised": 838,
+      "equal": 838,
+      "differing": 0
+    },
+    {
+      "id": "ability:synchronize",
+      "present": 13991,
+      "exercised": 4785,
+      "equal": 4785,
+      "differing": 0
+    },
+    {
+      "id": "ability:tangledfeet",
+      "present": 360,
+      "exercised": 332,
+      "equal": 332,
+      "differing": 0
+    },
+    {
+      "id": "ability:technician",
+      "present": 4755,
+      "exercised": 3928,
+      "equal": 3928,
+      "differing": 0
+    },
+    {
+      "id": "ability:telepathy",
+      "present": 4281,
+      "exercised": 2888,
+      "equal": 2888,
+      "differing": 0
+    },
+    {
+      "id": "ability:thermalexchange",
+      "present": 3225,
+      "exercised": 2202,
+      "equal": 2202,
+      "differing": 0
+    },
+    {
+      "id": "ability:thickfat",
+      "present": 1629,
+      "exercised": 1404,
+      "equal": 1404,
+      "differing": 0
+    },
+    {
+      "id": "ability:torrent",
+      "present": 15391,
+      "exercised": 9999,
+      "equal": 9999,
+      "differing": 0
+    },
+    {
+      "id": "ability:toughclaws",
+      "present": 14139,
+      "exercised": 8511,
+      "equal": 8511,
+      "differing": 0
+    },
+    {
+      "id": "ability:toxicdebris",
+      "present": 6420,
+      "exercised": 3560,
+      "equal": 3560,
+      "differing": 0
+    },
+    {
+      "id": "ability:trace",
+      "present": 363,
+      "exercised": 332,
+      "equal": 332,
+      "differing": 0
+    },
+    {
+      "id": "ability:unaware",
+      "present": 4217,
+      "exercised": 1727,
+      "equal": 1727,
+      "differing": 0
+    },
+    {
+      "id": "ability:unburden",
+      "present": 3904,
+      "exercised": 2462,
+      "equal": 2462,
+      "differing": 0
+    },
+    {
+      "id": "ability:unnerve",
+      "present": 11385,
+      "exercised": 7694,
+      "equal": 7694,
+      "differing": 0
+    },
+    {
+      "id": "ability:vitalspirit",
+      "present": 2229,
+      "exercised": 1191,
+      "equal": 1191,
+      "differing": 0
+    },
+    {
+      "id": "ability:voltabsorb",
+      "present": 1753,
+      "exercised": 1095,
+      "equal": 1095,
+      "differing": 0
+    },
+    {
+      "id": "ability:wanderingspirit",
+      "present": 2145,
+      "exercised": 1642,
+      "equal": 1642,
+      "differing": 0
+    },
+    {
+      "id": "ability:waterabsorb",
+      "present": 7832,
+      "exercised": 4945,
+      "equal": 4945,
+      "differing": 0
+    },
+    {
+      "id": "ability:waterbubble",
+      "present": 2193,
+      "exercised": 1659,
+      "equal": 1659,
+      "differing": 0
+    },
+    {
+      "id": "ability:weakarmor",
+      "present": 12161,
+      "exercised": 7490,
+      "equal": 7490,
+      "differing": 0
+    },
+    {
+      "id": "ability:whitesmoke",
+      "present": 308,
+      "exercised": 308,
+      "equal": 308,
+      "differing": 0
+    },
+    {
+      "id": "ability:zerotohero",
+      "present": 10359,
+      "exercised": 6560,
+      "equal": 6560,
+      "differing": 0
+    },
+    {
+      "id": "field:trickroom",
+      "present": 13220,
+      "exercised": 8488,
+      "equal": 8488,
+      "differing": 0
+    },
+    {
+      "id": "item:abomasite",
+      "present": 5771,
+      "exercised": 4243,
+      "equal": 4243,
+      "differing": 0
+    },
+    {
+      "id": "item:absolite",
+      "present": 5725,
+      "exercised": 1551,
+      "equal": 1551,
+      "differing": 0
+    },
+    {
+      "id": "item:absolitez",
+      "present": 3339,
+      "exercised": 3005,
+      "equal": 3005,
+      "differing": 0
+    },
+    {
+      "id": "item:aerodactylite",
+      "present": 7080,
+      "exercised": 2976,
+      "equal": 2976,
+      "differing": 0
+    },
+    {
+      "id": "item:aggronite",
+      "present": 2200,
+      "exercised": 1267,
+      "equal": 1267,
+      "differing": 0
+    },
+    {
+      "id": "item:airballoon",
+      "present": 2686,
+      "exercised": 1840,
+      "equal": 1840,
+      "differing": 0
+    },
+    {
+      "id": "item:alakazite",
+      "present": 10263,
+      "exercised": 1627,
+      "equal": 1627,
+      "differing": 0
+    },
+    {
+      "id": "item:altarianite",
+      "present": 6817,
+      "exercised": 3840,
+      "equal": 3840,
+      "differing": 0
+    },
+    {
+      "id": "item:ampharosite",
+      "present": 4795,
+      "exercised": 2330,
+      "equal": 2330,
+      "differing": 0
+    },
+    {
+      "id": "item:aspearberry",
+      "present": 7736,
+      "exercised": 5030,
+      "equal": 5030,
+      "differing": 0
+    },
+    {
+      "id": "item:audinite",
+      "present": 2925,
+      "exercised": 2434,
+      "equal": 2434,
+      "differing": 0
+    },
+    {
+      "id": "item:babiriberry",
+      "present": 7317,
+      "exercised": 3390,
+      "equal": 3390,
+      "differing": 0
+    },
+    {
+      "id": "item:banettite",
+      "present": 5700,
+      "exercised": 2875,
+      "equal": 2875,
+      "differing": 0
+    },
+    {
+      "id": "item:barbaracite",
+      "present": 2472,
+      "exercised": 1622,
+      "equal": 1622,
+      "differing": 0
+    },
+    {
+      "id": "item:baxcalibrite",
+      "present": 2597,
+      "exercised": 1540,
+      "equal": 1540,
+      "differing": 0
+    },
+    {
+      "id": "item:beedrillite",
+      "present": 5595,
+      "exercised": 3361,
+      "equal": 3361,
+      "differing": 0
+    },
+    {
+      "id": "item:bigroot",
+      "present": 7181,
+      "exercised": 4914,
+      "equal": 4914,
+      "differing": 0
+    },
+    {
+      "id": "item:bindingband",
+      "present": 5426,
+      "exercised": 3362,
+      "equal": 3362,
+      "differing": 0
+    },
+    {
+      "id": "item:blackbelt",
+      "present": 3201,
+      "exercised": 2360,
+      "equal": 2360,
+      "differing": 0
+    },
+    {
+      "id": "item:blackglasses",
+      "present": 15149,
+      "exercised": 6537,
+      "equal": 6537,
+      "differing": 0
+    },
+    {
+      "id": "item:blastoisinite",
+      "present": 6576,
+      "exercised": 4865,
+      "equal": 4865,
+      "differing": 0
+    },
+    {
+      "id": "item:blazikenite",
+      "present": 3388,
+      "exercised": 2383,
+      "equal": 2383,
+      "differing": 0
+    },
+    {
+      "id": "item:brightpowder",
+      "present": 7821,
+      "exercised": 4656,
+      "equal": 4656,
+      "differing": 0
+    },
+    {
+      "id": "item:cameruptite",
+      "present": 4765,
+      "exercised": 3386,
+      "equal": 3386,
+      "differing": 0
+    },
+    {
+      "id": "item:chandelurite",
+      "present": 968,
+      "exercised": 851,
+      "equal": 851,
+      "differing": 0
+    },
+    {
+      "id": "item:charcoal",
+      "present": 4585,
+      "exercised": 2404,
+      "equal": 2404,
+      "differing": 0
+    },
+    {
+      "id": "item:charizarditex",
+      "present": 3358,
+      "exercised": 2939,
+      "equal": 2939,
+      "differing": 0
+    },
+    {
+      "id": "item:charizarditey",
+      "present": 6451,
+      "exercised": 4084,
+      "equal": 4084,
+      "differing": 0
+    },
+    {
+      "id": "item:chartiberry",
+      "present": 4471,
+      "exercised": 2706,
+      "equal": 2706,
+      "differing": 0
+    },
+    {
+      "id": "item:cheriberry",
+      "present": 5762,
+      "exercised": 4278,
+      "equal": 4278,
+      "differing": 0
+    },
+    {
+      "id": "item:chesnaughtite",
+      "present": 2908,
+      "exercised": 2033,
+      "equal": 2033,
+      "differing": 0
+    },
+    {
+      "id": "item:chestoberry",
+      "present": 3371,
+      "exercised": 2646,
+      "equal": 2646,
+      "differing": 0
+    },
+    {
+      "id": "item:chilanberry",
+      "present": 5106,
+      "exercised": 3447,
+      "equal": 3447,
+      "differing": 0
+    },
+    {
+      "id": "item:chimechite",
+      "present": 5169,
+      "exercised": 1637,
+      "equal": 1637,
+      "differing": 0
+    },
+    {
+      "id": "item:choicescarf",
+      "present": 1683,
+      "exercised": 1332,
+      "equal": 1332,
+      "differing": 0
+    },
+    {
+      "id": "item:chopleberry",
+      "present": 9303,
+      "exercised": 5927,
+      "equal": 5927,
+      "differing": 0
+    },
+    {
+      "id": "item:clefablite",
+      "present": 6587,
+      "exercised": 4616,
+      "equal": 4616,
+      "differing": 0
+    },
+    {
+      "id": "item:cobaberry",
+      "present": 5395,
+      "exercised": 3521,
+      "equal": 3521,
+      "differing": 0
+    },
+    {
+      "id": "item:colburberry",
+      "present": 6032,
+      "exercised": 4200,
+      "equal": 4200,
+      "differing": 0
+    },
+    {
+      "id": "item:crabominite",
+      "present": 2762,
+      "exercised": 2087,
+      "equal": 2087,
+      "differing": 0
+    },
+    {
+      "id": "item:damprock",
+      "present": 6570,
+      "exercised": 3167,
+      "equal": 3167,
+      "differing": 0
+    },
+    {
+      "id": "item:delphoxite",
+      "present": 1235,
+      "exercised": 730,
+      "equal": 730,
+      "differing": 0
+    },
+    {
+      "id": "item:dragalgite",
+      "present": 3192,
+      "exercised": 2687,
+      "equal": 2687,
+      "differing": 0
+    },
+    {
+      "id": "item:dragonfang",
+      "present": 4888,
+      "exercised": 3235,
+      "equal": 3235,
+      "differing": 0
+    },
+    {
+      "id": "item:dragoninite",
+      "present": 6679,
+      "exercised": 4174,
+      "equal": 4174,
+      "differing": 0
+    },
+    {
+      "id": "item:drampanite",
+      "present": 4721,
+      "exercised": 4359,
+      "equal": 4359,
+      "differing": 0
+    },
+    {
+      "id": "item:eelektrossite",
+      "present": 338,
+      "exercised": 334,
+      "equal": 334,
+      "differing": 0
+    },
+    {
+      "id": "item:ejectbutton",
+      "present": 1744,
+      "exercised": 1432,
+      "equal": 1432,
+      "differing": 0
+    },
+    {
+      "id": "item:electricseed",
+      "present": 6030,
+      "exercised": 3624,
+      "equal": 3624,
+      "differing": 0
+    },
+    {
+      "id": "item:emboarite",
+      "present": 1595,
+      "exercised": 1247,
+      "equal": 1247,
+      "differing": 0
+    },
+    {
+      "id": "item:excadrite",
+      "present": 1110,
+      "exercised": 1062,
+      "equal": 1062,
+      "differing": 0
+    },
+    {
+      "id": "item:expertbelt",
+      "present": 3981,
+      "exercised": 2958,
+      "equal": 2958,
+      "differing": 0
+    },
+    {
+      "id": "item:fairyfeather",
+      "present": 5373,
+      "exercised": 3164,
+      "equal": 3164,
+      "differing": 0
+    },
+    {
+      "id": "item:falinksite",
+      "present": 6984,
+      "exercised": 2436,
+      "equal": 2436,
+      "differing": 0
+    },
+    {
+      "id": "item:feraligite",
+      "present": 793,
+      "exercised": 640,
+      "equal": 640,
+      "differing": 0
+    },
+    {
+      "id": "item:floettite",
+      "present": 5885,
+      "exercised": 4011,
+      "equal": 4011,
+      "differing": 0
+    },
+    {
+      "id": "item:focusband",
+      "present": 3969,
+      "exercised": 3277,
+      "equal": 3277,
+      "differing": 0
+    },
+    {
+      "id": "item:focussash",
+      "present": 2635,
+      "exercised": 2441,
+      "equal": 2441,
+      "differing": 0
+    },
+    {
+      "id": "item:froslassite",
+      "present": 4153,
+      "exercised": 1584,
+      "equal": 1584,
+      "differing": 0
+    },
+    {
+      "id": "item:galladite",
+      "present": 3946,
+      "exercised": 2879,
+      "equal": 2879,
+      "differing": 0
+    },
+    {
+      "id": "item:garchompite",
+      "present": 1790,
+      "exercised": 1718,
+      "equal": 1718,
+      "differing": 0
+    },
+    {
+      "id": "item:garchompitez",
+      "present": 5985,
+      "exercised": 3988,
+      "equal": 3988,
+      "differing": 0
+    },
+    {
+      "id": "item:gardevoirite",
+      "present": 2540,
+      "exercised": 1510,
+      "equal": 1510,
+      "differing": 0
+    },
+    {
+      "id": "item:gengarite",
+      "present": 6791,
+      "exercised": 6135,
+      "equal": 6135,
+      "differing": 0
+    },
+    {
+      "id": "item:glalitite",
+      "present": 5174,
+      "exercised": 2441,
+      "equal": 2441,
+      "differing": 0
+    },
+    {
+      "id": "item:glimmoranite",
+      "present": 3280,
+      "exercised": 2746,
+      "equal": 2746,
+      "differing": 0
+    },
+    {
+      "id": "item:golisopite",
+      "present": 3975,
+      "exercised": 2818,
+      "equal": 2818,
+      "differing": 0
+    },
+    {
+      "id": "item:golurkite",
+      "present": 5691,
+      "exercised": 3510,
+      "equal": 3510,
+      "differing": 0
+    },
+    {
+      "id": "item:grassyseed",
+      "present": 6298,
+      "exercised": 4181,
+      "equal": 4181,
+      "differing": 0
+    },
+    {
+      "id": "item:greninjite",
+      "present": 2173,
+      "exercised": 1270,
+      "equal": 1270,
+      "differing": 0
+    },
+    {
+      "id": "item:gyaradosite",
+      "present": 5133,
+      "exercised": 3938,
+      "equal": 3938,
+      "differing": 0
+    },
+    {
+      "id": "item:habanberry",
+      "present": 5813,
+      "exercised": 3848,
+      "equal": 3848,
+      "differing": 0
+    },
+    {
+      "id": "item:hardstone",
+      "present": 5426,
+      "exercised": 4229,
+      "equal": 4229,
+      "differing": 0
+    },
+    {
+      "id": "item:hawluchanite",
+      "present": 2643,
+      "exercised": 2501,
+      "equal": 2501,
+      "differing": 0
+    },
+    {
+      "id": "item:heatrock",
+      "present": 8277,
+      "exercised": 6001,
+      "equal": 6001,
+      "differing": 0
+    },
+    {
+      "id": "item:heracronite",
+      "present": 2152,
+      "exercised": 1515,
+      "equal": 1515,
+      "differing": 0
+    },
+    {
+      "id": "item:houndoominite",
+      "present": 1858,
+      "exercised": 1457,
+      "equal": 1457,
+      "differing": 0
+    },
+    {
+      "id": "item:icyrock",
+      "present": 5421,
+      "exercised": 3821,
+      "equal": 3821,
+      "differing": 0
+    },
+    {
+      "id": "item:ironball",
+      "present": 7318,
+      "exercised": 4302,
+      "equal": 4302,
+      "differing": 0
+    },
+    {
+      "id": "item:kangaskhanite",
+      "present": 1328,
+      "exercised": 1163,
+      "equal": 1163,
+      "differing": 0
+    },
+    {
+      "id": "item:kasibberry",
+      "present": 5778,
+      "exercised": 3315,
+      "equal": 3315,
+      "differing": 0
+    },
+    {
+      "id": "item:kebiaberry",
+      "present": 6591,
+      "exercised": 2897,
+      "equal": 2897,
+      "differing": 0
+    },
+    {
+      "id": "item:kingsrock",
+      "present": 3505,
+      "exercised": 3035,
+      "equal": 3035,
+      "differing": 0
+    },
+    {
+      "id": "item:leek",
+      "present": 8738,
+      "exercised": 6575,
+      "equal": 6575,
+      "differing": 0
+    },
+    {
+      "id": "item:leftovers",
+      "present": 17081,
+      "exercised": 8432,
+      "equal": 8432,
+      "differing": 0
+    },
+    {
+      "id": "item:leppaberry",
+      "present": 6625,
+      "exercised": 4483,
+      "equal": 4483,
+      "differing": 0
+    },
+    {
+      "id": "item:lifeorb",
+      "present": 11760,
+      "exercised": 7588,
+      "equal": 7588,
+      "differing": 0
+    },
+    {
+      "id": "item:lightball",
+      "present": 6357,
+      "exercised": 3374,
+      "equal": 3374,
+      "differing": 0
+    },
+    {
+      "id": "item:lightclay",
+      "present": 7488,
+      "exercised": 5520,
+      "equal": 5520,
+      "differing": 0
+    },
+    {
+      "id": "item:lopunnite",
+      "present": 5918,
+      "exercised": 4142,
+      "equal": 4142,
+      "differing": 0
+    },
+    {
+      "id": "item:lucarionite",
+      "present": 1725,
+      "exercised": 1004,
+      "equal": 1004,
+      "differing": 0
+    },
+    {
+      "id": "item:lucarionitez",
+      "present": 3525,
+      "exercised": 2198,
+      "equal": 2198,
+      "differing": 0
+    },
+    {
+      "id": "item:lumberry",
+      "present": 3361,
+      "exercised": 2712,
+      "equal": 2712,
+      "differing": 0
+    },
+    {
+      "id": "item:magnet",
+      "present": 2910,
+      "exercised": 1975,
+      "equal": 1975,
+      "differing": 0
+    },
+    {
+      "id": "item:malamarite",
+      "present": 3952,
+      "exercised": 3362,
+      "equal": 3362,
+      "differing": 0
+    },
+    {
+      "id": "item:manectite",
+      "present": 3943,
+      "exercised": 2748,
+      "equal": 2748,
+      "differing": 0
+    },
+    {
+      "id": "item:mawilite",
+      "present": 2573,
+      "exercised": 1594,
+      "equal": 1594,
+      "differing": 0
+    },
+    {
+      "id": "item:medichamite",
+      "present": 5829,
+      "exercised": 3320,
+      "equal": 3320,
+      "differing": 0
+    },
+    {
+      "id": "item:meganiumite",
+      "present": 7783,
+      "exercised": 4828,
+      "equal": 4828,
+      "differing": 0
+    },
+    {
+      "id": "item:mentalherb",
+      "present": 3773,
+      "exercised": 3094,
+      "equal": 3094,
+      "differing": 0
+    },
+    {
+      "id": "item:meowsticite",
+      "present": 10927,
+      "exercised": 2463,
+      "equal": 2463,
+      "differing": 0
+    },
+    {
+      "id": "item:metagrossite",
+      "present": 2563,
+      "exercised": 1945,
+      "equal": 1945,
+      "differing": 0
+    },
+    {
+      "id": "item:metalcoat",
+      "present": 4407,
+      "exercised": 3427,
+      "equal": 3427,
+      "differing": 0
+    },
+    {
+      "id": "item:metronome",
+      "present": 5398,
+      "exercised": 4042,
+      "equal": 4042,
+      "differing": 0
+    },
+    {
+      "id": "item:miracleseed",
+      "present": 6613,
+      "exercised": 4417,
+      "equal": 4417,
+      "differing": 0
+    },
+    {
+      "id": "item:mistyseed",
+      "present": 6454,
+      "exercised": 4319,
+      "equal": 4319,
+      "differing": 0
+    },
+    {
+      "id": "item:muscleband",
+      "present": 5958,
+      "exercised": 4063,
+      "equal": 4063,
+      "differing": 0
+    },
+    {
+      "id": "item:mysticwater",
+      "present": 4316,
+      "exercised": 2740,
+      "equal": 2740,
+      "differing": 0
+    },
+    {
+      "id": "item:nevermeltice",
+      "present": 5904,
+      "exercised": 3999,
+      "equal": 3999,
+      "differing": 0
+    },
+    {
+      "id": "item:normalgem",
+      "present": 6235,
+      "exercised": 3748,
+      "equal": 3748,
+      "differing": 0
+    },
+    {
+      "id": "item:occaberry",
+      "present": 1356,
+      "exercised": 1177,
+      "equal": 1177,
+      "differing": 0
+    },
+    {
+      "id": "item:oranberry",
+      "present": 5002,
+      "exercised": 3587,
+      "equal": 3587,
+      "differing": 0
+    },
+    {
+      "id": "item:passhoberry",
+      "present": 5680,
+      "exercised": 4518,
+      "equal": 4518,
+      "differing": 0
+    },
+    {
+      "id": "item:payapaberry",
+      "present": 5110,
+      "exercised": 2977,
+      "equal": 2977,
+      "differing": 0
+    },
+    {
+      "id": "item:pechaberry",
+      "present": 3631,
+      "exercised": 2132,
+      "equal": 2132,
+      "differing": 0
+    },
+    {
+      "id": "item:persimberry",
+      "present": 5398,
+      "exercised": 3768,
+      "equal": 3768,
+      "differing": 0
+    },
+    {
+      "id": "item:pidgeotite",
+      "present": 4104,
+      "exercised": 2554,
+      "equal": 2554,
+      "differing": 0
+    },
+    {
+      "id": "item:pinsirite",
+      "present": 5264,
+      "exercised": 2377,
+      "equal": 2377,
+      "differing": 0
+    },
+    {
+      "id": "item:poisonbarb",
+      "present": 7452,
+      "exercised": 3764,
+      "equal": 3764,
+      "differing": 0
+    },
+    {
+      "id": "item:psychicseed",
+      "present": 4972,
+      "exercised": 3069,
+      "equal": 3069,
+      "differing": 0
+    },
+    {
+      "id": "item:pyroarite",
+      "present": 1259,
+      "exercised": 1193,
+      "equal": 1193,
+      "differing": 0
+    },
+    {
+      "id": "item:quickclaw",
+      "present": 13868,
+      "exercised": 4778,
+      "equal": 4778,
+      "differing": 0
+    },
+    {
+      "id": "item:raichunitex",
+      "present": 731,
+      "exercised": 700,
+      "equal": 700,
+      "differing": 0
+    },
+    {
+      "id": "item:raichunitey",
+      "present": 5669,
+      "exercised": 3853,
+      "equal": 3853,
+      "differing": 0
+    },
+    {
+      "id": "item:rawstberry",
+      "present": 7997,
+      "exercised": 5013,
+      "equal": 5013,
+      "differing": 0
+    },
+    {
+      "id": "item:redcard",
+      "present": 5302,
+      "exercised": 2841,
+      "equal": 2841,
+      "differing": 0
+    },
+    {
+      "id": "item:rindoberry",
+      "present": 4577,
+      "exercised": 2712,
+      "equal": 2712,
+      "differing": 0
+    },
+    {
+      "id": "item:rockyhelmet",
+      "present": 5822,
+      "exercised": 3484,
+      "equal": 3484,
+      "differing": 0
+    },
+    {
+      "id": "item:roseliberry",
+      "present": 6827,
+      "exercised": 5308,
+      "equal": 5308,
+      "differing": 0
+    },
+    {
+      "id": "item:sablenite",
+      "present": 6867,
+      "exercised": 4695,
+      "equal": 4695,
+      "differing": 0
+    },
+    {
+      "id": "item:salamencite",
+      "present": 9224,
+      "exercised": 7292,
+      "equal": 7292,
+      "differing": 0
+    },
+    {
+      "id": "item:sceptilite",
+      "present": 5473,
+      "exercised": 2975,
+      "equal": 2975,
+      "differing": 0
+    },
+    {
+      "id": "item:scizorite",
+      "present": 2562,
+      "exercised": 1875,
+      "equal": 1875,
+      "differing": 0
+    },
+    {
+      "id": "item:scolipite",
+      "present": 6133,
+      "exercised": 3580,
+      "equal": 3580,
+      "differing": 0
+    },
+    {
+      "id": "item:scopelens",
+      "present": 4884,
+      "exercised": 3563,
+      "equal": 3563,
+      "differing": 0
+    },
+    {
+      "id": "item:scovillainite",
+      "present": 634,
+      "exercised": 628,
+      "equal": 628,
+      "differing": 0
+    },
+    {
+      "id": "item:scraftinite",
+      "present": 7548,
+      "exercised": 5471,
+      "equal": 5471,
+      "differing": 0
+    },
+    {
+      "id": "item:sharpbeak",
+      "present": 8396,
+      "exercised": 3637,
+      "equal": 3637,
+      "differing": 0
+    },
+    {
+      "id": "item:sharpedonite",
+      "present": 5795,
+      "exercised": 2301,
+      "equal": 2301,
+      "differing": 0
+    },
+    {
+      "id": "item:shedshell",
+      "present": 3501,
+      "exercised": 2802,
+      "equal": 2802,
+      "differing": 0
+    },
+    {
+      "id": "item:shellbell",
+      "present": 4355,
+      "exercised": 2351,
+      "equal": 2351,
+      "differing": 0
+    },
+    {
+      "id": "item:shucaberry",
+      "present": 3621,
+      "exercised": 2578,
+      "equal": 2578,
+      "differing": 0
+    },
+    {
+      "id": "item:silkscarf",
+      "present": 7492,
+      "exercised": 4839,
+      "equal": 4839,
+      "differing": 0
+    },
+    {
+      "id": "item:silverpowder",
+      "present": 5377,
+      "exercised": 3040,
+      "equal": 3040,
+      "differing": 0
+    },
+    {
+      "id": "item:sitrusberry",
+      "present": 8818,
+      "exercised": 4866,
+      "equal": 4866,
+      "differing": 0
+    },
+    {
+      "id": "item:skarmorite",
+      "present": 1020,
+      "exercised": 960,
+      "equal": 960,
+      "differing": 0
+    },
+    {
+      "id": "item:slowbronite",
+      "present": 750,
+      "exercised": 693,
+      "equal": 693,
+      "differing": 0
+    },
+    {
+      "id": "item:smoothrock",
+      "present": 8717,
+      "exercised": 5152,
+      "equal": 5152,
+      "differing": 0
+    },
+    {
+      "id": "item:softsand",
+      "present": 5401,
+      "exercised": 3463,
+      "equal": 3463,
+      "differing": 0
+    },
+    {
+      "id": "item:spelltag",
+      "present": 10084,
+      "exercised": 6456,
+      "equal": 6456,
+      "differing": 0
+    },
+    {
+      "id": "item:staraptite",
+      "present": 5499,
+      "exercised": 4125,
+      "equal": 4125,
+      "differing": 0
+    },
+    {
+      "id": "item:starminite",
+      "present": 3012,
+      "exercised": 1230,
+      "equal": 1230,
+      "differing": 0
+    },
+    {
+      "id": "item:steelixite",
+      "present": 879,
+      "exercised": 828,
+      "equal": 828,
+      "differing": 0
+    },
+    {
+      "id": "item:swampertite",
+      "present": 3540,
+      "exercised": 1569,
+      "equal": 1569,
+      "differing": 0
+    },
+    {
+      "id": "item:tangaberry",
+      "present": 7254,
+      "exercised": 5656,
+      "equal": 5656,
+      "differing": 0
+    },
+    {
+      "id": "item:terrainextender",
+      "present": 3966,
+      "exercised": 2852,
+      "equal": 2852,
+      "differing": 0
+    },
+    {
+      "id": "item:twistedspoon",
+      "present": 8428,
+      "exercised": 5526,
+      "equal": 5526,
+      "differing": 0
+    },
+    {
+      "id": "item:tyranitarite",
+      "present": 3392,
+      "exercised": 2660,
+      "equal": 2660,
+      "differing": 0
+    },
+    {
+      "id": "item:venusaurite",
+      "present": 3514,
+      "exercised": 2968,
+      "equal": 2968,
+      "differing": 0
+    },
+    {
+      "id": "item:victreebelite",
+      "present": 2486,
+      "exercised": 972,
+      "equal": 972,
+      "differing": 0
+    },
+    {
+      "id": "item:wacanberry",
+      "present": 6918,
+      "exercised": 4545,
+      "equal": 4545,
+      "differing": 0
+    },
+    {
+      "id": "item:whiteherb",
+      "present": 10806,
+      "exercised": 6969,
+      "equal": 6969,
+      "differing": 0
+    },
+    {
+      "id": "item:widelens",
+      "present": 8470,
+      "exercised": 5208,
+      "equal": 5208,
+      "differing": 0
+    },
+    {
+      "id": "item:wiseglasses",
+      "present": 3927,
+      "exercised": 2504,
+      "equal": 2504,
+      "differing": 0
+    },
+    {
+      "id": "item:yacheberry",
+      "present": 5056,
+      "exercised": 3431,
+      "equal": 3431,
+      "differing": 0
+    },
+    {
+      "id": "item:zoomlens",
+      "present": 8275,
+      "exercised": 5042,
+      "equal": 5042,
+      "differing": 0
+    },
+    {
+      "id": "kind:damage",
+      "present": 204374,
+      "exercised": 204374,
+      "equal": 204374,
+      "differing": 0
+    },
+    {
+      "id": "kind:move_outcome",
+      "present": 161517,
+      "exercised": 161517,
+      "equal": 161517,
+      "differing": 0
+    },
+    {
+      "id": "kind:speed_order",
+      "present": 138456,
+      "exercised": 138456,
+      "equal": 138456,
+      "differing": 0
+    },
+    {
+      "id": "kind:stats",
+      "present": 5390,
+      "exercised": 5390,
+      "equal": 5390,
+      "differing": 0
+    },
+    {
+      "id": "move:accelerock",
+      "present": 1576,
+      "exercised": 146,
+      "equal": 146,
+      "differing": 0
+    },
+    {
+      "id": "move:acidarmor",
+      "present": 6902,
+      "exercised": 143,
+      "equal": 143,
+      "differing": 0
+    },
+    {
+      "id": "move:acidspray",
+      "present": 11654,
+      "exercised": 454,
+      "equal": 454,
+      "differing": 0
+    },
+    {
+      "id": "move:acrobatics",
+      "present": 25366,
+      "exercised": 1000,
+      "equal": 1000,
+      "differing": 0
+    },
+    {
+      "id": "move:acupressure",
+      "present": 5011,
+      "exercised": 236,
+      "equal": 236,
+      "differing": 0
+    },
+    {
+      "id": "move:aerialace",
+      "present": 35910,
+      "exercised": 2801,
+      "equal": 2801,
+      "differing": 0
+    },
+    {
+      "id": "move:afteryou",
+      "present": 4720,
+      "exercised": 119,
+      "equal": 119,
+      "differing": 0
+    },
+    {
+      "id": "move:agility",
+      "present": 32211,
+      "exercised": 1562,
+      "equal": 1562,
+      "differing": 0
+    },
+    {
+      "id": "move:aircutter",
+      "present": 13284,
+      "exercised": 1804,
+      "equal": 1804,
+      "differing": 0
+    },
+    {
+      "id": "move:airslash",
+      "present": 14314,
+      "exercised": 2209,
+      "equal": 2209,
+      "differing": 0
+    },
+    {
+      "id": "move:alluringvoice",
+      "present": 15649,
+      "exercised": 1353,
+      "equal": 1353,
+      "differing": 0
+    },
+    {
+      "id": "move:allyswitch",
+      "present": 15995,
+      "exercised": 731,
+      "equal": 731,
+      "differing": 0
+    },
+    {
+      "id": "move:amnesia",
+      "present": 10488,
+      "exercised": 335,
+      "equal": 335,
+      "differing": 0
+    },
+    {
+      "id": "move:ancientpower",
+      "present": 14164,
+      "exercised": 1409,
+      "equal": 1409,
+      "differing": 0
+    },
+    {
+      "id": "move:aquajet",
+      "present": 4145,
+      "exercised": 396,
+      "equal": 396,
+      "differing": 0
+    },
+    {
+      "id": "move:aquaring",
+      "present": 1409,
+      "exercised": 65,
+      "equal": 65,
+      "differing": 0
+    },
+    {
+      "id": "move:aquatail",
+      "present": 7056,
+      "exercised": 1123,
+      "equal": 1123,
+      "differing": 0
+    },
+    {
+      "id": "move:aromaticmist",
+      "present": 1891,
+      "exercised": 116,
+      "equal": 116,
+      "differing": 0
+    },
+    {
+      "id": "move:assurance",
+      "present": 21155,
+      "exercised": 2537,
+      "equal": 2537,
+      "differing": 0
+    },
+    {
+      "id": "move:attract",
+      "present": 30830,
+      "exercised": 2328,
+      "equal": 2328,
+      "differing": 0
+    },
+    {
+      "id": "move:aurasphere",
+      "present": 3130,
+      "exercised": 408,
+      "equal": 408,
+      "differing": 0
+    },
+    {
+      "id": "move:auroraveil",
+      "present": 2191,
+      "exercised": 73,
+      "equal": 73,
+      "differing": 0
+    },
+    {
+      "id": "move:avalanche",
+      "present": 8450,
+      "exercised": 1144,
+      "equal": 1144,
+      "differing": 0
+    },
+    {
+      "id": "move:babydolleyes",
+      "present": 3883,
+      "exercised": 292,
+      "equal": 292,
+      "differing": 0
+    },
+    {
+      "id": "move:batonpass",
+      "present": 8672,
+      "exercised": 626,
+      "equal": 626,
+      "differing": 0
+    },
+    {
+      "id": "move:beatup",
+      "present": 2008,
+      "exercised": 269,
+      "equal": 269,
+      "differing": 0
+    },
+    {
+      "id": "move:belch",
+      "present": 8990,
+      "exercised": 1187,
+      "equal": 1187,
+      "differing": 0
+    },
+    {
+      "id": "move:bellydrum",
+      "present": 539,
+      "exercised": 38,
+      "equal": 38,
+      "differing": 0
+    },
+    {
+      "id": "move:bind",
+      "present": 389,
+      "exercised": 73,
+      "equal": 73,
+      "differing": 0
+    },
+    {
+      "id": "move:bite",
+      "present": 17629,
+      "exercised": 2547,
+      "equal": 2547,
+      "differing": 0
+    },
+    {
+      "id": "move:bittermalice",
+      "present": 3113,
+      "exercised": 431,
+      "equal": 431,
+      "differing": 0
+    },
+    {
+      "id": "move:blastburn",
+      "present": 3048,
+      "exercised": 336,
+      "equal": 336,
+      "differing": 0
+    },
+    {
+      "id": "move:blazekick",
+      "present": 2429,
+      "exercised": 357,
+      "equal": 357,
+      "differing": 0
+    },
+    {
+      "id": "move:blizzard",
+      "present": 7706,
+      "exercised": 1098,
+      "equal": 1098,
+      "differing": 0
+    },
+    {
+      "id": "move:block",
+      "present": 973,
+      "exercised": 74,
+      "equal": 74,
+      "differing": 0
+    },
+    {
+      "id": "move:bodypress",
+      "present": 26088,
+      "exercised": 3321,
+      "equal": 3321,
+      "differing": 0
+    },
+    {
+      "id": "move:bodyslam",
+      "present": 33850,
+      "exercised": 4768,
+      "equal": 4768,
+      "differing": 0
+    },
+    {
+      "id": "move:boomburst",
+      "present": 146,
+      "exercised": 14,
+      "equal": 14,
+      "differing": 0
+    },
+    {
+      "id": "move:bounce",
+      "present": 5211,
+      "exercised": 808,
+      "equal": 808,
+      "differing": 0
+    },
+    {
+      "id": "move:bravebird",
+      "present": 3508,
+      "exercised": 627,
+      "equal": 627,
+      "differing": 0
+    },
+    {
+      "id": "move:breakingswipe",
+      "present": 3345,
+      "exercised": 424,
+      "equal": 424,
+      "differing": 0
+    },
+    {
+      "id": "move:brickbreak",
+      "present": 29623,
+      "exercised": 4574,
+      "equal": 4574,
+      "differing": 0
+    },
+    {
+      "id": "move:brutalswing",
+      "present": 11008,
+      "exercised": 1546,
+      "equal": 1546,
+      "differing": 0
+    },
+    {
+      "id": "move:bugbite",
+      "present": 7554,
+      "exercised": 1241,
+      "equal": 1241,
+      "differing": 0
+    },
+    {
+      "id": "move:bugbuzz",
+      "present": 4312,
+      "exercised": 677,
+      "equal": 677,
+      "differing": 0
+    },
+    {
+      "id": "move:bulkup",
+      "present": 11370,
+      "exercised": 848,
+      "equal": 848,
+      "differing": 0
+    },
+    {
+      "id": "move:bulldoze",
+      "present": 24728,
+      "exercised": 3595,
+      "equal": 3595,
+      "differing": 0
+    },
+    {
+      "id": "move:bulletpunch",
+      "present": 1120,
+      "exercised": 146,
+      "equal": 146,
+      "differing": 0
+    },
+    {
+      "id": "move:bulletseed",
+      "present": 5108,
+      "exercised": 805,
+      "equal": 805,
+      "differing": 0
+    },
+    {
+      "id": "move:burningjealousy",
+      "present": 6930,
+      "exercised": 824,
+      "equal": 824,
+      "differing": 0
+    },
+    {
+      "id": "move:burnup",
+      "present": 3021,
+      "exercised": 245,
+      "equal": 245,
+      "differing": 0
+    },
+    {
+      "id": "move:calmmind",
+      "present": 23923,
+      "exercised": 1762,
+      "equal": 1762,
+      "differing": 0
+    },
+    {
+      "id": "move:charge",
+      "present": 2231,
+      "exercised": 89,
+      "equal": 89,
+      "differing": 0
+    },
+    {
+      "id": "move:chargebeam",
+      "present": 16624,
+      "exercised": 2345,
+      "equal": 2345,
+      "differing": 0
+    },
+    {
+      "id": "move:charm",
+      "present": 19679,
+      "exercised": 1618,
+      "equal": 1618,
+      "differing": 0
+    },
+    {
+      "id": "move:chillingwater",
+      "present": 26143,
+      "exercised": 3968,
+      "equal": 3968,
+      "differing": 0
+    },
+    {
+      "id": "move:chillyreception",
+      "present": 6030,
+      "exercised": 329,
+      "equal": 329,
+      "differing": 0
+    },
+    {
+      "id": "move:clearsmog",
+      "present": 2017,
+      "exercised": 282,
+      "equal": 282,
+      "differing": 0
+    },
+    {
+      "id": "move:closecombat",
+      "present": 18703,
+      "exercised": 2620,
+      "equal": 2620,
+      "differing": 0
+    },
+    {
+      "id": "move:coaching",
+      "present": 3887,
+      "exercised": 253,
+      "equal": 253,
+      "differing": 0
+    },
+    {
+      "id": "move:coil",
+      "present": 565,
+      "exercised": 30,
+      "equal": 30,
+      "differing": 0
+    },
+    {
+      "id": "move:comeuppance",
+      "present": 84,
+      "exercised": 6,
+      "equal": 6,
+      "differing": 0
+    },
+    {
+      "id": "move:confuseray",
+      "present": 10496,
+      "exercised": 947,
+      "equal": 947,
+      "differing": 0
+    },
+    {
+      "id": "move:copycat",
+      "present": 5241,
+      "exercised": 340,
+      "equal": 340,
+      "differing": 0
+    },
+    {
+      "id": "move:corrosivegas",
+      "present": 279,
+      "exercised": 21,
+      "equal": 21,
+      "differing": 0
+    },
+    {
+      "id": "move:cosmicpower",
+      "present": 2705,
+      "exercised": 189,
+      "equal": 189,
+      "differing": 0
+    },
+    {
+      "id": "move:cottonguard",
+      "present": 2183,
+      "exercised": 128,
+      "equal": 128,
+      "differing": 0
+    },
+    {
+      "id": "move:cottonspore",
+      "present": 1262,
+      "exercised": 84,
+      "equal": 84,
+      "differing": 0
+    },
+    {
+      "id": "move:counter",
+      "present": 21422,
+      "exercised": 379,
+      "equal": 379,
+      "differing": 0
+    },
+    {
+      "id": "move:courtchange",
+      "present": 191,
+      "exercised": 15,
+      "equal": 15,
+      "differing": 0
+    },
+    {
+      "id": "move:covet",
+      "present": 7179,
+      "exercised": 988,
+      "equal": 988,
+      "differing": 0
+    },
+    {
+      "id": "move:crabhammer",
+      "present": 336,
+      "exercised": 48,
+      "equal": 48,
+      "differing": 0
+    },
+    {
+      "id": "move:crosschop",
+      "present": 3037,
+      "exercised": 282,
+      "equal": 282,
+      "differing": 0
+    },
+    {
+      "id": "move:crosspoison",
+      "present": 1340,
+      "exercised": 194,
+      "equal": 194,
+      "differing": 0
+    },
+    {
+      "id": "move:crunch",
+      "present": 18189,
+      "exercised": 2883,
+      "equal": 2883,
+      "differing": 0
+    },
+    {
+      "id": "move:curse",
+      "present": 19171,
+      "exercised": 1458,
+      "equal": 1458,
+      "differing": 0
+    },
+    {
+      "id": "move:darkpulse",
+      "present": 21302,
+      "exercised": 3428,
+      "equal": 3428,
+      "differing": 0
+    },
+    {
+      "id": "move:dazzlinggleam",
+      "present": 12561,
+      "exercised": 1698,
+      "equal": 1698,
+      "differing": 0
+    },
+    {
+      "id": "move:decorate",
+      "present": 5131,
+      "exercised": 428,
+      "equal": 428,
+      "differing": 0
+    },
+    {
+      "id": "move:defog",
+      "present": 3429,
+      "exercised": 248,
+      "equal": 248,
+      "differing": 0
+    },
+    {
+      "id": "move:destinybond",
+      "present": 5862,
+      "exercised": 397,
+      "equal": 397,
+      "differing": 0
+    },
+    {
+      "id": "move:detect",
+      "present": 8236,
+      "exercised": 710,
+      "equal": 710,
+      "differing": 0
+    },
+    {
+      "id": "move:dig",
+      "present": 22730,
+      "exercised": 3290,
+      "equal": 3290,
+      "differing": 0
+    },
+    {
+      "id": "move:direclaw",
+      "present": 619,
+      "exercised": 99,
+      "equal": 99,
+      "differing": 0
+    },
+    {
+      "id": "move:disable",
+      "present": 9160,
+      "exercised": 781,
+      "equal": 781,
+      "differing": 0
+    },
+    {
+      "id": "move:discharge",
+      "present": 8197,
+      "exercised": 992,
+      "equal": 992,
+      "differing": 0
+    },
+    {
+      "id": "move:dive",
+      "present": 2778,
+      "exercised": 453,
+      "equal": 453,
+      "differing": 0
+    },
+    {
+      "id": "move:doubleedge",
+      "present": 39268,
+      "exercised": 5953,
+      "equal": 5953,
+      "differing": 0
+    },
+    {
+      "id": "move:doublehit",
+      "present": 7380,
+      "exercised": 1248,
+      "equal": 1248,
+      "differing": 0
+    },
+    {
+      "id": "move:doubleteam",
+      "present": 7134,
+      "exercised": 499,
+      "equal": 499,
+      "differing": 0
+    },
+    {
+      "id": "move:dracometeor",
+      "present": 3510,
+      "exercised": 548,
+      "equal": 548,
+      "differing": 0
+    },
+    {
+      "id": "move:dragoncheer",
+      "present": 2136,
+      "exercised": 132,
+      "equal": 132,
+      "differing": 0
+    },
+    {
+      "id": "move:dragonclaw",
+      "present": 9213,
+      "exercised": 1348,
+      "equal": 1348,
+      "differing": 0
+    },
+    {
+      "id": "move:dragondance",
+      "present": 6366,
+      "exercised": 450,
+      "equal": 450,
+      "differing": 0
+    },
+    {
+      "id": "move:dragondarts",
+      "present": 1913,
+      "exercised": 256,
+      "equal": 256,
+      "differing": 0
+    },
+    {
+      "id": "move:dragonpulse",
+      "present": 11714,
+      "exercised": 1785,
+      "equal": 1785,
+      "differing": 0
+    },
+    {
+      "id": "move:dragonrush",
+      "present": 4362,
+      "exercised": 718,
+      "equal": 718,
+      "differing": 0
+    },
+    {
+      "id": "move:dragontail",
+      "present": 6870,
+      "exercised": 1041,
+      "equal": 1041,
+      "differing": 0
+    },
+    {
+      "id": "move:drainingkiss",
+      "present": 14081,
+      "exercised": 2035,
+      "equal": 2035,
+      "differing": 0
+    },
+    {
+      "id": "move:drainpunch",
+      "present": 13072,
+      "exercised": 2164,
+      "equal": 2164,
+      "differing": 0
+    },
+    {
+      "id": "move:drillpeck",
+      "present": 1521,
+      "exercised": 164,
+      "equal": 164,
+      "differing": 0
+    },
+    {
+      "id": "move:drillrun",
+      "present": 1757,
+      "exercised": 270,
+      "equal": 270,
+      "differing": 0
+    },
+    {
+      "id": "move:drumbeating",
+      "present": 1557,
+      "exercised": 276,
+      "equal": 276,
+      "differing": 0
+    },
+    {
+      "id": "move:dualwingbeat",
+      "present": 14429,
+      "exercised": 2282,
+      "equal": 2282,
+      "differing": 0
+    },
+    {
+      "id": "move:dynamicpunch",
+      "present": 8586,
+      "exercised": 1074,
+      "equal": 1074,
+      "differing": 0
+    },
+    {
+      "id": "move:earthpower",
+      "present": 13664,
+      "exercised": 1931,
+      "equal": 1931,
+      "differing": 0
+    },
+    {
+      "id": "move:earthquake",
+      "present": 15242,
+      "exercised": 2042,
+      "equal": 2042,
+      "differing": 0
+    },
+    {
+      "id": "move:eerieimpulse",
+      "present": 4176,
+      "exercised": 363,
+      "equal": 363,
+      "differing": 0
+    },
+    {
+      "id": "move:electricterrain",
+      "present": 5564,
+      "exercised": 376,
+      "equal": 376,
+      "differing": 0
+    },
+    {
+      "id": "move:electrify",
+      "present": 137,
+      "exercised": 15,
+      "equal": 15,
+      "differing": 0
+    },
+    {
+      "id": "move:electroball",
+      "present": 12177,
+      "exercised": 1797,
+      "equal": 1797,
+      "differing": 0
+    },
+    {
+      "id": "move:electroweb",
+      "present": 7044,
+      "exercised": 795,
+      "equal": 795,
+      "differing": 0
+    },
+    {
+      "id": "move:encore",
+      "present": 15435,
+      "exercised": 1419,
+      "equal": 1419,
+      "differing": 0
+    },
+    {
+      "id": "move:endeavor",
+      "present": 30982,
+      "exercised": 4463,
+      "equal": 4463,
+      "differing": 0
+    },
+    {
+      "id": "move:endure",
+      "present": 65038,
+      "exercised": 6015,
+      "equal": 6015,
+      "differing": 0
+    },
+    {
+      "id": "move:energyball",
+      "present": 20943,
+      "exercised": 3203,
+      "equal": 3203,
+      "differing": 0
+    },
+    {
+      "id": "move:entrainment",
+      "present": 5144,
+      "exercised": 405,
+      "equal": 405,
+      "differing": 0
+    },
+    {
+      "id": "move:eruption",
+      "present": 223,
+      "exercised": 33,
+      "equal": 33,
+      "differing": 0
+    },
+    {
+      "id": "move:expandingforce",
+      "present": 13057,
+      "exercised": 2012,
+      "equal": 2012,
+      "differing": 0
+    },
+    {
+      "id": "move:explosion",
+      "present": 1954,
+      "exercised": 254,
+      "equal": 254,
+      "differing": 0
+    },
+    {
+      "id": "move:extrasensory",
+      "present": 3601,
+      "exercised": 520,
+      "equal": 520,
+      "differing": 0
+    },
+    {
+      "id": "move:facade",
+      "present": 76659,
+      "exercised": 12357,
+      "equal": 12357,
+      "differing": 0
+    },
+    {
+      "id": "move:fairylock",
+      "present": 550,
+      "exercised": 34,
+      "equal": 34,
+      "differing": 0
+    },
+    {
+      "id": "move:fakeout",
+      "present": 16958,
+      "exercised": 1435,
+      "equal": 1435,
+      "differing": 0
+    },
+    {
+      "id": "move:faketears",
+      "present": 18602,
+      "exercised": 1550,
+      "equal": 1550,
+      "differing": 0
+    },
+    {
+      "id": "move:featherdance",
+      "present": 4729,
+      "exercised": 384,
+      "equal": 384,
+      "differing": 0
+    },
+    {
+      "id": "move:feint",
+      "present": 10651,
+      "exercised": 1488,
+      "equal": 1488,
+      "differing": 0
+    },
+    {
+      "id": "move:fellstinger",
+      "present": 392,
+      "exercised": 70,
+      "equal": 70,
+      "differing": 0
+    },
+    {
+      "id": "move:finalgambit",
+      "present": 389,
+      "exercised": 64,
+      "equal": 64,
+      "differing": 0
+    },
+    {
+      "id": "move:fireblast",
+      "present": 18806,
+      "exercised": 2728,
+      "equal": 2728,
+      "differing": 0
+    },
+    {
+      "id": "move:firefang",
+      "present": 12862,
+      "exercised": 1884,
+      "equal": 1884,
+      "differing": 0
+    },
+    {
+      "id": "move:firepunch",
+      "present": 9550,
+      "exercised": 1318,
+      "equal": 1318,
+      "differing": 0
+    },
+    {
+      "id": "move:firespin",
+      "present": 17503,
+      "exercised": 2716,
+      "equal": 2716,
+      "differing": 0
+    },
+    {
+      "id": "move:firstimpression",
+      "present": 2012,
+      "exercised": 157,
+      "equal": 157,
+      "differing": 0
+    },
+    {
+      "id": "move:flail",
+      "present": 12927,
+      "exercised": 1901,
+      "equal": 1901,
+      "differing": 0
+    },
+    {
+      "id": "move:flamecharge",
+      "present": 3581,
+      "exercised": 558,
+      "equal": 558,
+      "differing": 0
+    },
+    {
+      "id": "move:flamethrower",
+      "present": 15109,
+      "exercised": 2413,
+      "equal": 2413,
+      "differing": 0
+    },
+    {
+      "id": "move:flareblitz",
+      "present": 5833,
+      "exercised": 934,
+      "equal": 934,
+      "differing": 0
+    },
+    {
+      "id": "move:flashcannon",
+      "present": 10594,
+      "exercised": 1482,
+      "equal": 1482,
+      "differing": 0
+    },
+    {
+      "id": "move:flatter",
+      "present": 227,
+      "exercised": 16,
+      "equal": 16,
+      "differing": 0
+    },
+    {
+      "id": "move:fling",
+      "present": 40807,
+      "exercised": 5810,
+      "equal": 5810,
+      "differing": 0
+    },
+    {
+      "id": "move:flipturn",
+      "present": 3631,
+      "exercised": 461,
+      "equal": 461,
+      "differing": 0
+    },
+    {
+      "id": "move:fly",
+      "present": 15195,
+      "exercised": 2069,
+      "equal": 2069,
+      "differing": 0
+    },
+    {
+      "id": "move:flyingpress",
+      "present": 265,
+      "exercised": 40,
+      "equal": 40,
+      "differing": 0
+    },
+    {
+      "id": "move:focusblast",
+      "present": 27315,
+      "exercised": 4417,
+      "equal": 4417,
+      "differing": 0
+    },
+    {
+      "id": "move:focusenergy",
+      "present": 29001,
+      "exercised": 1864,
+      "equal": 1864,
+      "differing": 0
+    },
+    {
+      "id": "move:focuspunch",
+      "present": 14997,
+      "exercised": 1319,
+      "equal": 1319,
+      "differing": 0
+    },
+    {
+      "id": "move:followme",
+      "present": 247,
+      "exercised": 21,
+      "equal": 21,
+      "differing": 0
+    },
+    {
+      "id": "move:foulplay",
+      "present": 19053,
+      "exercised": 2829,
+      "equal": 2829,
+      "differing": 0
+    },
+    {
+      "id": "move:freezedry",
+      "present": 2303,
+      "exercised": 374,
+      "equal": 374,
+      "differing": 0
+    },
+    {
+      "id": "move:frenzyplant",
+      "present": 1996,
+      "exercised": 314,
+      "equal": 314,
+      "differing": 0
+    },
+    {
+      "id": "move:frostbreath",
+      "present": 2113,
+      "exercised": 354,
+      "equal": 354,
+      "differing": 0
+    },
+    {
+      "id": "move:futuresight",
+      "present": 11724,
+      "exercised": 1109,
+      "equal": 1109,
+      "differing": 0
+    },
+    {
+      "id": "move:gastroacid",
+      "present": 799,
+      "exercised": 69,
+      "equal": 69,
+      "differing": 0
+    },
+    {
+      "id": "move:gigadrain",
+      "present": 13524,
+      "exercised": 1992,
+      "equal": 1992,
+      "differing": 0
+    },
+    {
+      "id": "move:gigaimpact",
+      "present": 65039,
+      "exercised": 9317,
+      "equal": 9317,
+      "differing": 0
+    },
+    {
+      "id": "move:gigatonhammer",
+      "present": 842,
+      "exercised": 76,
+      "equal": 76,
+      "differing": 0
+    },
+    {
+      "id": "move:glare",
+      "present": 313,
+      "exercised": 25,
+      "equal": 25,
+      "differing": 0
+    },
+    {
+      "id": "move:grassknot",
+      "present": 22853,
+      "exercised": 3277,
+      "equal": 3277,
+      "differing": 0
+    },
+    {
+      "id": "move:grassyglide",
+      "present": 8234,
+      "exercised": 1148,
+      "equal": 1148,
+      "differing": 0
+    },
+    {
+      "id": "move:grassyterrain",
+      "present": 6539,
+      "exercised": 430,
+      "equal": 430,
+      "differing": 0
+    },
+    {
+      "id": "move:gravity",
+      "present": 4311,
+      "exercised": 281,
+      "equal": 281,
+      "differing": 0
+    },
+    {
+      "id": "move:growth",
+      "present": 4401,
+      "exercised": 305,
+      "equal": 305,
+      "differing": 0
+    },
+    {
+      "id": "move:guardsplit",
+      "present": 4244,
+      "exercised": 384,
+      "equal": 384,
+      "differing": 0
+    },
+    {
+      "id": "move:guardswap",
+      "present": 10467,
+      "exercised": 809,
+      "equal": 809,
+      "differing": 0
+    },
+    {
+      "id": "move:guillotine",
+      "present": 414,
+      "exercised": 69,
+      "equal": 69,
+      "differing": 0
+    },
+    {
+      "id": "move:gunkshot",
+      "present": 9111,
+      "exercised": 1289,
+      "equal": 1289,
+      "differing": 0
+    },
+    {
+      "id": "move:gyroball",
+      "present": 1766,
+      "exercised": 311,
+      "equal": 311,
+      "differing": 0
+    },
+    {
+      "id": "move:hammerarm",
+      "present": 10443,
+      "exercised": 1582,
+      "equal": 1582,
+      "differing": 0
+    },
+    {
+      "id": "move:hardpress",
+      "present": 4784,
+      "exercised": 723,
+      "equal": 723,
+      "differing": 0
+    },
+    {
+      "id": "move:haze",
+      "present": 9871,
+      "exercised": 730,
+      "equal": 730,
+      "differing": 0
+    },
+    {
+      "id": "move:headlongrush",
+      "present": 1943,
+      "exercised": 302,
+      "equal": 302,
+      "differing": 0
+    },
+    {
+      "id": "move:headsmash",
+      "present": 2653,
+      "exercised": 387,
+      "equal": 387,
+      "differing": 0
+    },
+    {
+      "id": "move:healbell",
+      "present": 742,
+      "exercised": 49,
+      "equal": 49,
+      "differing": 0
+    },
+    {
+      "id": "move:healingwish",
+      "present": 1128,
+      "exercised": 111,
+      "equal": 111,
+      "differing": 0
+    },
+    {
+      "id": "move:healpulse",
+      "present": 4106,
+      "exercised": 388,
+      "equal": 388,
+      "differing": 0
+    },
+    {
+      "id": "move:heatcrash",
+      "present": 2974,
+      "exercised": 477,
+      "equal": 477,
+      "differing": 0
+    },
+    {
+      "id": "move:heatwave",
+      "present": 6608,
+      "exercised": 910,
+      "equal": 910,
+      "differing": 0
+    },
+    {
+      "id": "move:heavyslam",
+      "present": 6559,
+      "exercised": 984,
+      "equal": 984,
+      "differing": 0
+    },
+    {
+      "id": "move:helpinghand",
+      "present": 34115,
+      "exercised": 2417,
+      "equal": 2417,
+      "differing": 0
+    },
+    {
+      "id": "move:hex",
+      "present": 11687,
+      "exercised": 1842,
+      "equal": 1842,
+      "differing": 0
+    },
+    {
+      "id": "move:highhorsepower",
+      "present": 10374,
+      "exercised": 1662,
+      "equal": 1662,
+      "differing": 0
+    },
+    {
+      "id": "move:highjumpkick",
+      "present": 2665,
+      "exercised": 446,
+      "equal": 446,
+      "differing": 0
+    },
+    {
+      "id": "move:horndrill",
+      "present": 812,
+      "exercised": 127,
+      "equal": 127,
+      "differing": 0
+    },
+    {
+      "id": "move:hornleech",
+      "present": 300,
+      "exercised": 46,
+      "equal": 46,
+      "differing": 0
+    },
+    {
+      "id": "move:howl",
+      "present": 3383,
+      "exercised": 204,
+      "equal": 204,
+      "differing": 0
+    },
+    {
+      "id": "move:hurricane",
+      "present": 17536,
+      "exercised": 2381,
+      "equal": 2381,
+      "differing": 0
+    },
+    {
+      "id": "move:hydrocannon",
+      "present": 2697,
+      "exercised": 294,
+      "equal": 294,
+      "differing": 0
+    },
+    {
+      "id": "move:hydropump",
+      "present": 15116,
+      "exercised": 2099,
+      "equal": 2099,
+      "differing": 0
+    },
+    {
+      "id": "move:hyperbeam",
+      "present": 66921,
+      "exercised": 9688,
+      "equal": 9688,
+      "differing": 0
+    },
+    {
+      "id": "move:hypervoice",
+      "present": 14719,
+      "exercised": 1959,
+      "equal": 1959,
+      "differing": 0
+    },
+    {
+      "id": "move:hypnosis",
+      "present": 4407,
+      "exercised": 363,
+      "equal": 363,
+      "differing": 0
+    },
+    {
+      "id": "move:icebeam",
+      "present": 20766,
+      "exercised": 2907,
+      "equal": 2907,
+      "differing": 0
+    },
+    {
+      "id": "move:icefang",
+      "present": 10807,
+      "exercised": 1517,
+      "equal": 1517,
+      "differing": 0
+    },
+    {
+      "id": "move:icehammer",
+      "present": 1037,
+      "exercised": 167,
+      "equal": 167,
+      "differing": 0
+    },
+    {
+      "id": "move:icepunch",
+      "present": 21320,
+      "exercised": 3171,
+      "equal": 3171,
+      "differing": 0
+    },
+    {
+      "id": "move:iceshard",
+      "present": 611,
+      "exercised": 117,
+      "equal": 117,
+      "differing": 0
+    },
+    {
+      "id": "move:icespinner",
+      "present": 7810,
+      "exercised": 1127,
+      "equal": 1127,
+      "differing": 0
+    },
+    {
+      "id": "move:iciclecrash",
+      "present": 547,
+      "exercised": 102,
+      "equal": 102,
+      "differing": 0
+    },
+    {
+      "id": "move:iciclespear",
+      "present": 2121,
+      "exercised": 324,
+      "equal": 324,
+      "differing": 0
+    },
+    {
+      "id": "move:icywind",
+      "present": 15924,
+      "exercised": 2384,
+      "equal": 2384,
+      "differing": 0
+    },
+    {
+      "id": "move:imprison",
+      "present": 7190,
+      "exercised": 490,
+      "equal": 490,
+      "differing": 0
+    },
+    {
+      "id": "move:inferno",
+      "present": 32,
+      "exercised": 8,
+      "equal": 8,
+      "differing": 0
+    },
+    {
+      "id": "move:ingrain",
+      "present": 2480,
+      "exercised": 196,
+      "equal": 196,
+      "differing": 0
+    },
+    {
+      "id": "move:irondefense",
+      "present": 17770,
+      "exercised": 1229,
+      "equal": 1229,
+      "differing": 0
+    },
+    {
+      "id": "move:ironhead",
+      "present": 13973,
+      "exercised": 1966,
+      "equal": 1966,
+      "differing": 0
+    },
+    {
+      "id": "move:irontail",
+      "present": 38699,
+      "exercised": 5566,
+      "equal": 5566,
+      "differing": 0
+    },
+    {
+      "id": "move:jawlock",
+      "present": 123,
+      "exercised": 16,
+      "equal": 16,
+      "differing": 0
+    },
+    {
+      "id": "move:knockoff",
+      "present": 23614,
+      "exercised": 3557,
+      "equal": 3557,
+      "differing": 0
+    },
+    {
+      "id": "move:lashout",
+      "present": 13544,
+      "exercised": 2164,
+      "equal": 2164,
+      "differing": 0
+    },
+    {
+      "id": "move:lastresort",
+      "present": 4621,
+      "exercised": 705,
+      "equal": 705,
+      "differing": 0
+    },
+    {
+      "id": "move:lastrespects",
+      "present": 7335,
+      "exercised": 999,
+      "equal": 999,
+      "differing": 0
+    },
+    {
+      "id": "move:lavaplume",
+      "present": 831,
+      "exercised": 114,
+      "equal": 114,
+      "differing": 0
+    },
+    {
+      "id": "move:leafblade",
+      "present": 2490,
+      "exercised": 311,
+      "equal": 311,
+      "differing": 0
+    },
+    {
+      "id": "move:leafstorm",
+      "present": 3115,
+      "exercised": 496,
+      "equal": 496,
+      "differing": 0
+    },
+    {
+      "id": "move:leechlife",
+      "present": 2104,
+      "exercised": 363,
+      "equal": 363,
+      "differing": 0
+    },
+    {
+      "id": "move:leechseed",
+      "present": 2830,
+      "exercised": 242,
+      "equal": 242,
+      "differing": 0
+    },
+    {
+      "id": "move:lifedew",
+      "present": 2150,
+      "exercised": 105,
+      "equal": 105,
+      "differing": 0
+    },
+    {
+      "id": "move:lightofruin",
+      "present": 1035,
+      "exercised": 178,
+      "equal": 178,
+      "differing": 0
+    },
+    {
+      "id": "move:lightscreen",
+      "present": 26392,
+      "exercised": 1781,
+      "equal": 1781,
+      "differing": 0
+    },
+    {
+      "id": "move:liquidation",
+      "present": 6463,
+      "exercised": 1109,
+      "equal": 1109,
+      "differing": 0
+    },
+    {
+      "id": "move:lowkick",
+      "present": 15572,
+      "exercised": 2350,
+      "equal": 2350,
+      "differing": 0
+    },
+    {
+      "id": "move:lowsweep",
+      "present": 12267,
+      "exercised": 1619,
+      "equal": 1619,
+      "differing": 0
+    },
+    {
+      "id": "move:lunge",
+      "present": 4936,
+      "exercised": 847,
+      "equal": 847,
+      "differing": 0
+    },
+    {
+      "id": "move:machpunch",
+      "present": 1022,
+      "exercised": 172,
+      "equal": 172,
+      "differing": 0
+    },
+    {
+      "id": "move:magicroom",
+      "present": 3350,
+      "exercised": 220,
+      "equal": 220,
+      "differing": 0
+    },
+    {
+      "id": "move:magnetrise",
+      "present": 1693,
+      "exercised": 117,
+      "equal": 117,
+      "differing": 0
+    },
+    {
+      "id": "move:meanlook",
+      "present": 4137,
+      "exercised": 384,
+      "equal": 384,
+      "differing": 0
+    },
+    {
+      "id": "move:megahorn",
+      "present": 5957,
+      "exercised": 747,
+      "equal": 747,
+      "differing": 0
+    },
+    {
+      "id": "move:megakick",
+      "present": 10963,
+      "exercised": 1749,
+      "equal": 1749,
+      "differing": 0
+    },
+    {
+      "id": "move:memento",
+      "present": 1538,
+      "exercised": 171,
+      "equal": 171,
+      "differing": 0
+    },
+    {
+      "id": "move:metalburst",
+      "present": 3441,
+      "exercised": 247,
+      "equal": 247,
+      "differing": 0
+    },
+    {
+      "id": "move:metalsound",
+      "present": 5732,
+      "exercised": 383,
+      "equal": 383,
+      "differing": 0
+    },
+    {
+      "id": "move:meteorbeam",
+      "present": 7492,
+      "exercised": 1205,
+      "equal": 1205,
+      "differing": 0
+    },
+    {
+      "id": "move:meteormash",
+      "present": 389,
+      "exercised": 60,
+      "equal": 60,
+      "differing": 0
+    },
+    {
+      "id": "move:milkdrink",
+      "present": 230,
+      "exercised": 17,
+      "equal": 17,
+      "differing": 0
+    },
+    {
+      "id": "move:minimize",
+      "present": 2536,
+      "exercised": 167,
+      "equal": 167,
+      "differing": 0
+    },
+    {
+      "id": "move:mirrorcoat",
+      "present": 9517,
+      "exercised": 53,
+      "equal": 53,
+      "differing": 0
+    },
+    {
+      "id": "move:mistyexplosion",
+      "present": 630,
+      "exercised": 107,
+      "equal": 107,
+      "differing": 0
+    },
+    {
+      "id": "move:mistyterrain",
+      "present": 5601,
+      "exercised": 361,
+      "equal": 361,
+      "differing": 0
+    },
+    {
+      "id": "move:moonblast",
+      "present": 3010,
+      "exercised": 454,
+      "equal": 454,
+      "differing": 0
+    },
+    {
+      "id": "move:moonlight",
+      "present": 1265,
+      "exercised": 94,
+      "equal": 94,
+      "differing": 0
+    },
+    {
+      "id": "move:morningsun",
+      "present": 152,
+      "exercised": 9,
+      "equal": 9,
+      "differing": 0
+    },
+    {
+      "id": "move:mortalspin",
+      "present": 782,
+      "exercised": 103,
+      "equal": 103,
+      "differing": 0
+    },
+    {
+      "id": "move:muddywater",
+      "present": 2642,
+      "exercised": 314,
+      "equal": 314,
+      "differing": 0
+    },
+    {
+      "id": "move:mudshot",
+      "present": 14620,
+      "exercised": 2395,
+      "equal": 2395,
+      "differing": 0
+    },
+    {
+      "id": "move:mudslap",
+      "present": 19542,
+      "exercised": 2795,
+      "equal": 2795,
+      "differing": 0
+    },
+    {
+      "id": "move:mysticalfire",
+      "present": 5621,
+      "exercised": 895,
+      "equal": 895,
+      "differing": 0
+    },
+    {
+      "id": "move:nastyplot",
+      "present": 14019,
+      "exercised": 811,
+      "equal": 811,
+      "differing": 0
+    },
+    {
+      "id": "move:nightdaze",
+      "present": 340,
+      "exercised": 64,
+      "equal": 64,
+      "differing": 0
+    },
+    {
+      "id": "move:nightshade",
+      "present": 23711,
+      "exercised": 3353,
+      "equal": 3353,
+      "differing": 0
+    },
+    {
+      "id": "move:nightslash",
+      "present": 11254,
+      "exercised": 1594,
+      "equal": 1594,
+      "differing": 0
+    },
+    {
+      "id": "move:nobleroar",
+      "present": 70,
+      "exercised": 8,
+      "equal": 8,
+      "differing": 0
+    },
+    {
+      "id": "move:noretreat",
+      "present": 733,
+      "exercised": 50,
+      "equal": 50,
+      "differing": 0
+    },
+    {
+      "id": "move:nuzzle",
+      "present": 574,
+      "exercised": 89,
+      "equal": 89,
+      "differing": 0
+    },
+    {
+      "id": "move:octolock",
+      "present": 241,
+      "exercised": 12,
+      "equal": 12,
+      "differing": 0
+    },
+    {
+      "id": "move:outrage",
+      "present": 19914,
+      "exercised": 2653,
+      "equal": 2653,
+      "differing": 0
+    },
+    {
+      "id": "move:overheat",
+      "present": 10781,
+      "exercised": 1570,
+      "equal": 1570,
+      "differing": 0
+    },
+    {
+      "id": "move:painsplit",
+      "present": 19086,
+      "exercised": 1567,
+      "equal": 1567,
+      "differing": 0
+    },
+    {
+      "id": "move:paraboliccharge",
+      "present": 744,
+      "exercised": 93,
+      "equal": 93,
+      "differing": 0
+    },
+    {
+      "id": "move:partingshot",
+      "present": 1618,
+      "exercised": 109,
+      "equal": 109,
+      "differing": 0
+    },
+    {
+      "id": "move:payback",
+      "present": 22025,
+      "exercised": 3295,
+      "equal": 3295,
+      "differing": 0
+    },
+    {
+      "id": "move:perishsong",
+      "present": 480,
+      "exercised": 34,
+      "equal": 34,
+      "differing": 0
+    },
+    {
+      "id": "move:petalblizzard",
+      "present": 6236,
+      "exercised": 789,
+      "equal": 789,
+      "differing": 0
+    },
+    {
+      "id": "move:petaldance",
+      "present": 3086,
+      "exercised": 473,
+      "equal": 473,
+      "differing": 0
+    },
+    {
+      "id": "move:phantomforce",
+      "present": 14344,
+      "exercised": 1872,
+      "equal": 1872,
+      "differing": 0
+    },
+    {
+      "id": "move:pinmissile",
+      "present": 1177,
+      "exercised": 191,
+      "equal": 191,
+      "differing": 0
+    },
+    {
+      "id": "move:playrough",
+      "present": 13798,
+      "exercised": 1925,
+      "equal": 1925,
+      "differing": 0
+    },
+    {
+      "id": "move:pluck",
+      "present": 41,
+      "exercised": 8,
+      "equal": 8,
+      "differing": 0
+    },
+    {
+      "id": "move:poisonfang",
+      "present": 1473,
+      "exercised": 235,
+      "equal": 235,
+      "differing": 0
+    },
+    {
+      "id": "move:poisonjab",
+      "present": 12954,
+      "exercised": 1957,
+      "equal": 1957,
+      "differing": 0
+    },
+    {
+      "id": "move:poisonpowder",
+      "present": 6360,
+      "exercised": 565,
+      "equal": 565,
+      "differing": 0
+    },
+    {
+      "id": "move:pollenpuff",
+      "present": 5402,
+      "exercised": 875,
+      "equal": 875,
+      "differing": 0
+    },
+    {
+      "id": "move:poltergeist",
+      "present": 19054,
+      "exercised": 2691,
+      "equal": 2691,
+      "differing": 0
+    },
+    {
+      "id": "move:populationbomb",
+      "present": 313,
+      "exercised": 52,
+      "equal": 52,
+      "differing": 0
+    },
+    {
+      "id": "move:pounce",
+      "present": 8934,
+      "exercised": 1294,
+      "equal": 1294,
+      "differing": 0
+    },
+    {
+      "id": "move:powergem",
+      "present": 5688,
+      "exercised": 839,
+      "equal": 839,
+      "differing": 0
+    },
+    {
+      "id": "move:powersplit",
+      "present": 418,
+      "exercised": 18,
+      "equal": 18,
+      "differing": 0
+    },
+    {
+      "id": "move:powerswap",
+      "present": 3948,
+      "exercised": 369,
+      "equal": 369,
+      "differing": 0
+    },
+    {
+      "id": "move:powertrick",
+      "present": 455,
+      "exercised": 32,
+      "equal": 32,
+      "differing": 0
+    },
+    {
+      "id": "move:powertrip",
+      "present": 4618,
+      "exercised": 484,
+      "equal": 484,
+      "differing": 0
+    },
+    {
+      "id": "move:powerwhip",
+      "present": 884,
+      "exercised": 147,
+      "equal": 147,
+      "differing": 0
+    },
+    {
+      "id": "move:protect",
+      "present": 55417,
+      "exercised": 5221,
+      "equal": 5221,
+      "differing": 0
+    },
+    {
+      "id": "move:psychic",
+      "present": 30775,
+      "exercised": 4821,
+      "equal": 4821,
+      "differing": 0
+    },
+    {
+      "id": "move:psychicfangs",
+      "present": 7460,
+      "exercised": 1029,
+      "equal": 1029,
+      "differing": 0
+    },
+    {
+      "id": "move:psychicnoise",
+      "present": 5393,
+      "exercised": 869,
+      "equal": 869,
+      "differing": 0
+    },
+    {
+      "id": "move:psychicterrain",
+      "present": 2818,
+      "exercised": 207,
+      "equal": 207,
+      "differing": 0
+    },
+    {
+      "id": "move:psychocut",
+      "present": 4644,
+      "exercised": 734,
+      "equal": 734,
+      "differing": 0
+    },
+    {
+      "id": "move:psychup",
+      "present": 25123,
+      "exercised": 2139,
+      "equal": 2139,
+      "differing": 0
+    },
+    {
+      "id": "move:psyshock",
+      "present": 8522,
+      "exercised": 1419,
+      "equal": 1419,
+      "differing": 0
+    },
+    {
+      "id": "move:quash",
+      "present": 3483,
+      "exercised": 305,
+      "equal": 305,
+      "differing": 0
+    },
+    {
+      "id": "move:quickattack",
+      "present": 13064,
+      "exercised": 2129,
+      "equal": 2129,
+      "differing": 0
+    },
+    {
+      "id": "move:quickguard",
+      "present": 5274,
+      "exercised": 521,
+      "equal": 521,
+      "differing": 0
+    },
+    {
+      "id": "move:quiverdance",
+      "present": 1447,
+      "exercised": 97,
+      "equal": 97,
+      "differing": 0
+    },
+    {
+      "id": "move:ragefist",
+      "present": 1403,
+      "exercised": 184,
+      "equal": 184,
+      "differing": 0
+    },
+    {
+      "id": "move:ragepowder",
+      "present": 1549,
+      "exercised": 92,
+      "equal": 92,
+      "differing": 0
+    },
+    {
+      "id": "move:ragingfury",
+      "present": 330,
+      "exercised": 42,
+      "equal": 42,
+      "differing": 0
+    },
+    {
+      "id": "move:raindance",
+      "present": 46070,
+      "exercised": 3248,
+      "equal": 3248,
+      "differing": 0
+    },
+    {
+      "id": "move:rapidspin",
+      "present": 3115,
+      "exercised": 531,
+      "equal": 531,
+      "differing": 0
+    },
+    {
+      "id": "move:razorshell",
+      "present": 1385,
+      "exercised": 226,
+      "equal": 226,
+      "differing": 0
+    },
+    {
+      "id": "move:recover",
+      "present": 2529,
+      "exercised": 171,
+      "equal": 171,
+      "differing": 0
+    },
+    {
+      "id": "move:recycle",
+      "present": 3760,
+      "exercised": 282,
+      "equal": 282,
+      "differing": 0
+    },
+    {
+      "id": "move:reflect",
+      "present": 34834,
+      "exercised": 2323,
+      "equal": 2323,
+      "differing": 0
+    },
+    {
+      "id": "move:reflecttype",
+      "present": 686,
+      "exercised": 32,
+      "equal": 32,
+      "differing": 0
+    },
+    {
+      "id": "move:rest",
+      "present": 86146,
+      "exercised": 6525,
+      "equal": 6525,
+      "differing": 0
+    },
+    {
+      "id": "move:reversal",
+      "present": 17070,
+      "exercised": 2659,
+      "equal": 2659,
+      "differing": 0
+    },
+    {
+      "id": "move:risingvoltage",
+      "present": 6739,
+      "exercised": 1006,
+      "equal": 1006,
+      "differing": 0
+    },
+    {
+      "id": "move:roar",
+      "present": 22681,
+      "exercised": 1701,
+      "equal": 1701,
+      "differing": 0
+    },
+    {
+      "id": "move:rockblast",
+      "present": 8077,
+      "exercised": 1120,
+      "equal": 1120,
+      "differing": 0
+    },
+    {
+      "id": "move:rockpolish",
+      "present": 399,
+      "exercised": 19,
+      "equal": 19,
+      "differing": 0
+    },
+    {
+      "id": "move:rockslide",
+      "present": 21480,
+      "exercised": 2869,
+      "equal": 2869,
+      "differing": 0
+    },
+    {
+      "id": "move:rocktomb",
+      "present": 40947,
+      "exercised": 5476,
+      "equal": 5476,
+      "differing": 0
+    },
+    {
+      "id": "move:roleplay",
+      "present": 436,
+      "exercised": 43,
+      "equal": 43,
+      "differing": 0
+    },
+    {
+      "id": "move:roost",
+      "present": 8859,
+      "exercised": 524,
+      "equal": 524,
+      "differing": 0
+    },
+    {
+      "id": "move:round",
+      "present": 70576,
+      "exercised": 12273,
+      "equal": 12273,
+      "differing": 0
+    },
+    {
+      "id": "move:sacredsword",
+      "present": 201,
+      "exercised": 23,
+      "equal": 23,
+      "differing": 0
+    },
+    {
+      "id": "move:safeguard",
+      "present": 16299,
+      "exercised": 1168,
+      "equal": 1168,
+      "differing": 0
+    },
+    {
+      "id": "move:sandstorm",
+      "present": 18894,
+      "exercised": 1329,
+      "equal": 1329,
+      "differing": 0
+    },
+    {
+      "id": "move:sandtomb",
+      "present": 6006,
+      "exercised": 976,
+      "equal": 976,
+      "differing": 0
+    },
+    {
+      "id": "move:scald",
+      "present": 5650,
+      "exercised": 768,
+      "equal": 768,
+      "differing": 0
+    },
+    {
+      "id": "move:scaleshot",
+      "present": 10109,
+      "exercised": 1359,
+      "equal": 1359,
+      "differing": 0
+    },
+    {
+      "id": "move:scaryface",
+      "present": 33800,
+      "exercised": 2933,
+      "equal": 2933,
+      "differing": 0
+    },
+    {
+      "id": "move:scorchingsands",
+      "present": 8091,
+      "exercised": 1294,
+      "equal": 1294,
+      "differing": 0
+    },
+    {
+      "id": "move:screech",
+      "present": 14846,
+      "exercised": 1358,
+      "equal": 1358,
+      "differing": 0
+    },
+    {
+      "id": "move:seedbomb",
+      "present": 15997,
+      "exercised": 2015,
+      "equal": 2015,
+      "differing": 0
+    },
+    {
+      "id": "move:seismictoss",
+      "present": 1307,
+      "exercised": 198,
+      "equal": 198,
+      "differing": 0
+    },
+    {
+      "id": "move:selfdestruct",
+      "present": 1739,
+      "exercised": 243,
+      "equal": 243,
+      "differing": 0
+    },
+    {
+      "id": "move:shadowball",
+      "present": 35837,
+      "exercised": 5882,
+      "equal": 5882,
+      "differing": 0
+    },
+    {
+      "id": "move:shadowclaw",
+      "present": 16297,
+      "exercised": 2429,
+      "equal": 2429,
+      "differing": 0
+    },
+    {
+      "id": "move:shadowsneak",
+      "present": 4120,
+      "exercised": 592,
+      "equal": 592,
+      "differing": 0
+    },
+    {
+      "id": "move:shedtail",
+      "present": 507,
+      "exercised": 30,
+      "equal": 30,
+      "differing": 0
+    },
+    {
+      "id": "move:sheercold",
+      "present": 3109,
+      "exercised": 353,
+      "equal": 353,
+      "differing": 0
+    },
+    {
+      "id": "move:shellsidearm",
+      "present": 284,
+      "exercised": 48,
+      "equal": 48,
+      "differing": 0
+    },
+    {
+      "id": "move:shellsmash",
+      "present": 1582,
+      "exercised": 120,
+      "equal": 120,
+      "differing": 0
+    },
+    {
+      "id": "move:simplebeam",
+      "present": 1293,
+      "exercised": 106,
+      "equal": 106,
+      "differing": 0
+    },
+    {
+      "id": "move:sing",
+      "present": 1609,
+      "exercised": 129,
+      "equal": 129,
+      "differing": 0
+    },
+    {
+      "id": "move:skillswap",
+      "present": 11654,
+      "exercised": 1047,
+      "equal": 1047,
+      "differing": 0
+    },
+    {
+      "id": "move:skittersmack",
+      "present": 11327,
+      "exercised": 1779,
+      "equal": 1779,
+      "differing": 0
+    },
+    {
+      "id": "move:skyattack",
+      "present": 2594,
+      "exercised": 436,
+      "equal": 436,
+      "differing": 0
+    },
+    {
+      "id": "move:slackoff",
+      "present": 2125,
+      "exercised": 123,
+      "equal": 123,
+      "differing": 0
+    },
+    {
+      "id": "move:slash",
+      "present": 8117,
+      "exercised": 1257,
+      "equal": 1257,
+      "differing": 0
+    },
+    {
+      "id": "move:sleeppowder",
+      "present": 6366,
+      "exercised": 502,
+      "equal": 502,
+      "differing": 0
+    },
+    {
+      "id": "move:sleeptalk",
+      "present": 52607,
+      "exercised": 3693,
+      "equal": 3693,
+      "differing": 0
+    },
+    {
+      "id": "move:sludgebomb",
+      "present": 11140,
+      "exercised": 1664,
+      "equal": 1664,
+      "differing": 0
+    },
+    {
+      "id": "move:sludgewave",
+      "present": 5898,
+      "exercised": 689,
+      "equal": 689,
+      "differing": 0
+    },
+    {
+      "id": "move:smackdown",
+      "present": 7258,
+      "exercised": 922,
+      "equal": 922,
+      "differing": 0
+    },
+    {
+      "id": "move:smartstrike",
+      "present": 1326,
+      "exercised": 169,
+      "equal": 169,
+      "differing": 0
+    },
+    {
+      "id": "move:snaptrap",
+      "present": 386,
+      "exercised": 41,
+      "equal": 41,
+      "differing": 0
+    },
+    {
+      "id": "move:snarl",
+      "present": 9442,
+      "exercised": 1276,
+      "equal": 1276,
+      "differing": 0
+    },
+    {
+      "id": "move:snore",
+      "present": 58753,
+      "exercised": 8795,
+      "equal": 8795,
+      "differing": 0
+    },
+    {
+      "id": "move:snowscape",
+      "present": 5682,
+      "exercised": 394,
+      "equal": 394,
+      "differing": 0
+    },
+    {
+      "id": "move:soak",
+      "present": 1389,
+      "exercised": 108,
+      "equal": 108,
+      "differing": 0
+    },
+    {
+      "id": "move:solarbeam",
+      "present": 25721,
+      "exercised": 3966,
+      "equal": 3966,
+      "differing": 0
+    },
+    {
+      "id": "move:solarblade",
+      "present": 5084,
+      "exercised": 824,
+      "equal": 824,
+      "differing": 0
+    },
+    {
+      "id": "move:spikes",
+      "present": 2363,
+      "exercised": 144,
+      "equal": 144,
+      "differing": 0
+    },
+    {
+      "id": "move:spikyshield",
+      "present": 798,
+      "exercised": 77,
+      "equal": 77,
+      "differing": 0
+    },
+    {
+      "id": "move:spiritbreak",
+      "present": 520,
+      "exercised": 77,
+      "equal": 77,
+      "differing": 0
+    },
+    {
+      "id": "move:spite",
+      "present": 12277,
+      "exercised": 1080,
+      "equal": 1080,
+      "differing": 0
+    },
+    {
+      "id": "move:spitup",
+      "present": 3312,
+      "exercised": 501,
+      "equal": 501,
+      "differing": 0
+    },
+    {
+      "id": "move:stealthrock",
+      "present": 12121,
+      "exercised": 845,
+      "equal": 845,
+      "differing": 0
+    },
+    {
+      "id": "move:steelbeam",
+      "present": 5207,
+      "exercised": 704,
+      "equal": 704,
+      "differing": 0
+    },
+    {
+      "id": "move:steelroller",
+      "present": 596,
+      "exercised": 85,
+      "equal": 85,
+      "differing": 0
+    },
+    {
+      "id": "move:steelwing",
+      "present": 12913,
+      "exercised": 1853,
+      "equal": 1853,
+      "differing": 0
+    },
+    {
+      "id": "move:stickyweb",
+      "present": 841,
+      "exercised": 62,
+      "equal": 62,
+      "differing": 0
+    },
+    {
+      "id": "move:stockpile",
+      "present": 6856,
+      "exercised": 432,
+      "equal": 432,
+      "differing": 0
+    },
+    {
+      "id": "move:stompingtantrum",
+      "present": 18632,
+      "exercised": 2702,
+      "equal": 2702,
+      "differing": 0
+    },
+    {
+      "id": "move:stoneedge",
+      "present": 16835,
+      "exercised": 2413,
+      "equal": 2413,
+      "differing": 0
+    },
+    {
+      "id": "move:storedpower",
+      "present": 19523,
+      "exercised": 2919,
+      "equal": 2919,
+      "differing": 0
+    },
+    {
+      "id": "move:stormthrow",
+      "present": 1051,
+      "exercised": 182,
+      "equal": 182,
+      "differing": 0
+    },
+    {
+      "id": "move:strengthsap",
+      "present": 5126,
+      "exercised": 395,
+      "equal": 395,
+      "differing": 0
+    },
+    {
+      "id": "move:stringshot",
+      "present": 3706,
+      "exercised": 256,
+      "equal": 256,
+      "differing": 0
+    },
+    {
+      "id": "move:struggle",
+      "present": 59,
+      "exercised": 49,
+      "equal": 49,
+      "differing": 0
+    },
+    {
+      "id": "move:strugglebug",
+      "present": 4418,
+      "exercised": 594,
+      "equal": 594,
+      "differing": 0
+    },
+    {
+      "id": "move:stuffcheeks",
+      "present": 270,
+      "exercised": 21,
+      "equal": 21,
+      "differing": 0
+    },
+    {
+      "id": "move:stunspore",
+      "present": 2185,
+      "exercised": 199,
+      "equal": 199,
+      "differing": 0
+    },
+    {
+      "id": "move:substitute",
+      "present": 58642,
+      "exercised": 4389,
+      "equal": 4389,
+      "differing": 0
+    },
+    {
+      "id": "move:suckerpunch",
+      "present": 17771,
+      "exercised": 2765,
+      "equal": 2765,
+      "differing": 0
+    },
+    {
+      "id": "move:sunnyday",
+      "present": 43292,
+      "exercised": 3046,
+      "equal": 3046,
+      "differing": 0
+    },
+    {
+      "id": "move:supercellslam",
+      "present": 4759,
+      "exercised": 729,
+      "equal": 729,
+      "differing": 0
+    },
+    {
+      "id": "move:superfang",
+      "present": 1547,
+      "exercised": 259,
+      "equal": 259,
+      "differing": 0
+    },
+    {
+      "id": "move:superpower",
+      "present": 8451,
+      "exercised": 1248,
+      "equal": 1248,
+      "differing": 0
+    },
+    {
+      "id": "move:surf",
+      "present": 15247,
+      "exercised": 1914,
+      "equal": 1914,
+      "differing": 0
+    },
+    {
+      "id": "move:swagger",
+      "present": 19386,
+      "exercised": 1509,
+      "equal": 1509,
+      "differing": 0
+    },
+    {
+      "id": "move:sweetkiss",
+      "present": 6545,
+      "exercised": 559,
+      "equal": 559,
+      "differing": 0
+    },
+    {
+      "id": "move:sweetscent",
+      "present": 2928,
+      "exercised": 192,
+      "equal": 192,
+      "differing": 0
+    },
+    {
+      "id": "move:switcheroo",
+      "present": 2569,
+      "exercised": 187,
+      "equal": 187,
+      "differing": 0
+    },
+    {
+      "id": "move:swordsdance",
+      "present": 14657,
+      "exercised": 1023,
+      "equal": 1023,
+      "differing": 0
+    },
+    {
+      "id": "move:synthesis",
+      "present": 5086,
+      "exercised": 344,
+      "equal": 344,
+      "differing": 0
+    },
+    {
+      "id": "move:tailslap",
+      "present": 4585,
+      "exercised": 701,
+      "equal": 701,
+      "differing": 0
+    },
+    {
+      "id": "move:tailwind",
+      "present": 23331,
+      "exercised": 1666,
+      "equal": 1666,
+      "differing": 0
+    },
+    {
+      "id": "move:taunt",
+      "present": 26190,
+      "exercised": 2153,
+      "equal": 2153,
+      "differing": 0
+    },
+    {
+      "id": "move:tearfullook",
+      "present": 2894,
+      "exercised": 227,
+      "equal": 227,
+      "differing": 0
+    },
+    {
+      "id": "move:teeterdance",
+      "present": 1567,
+      "exercised": 137,
+      "equal": 137,
+      "differing": 0
+    },
+    {
+      "id": "move:temperflare",
+      "present": 4798,
+      "exercised": 786,
+      "equal": 786,
+      "differing": 0
+    },
+    {
+      "id": "move:terrainpulse",
+      "present": 5496,
+      "exercised": 787,
+      "equal": 787,
+      "differing": 0
+    },
+    {
+      "id": "move:thief",
+      "present": 45046,
+      "exercised": 6528,
+      "equal": 6528,
+      "differing": 0
+    },
+    {
+      "id": "move:thrash",
+      "present": 7423,
+      "exercised": 1001,
+      "equal": 1001,
+      "differing": 0
+    },
+    {
+      "id": "move:throatchop",
+      "present": 39579,
+      "exercised": 5890,
+      "equal": 5890,
+      "differing": 0
+    },
+    {
+      "id": "move:thunder",
+      "present": 26969,
+      "exercised": 3970,
+      "equal": 3970,
+      "differing": 0
+    },
+    {
+      "id": "move:thunderbolt",
+      "present": 21967,
+      "exercised": 3223,
+      "equal": 3223,
+      "differing": 0
+    },
+    {
+      "id": "move:thunderfang",
+      "present": 5741,
+      "exercised": 934,
+      "equal": 934,
+      "differing": 0
+    },
+    {
+      "id": "move:thunderpunch",
+      "present": 29617,
+      "exercised": 4388,
+      "equal": 4388,
+      "differing": 0
+    },
+    {
+      "id": "move:thunderwave",
+      "present": 18233,
+      "exercised": 1619,
+      "equal": 1619,
+      "differing": 0
+    },
+    {
+      "id": "move:tickle",
+      "present": 7509,
+      "exercised": 736,
+      "equal": 736,
+      "differing": 0
+    },
+    {
+      "id": "move:topsyturvy",
+      "present": 500,
+      "exercised": 34,
+      "equal": 34,
+      "differing": 0
+    },
+    {
+      "id": "move:torment",
+      "present": 14114,
+      "exercised": 1127,
+      "equal": 1127,
+      "differing": 0
+    },
+    {
+      "id": "move:toxic",
+      "present": 13292,
+      "exercised": 1091,
+      "equal": 1091,
+      "differing": 0
+    },
+    {
+      "id": "move:toxicspikes",
+      "present": 4912,
+      "exercised": 356,
+      "equal": 356,
+      "differing": 0
+    },
+    {
+      "id": "move:toxicthread",
+      "present": 765,
+      "exercised": 58,
+      "equal": 58,
+      "differing": 0
+    },
+    {
+      "id": "move:trailblaze",
+      "present": 30915,
+      "exercised": 4574,
+      "equal": 4574,
+      "differing": 0
+    },
+    {
+      "id": "move:transform",
+      "present": 7156,
+      "exercised": 110,
+      "equal": 110,
+      "differing": 0
+    },
+    {
+      "id": "move:triattack",
+      "present": 10229,
+      "exercised": 1503,
+      "equal": 1503,
+      "differing": 0
+    },
+    {
+      "id": "move:trick",
+      "present": 11712,
+      "exercised": 1115,
+      "equal": 1115,
+      "differing": 0
+    },
+    {
+      "id": "move:trickortreat",
+      "present": 1831,
+      "exercised": 136,
+      "equal": 136,
+      "differing": 0
+    },
+    {
+      "id": "move:trickroom",
+      "present": 19008,
+      "exercised": 1448,
+      "equal": 1448,
+      "differing": 0
+    },
+    {
+      "id": "move:upperhand",
+      "present": 9525,
+      "exercised": 1543,
+      "equal": 1543,
+      "differing": 0
+    },
+    {
+      "id": "move:uproar",
+      "present": 21072,
+      "exercised": 2745,
+      "equal": 2745,
+      "differing": 0
+    },
+    {
+      "id": "move:uturn",
+      "present": 12123,
+      "exercised": 1855,
+      "equal": 1855,
+      "differing": 0
+    },
+    {
+      "id": "move:vacuumwave",
+      "present": 1782,
+      "exercised": 298,
+      "equal": 298,
+      "differing": 0
+    },
+    {
+      "id": "move:venoshock",
+      "present": 11487,
+      "exercised": 1691,
+      "equal": 1691,
+      "differing": 0
+    },
+    {
+      "id": "move:voltswitch",
+      "present": 3545,
+      "exercised": 535,
+      "equal": 535,
+      "differing": 0
+    },
+    {
+      "id": "move:volttackle",
+      "present": 322,
+      "exercised": 66,
+      "equal": 66,
+      "differing": 0
+    },
+    {
+      "id": "move:waterfall",
+      "present": 2734,
+      "exercised": 396,
+      "equal": 396,
+      "differing": 0
+    },
+    {
+      "id": "move:waterpulse",
+      "present": 17391,
+      "exercised": 2535,
+      "equal": 2535,
+      "differing": 0
+    },
+    {
+      "id": "move:waterspout",
+      "present": 566,
+      "exercised": 91,
+      "equal": 91,
+      "differing": 0
+    },
+    {
+      "id": "move:wavecrash",
+      "present": 1728,
+      "exercised": 264,
+      "equal": 264,
+      "differing": 0
+    },
+    {
+      "id": "move:weatherball",
+      "present": 12748,
+      "exercised": 1902,
+      "equal": 1902,
+      "differing": 0
+    },
+    {
+      "id": "move:whirlpool",
+      "present": 7660,
+      "exercised": 1270,
+      "equal": 1270,
+      "differing": 0
+    },
+    {
+      "id": "move:whirlwind",
+      "present": 14107,
+      "exercised": 1125,
+      "equal": 1125,
+      "differing": 0
+    },
+    {
+      "id": "move:wideguard",
+      "present": 8144,
+      "exercised": 607,
+      "equal": 607,
+      "differing": 0
+    },
+    {
+      "id": "move:wildcharge",
+      "present": 7166,
+      "exercised": 985,
+      "equal": 985,
+      "differing": 0
+    },
+    {
+      "id": "move:willowisp",
+      "present": 11807,
+      "exercised": 998,
+      "equal": 998,
+      "differing": 0
+    },
+    {
+      "id": "move:wish",
+      "present": 9347,
+      "exercised": 604,
+      "equal": 604,
+      "differing": 0
+    },
+    {
+      "id": "move:wonderroom",
+      "present": 7748,
+      "exercised": 599,
+      "equal": 599,
+      "differing": 0
+    },
+    {
+      "id": "move:worryseed",
+      "present": 1413,
+      "exercised": 126,
+      "equal": 126,
+      "differing": 0
+    },
+    {
+      "id": "move:wrap",
+      "present": 5620,
+      "exercised": 720,
+      "equal": 720,
+      "differing": 0
+    },
+    {
+      "id": "move:xscissor",
+      "present": 8349,
+      "exercised": 1411,
+      "equal": 1411,
+      "differing": 0
+    },
+    {
+      "id": "move:yawn",
+      "present": 56645,
+      "exercised": 4774,
+      "equal": 4774,
+      "differing": 0
+    },
+    {
+      "id": "move:zapcannon",
+      "present": 4367,
+      "exercised": 621,
+      "equal": 621,
+      "differing": 0
+    },
+    {
+      "id": "move:zenheadbutt",
+      "present": 34773,
+      "exercised": 4850,
+      "equal": 4850,
+      "differing": 0
+    },
+    {
+      "id": "side:light_screen",
+      "present": 13876,
+      "exercised": 8626,
+      "equal": 8626,
+      "differing": 0
+    },
+    {
+      "id": "side:reflect",
+      "present": 23259,
+      "exercised": 13248,
+      "equal": 13248,
+      "differing": 0
+    },
+    {
+      "id": "side:tailwind",
+      "present": 14853,
+      "exercised": 8888,
+      "equal": 8888,
+      "differing": 0
+    },
+    {
+      "id": "slot:futuremove",
+      "present": 2793,
+      "exercised": 22,
+      "equal": 22,
+      "differing": 0
+    },
+    {
+      "id": "slot:wish",
+      "present": 821,
+      "exercised": 278,
+      "equal": 278,
+      "differing": 0
+    },
+    {
+      "id": "species:abomasnow",
+      "present": 7778,
+      "exercised": 3081,
+      "equal": 3081,
+      "differing": 0
+    },
+    {
+      "id": "species:abomasnowmega",
+      "present": 4706,
+      "exercised": 3294,
+      "equal": 3294,
+      "differing": 0
+    },
+    {
+      "id": "species:absol",
+      "present": 4102,
+      "exercised": 3844,
+      "equal": 3844,
+      "differing": 0
+    },
+    {
+      "id": "species:absolmega",
+      "present": 5459,
+      "exercised": 1294,
+      "equal": 1294,
+      "differing": 0
+    },
+    {
+      "id": "species:absolmegaz",
+      "present": 1522,
+      "exercised": 1447,
+      "equal": 1447,
+      "differing": 0
+    },
+    {
+      "id": "species:aegislash",
+      "present": 6395,
+      "exercised": 3675,
+      "equal": 3675,
+      "differing": 0
+    },
+    {
+      "id": "species:aerodactyl",
+      "present": 3867,
+      "exercised": 2701,
+      "equal": 2701,
+      "differing": 0
+    },
+    {
+      "id": "species:aerodactylmega",
+      "present": 6433,
+      "exercised": 2529,
+      "equal": 2529,
+      "differing": 0
+    },
+    {
+      "id": "species:aggron",
+      "present": 4142,
+      "exercised": 2689,
+      "equal": 2689,
+      "differing": 0
+    },
+    {
+      "id": "species:aggronmega",
+      "present": 1521,
+      "exercised": 838,
+      "equal": 838,
+      "differing": 0
+    },
+    {
+      "id": "species:alakazam",
+      "present": 6098,
+      "exercised": 3599,
+      "equal": 3599,
+      "differing": 0
+    },
+    {
+      "id": "species:alakazammega",
+      "present": 7882,
+      "exercised": 774,
+      "equal": 774,
+      "differing": 0
+    },
+    {
+      "id": "species:alcremie",
+      "present": 4771,
+      "exercised": 2557,
+      "equal": 2557,
+      "differing": 0
+    },
+    {
+      "id": "species:alcremiecaramelswirl",
+      "present": 2458,
+      "exercised": 2170,
+      "equal": 2170,
+      "differing": 0
+    },
+    {
+      "id": "species:alcremielemoncream",
+      "present": 4077,
+      "exercised": 3448,
+      "equal": 3448,
+      "differing": 0
+    },
+    {
+      "id": "species:alcremiematchacream",
+      "present": 1693,
+      "exercised": 1523,
+      "equal": 1523,
+      "differing": 0
+    },
+    {
+      "id": "species:alcremiemintcream",
+      "present": 2904,
+      "exercised": 2204,
+      "equal": 2204,
+      "differing": 0
+    },
+    {
+      "id": "species:alcremierainbowswirl",
+      "present": 1978,
+      "exercised": 1405,
+      "equal": 1405,
+      "differing": 0
+    },
+    {
+      "id": "species:alcremierubycream",
+      "present": 1408,
+      "exercised": 1327,
+      "equal": 1327,
+      "differing": 0
+    },
+    {
+      "id": "species:alcremierubyswirl",
+      "present": 7155,
+      "exercised": 4634,
+      "equal": 4634,
+      "differing": 0
+    },
+    {
+      "id": "species:altaria",
+      "present": 8920,
+      "exercised": 6660,
+      "equal": 6660,
+      "differing": 0
+    },
+    {
+      "id": "species:altariamega",
+      "present": 3712,
+      "exercised": 1715,
+      "equal": 1715,
+      "differing": 0
+    },
+    {
+      "id": "species:ampharos",
+      "present": 4205,
+      "exercised": 2594,
+      "equal": 2594,
+      "differing": 0
+    },
+    {
+      "id": "species:ampharosmega",
+      "present": 3197,
+      "exercised": 1397,
+      "equal": 1397,
+      "differing": 0
+    },
+    {
+      "id": "species:annihilape",
+      "present": 8267,
+      "exercised": 4252,
+      "equal": 4252,
+      "differing": 0
+    },
+    {
+      "id": "species:appletun",
+      "present": 1553,
+      "exercised": 1429,
+      "equal": 1429,
+      "differing": 0
+    },
+    {
+      "id": "species:araquanid",
+      "present": 8540,
+      "exercised": 5991,
+      "equal": 5991,
+      "differing": 0
+    },
+    {
+      "id": "species:arbok",
+      "present": 4721,
+      "exercised": 3156,
+      "equal": 3156,
+      "differing": 0
+    },
+    {
+      "id": "species:arboliva",
+      "present": 8183,
+      "exercised": 5281,
+      "equal": 5281,
+      "differing": 0
+    },
+    {
+      "id": "species:arcanine",
+      "present": 6507,
+      "exercised": 4286,
+      "equal": 4286,
+      "differing": 0
+    },
+    {
+      "id": "species:arcaninehisui",
+      "present": 3672,
+      "exercised": 3168,
+      "equal": 3168,
+      "differing": 0
+    },
+    {
+      "id": "species:archaludon",
+      "present": 812,
+      "exercised": 753,
+      "equal": 753,
+      "differing": 0
+    },
+    {
+      "id": "species:ariados",
+      "present": 2131,
+      "exercised": 1966,
+      "equal": 1966,
+      "differing": 0
+    },
+    {
+      "id": "species:armarouge",
+      "present": 7276,
+      "exercised": 4684,
+      "equal": 4684,
+      "differing": 0
+    },
+    {
+      "id": "species:aromatisse",
+      "present": 2900,
+      "exercised": 1175,
+      "equal": 1175,
+      "differing": 0
+    },
+    {
+      "id": "species:audino",
+      "present": 7750,
+      "exercised": 5703,
+      "equal": 5703,
+      "differing": 0
+    },
+    {
+      "id": "species:audinomega",
+      "present": 1841,
+      "exercised": 1687,
+      "equal": 1687,
+      "differing": 0
+    },
+    {
+      "id": "species:aurorus",
+      "present": 5887,
+      "exercised": 3556,
+      "equal": 3556,
+      "differing": 0
+    },
+    {
+      "id": "species:avalugg",
+      "present": 2448,
+      "exercised": 2144,
+      "equal": 2144,
+      "differing": 0
+    },
+    {
+      "id": "species:avalugghisui",
+      "present": 2647,
+      "exercised": 2121,
+      "equal": 2121,
+      "differing": 0
+    },
+    {
+      "id": "species:azumarill",
+      "present": 3799,
+      "exercised": 2794,
+      "equal": 2794,
+      "differing": 0
+    },
+    {
+      "id": "species:banette",
+      "present": 3917,
+      "exercised": 2960,
+      "equal": 2960,
+      "differing": 0
+    },
+    {
+      "id": "species:banettemega",
+      "present": 4659,
+      "exercised": 2344,
+      "equal": 2344,
+      "differing": 0
+    },
+    {
+      "id": "species:barbaracle",
+      "present": 4352,
+      "exercised": 3563,
+      "equal": 3563,
+      "differing": 0
+    },
+    {
+      "id": "species:barbaraclemega",
+      "present": 869,
+      "exercised": 478,
+      "equal": 478,
+      "differing": 0
+    },
+    {
+      "id": "species:basculegion",
+      "present": 2097,
+      "exercised": 1377,
+      "equal": 1377,
+      "differing": 0
+    },
+    {
+      "id": "species:basculegionf",
+      "present": 12770,
+      "exercised": 6914,
+      "equal": 6914,
+      "differing": 0
+    },
+    {
+      "id": "species:bastiodon",
+      "present": 8837,
+      "exercised": 4420,
+      "equal": 4420,
+      "differing": 0
+    },
+    {
+      "id": "species:baxcalibur",
+      "present": 4527,
+      "exercised": 3310,
+      "equal": 3310,
+      "differing": 0
+    },
+    {
+      "id": "species:baxcaliburmega",
+      "present": 1412,
+      "exercised": 811,
+      "equal": 811,
+      "differing": 0
+    },
+    {
+      "id": "species:beartic",
+      "present": 2605,
+      "exercised": 1639,
+      "equal": 1639,
+      "differing": 0
+    },
+    {
+      "id": "species:beedrill",
+      "present": 3874,
+      "exercised": 2358,
+      "equal": 2358,
+      "differing": 0
+    },
+    {
+      "id": "species:beedrillmega",
+      "present": 3384,
+      "exercised": 2200,
+      "equal": 2200,
+      "differing": 0
+    },
+    {
+      "id": "species:bellibolt",
+      "present": 4938,
+      "exercised": 2584,
+      "equal": 2584,
+      "differing": 0
+    },
+    {
+      "id": "species:blastoise",
+      "present": 5877,
+      "exercised": 4367,
+      "equal": 4367,
+      "differing": 0
+    },
+    {
+      "id": "species:blastoisemega",
+      "present": 4049,
+      "exercised": 3157,
+      "equal": 3157,
+      "differing": 0
+    },
+    {
+      "id": "species:blaziken",
+      "present": 3886,
+      "exercised": 1706,
+      "equal": 1706,
+      "differing": 0
+    },
+    {
+      "id": "species:blazikenmega",
+      "present": 1444,
+      "exercised": 1246,
+      "equal": 1246,
+      "differing": 0
+    },
+    {
+      "id": "species:camerupt",
+      "present": 8702,
+      "exercised": 5035,
+      "equal": 5035,
+      "differing": 0
+    },
+    {
+      "id": "species:cameruptmega",
+      "present": 3137,
+      "exercised": 2387,
+      "equal": 2387,
+      "differing": 0
+    },
+    {
+      "id": "species:castform",
+      "present": 11998,
+      "exercised": 6953,
+      "equal": 6953,
+      "differing": 0
+    },
+    {
+      "id": "species:ceruledge",
+      "present": 7758,
+      "exercised": 3984,
+      "equal": 3984,
+      "differing": 0
+    },
+    {
+      "id": "species:chandelure",
+      "present": 2225,
+      "exercised": 1674,
+      "equal": 1674,
+      "differing": 0
+    },
+    {
+      "id": "species:chandeluremega",
+      "present": 621,
+      "exercised": 545,
+      "equal": 545,
+      "differing": 0
+    },
+    {
+      "id": "species:charizard",
+      "present": 11702,
+      "exercised": 8044,
+      "equal": 8044,
+      "differing": 0
+    },
+    {
+      "id": "species:charizardmegax",
+      "present": 1786,
+      "exercised": 1629,
+      "equal": 1629,
+      "differing": 0
+    },
+    {
+      "id": "species:charizardmegay",
+      "present": 2619,
+      "exercised": 1909,
+      "equal": 1909,
+      "differing": 0
+    },
+    {
+      "id": "species:chesnaught",
+      "present": 2159,
+      "exercised": 1634,
+      "equal": 1634,
+      "differing": 0
+    },
+    {
+      "id": "species:chesnaughtmega",
+      "present": 2367,
+      "exercised": 1527,
+      "equal": 1527,
+      "differing": 0
+    },
+    {
+      "id": "species:chimecho",
+      "present": 10667,
+      "exercised": 4832,
+      "equal": 4832,
+      "differing": 0
+    },
+    {
+      "id": "species:chimechomega",
+      "present": 3378,
+      "exercised": 717,
+      "equal": 717,
+      "differing": 0
+    },
+    {
+      "id": "species:cinderace",
+      "present": 2220,
+      "exercised": 1861,
+      "equal": 1861,
+      "differing": 0
+    },
+    {
+      "id": "species:clawitzer",
+      "present": 2184,
+      "exercised": 1730,
+      "equal": 1730,
+      "differing": 0
+    },
+    {
+      "id": "species:clefable",
+      "present": 4861,
+      "exercised": 3009,
+      "equal": 3009,
+      "differing": 0
+    },
+    {
+      "id": "species:clefablemega",
+      "present": 3639,
+      "exercised": 2709,
+      "equal": 2709,
+      "differing": 0
+    },
+    {
+      "id": "species:cofagrigus",
+      "present": 4941,
+      "exercised": 4469,
+      "equal": 4469,
+      "differing": 0
+    },
+    {
+      "id": "species:conkeldurr",
+      "present": 4707,
+      "exercised": 2418,
+      "equal": 2418,
+      "differing": 0
+    },
+    {
+      "id": "species:corviknight",
+      "present": 7894,
+      "exercised": 5682,
+      "equal": 5682,
+      "differing": 0
+    },
+    {
+      "id": "species:crabominable",
+      "present": 2827,
+      "exercised": 2392,
+      "equal": 2392,
+      "differing": 0
+    },
+    {
+      "id": "species:crabominablemega",
+      "present": 2146,
+      "exercised": 1825,
+      "equal": 1825,
+      "differing": 0
+    },
+    {
+      "id": "species:decidueye",
+      "present": 5816,
+      "exercised": 3048,
+      "equal": 3048,
+      "differing": 0
+    },
+    {
+      "id": "species:decidueyehisui",
+      "present": 625,
+      "exercised": 589,
+      "equal": 589,
+      "differing": 0
+    },
+    {
+      "id": "species:dedenne",
+      "present": 4657,
+      "exercised": 2306,
+      "equal": 2306,
+      "differing": 0
+    },
+    {
+      "id": "species:delphox",
+      "present": 2355,
+      "exercised": 1986,
+      "equal": 1986,
+      "differing": 0
+    },
+    {
+      "id": "species:delphoxmega",
+      "present": 1077,
+      "exercised": 576,
+      "equal": 576,
+      "differing": 0
+    },
+    {
+      "id": "species:diggersby",
+      "present": 2238,
+      "exercised": 2058,
+      "equal": 2058,
+      "differing": 0
+    },
+    {
+      "id": "species:ditto",
+      "present": 7156,
+      "exercised": 4244,
+      "equal": 4244,
+      "differing": 0
+    },
+    {
+      "id": "species:dragalge",
+      "present": 6932,
+      "exercised": 5636,
+      "equal": 5636,
+      "differing": 0
+    },
+    {
+      "id": "species:dragalgemega",
+      "present": 1618,
+      "exercised": 1578,
+      "equal": 1578,
+      "differing": 0
+    },
+    {
+      "id": "species:dragapult",
+      "present": 6977,
+      "exercised": 3161,
+      "equal": 3161,
+      "differing": 0
+    },
+    {
+      "id": "species:dragonite",
+      "present": 7760,
+      "exercised": 4319,
+      "equal": 4319,
+      "differing": 0
+    },
+    {
+      "id": "species:dragonitemega",
+      "present": 4783,
+      "exercised": 2917,
+      "equal": 2917,
+      "differing": 0
+    },
+    {
+      "id": "species:drampa",
+      "present": 9967,
+      "exercised": 4777,
+      "equal": 4777,
+      "differing": 0
+    },
+    {
+      "id": "species:drampamega",
+      "present": 3500,
+      "exercised": 3279,
+      "equal": 3279,
+      "differing": 0
+    },
+    {
+      "id": "species:eelektross",
+      "present": 924,
+      "exercised": 710,
+      "equal": 710,
+      "differing": 0
+    },
+    {
+      "id": "species:emboar",
+      "present": 8426,
+      "exercised": 4902,
+      "equal": 4902,
+      "differing": 0
+    },
+    {
+      "id": "species:emboarmega",
+      "present": 263,
+      "exercised": 263,
+      "equal": 263,
+      "differing": 0
+    },
+    {
+      "id": "species:emolga",
+      "present": 3831,
+      "exercised": 2951,
+      "equal": 2951,
+      "differing": 0
+    },
+    {
+      "id": "species:empoleon",
+      "present": 4964,
+      "exercised": 3646,
+      "equal": 3646,
+      "differing": 0
+    },
+    {
+      "id": "species:espathra",
+      "present": 3838,
+      "exercised": 3327,
+      "equal": 3327,
+      "differing": 0
+    },
+    {
+      "id": "species:espeon",
+      "present": 5267,
+      "exercised": 3532,
+      "equal": 3532,
+      "differing": 0
+    },
+    {
+      "id": "species:excadrill",
+      "present": 2973,
+      "exercised": 2705,
+      "equal": 2705,
+      "differing": 0
+    },
+    {
+      "id": "species:excadrillmega",
+      "present": 485,
+      "exercised": 465,
+      "equal": 465,
+      "differing": 0
+    },
+    {
+      "id": "species:falinks",
+      "present": 4661,
+      "exercised": 3069,
+      "equal": 3069,
+      "differing": 0
+    },
+    {
+      "id": "species:falinksmega",
+      "present": 5551,
+      "exercised": 1682,
+      "equal": 1682,
+      "differing": 0
+    },
+    {
+      "id": "species:farfetchd",
+      "present": 6646,
+      "exercised": 3971,
+      "equal": 3971,
+      "differing": 0
+    },
+    {
+      "id": "species:farigiraf",
+      "present": 3642,
+      "exercised": 2074,
+      "equal": 2074,
+      "differing": 0
+    },
+    {
+      "id": "species:feraligatr",
+      "present": 5481,
+      "exercised": 4041,
+      "equal": 4041,
+      "differing": 0
+    },
+    {
+      "id": "species:feraligatrmega",
+      "present": 14,
+      "exercised": 10,
+      "equal": 10,
+      "differing": 0
+    },
+    {
+      "id": "species:flapple",
+      "present": 5660,
+      "exercised": 5075,
+      "equal": 5075,
+      "differing": 0
+    },
+    {
+      "id": "species:flareon",
+      "present": 2231,
+      "exercised": 2086,
+      "equal": 2086,
+      "differing": 0
+    },
+    {
+      "id": "species:floetteeternal",
+      "present": 4566,
+      "exercised": 3793,
+      "equal": 3793,
+      "differing": 0
+    },
+    {
+      "id": "species:floettemega",
+      "present": 2808,
+      "exercised": 1821,
+      "equal": 1821,
+      "differing": 0
+    },
+    {
+      "id": "species:florges",
+      "present": 9948,
+      "exercised": 4359,
+      "equal": 4359,
+      "differing": 0
+    },
+    {
+      "id": "species:forretress",
+      "present": 1080,
+      "exercised": 1068,
+      "equal": 1068,
+      "differing": 0
+    },
+    {
+      "id": "species:froslass",
+      "present": 3020,
+      "exercised": 2002,
+      "equal": 2002,
+      "differing": 0
+    },
+    {
+      "id": "species:froslassmega",
+      "present": 862,
+      "exercised": 556,
+      "equal": 556,
+      "differing": 0
+    },
+    {
+      "id": "species:furfrou",
+      "present": 2474,
+      "exercised": 1732,
+      "equal": 1732,
+      "differing": 0
+    },
+    {
+      "id": "species:gallade",
+      "present": 5562,
+      "exercised": 3186,
+      "equal": 3186,
+      "differing": 0
+    },
+    {
+      "id": "species:gallademega",
+      "present": 1898,
+      "exercised": 1687,
+      "equal": 1687,
+      "differing": 0
+    },
+    {
+      "id": "species:garbodor",
+      "present": 1839,
+      "exercised": 1179,
+      "equal": 1179,
+      "differing": 0
+    },
+    {
+      "id": "species:garchomp",
+      "present": 2424,
+      "exercised": 1714,
+      "equal": 1714,
+      "differing": 0
+    },
+    {
+      "id": "species:garchompmega",
+      "present": 1022,
+      "exercised": 1018,
+      "equal": 1018,
+      "differing": 0
+    },
+    {
+      "id": "species:garchompmegaz",
+      "present": 5122,
+      "exercised": 3162,
+      "equal": 3162,
+      "differing": 0
+    },
+    {
+      "id": "species:gardevoir",
+      "present": 2426,
+      "exercised": 1263,
+      "equal": 1263,
+      "differing": 0
+    },
+    {
+      "id": "species:gardevoirmega",
+      "present": 42,
+      "exercised": 30,
+      "equal": 30,
+      "differing": 0
+    },
+    {
+      "id": "species:garganacl",
+      "present": 4909,
+      "exercised": 1835,
+      "equal": 1835,
+      "differing": 0
+    },
+    {
+      "id": "species:gengar",
+      "present": 2311,
+      "exercised": 2126,
+      "equal": 2126,
+      "differing": 0
+    },
+    {
+      "id": "species:gengarmega",
+      "present": 3873,
+      "exercised": 3484,
+      "equal": 3484,
+      "differing": 0
+    },
+    {
+      "id": "species:gholdengo",
+      "present": 5201,
+      "exercised": 3596,
+      "equal": 3596,
+      "differing": 0
+    },
+    {
+      "id": "species:glaceon",
+      "present": 2260,
+      "exercised": 1161,
+      "equal": 1161,
+      "differing": 0
+    },
+    {
+      "id": "species:glalie",
+      "present": 1268,
+      "exercised": 1208,
+      "equal": 1208,
+      "differing": 0
+    },
+    {
+      "id": "species:glaliemega",
+      "present": 138,
+      "exercised": 126,
+      "equal": 126,
+      "differing": 0
+    },
+    {
+      "id": "species:glimmora",
+      "present": 12997,
+      "exercised": 6723,
+      "equal": 6723,
+      "differing": 0
+    },
+    {
+      "id": "species:glimmoramega",
+      "present": 975,
+      "exercised": 883,
+      "equal": 883,
+      "differing": 0
+    },
+    {
+      "id": "species:gliscor",
+      "present": 3047,
+      "exercised": 2390,
+      "equal": 2390,
+      "differing": 0
+    },
+    {
+      "id": "species:gogoat",
+      "present": 5954,
+      "exercised": 4233,
+      "equal": 4233,
+      "differing": 0
+    },
+    {
+      "id": "species:golisopod",
+      "present": 4570,
+      "exercised": 3599,
+      "equal": 3599,
+      "differing": 0
+    },
+    {
+      "id": "species:golisopodmega",
+      "present": 2667,
+      "exercised": 1886,
+      "equal": 1886,
+      "differing": 0
+    },
+    {
+      "id": "species:golurk",
+      "present": 5065,
+      "exercised": 3618,
+      "equal": 3618,
+      "differing": 0
+    },
+    {
+      "id": "species:golurkmega",
+      "present": 1242,
+      "exercised": 1067,
+      "equal": 1067,
+      "differing": 0
+    },
+    {
+      "id": "species:goodra",
+      "present": 553,
+      "exercised": 129,
+      "equal": 129,
+      "differing": 0
+    },
+    {
+      "id": "species:goodrahisui",
+      "present": 6656,
+      "exercised": 4349,
+      "equal": 4349,
+      "differing": 0
+    },
+    {
+      "id": "species:gourgeist",
+      "present": 3274,
+      "exercised": 2138,
+      "equal": 2138,
+      "differing": 0
+    },
+    {
+      "id": "species:gourgeistlarge",
+      "present": 4692,
+      "exercised": 2370,
+      "equal": 2370,
+      "differing": 0
+    },
+    {
+      "id": "species:gourgeistsmall",
+      "present": 1524,
+      "exercised": 968,
+      "equal": 968,
+      "differing": 0
+    },
+    {
+      "id": "species:gourgeistsuper",
+      "present": 3170,
+      "exercised": 2798,
+      "equal": 2798,
+      "differing": 0
+    },
+    {
+      "id": "species:grapploct",
+      "present": 2384,
+      "exercised": 2346,
+      "equal": 2346,
+      "differing": 0
+    },
+    {
+      "id": "species:greninja",
+      "present": 1412,
+      "exercised": 959,
+      "equal": 959,
+      "differing": 0
+    },
+    {
+      "id": "species:greninjamega",
+      "present": 1131,
+      "exercised": 638,
+      "equal": 638,
+      "differing": 0
+    },
+    {
+      "id": "species:grimmsnarl",
+      "present": 6320,
+      "exercised": 4280,
+      "equal": 4280,
+      "differing": 0
+    },
+    {
+      "id": "species:gyarados",
+      "present": 5358,
+      "exercised": 3743,
+      "equal": 3743,
+      "differing": 0
+    },
+    {
+      "id": "species:gyaradosmega",
+      "present": 3378,
+      "exercised": 2528,
+      "equal": 2528,
+      "differing": 0
+    },
+    {
+      "id": "species:hatterene",
+      "present": 3746,
+      "exercised": 2366,
+      "equal": 2366,
+      "differing": 0
+    },
+    {
+      "id": "species:hawlucha",
+      "present": 6555,
+      "exercised": 5566,
+      "equal": 5566,
+      "differing": 0
+    },
+    {
+      "id": "species:hawluchamega",
+      "present": 1103,
+      "exercised": 1002,
+      "equal": 1002,
+      "differing": 0
+    },
+    {
+      "id": "species:heliolisk",
+      "present": 4876,
+      "exercised": 3066,
+      "equal": 3066,
+      "differing": 0
+    },
+    {
+      "id": "species:heracross",
+      "present": 5530,
+      "exercised": 3105,
+      "equal": 3105,
+      "differing": 0
+    },
+    {
+      "id": "species:heracrossmega",
+      "present": 1591,
+      "exercised": 1193,
+      "equal": 1193,
+      "differing": 0
+    },
+    {
+      "id": "species:hippowdon",
+      "present": 6094,
+      "exercised": 2586,
+      "equal": 2586,
+      "differing": 0
+    },
+    {
+      "id": "species:houndoom",
+      "present": 4729,
+      "exercised": 3306,
+      "equal": 3306,
+      "differing": 0
+    },
+    {
+      "id": "species:houndoommega",
+      "present": 1127,
+      "exercised": 792,
+      "equal": 792,
+      "differing": 0
+    },
+    {
+      "id": "species:houndstone",
+      "present": 11483,
+      "exercised": 5087,
+      "equal": 5087,
+      "differing": 0
+    },
+    {
+      "id": "species:hydrapple",
+      "present": 4473,
+      "exercised": 1857,
+      "equal": 1857,
+      "differing": 0
+    },
+    {
+      "id": "species:hydreigon",
+      "present": 6798,
+      "exercised": 4248,
+      "equal": 4248,
+      "differing": 0
+    },
+    {
+      "id": "species:incineroar",
+      "present": 10216,
+      "exercised": 7042,
+      "equal": 7042,
+      "differing": 0
+    },
+    {
+      "id": "species:indeedee",
+      "present": 6014,
+      "exercised": 3050,
+      "equal": 3050,
+      "differing": 0
+    },
+    {
+      "id": "species:indeedeef",
+      "present": 4603,
+      "exercised": 4038,
+      "equal": 4038,
+      "differing": 0
+    },
+    {
+      "id": "species:infernape",
+      "present": 2827,
+      "exercised": 1567,
+      "equal": 1567,
+      "differing": 0
+    },
+    {
+      "id": "species:inteleon",
+      "present": 3024,
+      "exercised": 2360,
+      "equal": 2360,
+      "differing": 0
+    },
+    {
+      "id": "species:jolteon",
+      "present": 3997,
+      "exercised": 2720,
+      "equal": 2720,
+      "differing": 0
+    },
+    {
+      "id": "species:kangaskhan",
+      "present": 10630,
+      "exercised": 5391,
+      "equal": 5391,
+      "differing": 0
+    },
+    {
+      "id": "species:kangaskhanmega",
+      "present": 167,
+      "exercised": 101,
+      "equal": 101,
+      "differing": 0
+    },
+    {
+      "id": "species:kingambit",
+      "present": 8240,
+      "exercised": 3357,
+      "equal": 3357,
+      "differing": 0
+    },
+    {
+      "id": "species:kleavor",
+      "present": 3888,
+      "exercised": 3633,
+      "equal": 3633,
+      "differing": 0
+    },
+    {
+      "id": "species:klefki",
+      "present": 2521,
+      "exercised": 1810,
+      "equal": 1810,
+      "differing": 0
+    },
+    {
+      "id": "species:kommoo",
+      "present": 3852,
+      "exercised": 3020,
+      "equal": 3020,
+      "differing": 0
+    },
+    {
+      "id": "species:krookodile",
+      "present": 5082,
+      "exercised": 2741,
+      "equal": 2741,
+      "differing": 0
+    },
+    {
+      "id": "species:leafeon",
+      "present": 3111,
+      "exercised": 3044,
+      "equal": 3044,
+      "differing": 0
+    },
+    {
+      "id": "species:liepard",
+      "present": 7111,
+      "exercised": 5121,
+      "equal": 5121,
+      "differing": 0
+    },
+    {
+      "id": "species:lopunny",
+      "present": 7432,
+      "exercised": 4436,
+      "equal": 4436,
+      "differing": 0
+    },
+    {
+      "id": "species:lopunnymega",
+      "present": 2795,
+      "exercised": 2204,
+      "equal": 2204,
+      "differing": 0
+    },
+    {
+      "id": "species:lucario",
+      "present": 2583,
+      "exercised": 2148,
+      "equal": 2148,
+      "differing": 0
+    },
+    {
+      "id": "species:lucariomega",
+      "present": 287,
+      "exercised": 287,
+      "equal": 287,
+      "differing": 0
+    },
+    {
+      "id": "species:lucariomegaz",
+      "present": 2726,
+      "exercised": 1758,
+      "equal": 1758,
+      "differing": 0
+    },
+    {
+      "id": "species:luxray",
+      "present": 4689,
+      "exercised": 2617,
+      "equal": 2617,
+      "differing": 0
+    },
+    {
+      "id": "species:lycanroc",
+      "present": 2600,
+      "exercised": 2319,
+      "equal": 2319,
+      "differing": 0
+    },
+    {
+      "id": "species:lycanrocdusk",
+      "present": 11330,
+      "exercised": 6603,
+      "equal": 6603,
+      "differing": 0
+    },
+    {
+      "id": "species:lycanrocmidnight",
+      "present": 4425,
+      "exercised": 1935,
+      "equal": 1935,
+      "differing": 0
+    },
+    {
+      "id": "species:mabosstiff",
+      "present": 3021,
+      "exercised": 2719,
+      "equal": 2719,
+      "differing": 0
+    },
+    {
+      "id": "species:machamp",
+      "present": 10345,
+      "exercised": 3770,
+      "equal": 3770,
+      "differing": 0
+    },
+    {
+      "id": "species:malamar",
+      "present": 5190,
+      "exercised": 3771,
+      "equal": 3771,
+      "differing": 0
+    },
+    {
+      "id": "species:malamarmega",
+      "present": 2942,
+      "exercised": 2799,
+      "equal": 2799,
+      "differing": 0
+    },
+    {
+      "id": "species:mamoswine",
+      "present": 3235,
+      "exercised": 3044,
+      "equal": 3044,
+      "differing": 0
+    },
+    {
+      "id": "species:manectric",
+      "present": 8123,
+      "exercised": 4536,
+      "equal": 4536,
+      "differing": 0
+    },
+    {
+      "id": "species:manectricmega",
+      "present": 2528,
+      "exercised": 1730,
+      "equal": 1730,
+      "differing": 0
+    },
+    {
+      "id": "species:maushold",
+      "present": 3191,
+      "exercised": 2894,
+      "equal": 2894,
+      "differing": 0
+    },
+    {
+      "id": "species:mausholdfour",
+      "present": 530,
+      "exercised": 384,
+      "equal": 384,
+      "differing": 0
+    },
+    {
+      "id": "species:mawile",
+      "present": 3938,
+      "exercised": 2724,
+      "equal": 2724,
+      "differing": 0
+    },
+    {
+      "id": "species:mawilemega",
+      "present": 1934,
+      "exercised": 995,
+      "equal": 995,
+      "differing": 0
+    },
+    {
+      "id": "species:medicham",
+      "present": 8244,
+      "exercised": 5133,
+      "equal": 5133,
+      "differing": 0
+    },
+    {
+      "id": "species:medichammega",
+      "present": 3094,
+      "exercised": 2008,
+      "equal": 2008,
+      "differing": 0
+    },
+    {
+      "id": "species:meganium",
+      "present": 5055,
+      "exercised": 3953,
+      "equal": 3953,
+      "differing": 0
+    },
+    {
+      "id": "species:meganiummega",
+      "present": 5850,
+      "exercised": 3349,
+      "equal": 3349,
+      "differing": 0
+    },
+    {
+      "id": "species:meowscarada",
+      "present": 2428,
+      "exercised": 1775,
+      "equal": 1775,
+      "differing": 0
+    },
+    {
+      "id": "species:meowstic",
+      "present": 2658,
+      "exercised": 1752,
+      "equal": 1752,
+      "differing": 0
+    },
+    {
+      "id": "species:meowsticf",
+      "present": 8921,
+      "exercised": 5582,
+      "equal": 5582,
+      "differing": 0
+    },
+    {
+      "id": "species:meowsticfmega",
+      "present": 4280,
+      "exercised": 382,
+      "equal": 382,
+      "differing": 0
+    },
+    {
+      "id": "species:meowsticmmega",
+      "present": 3992,
+      "exercised": 353,
+      "equal": 353,
+      "differing": 0
+    },
+    {
+      "id": "species:metagross",
+      "present": 9675,
+      "exercised": 6092,
+      "equal": 6092,
+      "differing": 0
+    },
+    {
+      "id": "species:metagrossmega",
+      "present": 606,
+      "exercised": 596,
+      "equal": 596,
+      "differing": 0
+    },
+    {
+      "id": "species:milotic",
+      "present": 2394,
+      "exercised": 1240,
+      "equal": 1240,
+      "differing": 0
+    },
+    {
+      "id": "species:mimikyu",
+      "present": 5552,
+      "exercised": 4291,
+      "equal": 4291,
+      "differing": 0
+    },
+    {
+      "id": "species:mimikyubusted",
+      "present": 2886,
+      "exercised": 1890,
+      "equal": 1890,
+      "differing": 0
+    },
+    {
+      "id": "species:morpeko",
+      "present": 13039,
+      "exercised": 9080,
+      "equal": 9080,
+      "differing": 0
+    },
+    {
+      "id": "species:mrmime",
+      "present": 3030,
+      "exercised": 1659,
+      "equal": 1659,
+      "differing": 0
+    },
+    {
+      "id": "species:mrrime",
+      "present": 3401,
+      "exercised": 2035,
+      "equal": 2035,
+      "differing": 0
+    },
+    {
+      "id": "species:mudsdale",
+      "present": 4245,
+      "exercised": 3369,
+      "equal": 3369,
+      "differing": 0
+    },
+    {
+      "id": "species:musharna",
+      "present": 4580,
+      "exercised": 2866,
+      "equal": 2866,
+      "differing": 0
+    },
+    {
+      "id": "species:ninetales",
+      "present": 7089,
+      "exercised": 5042,
+      "equal": 5042,
+      "differing": 0
+    },
+    {
+      "id": "species:ninetalesalola",
+      "present": 2415,
+      "exercised": 1190,
+      "equal": 1190,
+      "differing": 0
+    },
+    {
+      "id": "species:noivern",
+      "present": 2375,
+      "exercised": 2246,
+      "equal": 2246,
+      "differing": 0
+    },
+    {
+      "id": "species:oranguru",
+      "present": 5628,
+      "exercised": 3325,
+      "equal": 3325,
+      "differing": 0
+    },
+    {
+      "id": "species:orthworm",
+      "present": 4176,
+      "exercised": 2803,
+      "equal": 2803,
+      "differing": 0
+    },
+    {
+      "id": "species:overqwil",
+      "present": 8182,
+      "exercised": 6614,
+      "equal": 6614,
+      "differing": 0
+    },
+    {
+      "id": "species:palafin",
+      "present": 7764,
+      "exercised": 4991,
+      "equal": 4991,
+      "differing": 0
+    },
+    {
+      "id": "species:palafinhero",
+      "present": 2595,
+      "exercised": 1607,
+      "equal": 1607,
+      "differing": 0
+    },
+    {
+      "id": "species:pangoro",
+      "present": 2802,
+      "exercised": 1489,
+      "equal": 1489,
+      "differing": 0
+    },
+    {
+      "id": "species:passimian",
+      "present": 4708,
+      "exercised": 3082,
+      "equal": 3082,
+      "differing": 0
+    },
+    {
+      "id": "species:pawmot",
+      "present": 2011,
+      "exercised": 1579,
+      "equal": 1579,
+      "differing": 0
+    },
+    {
+      "id": "species:pelipper",
+      "present": 2994,
+      "exercised": 2050,
+      "equal": 2050,
+      "differing": 0
+    },
+    {
+      "id": "species:perrserker",
+      "present": 7569,
+      "exercised": 4440,
+      "equal": 4440,
+      "differing": 0
+    },
+    {
+      "id": "species:persian",
+      "present": 2210,
+      "exercised": 1878,
+      "equal": 1878,
+      "differing": 0
+    },
+    {
+      "id": "species:persianalola",
+      "present": 2470,
+      "exercised": 1722,
+      "equal": 1722,
+      "differing": 0
+    },
+    {
+      "id": "species:pidgeot",
+      "present": 2584,
+      "exercised": 1674,
+      "equal": 1674,
+      "differing": 0
+    },
+    {
+      "id": "species:pidgeotmega",
+      "present": 2643,
+      "exercised": 1779,
+      "equal": 1779,
+      "differing": 0
+    },
+    {
+      "id": "species:pikachu",
+      "present": 2039,
+      "exercised": 1147,
+      "equal": 1147,
+      "differing": 0
+    },
+    {
+      "id": "species:pincurchin",
+      "present": 5696,
+      "exercised": 2613,
+      "equal": 2613,
+      "differing": 0
+    },
+    {
+      "id": "species:pinsir",
+      "present": 5862,
+      "exercised": 4089,
+      "equal": 4089,
+      "differing": 0
+    },
+    {
+      "id": "species:pinsirmega",
+      "present": 3893,
+      "exercised": 1742,
+      "equal": 1742,
+      "differing": 0
+    },
+    {
+      "id": "species:politoed",
+      "present": 531,
+      "exercised": 490,
+      "equal": 490,
+      "differing": 0
+    },
+    {
+      "id": "species:polteageist",
+      "present": 4529,
+      "exercised": 2806,
+      "equal": 2806,
+      "differing": 0
+    },
+    {
+      "id": "species:polteageistantique",
+      "present": 550,
+      "exercised": 481,
+      "equal": 481,
+      "differing": 0
+    },
+    {
+      "id": "species:primarina",
+      "present": 1187,
+      "exercised": 813,
+      "equal": 813,
+      "differing": 0
+    },
+    {
+      "id": "species:pyroar",
+      "present": 3220,
+      "exercised": 2854,
+      "equal": 2854,
+      "differing": 0
+    },
+    {
+      "id": "species:pyroarmega",
+      "present": 110,
+      "exercised": 100,
+      "equal": 100,
+      "differing": 0
+    },
+    {
+      "id": "species:quaquaval",
+      "present": 4298,
+      "exercised": 1594,
+      "equal": 1594,
+      "differing": 0
+    },
+    {
+      "id": "species:qwilfish",
+      "present": 3016,
+      "exercised": 1201,
+      "equal": 1201,
+      "differing": 0
+    },
+    {
+      "id": "species:raichu",
+      "present": 6922,
+      "exercised": 5417,
+      "equal": 5417,
+      "differing": 0
+    },
+    {
+      "id": "species:raichualola",
+      "present": 5038,
+      "exercised": 3088,
+      "equal": 3088,
+      "differing": 0
+    },
+    {
+      "id": "species:raichumegax",
+      "present": 526,
+      "exercised": 499,
+      "equal": 499,
+      "differing": 0
+    },
+    {
+      "id": "species:raichumegay",
+      "present": 4505,
+      "exercised": 2903,
+      "equal": 2903,
+      "differing": 0
+    },
+    {
+      "id": "species:rampardos",
+      "present": 3278,
+      "exercised": 2016,
+      "equal": 2016,
+      "differing": 0
+    },
+    {
+      "id": "species:reuniclus",
+      "present": 9367,
+      "exercised": 5251,
+      "equal": 5251,
+      "differing": 0
+    },
+    {
+      "id": "species:rhyperior",
+      "present": 5580,
+      "exercised": 2945,
+      "equal": 2945,
+      "differing": 0
+    },
+    {
+      "id": "species:rillaboom",
+      "present": 1663,
+      "exercised": 1516,
+      "equal": 1516,
+      "differing": 0
+    },
+    {
+      "id": "species:roserade",
+      "present": 763,
+      "exercised": 687,
+      "equal": 687,
+      "differing": 0
+    },
+    {
+      "id": "species:rotom",
+      "present": 5341,
+      "exercised": 2378,
+      "equal": 2378,
+      "differing": 0
+    },
+    {
+      "id": "species:rotomfan",
+      "present": 3334,
+      "exercised": 1432,
+      "equal": 1432,
+      "differing": 0
+    },
+    {
+      "id": "species:rotomfrost",
+      "present": 1691,
+      "exercised": 1181,
+      "equal": 1181,
+      "differing": 0
+    },
+    {
+      "id": "species:rotomheat",
+      "present": 2304,
+      "exercised": 1682,
+      "equal": 1682,
+      "differing": 0
+    },
+    {
+      "id": "species:rotommow",
+      "present": 1803,
+      "exercised": 1360,
+      "equal": 1360,
+      "differing": 0
+    },
+    {
+      "id": "species:rotomwash",
+      "present": 2376,
+      "exercised": 2045,
+      "equal": 2045,
+      "differing": 0
+    },
+    {
+      "id": "species:runerigus",
+      "present": 2145,
+      "exercised": 1653,
+      "equal": 1653,
+      "differing": 0
+    },
+    {
+      "id": "species:sableye",
+      "present": 1981,
+      "exercised": 1669,
+      "equal": 1669,
+      "differing": 0
+    },
+    {
+      "id": "species:sableyemega",
+      "present": 5903,
+      "exercised": 3891,
+      "equal": 3891,
+      "differing": 0
+    },
+    {
+      "id": "species:salamence",
+      "present": 7641,
+      "exercised": 5983,
+      "equal": 5983,
+      "differing": 0
+    },
+    {
+      "id": "species:salamencemega",
+      "present": 6145,
+      "exercised": 4592,
+      "equal": 4592,
+      "differing": 0
+    },
+    {
+      "id": "species:salazzle",
+      "present": 2333,
+      "exercised": 1695,
+      "equal": 1695,
+      "differing": 0
+    },
+    {
+      "id": "species:samurott",
+      "present": 3236,
+      "exercised": 2609,
+      "equal": 2609,
+      "differing": 0
+    },
+    {
+      "id": "species:samurotthisui",
+      "present": 1920,
+      "exercised": 962,
+      "equal": 962,
+      "differing": 0
+    },
+    {
+      "id": "species:sandaconda",
+      "present": 7240,
+      "exercised": 4533,
+      "equal": 4533,
+      "differing": 0
+    },
+    {
+      "id": "species:sceptile",
+      "present": 4781,
+      "exercised": 3522,
+      "equal": 3522,
+      "differing": 0
+    },
+    {
+      "id": "species:sceptilemega",
+      "present": 2199,
+      "exercised": 771,
+      "equal": 771,
+      "differing": 0
+    },
+    {
+      "id": "species:scizor",
+      "present": 7005,
+      "exercised": 5484,
+      "equal": 5484,
+      "differing": 0
+    },
+    {
+      "id": "species:scizormega",
+      "present": 559,
+      "exercised": 542,
+      "equal": 542,
+      "differing": 0
+    },
+    {
+      "id": "species:scolipede",
+      "present": 2191,
+      "exercised": 2082,
+      "equal": 2082,
+      "differing": 0
+    },
+    {
+      "id": "species:scolipedemega",
+      "present": 5515,
+      "exercised": 2992,
+      "equal": 2992,
+      "differing": 0
+    },
+    {
+      "id": "species:scovillain",
+      "present": 1561,
+      "exercised": 1199,
+      "equal": 1199,
+      "differing": 0
+    },
+    {
+      "id": "species:scovillainmega",
+      "present": 441,
+      "exercised": 438,
+      "equal": 438,
+      "differing": 0
+    },
+    {
+      "id": "species:scrafty",
+      "present": 9359,
+      "exercised": 7682,
+      "equal": 7682,
+      "differing": 0
+    },
+    {
+      "id": "species:scraftymega",
+      "present": 4884,
+      "exercised": 3444,
+      "equal": 3444,
+      "differing": 0
+    },
+    {
+      "id": "species:serperior",
+      "present": 2110,
+      "exercised": 1710,
+      "equal": 1710,
+      "differing": 0
+    },
+    {
+      "id": "species:sharpedo",
+      "present": 5485,
+      "exercised": 2043,
+      "equal": 2043,
+      "differing": 0
+    },
+    {
+      "id": "species:sharpedomega",
+      "present": 3893,
+      "exercised": 1342,
+      "equal": 1342,
+      "differing": 0
+    },
+    {
+      "id": "species:simipour",
+      "present": 2079,
+      "exercised": 1642,
+      "equal": 1642,
+      "differing": 0
+    },
+    {
+      "id": "species:simisage",
+      "present": 2636,
+      "exercised": 2215,
+      "equal": 2215,
+      "differing": 0
+    },
+    {
+      "id": "species:simisear",
+      "present": 6991,
+      "exercised": 3199,
+      "equal": 3199,
+      "differing": 0
+    },
+    {
+      "id": "species:sinistcha",
+      "present": 3939,
+      "exercised": 1869,
+      "equal": 1869,
+      "differing": 0
+    },
+    {
+      "id": "species:sinistchamasterpiece",
+      "present": 3867,
+      "exercised": 2546,
+      "equal": 2546,
+      "differing": 0
+    },
+    {
+      "id": "species:sirfetchd",
+      "present": 3192,
+      "exercised": 1995,
+      "equal": 1995,
+      "differing": 0
+    },
+    {
+      "id": "species:skarmory",
+      "present": 4009,
+      "exercised": 3100,
+      "equal": 3100,
+      "differing": 0
+    },
+    {
+      "id": "species:skeledirge",
+      "present": 11907,
+      "exercised": 5461,
+      "equal": 5461,
+      "differing": 0
+    },
+    {
+      "id": "species:slowbro",
+      "present": 4442,
+      "exercised": 3481,
+      "equal": 3481,
+      "differing": 0
+    },
+    {
+      "id": "species:slowbrogalar",
+      "present": 10335,
+      "exercised": 4684,
+      "equal": 4684,
+      "differing": 0
+    },
+    {
+      "id": "species:slowking",
+      "present": 4134,
+      "exercised": 3341,
+      "equal": 3341,
+      "differing": 0
+    },
+    {
+      "id": "species:slowkinggalar",
+      "present": 17441,
+      "exercised": 6855,
+      "equal": 6855,
+      "differing": 0
+    },
+    {
+      "id": "species:slurpuff",
+      "present": 6035,
+      "exercised": 2512,
+      "equal": 2512,
+      "differing": 0
+    },
+    {
+      "id": "species:sneasler",
+      "present": 4055,
+      "exercised": 1849,
+      "equal": 1849,
+      "differing": 0
+    },
+    {
+      "id": "species:snorlax",
+      "present": 8889,
+      "exercised": 2594,
+      "equal": 2594,
+      "differing": 0
+    },
+    {
+      "id": "species:spiritomb",
+      "present": 8625,
+      "exercised": 4406,
+      "equal": 4406,
+      "differing": 0
+    },
+    {
+      "id": "species:squawkabilly",
+      "present": 3422,
+      "exercised": 2199,
+      "equal": 2199,
+      "differing": 0
+    },
+    {
+      "id": "species:squawkabillyblue",
+      "present": 2457,
+      "exercised": 1976,
+      "equal": 1976,
+      "differing": 0
+    },
+    {
+      "id": "species:squawkabillywhite",
+      "present": 7602,
+      "exercised": 3830,
+      "equal": 3830,
+      "differing": 0
+    },
+    {
+      "id": "species:squawkabillyyellow",
+      "present": 3315,
+      "exercised": 2753,
+      "equal": 2753,
+      "differing": 0
+    },
+    {
+      "id": "species:staraptor",
+      "present": 7216,
+      "exercised": 5238,
+      "equal": 5238,
+      "differing": 0
+    },
+    {
+      "id": "species:staraptormega",
+      "present": 3845,
+      "exercised": 2971,
+      "equal": 2971,
+      "differing": 0
+    },
+    {
+      "id": "species:starmie",
+      "present": 2563,
+      "exercised": 1909,
+      "equal": 1909,
+      "differing": 0
+    },
+    {
+      "id": "species:starmiemega",
+      "present": 14,
+      "exercised": 14,
+      "equal": 14,
+      "differing": 0
+    },
+    {
+      "id": "species:steelix",
+      "present": 1775,
+      "exercised": 1550,
+      "equal": 1550,
+      "differing": 0
+    },
+    {
+      "id": "species:stunfisk",
+      "present": 5853,
+      "exercised": 3475,
+      "equal": 3475,
+      "differing": 0
+    },
+    {
+      "id": "species:stunfiskgalar",
+      "present": 2139,
+      "exercised": 1554,
+      "equal": 1554,
+      "differing": 0
+    },
+    {
+      "id": "species:swalot",
+      "present": 374,
+      "exercised": 314,
+      "equal": 314,
+      "differing": 0
+    },
+    {
+      "id": "species:swampert",
+      "present": 11276,
+      "exercised": 6149,
+      "equal": 6149,
+      "differing": 0
+    },
+    {
+      "id": "species:swampertmega",
+      "present": 1604,
+      "exercised": 573,
+      "equal": 573,
+      "differing": 0
+    },
+    {
+      "id": "species:sylveon",
+      "present": 266,
+      "exercised": 266,
+      "equal": 266,
+      "differing": 0
+    },
+    {
+      "id": "species:talonflame",
+      "present": 6706,
+      "exercised": 3862,
+      "equal": 3862,
+      "differing": 0
+    },
+    {
+      "id": "species:tauros",
+      "present": 1743,
+      "exercised": 1671,
+      "equal": 1671,
+      "differing": 0
+    },
+    {
+      "id": "species:taurospaldeaaqua",
+      "present": 2219,
+      "exercised": 1250,
+      "equal": 1250,
+      "differing": 0
+    },
+    {
+      "id": "species:taurospaldeablaze",
+      "present": 3020,
+      "exercised": 2116,
+      "equal": 2116,
+      "differing": 0
+    },
+    {
+      "id": "species:taurospaldeacombat",
+      "present": 3229,
+      "exercised": 2686,
+      "equal": 2686,
+      "differing": 0
+    },
+    {
+      "id": "species:thievul",
+      "present": 2932,
+      "exercised": 2565,
+      "equal": 2565,
+      "differing": 0
+    },
+    {
+      "id": "species:tinkaton",
+      "present": 4483,
+      "exercised": 2230,
+      "equal": 2230,
+      "differing": 0
+    },
+    {
+      "id": "species:torkoal",
+      "present": 3225,
+      "exercised": 2016,
+      "equal": 2016,
+      "differing": 0
+    },
+    {
+      "id": "species:torterra",
+      "present": 3873,
+      "exercised": 2596,
+      "equal": 2596,
+      "differing": 0
+    },
+    {
+      "id": "species:toucannon",
+      "present": 4887,
+      "exercised": 4026,
+      "equal": 4026,
+      "differing": 0
+    },
+    {
+      "id": "species:toxapex",
+      "present": 4442,
+      "exercised": 2732,
+      "equal": 2732,
+      "differing": 0
+    },
+    {
+      "id": "species:toxicroak",
+      "present": 4818,
+      "exercised": 3044,
+      "equal": 3044,
+      "differing": 0
+    },
+    {
+      "id": "species:toxtricity",
+      "present": 1282,
+      "exercised": 1009,
+      "equal": 1009,
+      "differing": 0
+    },
+    {
+      "id": "species:toxtricitylowkey",
+      "present": 2924,
+      "exercised": 2065,
+      "equal": 2065,
+      "differing": 0
+    },
+    {
+      "id": "species:trevenant",
+      "present": 3267,
+      "exercised": 2198,
+      "equal": 2198,
+      "differing": 0
+    },
+    {
+      "id": "species:tsareena",
+      "present": 6746,
+      "exercised": 4389,
+      "equal": 4389,
+      "differing": 0
+    },
+    {
+      "id": "species:typhlosion",
+      "present": 1884,
+      "exercised": 1442,
+      "equal": 1442,
+      "differing": 0
+    },
+    {
+      "id": "species:typhlosionhisui",
+      "present": 4139,
+      "exercised": 2430,
+      "equal": 2430,
+      "differing": 0
+    },
+    {
+      "id": "species:tyranitar",
+      "present": 5616,
+      "exercised": 4292,
+      "equal": 4292,
+      "differing": 0
+    },
+    {
+      "id": "species:tyranitarmega",
+      "present": 2166,
+      "exercised": 1919,
+      "equal": 1919,
+      "differing": 0
+    },
+    {
+      "id": "species:tyrantrum",
+      "present": 1610,
+      "exercised": 1322,
+      "equal": 1322,
+      "differing": 0
+    },
+    {
+      "id": "species:umbreon",
+      "present": 7324,
+      "exercised": 4030,
+      "equal": 4030,
+      "differing": 0
+    },
+    {
+      "id": "species:vanilluxe",
+      "present": 4184,
+      "exercised": 2389,
+      "equal": 2389,
+      "differing": 0
+    },
+    {
+      "id": "species:vaporeon",
+      "present": 4622,
+      "exercised": 1524,
+      "equal": 1524,
+      "differing": 0
+    },
+    {
+      "id": "species:venusaur",
+      "present": 3326,
+      "exercised": 2809,
+      "equal": 2809,
+      "differing": 0
+    },
+    {
+      "id": "species:venusaurmega",
+      "present": 2064,
+      "exercised": 1889,
+      "equal": 1889,
+      "differing": 0
+    },
+    {
+      "id": "species:victreebel",
+      "present": 5570,
+      "exercised": 3453,
+      "equal": 3453,
+      "differing": 0
+    },
+    {
+      "id": "species:victreebelmega",
+      "present": 393,
+      "exercised": 341,
+      "equal": 341,
+      "differing": 0
+    },
+    {
+      "id": "species:vileplume",
+      "present": 2898,
+      "exercised": 1772,
+      "equal": 1772,
+      "differing": 0
+    },
+    {
+      "id": "species:vivillon",
+      "present": 2399,
+      "exercised": 2236,
+      "equal": 2236,
+      "differing": 0
+    },
+    {
+      "id": "species:vivillonarchipelago",
+      "present": 3351,
+      "exercised": 1615,
+      "equal": 1615,
+      "differing": 0
+    },
+    {
+      "id": "species:vivilloncontinental",
+      "present": 1803,
+      "exercised": 1389,
+      "equal": 1389,
+      "differing": 0
+    },
+    {
+      "id": "species:vivillonelegant",
+      "present": 815,
+      "exercised": 401,
+      "equal": 401,
+      "differing": 0
+    },
+    {
+      "id": "species:vivillonfancy",
+      "present": 3037,
+      "exercised": 845,
+      "equal": 845,
+      "differing": 0
+    },
+    {
+      "id": "species:vivillongarden",
+      "present": 1302,
+      "exercised": 1029,
+      "equal": 1029,
+      "differing": 0
+    },
+    {
+      "id": "species:vivillonhighplains",
+      "present": 3309,
+      "exercised": 2831,
+      "equal": 2831,
+      "differing": 0
+    },
+    {
+      "id": "species:vivillonicysnow",
+      "present": 3714,
+      "exercised": 3400,
+      "equal": 3400,
+      "differing": 0
+    },
+    {
+      "id": "species:vivillonjungle",
+      "present": 2467,
+      "exercised": 1796,
+      "equal": 1796,
+      "differing": 0
+    },
+    {
+      "id": "species:vivillonmarine",
+      "present": 1608,
+      "exercised": 872,
+      "equal": 872,
+      "differing": 0
+    },
+    {
+      "id": "species:vivillonmodern",
+      "present": 954,
+      "exercised": 915,
+      "equal": 915,
+      "differing": 0
+    },
+    {
+      "id": "species:vivillonmonsoon",
+      "present": 1322,
+      "exercised": 902,
+      "equal": 902,
+      "differing": 0
+    },
+    {
+      "id": "species:vivillonocean",
+      "present": 5083,
+      "exercised": 3104,
+      "equal": 3104,
+      "differing": 0
+    },
+    {
+      "id": "species:vivillonpokeball",
+      "present": 5593,
+      "exercised": 1863,
+      "equal": 1863,
+      "differing": 0
+    },
+    {
+      "id": "species:vivillonpolar",
+      "present": 1336,
+      "exercised": 1035,
+      "equal": 1035,
+      "differing": 0
+    },
+    {
+      "id": "species:vivillonsavanna",
+      "present": 2219,
+      "exercised": 1869,
+      "equal": 1869,
+      "differing": 0
+    },
+    {
+      "id": "species:vivillonsun",
+      "present": 3093,
+      "exercised": 1377,
+      "equal": 1377,
+      "differing": 0
+    },
+    {
+      "id": "species:vivillontundra",
+      "present": 604,
+      "exercised": 598,
+      "equal": 598,
+      "differing": 0
+    },
+    {
+      "id": "species:volcarona",
+      "present": 3870,
+      "exercised": 1657,
+      "equal": 1657,
+      "differing": 0
+    },
+    {
+      "id": "species:watchog",
+      "present": 2630,
+      "exercised": 1237,
+      "equal": 1237,
+      "differing": 0
+    },
+    {
+      "id": "species:weavile",
+      "present": 1229,
+      "exercised": 1045,
+      "equal": 1045,
+      "differing": 0
+    },
+    {
+      "id": "species:whimsicott",
+      "present": 7965,
+      "exercised": 4412,
+      "equal": 4412,
+      "differing": 0
+    },
+    {
+      "id": "species:wigglytuff",
+      "present": 1277,
+      "exercised": 1096,
+      "equal": 1096,
+      "differing": 0
+    },
+    {
+      "id": "species:wyrdeer",
+      "present": 2986,
+      "exercised": 2302,
+      "equal": 2302,
+      "differing": 0
+    },
+    {
+      "id": "species:zoroark",
+      "present": 2626,
+      "exercised": 2449,
+      "equal": 2449,
+      "differing": 0
+    },
+    {
+      "id": "species:zoroarkhisui",
+      "present": 6999,
+      "exercised": 5748,
+      "equal": 5748,
+      "differing": 0
+    },
+    {
+      "id": "status:brn",
+      "present": 16713,
+      "exercised": 11275,
+      "equal": 11275,
+      "differing": 0
+    },
+    {
+      "id": "status:frz",
+      "present": 2464,
+      "exercised": 1977,
+      "equal": 1977,
+      "differing": 0
+    },
+    {
+      "id": "status:par",
+      "present": 27949,
+      "exercised": 17852,
+      "equal": 17852,
+      "differing": 0
+    },
+    {
+      "id": "status:psn",
+      "present": 8902,
+      "exercised": 4885,
+      "equal": 4885,
+      "differing": 0
+    },
+    {
+      "id": "status:slp",
+      "present": 101703,
+      "exercised": 9491,
+      "equal": 9491,
+      "differing": 0
+    },
+    {
+      "id": "status:tox",
+      "present": 10298,
+      "exercised": 7277,
+      "equal": 7277,
+      "differing": 0
+    },
+    {
+      "id": "terrain:electricterrain",
+      "present": 5876,
+      "exercised": 3203,
+      "equal": 3203,
+      "differing": 0
+    },
+    {
+      "id": "terrain:grassyterrain",
+      "present": 11601,
+      "exercised": 7573,
+      "equal": 7573,
+      "differing": 0
+    },
+    {
+      "id": "terrain:mistyterrain",
+      "present": 2347,
+      "exercised": 1418,
+      "equal": 1418,
+      "differing": 0
+    },
+    {
+      "id": "terrain:psychicterrain",
+      "present": 7075,
+      "exercised": 5117,
+      "equal": 5117,
+      "differing": 0
+    },
+    {
+      "id": "volatile:aquaring",
+      "present": 135,
+      "exercised": 74,
+      "equal": 74,
+      "differing": 0
+    },
+    {
+      "id": "volatile:attract",
+      "present": 5628,
+      "exercised": 948,
+      "equal": 948,
+      "differing": 0
+    },
+    {
+      "id": "volatile:charge",
+      "present": 631,
+      "exercised": 85,
+      "equal": 85,
+      "differing": 0
+    },
+    {
+      "id": "volatile:confusion",
+      "present": 14408,
+      "exercised": 3540,
+      "equal": 3540,
+      "differing": 0
+    },
+    {
+      "id": "volatile:curse",
+      "present": 1380,
+      "exercised": 355,
+      "equal": 355,
+      "differing": 0
+    },
+    {
+      "id": "volatile:disable",
+      "present": 4144,
+      "exercised": 1316,
+      "equal": 1316,
+      "differing": 0
+    },
+    {
+      "id": "volatile:encore",
+      "present": 4058,
+      "exercised": 1229,
+      "equal": 1229,
+      "differing": 0
+    },
+    {
+      "id": "volatile:fallen1",
+      "present": 206,
+      "exercised": 0,
+      "equal": 0,
+      "differing": 0
+    },
+    {
+      "id": "volatile:flashfire",
+      "present": 3761,
+      "exercised": 920,
+      "equal": 920,
+      "differing": 0
+    },
+    {
+      "id": "volatile:focusenergy",
+      "present": 8049,
+      "exercised": 2088,
+      "equal": 2088,
+      "differing": 0
+    },
+    {
+      "id": "volatile:futuresight",
+      "present": 4511,
+      "exercised": 0,
+      "equal": 0,
+      "differing": 0
+    },
+    {
+      "id": "volatile:healblock",
+      "present": 369,
+      "exercised": 112,
+      "equal": 112,
+      "differing": 0
+    },
+    {
+      "id": "volatile:imprison",
+      "present": 1363,
+      "exercised": 113,
+      "equal": 113,
+      "differing": 0
+    },
+    {
+      "id": "volatile:ingrain",
+      "present": 370,
+      "exercised": 128,
+      "equal": 128,
+      "differing": 0
+    },
+    {
+      "id": "volatile:leechseed",
+      "present": 1359,
+      "exercised": 172,
+      "equal": 172,
+      "differing": 0
+    },
+    {
+      "id": "volatile:noretreat",
+      "present": 59,
+      "exercised": 30,
+      "equal": 30,
+      "differing": 0
+    },
+    {
+      "id": "volatile:octolock",
+      "present": 112,
+      "exercised": 61,
+      "equal": 61,
+      "differing": 0
+    },
+    {
+      "id": "volatile:powertrick",
+      "present": 48,
+      "exercised": 24,
+      "equal": 24,
+      "differing": 0
+    },
+    {
+      "id": "volatile:smackdown",
+      "present": 389,
+      "exercised": 146,
+      "equal": 146,
+      "differing": 0
+    },
+    {
+      "id": "volatile:stockpile",
+      "present": 1120,
+      "exercised": 228,
+      "equal": 228,
+      "differing": 0
+    },
+    {
+      "id": "volatile:substitute",
+      "present": 8442,
+      "exercised": 2908,
+      "equal": 2908,
+      "differing": 0
+    },
+    {
+      "id": "volatile:taunt",
+      "present": 6157,
+      "exercised": 2054,
+      "equal": 2054,
+      "differing": 0
+    },
+    {
+      "id": "volatile:throatchop",
+      "present": 5712,
+      "exercised": 1892,
+      "equal": 1892,
+      "differing": 0
+    },
+    {
+      "id": "volatile:torment",
+      "present": 8347,
+      "exercised": 2681,
+      "equal": 2681,
+      "differing": 0
+    },
+    {
+      "id": "volatile:typeadd",
+      "present": 118,
+      "exercised": 0,
+      "equal": 0,
+      "differing": 0
+    },
+    {
+      "id": "volatile:typechange",
+      "present": 4385,
+      "exercised": 0,
+      "equal": 0,
+      "differing": 0
+    },
+    {
+      "id": "volatile:uproar",
+      "present": 1696,
+      "exercised": 644,
+      "equal": 644,
+      "differing": 0
+    },
+    {
+      "id": "volatile:yawn",
+      "present": 8071,
+      "exercised": 1929,
+      "equal": 1929,
+      "differing": 0
+    },
+    {
+      "id": "weather:raindance",
+      "present": 26625,
+      "exercised": 16654,
+      "equal": 16654,
+      "differing": 0
+    },
+    {
+      "id": "weather:sandstorm",
+      "present": 20544,
+      "exercised": 14109,
+      "equal": 14109,
+      "differing": 0
+    },
+    {
+      "id": "weather:snowscape",
+      "present": 19129,
+      "exercised": 12717,
+      "equal": 12717,
+      "differing": 0
+    },
+    {
+      "id": "weather:sunnyday",
+      "present": 25630,
+      "exercised": 18328,
+      "equal": 18328,
+      "differing": 0
+    }
+  ],
+  "kinds": {
+    "ability": 200,
+    "field": 1,
+    "item": 166,
+    "kind": 4,
+    "move": 440,
+    "side": 3,
+    "slot": 2,
+    "species": 371,
+    "status": 6,
+    "terrain": 4,
+    "volatile": 28,
+    "weather": 4
+  },
+  "differences": []
+}
