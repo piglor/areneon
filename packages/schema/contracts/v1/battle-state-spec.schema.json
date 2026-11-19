@@ -1,0 +1,707 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:battle-state-spec",
+  "title": "BattleStateSpec",
+  "description": "The battle-state tensor schema (ADR-030 step 5 groundwork, ADR-028 section 5): the reviewed, versioned list of fields a batched battle-state tensor holds for one format, each with its dtype, shape, value range or engine-data vocabulary, its source (a path of the pinned engine's Battle.toJSON or a named derivation) and its visibility class (public, own-exact, revealed-only, hidden), plus the per-seat bookkeeping of what each seat was shown, the engine keys deliberately omitted, the map from the reducer's state keys and the encoder's state columns to the fields, and the world-writer state items. No engine is built from it here. Integers only. Its RFC 8785 SHA-256 is spec_hash; it names the engine-data table by hash, so a pin bump is a new record. A change of any value is a new record, never an edit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "format_id",
+    "engine_data_hash",
+    "vocabulary_hash",
+    "dims",
+    "groups",
+    "fields",
+    "omitted",
+    "encoder",
+    "reducer",
+    "out_of_scope",
+    "world_items"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "format_id": {
+      "description": "The target format.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+$",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "engine_data_hash": {
+      "description": "SHA-256 of the engine-data version 2 table the vocabulary fields index (its JCS bytes).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "minLength": 64,
+      "maxLength": 64
+    },
+    "vocabulary_hash": {
+      "description": "The team vocabulary the count dimensions are read from (its teamVocabularyHash).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "minLength": 64,
+      "maxLength": 64
+    },
+    "dims": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/Dim"
+      },
+      "description": "The shape symbols, ascending by symbol (reader rule)."
+    },
+    "groups": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/Group"
+      },
+      "description": "One row per group, ascending by id (reader rule: every group exactly once)."
+    },
+    "fields": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "items": {
+        "$ref": "#/$defs/Field"
+      },
+      "description": "The fields, ascending by id (reader rule: unique)."
+    },
+    "omitted": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 512,
+      "items": {
+        "$ref": "#/$defs/Omitted"
+      },
+      "description": "Engine keys deliberately not held, ascending by level then key (reader rule: unique; no key both held and omitted)."
+    },
+    "encoder": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "items": {
+        "$ref": "#/$defs/ColumnMap"
+      },
+      "description": "The encoder's state columns (patterns) mapped to fields, ascending by group then column (reader rule: unique)."
+    },
+    "reducer": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "items": {
+        "$ref": "#/$defs/ReducerMap"
+      },
+      "description": "The reducer's BattleState.to_dict keys (normalised paths) mapped to fields, ascending by key (reader rule: unique)."
+    },
+    "out_of_scope": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/OutOfScope"
+      },
+      "description": "Encoder options whose columns are not battle state, ascending by option (reader rule: unique)."
+    },
+    "world_items": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/WorldItem"
+      },
+      "description": "Every state item of the world-writers record, ascending by id (reader rule: every item exactly once)."
+    }
+  },
+  "$defs": {
+    "Symbol": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z_]*$",
+      "minLength": 1,
+      "maxLength": 32
+    },
+    "FieldId": {
+      "type": "string",
+      "pattern": "^(active|battle|field|roster|seat_active|seat_field|seat_roster|seat_side|side)\\.[a-z0-9_]+$",
+      "minLength": 3,
+      "maxLength": 96
+    },
+    "GroupId": {
+      "enum": [
+        "active",
+        "battle",
+        "field",
+        "roster",
+        "seat_active",
+        "seat_field",
+        "seat_roster",
+        "seat_side",
+        "side"
+      ]
+    },
+    "VocabList": {
+      "description": "A list of the engine-data version 2 table.",
+      "enum": [
+        "abilities",
+        "conditions",
+        "items",
+        "moves",
+        "species",
+        "statuses",
+        "terrains",
+        "types",
+        "weathers"
+      ]
+    },
+    "Lists": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": {
+        "$ref": "#/$defs/VocabList"
+      },
+      "description": "Vocabulary lists, ascending and unique (reader rule); their union of ids indexes the value."
+    },
+    "Note": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400
+    },
+    "Dim": {
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/CountDim"
+        },
+        {
+          "$ref": "#/$defs/VocabularyDim"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "CountDim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "symbol",
+        "size",
+        "source"
+      ],
+      "properties": {
+        "kind": {
+          "const": "count"
+        },
+        "symbol": {
+          "$ref": "#/$defs/Symbol"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "source": {
+          "description": "Where the size is read from (reader rule: it equals that value).",
+          "enum": [
+            "players",
+            "max_team_size",
+            "picked_team_size",
+            "active_per_side",
+            "max_move_count",
+            "stored_stat_ids",
+            "boost_ids",
+            "prng_words"
+          ]
+        }
+      },
+      "description": "A dimension of a fixed count, read from the engine, the rule table or the team vocabulary."
+    },
+    "VocabularyDim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "symbol",
+        "lists"
+      ],
+      "properties": {
+        "kind": {
+          "const": "vocabulary"
+        },
+        "symbol": {
+          "$ref": "#/$defs/Symbol"
+        },
+        "lists": {
+          "$ref": "#/$defs/Lists"
+        }
+      },
+      "description": "A dimension with one position per id of the union of engine-data lists: its size is read from the table, never written here."
+    },
+    "Group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "shape",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/GroupId"
+        },
+        "shape": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/Symbol"
+          },
+          "description": "The group's leading dimensions."
+        },
+        "gate": {
+          "description": "A 0/1 seat field of seat_<group> (class seat): for another seat, an entry of this group whose gate is not set packs as the unknown entry, so an unseen entry is indistinguishable from an absent one.",
+          "type": "string",
+          "pattern": "^(active|battle|field|roster|seat_active|seat_field|seat_roster|seat_side|side)\\.[a-z0-9_]+$",
+          "minLength": 3,
+          "maxLength": 96
+        },
+        "description": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "Field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "group",
+        "extra",
+        "dtype",
+        "value",
+        "source",
+        "visibility",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/FieldId"
+        },
+        "group": {
+          "$ref": "#/$defs/GroupId"
+        },
+        "extra": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/Symbol"
+          },
+          "description": "Dimensions after the group's."
+        },
+        "dtype": {
+          "enum": [
+            "int8",
+            "int16",
+            "int32"
+          ]
+        },
+        "value": {
+          "type": "object",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RangeValue"
+            },
+            {
+              "$ref": "#/$defs/VocabularyValue"
+            }
+          ],
+          "discriminator": {
+            "propertyName": "kind"
+          }
+        },
+        "source": {
+          "type": "object",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/EngineSource"
+            },
+            {
+              "$ref": "#/$defs/DerivedSource"
+            }
+          ],
+          "discriminator": {
+            "propertyName": "kind"
+          }
+        },
+        "visibility": {
+          "description": "public: every seat sees it exactly; own-exact: the owner exactly, another seat its projection; revealed-only: a seat sees it only where its reveal mask is set; hidden: no seat; seat: a seat field, exact only at the owning seat index (the seat's own derivation).",
+          "enum": [
+            "public",
+            "own-exact",
+            "revealed-only",
+            "hidden",
+            "seat"
+          ]
+        },
+        "projection": {
+          "description": "What another seat sees of an own-exact field: none (reader rule: present exactly for own-exact). A display projection (such as the shown hit-point percentage) is a seat field, the seat's own view, never a projection of the engine's value.",
+          "enum": [
+            "none"
+          ]
+        },
+        "reveal": {
+          "description": "The seat mask field that gates a revealed-only field (reader rule: present exactly for revealed-only).",
+          "type": "string",
+          "pattern": "^(active|battle|field|roster|seat_active|seat_field|seat_roster|seat_side|side)\\.[a-z0-9_]+$",
+          "minLength": 3,
+          "maxLength": 96
+        },
+        "masks": {
+          "description": "For a seat mask: the field whose value it gates (reader rule: a revealed-only field's reveal mask masks exactly that field).",
+          "type": "string",
+          "pattern": "^(active|battle|field|roster|seat_active|seat_field|seat_roster|seat_side|side)\\.[a-z0-9_]+$",
+          "minLength": 3,
+          "maxLength": 96
+        },
+        "description": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "RangeValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "min",
+        "max"
+      ],
+      "properties": {
+        "kind": {
+          "const": "range"
+        },
+        "min": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "max": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        }
+      }
+    },
+    "VocabularyValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "lists"
+      ],
+      "properties": {
+        "kind": {
+          "const": "vocabulary"
+        },
+        "lists": {
+          "$ref": "#/$defs/Lists"
+        }
+      },
+      "description": "An index: 0 none, 1 unknown, 2 + the id's position in the sorted union of the lists."
+    },
+    "EngineSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "path",
+        "read"
+      ],
+      "properties": {
+        "kind": {
+          "const": "engine"
+        },
+        "path": {
+          "description": "A path into Battle.toJSON(): a root (battle, side, pokemon, active (the side's active Pokemon), field), then keys, [] (each array entry) and {} (each object value).",
+          "type": "string",
+          "pattern": "^(battle|side|pokemon|active|field)(\\.[A-Za-z]+|\\[\\]|\\{\\})+$",
+          "minLength": 3,
+          "maxLength": 96
+        },
+        "read": {
+          "description": "How the value at the path becomes the integer: value (the integer), bool, present (the map entry or the array exists), id (a vocabulary index), length (an array's length), pokemon_ref (1 + the referred Pokemon's roster index, 0 none), species_mega (the forme's isMega), details_level and details_shiny (read from the details string), multi_hot (one flag per vocabulary id listed), opaque (the engine's own encoding, held as words).",
+          "enum": [
+            "value",
+            "bool",
+            "present",
+            "id",
+            "length",
+            "pokemon_ref",
+            "species_mega",
+            "details_level",
+            "details_shiny",
+            "multi_hot",
+            "opaque"
+          ]
+        }
+      }
+    },
+    "DerivedSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "from",
+        "name"
+      ],
+      "properties": {
+        "kind": {
+          "const": "derived"
+        },
+        "from": {
+          "description": "The module that fills it: the world facts (public-state world-facts.ts), the shared reader (public-state), the reducer (ml reducer), its history facts, the seat's own engine request, or the seat's own team.",
+          "enum": [
+            "world_facts",
+            "shared_reader",
+            "reducer",
+            "reducer_history",
+            "engine_request",
+            "own_team"
+          ]
+        },
+        "name": {
+          "description": "The value of that module the field is.",
+          "type": "string",
+          "pattern": "^[a-z0-9_.]+$",
+          "minLength": 1,
+          "maxLength": 96
+        }
+      }
+    },
+    "Omitted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level",
+        "key",
+        "reason"
+      ],
+      "properties": {
+        "level": {
+          "enum": [
+            "battle",
+            "side",
+            "pokemon",
+            "field",
+            "move_slot",
+            "effect"
+          ]
+        },
+        "key": {
+          "type": "string",
+          "pattern": "^[A-Za-z]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "reason": {
+          "description": "cosmetic: display or bookkeeping only; derived: a function of held fields or engine data; not_in_format: a mechanic the format lacks; internal: the engine's own transient machinery; hidden_input: a team-building input held only through its effects; reference: a link to another object, held by index elsewhere.",
+          "enum": [
+            "cosmetic",
+            "derived",
+            "not_in_format",
+            "internal",
+            "hidden_input",
+            "reference"
+          ]
+        }
+      }
+    },
+    "ColumnMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "group",
+        "column",
+        "option",
+        "own",
+        "opponent",
+        "shared",
+        "query"
+      ],
+      "properties": {
+        "group": {
+          "enum": [
+            "mon_cat",
+            "mon_num",
+            "field_cat",
+            "field_num",
+            "cand_cat",
+            "cand_tok"
+          ]
+        },
+        "column": {
+          "description": "A column name of the encoder's Layout; # stands for a number, * for an id.",
+          "type": "string",
+          "pattern": "^[a-z0-9_#*]+$",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "option": {
+          "description": "The encoder option that adds the column (base: every layout).",
+          "enum": [
+            "base",
+            "candidate_matchup",
+            "exact_volatiles",
+            "history_facts",
+            "recent_history"
+          ]
+        },
+        "own": {
+          "description": "Fields of the own side (an own token, or the own side's columns of the field token).",
+          "$ref": "#/$defs/FieldRefs"
+        },
+        "opponent": {
+          "description": "Fields of the opponent side (an opponent token, or the opponent side's columns). Reader rule: none whose class lets no other seat see it.",
+          "$ref": "#/$defs/FieldRefs"
+        },
+        "shared": {
+          "description": "Fields without a side.",
+          "$ref": "#/$defs/FieldRefs"
+        },
+        "query": {
+          "description": "Whether the column also reads the candidate or the seat's own request (not battle state).",
+          "type": "boolean"
+        }
+      }
+    },
+    "ReducerMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "own",
+        "opponent",
+        "shared"
+      ],
+      "properties": {
+        "key": {
+          "description": "A BattleState.to_dict path: side halves as SIDE, list entries as [], id-keyed maps as *.",
+          "type": "string",
+          "pattern": "^[a-z0-9_.*\\[\\]A-Z]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "own": {
+          "$ref": "#/$defs/FieldRefs"
+        },
+        "opponent": {
+          "$ref": "#/$defs/FieldRefs"
+        },
+        "shared": {
+          "$ref": "#/$defs/FieldRefs"
+        }
+      }
+    },
+    "FieldRefs": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/FieldId"
+      },
+      "description": "Field ids, ascending and unique (reader rule)."
+    },
+    "OutOfScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "option",
+        "reason"
+      ],
+      "properties": {
+        "option": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "reason": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "StateItemId": {
+      "description": "A state item of the world-writers record (its schema's closed list).",
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "WorldItem": {
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/HeldItem"
+        },
+        {
+          "$ref": "#/$defs/NotHeldItem"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "HeldItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "fields"
+      ],
+      "properties": {
+        "kind": {
+          "const": "held"
+        },
+        "id": {
+          "$ref": "#/$defs/StateItemId"
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/FieldId"
+          }
+        }
+      }
+    },
+    "NotHeldItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "reason"
+      ],
+      "properties": {
+        "kind": {
+          "const": "not_held"
+        },
+        "id": {
+          "$ref": "#/$defs/StateItemId"
+        },
+        "reason": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    }
+  }
+}
