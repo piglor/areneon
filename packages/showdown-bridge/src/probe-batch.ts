@@ -57,6 +57,13 @@ export function driveSync<T>(gen: Gen<T>, run: ProbeRunner): T {
   return step.value;
 }
 
+const known = new WeakMap<object, string>();
+
+/** Remember the JCS hash a caller already computed for `query` (the view's memo key), so the batch does not canonicalise and hash it again. */
+export function noteQueryHash(query: ProbeCall, hash: string): void {
+  known.set(query, hash);
+}
+
 /**
  * The batched call whose implementation is `run`, one query after another in query order. Equal queries of a batch (the same
  * JCS hash) are run once and share the outcome: the answer is a pure function of the query, so no result differs.
@@ -65,7 +72,7 @@ export function batchOf(run: ProbeRunner): BatchRunner {
   return (queries) => {
     const seen = new Map<string, Settled>();
     return queries.map((query) => {
-      const key = mechanicsQueryHash(query);
+      const key = known.get(query) ?? mechanicsQueryHash(query);
       let settled = seen.get(key);
       if (settled === undefined) {
         try {

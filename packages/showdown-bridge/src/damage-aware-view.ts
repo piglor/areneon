@@ -15,7 +15,7 @@ import type { HistoryDeclarer } from "./candidate-history.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { DECLARED_FACT } from "./mechanics-error.ts";
 import { type MechanicsContext, MechanicsProbeError, type ProbeOutcome } from "./mechanics-probe.ts";
-import { driveSync, type Gen, pure } from "./probe-batch.ts";
+import { driveSync, type Gen, noteQueryHash, pure } from "./probe-batch.ts";
 import { type MechanicsQuery, mechanicsQueryHash, type ParsedMechanicsQuery, readMechanicsQuery } from "./mechanics-query.ts";
 import type { MechanicsConfig } from "./mechanics-config.ts";
 import { type MechanicsResult, type PlainReason, plainReason } from "./mechanics-result.ts";
@@ -244,7 +244,9 @@ export function damageView(options: DamageViewOptions) {
     const query = readMechanicsQuery(value);
     // A marked query is another question than the same bytes unmarked: its memo key says so.
     const marked = options.history !== undefined && value.query.kind !== "stats" && value.query.history !== undefined && UNKNOWN_HISTORIES.has(value.query.history);
-    const key = mechanicsQueryHash(query) + (marked ? ":unknown" : "");
+    const hash = mechanicsQueryHash(query);
+    noteQueryHash(query, hash); // the wave's batch dedups by this hash and does not compute it again
+    const key = hash + (marked ? ":unknown" : "");
     counts.queries += 1;
     let result = memo.get(key);
     let noted = false;

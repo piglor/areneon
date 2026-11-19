@@ -18,7 +18,7 @@ import type { MechanicsResult } from "../src/mechanics-result.ts";
 import { playerChannel } from "../src/player-channel.ts";
 import type { PolicyClient } from "../src/policy-worker.ts";
 import type { PolicyQueryInput } from "../src/policy-protocol.ts";
-import { batchOf, driveSync, emptySeamStats, type Gen, SEAM_HOLD_MS, pure, SeamError, sumSeamStats, WaveSeam } from "../src/probe-batch.ts";
+import { batchOf, driveSync, noteQueryHash, emptySeamStats, type Gen, SEAM_HOLD_MS, pure, SeamError, sumSeamStats, WaveSeam } from "../src/probe-batch.ts";
 import { SAMPLES_DIR } from "../src/samples.ts";
 import { readTrainingRunConfig, type TrainingRunConfig } from "../src/training-run-config.ts";
 import { capture, type Captured, config, corpus, engine, mechanics, snapshot, vocabulary } from "./damage-aware-support.ts";
@@ -54,6 +54,21 @@ describe("driveSync and batchOf", () => {
     expect(driveSync(asking(0, 3, true), run)).toEqual([1, "caught refused", 3]);
     expect(seen.length).toBe(3);
     expect(() => driveSync(asking(0, 3, false), (q) => (mechanicsQueryHash(q) === mechanicsQueryHash(query(1)) ? (() => { throw new Error("boom"); })() : result(0)))).toThrow("boom");
+  });
+
+  it("dedups by the hash a caller noted, without hashing the query again", () => {
+    let runs = 0;
+    const batch = batchOf(() => {
+      runs += 1;
+      return result(runs);
+    });
+    const a = query(0);
+    const b = JSON.parse(JSON.stringify(query(5))) as ParsedMechanicsQuery; // another object, another content
+    noteQueryHash(a, "same");
+    noteQueryHash(b, "same");
+    const out = batch([a, b]);
+    expect(runs).toBe(1);
+    expect(out[0]).toBe(out[1]);
   });
 
   it("runs a batch in query order, once per distinct query, and keeps a refusal as the query's outcome", () => {
