@@ -26,8 +26,8 @@ function admitted(): Record<string, unknown> {
     backend: { ...BACKEND },
     showdown_commit: PINNED_SHOWDOWN_COMMIT,
     corpora: [
-      { id: "committed-random", kind: "regression", seed: "a".repeat(64), pool_hash: "a".repeat(64), content_hash: "1".repeat(64), tally_hash: "2".repeat(64), items: 300, count_mismatches: 0 },
-      { id: FRESH_ID, kind: "fresh", seed: freshSeed(BACKEND), pool_hash: "9".repeat(64), content_hash: "3".repeat(64), tally_hash: "5".repeat(64), items: 200_000, count_mismatches: 0 },
+      { id: "committed-random", kind: "regression", seed: "a".repeat(64), pool_hash: "a".repeat(64), content_hash: "1".repeat(64), tally_hash: "2".repeat(64), items: 300, distinct_items: 300, count_mismatches: 0 },
+      { id: FRESH_ID, kind: "fresh", seed: freshSeed(BACKEND), pool_hash: "9".repeat(64), content_hash: "3".repeat(64), tally_hash: "5".repeat(64), items: 200_000, distinct_items: 200_000, count_mismatches: 0 },
     ],
     entities: [
       { id: "ability:roughskin", admitted: false, counts: [count("committed-random", 5, 5, 4, 1), count(FRESH_ID, 25, 25, 25, 0)], kinds: [kind(25)] },
@@ -51,7 +51,7 @@ const empty = (): Record<string, unknown> => ({ ...admitted(), corpora: [], enti
 /** A shadow sample revoked an entity the fresh corpus had admitted. */
 function shadowRevoked(): Record<string, unknown> {
   const l = admitted() as any;
-  l.corpora.push({ id: "shadow-g000012", kind: "shadow", seed: "b".repeat(64), pool_hash: "b".repeat(64), content_hash: "6".repeat(64), tally_hash: "7".repeat(64), items: 256, count_mismatches: 0 });
+  l.corpora.push({ id: "shadow-g000012", kind: "shadow", seed: "b".repeat(64), pool_hash: "b".repeat(64), content_hash: "6".repeat(64), tally_hash: "7".repeat(64), items: 256, distinct_items: 256, count_mismatches: 0 });
   const quake = l.entities.find((e: any) => e.id === "move:earthquake");
   quake.admitted = false;
   quake.counts.push(count("shadow-g000012", 3, 3, 2, 1));
@@ -103,12 +103,17 @@ export function backendAdmissionSamples(): { valid: Cases; invalid: Cases; reade
       "backend-admission/revocation-past-corpus": change(admitted, (c) => (c.revoked[0].position = 300)),
       "backend-admission/pair-flag": change(admitted, (c) => (c.pairs[1].admitted = true)),
       "backend-admission/pair-not-admitted-entity": change(admitted, (c) => c.pairs.splice(1, 0, { a: "kind:damage", b: "move:protect", co_present: 30, co_exercised: 0, co_equal: 0, admitted: false })),
-      "backend-admission/fresh-below-minimum": change(admitted, (c) => (c.corpora[1].items = 199_999)),
+      "backend-admission/fresh-below-minimum": change(admitted, (c) => {
+        c.corpora[1].items = 199_999;
+        c.corpora[1].distinct_items = 199_999;
+      }),
+      "backend-admission/fresh-repeated-items": change(admitted, (c) => (c.corpora[1].distinct_items = 100)),
       "backend-admission/count-mismatch": change(admitted, (c) => (c.corpora[0].count_mismatches = 1)),
       "backend-admission/kinds-not-query-kind": change(admitted, (c) => (entity(c, "move:earthquake").kinds[0].kind = "move:protect")),
       "backend-admission/kinds-on-query-kind": change(admitted, (c) => entity(c, "kind:damage").kinds.push(kind(0))),
       "backend-admission/rare-pair": change(admitted, (c) => {
         c.corpora[1].items = 400_000;
+        c.corpora[1].distinct_items = 400_000;
       }),
     },
   };

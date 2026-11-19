@@ -26,7 +26,7 @@ function tallyOf(id: string): CorpusTally {
 }
 
 const toJson = (t: CorpusTally) => ({ spec: t.spec, items: t.items, entities: [...t.entities], differences: t.differences, count_mismatches: t.count_mismatches });
-const fromJson = (value: ReturnType<typeof toJson>): CorpusTally => ({ ...value, entities: new Map(value.entities as [string, EntityTally][]), pairs: new Map(), keys: [] });
+const fromJson = (value: ReturnType<typeof toJson>): CorpusTally => ({ ...value, entities: new Map(value.entities as [string, EntityTally][]), pairs: new Map(), keys: [], seen: new Set() });
 
 function write(tallies: CorpusTally[]): void {
   const report = differentialReport(reportInputs(engine, configs), tallies);

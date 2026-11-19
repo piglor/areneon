@@ -5,7 +5,7 @@
 // every query they yield is recorded, as `feature-bench.ts` replays real decisions. Evaluation code never imports this module.
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   addBatch,
@@ -184,19 +184,51 @@ export function corpusHash(dir: string, limit?: number): string {
   return sha256Jcs(names.map((name) => [name, createHash("sha256").update(readFileSync(join(dir, name))).digest("hex")]));
 }
 
-const BRIDGE_SRC = fileURLToPath(new URL("../../showdown-bridge/src/", import.meta.url));
-const CORE_SRC = fileURLToPath(new URL("../../differential/src/", import.meta.url));
-/** The bridge sources the probe answers and the builders' queries depend on (a file of these changes a query or an answer). */
-const PROBE_AND_BUILDER = /^(mechanics-|candidate-features|damage-aware-(view|score|assumed-set)|feature-(build|rows)|probe-batch|differential-probe|outcome-|history-facts)[a-z0-9-]*\.ts$/;
+const PACKAGES = fileURLToPath(new URL("../../", import.meta.url));
+/** Where the probe and the builders start: the probe backend and the builders' dispatch, plus the core. */
+export const SOURCE_ROOTS: readonly string[] = [
+  join(PACKAGES, "showdown-bridge/src/differential-probe.ts"),
+  join(PACKAGES, "showdown-bridge/src/feature-build.ts"),
+  join(PACKAGES, "differential/src/index.ts"),
+];
+// `from "..."`, `require("...")`, `import("...")` and `createRequire(...)("./x.cjs")` (the shared reader loads its interpreter so).
+const IMPORT = /(?:^|\n)\s*(?:import|export)\b[^;]*?\bfrom\s+"([^"]+)"|\brequire\(\s*"([^"]+)"\s*\)|\bimport\(\s*"([^"]+)"\s*\)|\)\(\s*"(\.{1,2}\/[^"]+)"\s*\)/g;
 
-/** SHA-256 over the names and bytes of the probe, builder and harness sources (the bridge's probe and builders, the core, this module). */
-export function sourcesHash(): string {
-  const files = [
-    ...readdirSync(BRIDGE_SRC).filter((name) => PROBE_AND_BUILDER.test(name)).map((name) => join(BRIDGE_SRC, name)),
-    ...readdirSync(CORE_SRC).filter((name) => name.endsWith(".ts")).map((name) => join(CORE_SRC, name)),
-    fileURLToPath(import.meta.url),
-  ];
-  return sha256Jcs(files.map((path) => [path.slice(path.indexOf("packages/")), createHash("sha256").update(readFileSync(path)).digest("hex")]).sort((a, b) => ((a[0] as string) < (b[0] as string) ? -1 : 1)));
+/** The file a module specifier names, or null for a Node built-in or a registry package (pinned by the lockfile, not hashed here). */
+function resolveSpecifier(from: string, spec: string): string | null {
+  if (spec.startsWith("./") || spec.startsWith("../")) return join(dirname(from), spec);
+  if (spec === "@areneon/schema/ajv") return join(PACKAGES, "schema/src/ajv.ts");
+  if (spec.startsWith("@areneon/schema/contracts/")) return join(PACKAGES, "schema", spec.slice("@areneon/schema/".length));
+  if (spec.startsWith("@areneon/schema/types/")) return join(PACKAGES, "schema/generated/ts", spec.slice("@areneon/schema/types/".length));
+  const workspace = /^@areneon\/([a-z-]+)$/.exec(spec);
+  return workspace === null ? null : join(PACKAGES, workspace[1] as string, "src/index.ts");
+}
+
+/**
+ * Every source file the probe, the builders and the harness core reach from `roots` through their imports (relative, workspace
+ * and schema imports; `require` of a local file such as the shared reader's `interpreter.cjs`), sorted. Registry packages are
+ * pinned by the lockfile and left out.
+ */
+export function sourceFiles(roots: readonly string[] = SOURCE_ROOTS, read: (path: string) => string = (path) => readFileSync(path, "utf8")): string[] {
+  const seen = new Set<string>();
+  const queue = [...roots];
+  while (queue.length > 0) {
+    const file = queue.pop() as string;
+    if (seen.has(file)) continue;
+    seen.add(file);
+    if (!/\.(ts|cjs)$/.test(file)) continue;
+    for (const m of read(file).matchAll(IMPORT)) {
+      const target = resolveSpecifier(file, (m[1] ?? m[2] ?? m[3] ?? m[4]) as string);
+      if (target !== null) queue.push(target);
+    }
+  }
+  return [...seen].sort();
+}
+
+/** SHA-256 over the repository paths and bytes of `sourceFiles()` and of the composition root itself. */
+export function sourcesHash(read: (path: string) => Buffer = (path) => readFileSync(path), roots: readonly string[] = SOURCE_ROOTS): string {
+  const files = [...sourceFiles(roots, (path) => read(path).toString("utf8")), fileURLToPath(import.meta.url)];
+  return sha256Jcs(files.map((path) => [path.slice(path.lastIndexOf("packages/")), createHash("sha256").update(read(path)).digest("hex")]));
 }
 
 /** The inputs a self-differential report is a function of (a test recomputes them: a stale report fails). */

@@ -21,7 +21,7 @@ import {
   withCorpus,
 } from "../src/admission.ts";
 import { sha256Jcs } from "../src/hash.ts";
-import { type CorpusTally, newTally } from "../src/tally.ts";
+import { addItem, type CorpusTally, newTally } from "../src/tally.ts";
 import { BACKEND, corpus, FRESH, PIN, POOL, REGRESSION, tallyOf } from "./support.ts";
 
 const ledgerOf = (...tallies: CorpusTally[]): BackendAdmission => buildLedger({ level: "mechanics-query", backend: BACKEND, showdown_commit: PIN, tallies });
@@ -107,10 +107,8 @@ describe("pairs", () => {
       { a: "move:a", b: "move:c", co_present: 20, co_exercised: 4, co_equal: 4, admitted: false },
       { a: "move:b", b: "move:c", co_present: 21, co_exercised: 0, co_equal: 0, admitted: false },
     ]);
-    const router = admissionRouter(ledger);
-    expect(router.route(["move:b", "move:a", "move:a"])).toBeNull();
-    expect(router.route(["move:c", "move:a"])).toEqual({ pair: ["move:a", "move:c"] });
-    expect(router.route(["move:a", "move:z"])).toEqual({ entity: "move:z" });
+    // A query names exactly one kind: these name none, so none is routed to the backend.
+    expect(admissionRouter(ledger).route(["move:b", "move:a"])).toEqual({ kinds: 0 });
   });
   it("leaves out a pair present in fewer than 1 in 10^4 fresh items", () => {
     expect(frequent(1, 10_000)).toBe(true);
@@ -122,7 +120,7 @@ describe("pairs", () => {
   });
   it("routes nothing without a ledger", () => {
     expect(admissionRouter(null).route(["kind:damage"])).toEqual({ entity: "kind:damage" });
-    expect(admissionRouter(null).route([])).toBeNull();
+    expect(admissionRouter(null).route([])).toEqual({ kinds: 0 });
   });
 });
 
@@ -198,7 +196,7 @@ describe("the reader", () => {
     expect(() => read(doctor(withPairs, (l) => void (pair(l).co_equal = 21)))).toThrow("must nest");
     expect(() => read(doctor(withPairs, (l) => void (pair(l).co_present = 0)))).toThrow("must nest");
     expect(() => read(doctor(withPairs, (l) => void (pair(l).admitted = false)))).toThrow("pair's admitted flag");
-    const sparse = doctor(withPairs, (l) => void ((l.corpora[0] as { items: number }).items = 300_000));
+    const sparse = doctor(withPairs, (l) => void Object.assign(l.corpora[0] as object, { items: 300_000, distinct_items: 300_000 }));
     expect(() => read(sparse)).toThrow("1 in 10^4");
   });
 });
@@ -220,7 +218,7 @@ describe("the evidence rules of the review (PR #413)", () => {
     expect(admissionRouter(ledger).route(["kind:damage", "move:a"])).toBeNull();
   });
   it("refuses an admitted entity a small fresh corpus or a count mismatch cannot support", () => {
-    expect(() => read(doctor(good(), (l) => void ((l.corpora[0] as { items: number }).items = 199_999)))).toThrow("minimum size");
+    expect(() => read(doctor(good(), (l) => void Object.assign(l.corpora[0] as object, { items: 199_999, distinct_items: 199_999 })))).toThrow("minimum size");
     expect(() => read(doctor(good(), (l) => void ((l.corpora[0] as { count_mismatches: number }).count_mismatches = 1)))).toThrow("count mismatch");
   });
   it("refuses kinds that are unsorted, not query kinds, on a query kind, or above the fresh counts", () => {
@@ -244,7 +242,36 @@ describe("the evidence rules of the review (PR #413)", () => {
     const shadow = tallyOf(corpus("shadow-g2", "shadow", "d".repeat(64)), [{ count: 3, entities: ["move:a"], differing: [2] }]);
     expect(admissionHash(withCorpus(ledgerOf(fresh), shadow))).toBe(admissionHash(ledgerOf(fresh, shadow)));
   });
-  it("routes only by a ledger the reader returned", () => {
+  it("routes only by a ledger the reader returned, which is deeply frozen", () => {
     expect(() => admissionRouter(structuredClone(good()))).toThrow("readBackendAdmission");
+    const ledger = good();
+    expect(Object.isFrozen(ledger) && Object.isFrozen(ledger.entities[0]) && Object.isFrozen(ledger.entities[0]?.counts[0])).toBe(true);
+    expect(() => (ledger.entities[0] as { admitted: boolean }).admitted = false).toThrow(TypeError);
+  });
+  it("routes a query of exactly one kind whose entities and pairs are admitted with it", () => {
+    const ledger = ledgerOf(
+      tallyOf(FRESH, [
+        { count: 25, entities: ["kind:damage", "move:a", "move:b"] },
+        { count: 20, entities: ["kind:damage", "move:a", "move:c"], reads: ["kind:damage", "move:a"] },
+        { count: 25, entities: ["kind:damage", "move:c"] },
+        { count: 25, entities: ["kind:stats", "species:x"] },
+      ]),
+    );
+    const router = admissionRouter(ledger);
+    expect(router.route(["kind:damage", "move:a", "move:b"])).toBeNull();
+    expect(router.route(["kind:damage", "move:a", "move:c"])).toEqual({ pair: ["move:a", "move:c"] });
+    expect(router.route(["kind:damage", "kind:stats", "move:a"])).toEqual({ kinds: 2 });
+    expect(router.route(["kind:damage", "move:z"])).toEqual({ entity: "move:z" });
+    expect(router.route(["kind:stats", "move:a"])).toEqual({ pair: ["kind:stats", "move:a"] });
+  });
+  it("refuses a repeated item in a fresh corpus and a ledger whose fresh corpus repeats items", () => {
+    const twice = newTally(FRESH);
+    addItem(twice, { position: 0, key: "q", entities: [], exercised: [], difference: null });
+    expect(() => addItem(twice, { position: 1, key: "q", entities: [], exercised: [], difference: null })).toThrow("each item once");
+    const regression = newTally(REGRESSION);
+    addItem(regression, { position: 0, key: "q", entities: [], exercised: [], difference: null });
+    addItem(regression, { position: 1, key: "q", entities: [], exercised: [], difference: null });
+    expect(regression.seen.size).toBe(1);
+    expect(() => read(doctor(good(), (l) => void ((l.corpora[0] as { distinct_items: number }).distinct_items = 5)))).toThrow("each item once");
   });
 });

@@ -44,6 +44,8 @@ export interface CorpusTally {
   count_mismatches: number;
   /** The items' stable keys, in item order (the content hash is over them, sorted). */
   keys: string[];
+  /** The distinct keys seen. A fresh corpus refuses a repeated one (see `addItem`). */
+  seen: Set<string>;
 }
 
 const ID = /^[a-z0-9][a-z0-9._-]*$/;
@@ -56,7 +58,7 @@ export class TallyError extends Error {
 export function newTally(spec: CorpusSpec): CorpusTally {
   if (!ID.test(spec.id) || spec.id.length > 64) throw new TallyError("a corpus id is a lower-case token");
   if (!HEX64.test(spec.seed) || !HEX64.test(spec.pool)) throw new TallyError("a corpus seed and pool are 64 hex digits");
-  return { spec: { ...spec }, items: 0, entities: new Map(), pairs: new Map(), differences: [], count_mismatches: 0, keys: [] };
+  return { spec: { ...spec }, items: 0, entities: new Map(), pairs: new Map(), differences: [], count_mismatches: 0, keys: [], seen: new Set() };
 }
 
 export const pairKey = (a: string, b: string): string => (a < b ? `${a}|${b}` : `${b}|${a}`);
@@ -79,13 +81,19 @@ const pairRow = (tally: CorpusTally, key: string): PairTally => {
   return row;
 };
 
-/** Add one compared item. Its position must be the next one of the corpus. */
+/**
+ * Add one compared item. Its position must be the next one of the corpus. A fresh corpus holds each item once: a repeated key is
+ * refused rather than counted once, so a draw with replacement (or copies of a few queries) fails where it is made instead of
+ * quietly yielding a corpus smaller than it says, and every count of a fresh tally is a count of distinct items.
+ */
 export function addItem(tally: CorpusTally, item: ItemResult): void {
   if (item.position !== tally.items) throw new TallyError("items are added in corpus order");
+  if (tally.seen.has(item.key) && tally.spec.kind === "fresh") throw new TallyError("a fresh corpus holds each item once: a repeated key (draw without replacement)");
   const exercised = new Set(item.exercised);
   for (const id of exercised) if (!item.entities.includes(id)) throw new TallyError("an exercised entity must be present");
   tally.items += 1;
   tally.keys.push(item.key);
+  tally.seen.add(item.key);
   const equal = item.difference === null;
   if (item.difference !== null) tally.differences.push(item.difference);
   for (const id of item.entities) {

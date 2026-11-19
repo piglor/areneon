@@ -72,7 +72,7 @@ const kindOf = (corpora: readonly Corpus[], id: string): CorpusKind | undefined 
 /** Whether a ledger's corpora can admit at all: one fresh corpus of the level's minimum size and no count mismatch anywhere. */
 export function evidenceHolds(ledger: Pick<BackendAdmission, "level" | "corpora">): boolean {
   const fresh = ledger.corpora.find((c) => c.kind === "fresh");
-  return fresh !== undefined && fresh.items >= MIN_FRESH_ITEMS[ledger.level] && ledger.corpora.every((c) => c.count_mismatches === 0);
+  return fresh !== undefined && fresh.distinct_items >= MIN_FRESH_ITEMS[ledger.level] && ledger.corpora.every((c) => c.count_mismatches === 0);
 }
 
 function totals(ledger: Pick<BackendAdmission, "corpora">, entity: Pick<Entity, "counts">): { fresh: EntityCount | undefined; differing: number } {
@@ -115,6 +115,7 @@ const corpusOf = (t: CorpusTally): Corpus => ({
   content_hash: contentHash(t),
   tally_hash: tallyHash(t),
   items: t.items,
+  distinct_items: t.seen.size,
   count_mismatches: t.count_mismatches,
 });
 
@@ -180,9 +181,12 @@ export function buildLedger(input: LedgerInput): BackendAdmission {
 }
 
 /**
- * The ledger after one more non-fresh corpus (a regression run, or a generation's shadow sample): counts merged, any entity the
- * new corpus found a difference in revoked, admission and the pairs recomputed (admission only ever falls; a count mismatch in
- * the new corpus ends every admission). Equal to `buildLedger` over all the tallies.
+ * The ledger after one more non-fresh corpus (a regression run, or a generation's shadow sample): the corpus is added, its counts
+ * are merged into each entity's rows, an entity it found a difference in is revoked (the revocation moves to it only when it
+ * sorts before the corpus that revoked the entity first), and admission is recomputed, so it only ever falls (a count mismatch in
+ * the new corpus ends every admission). The pairs and each entity's kinds are not recomputed: they are fresh-corpus evidence,
+ * kept as they were, and the pairs of an entity no longer admitted are dropped. The result equals `buildLedger` over the earlier
+ * tallies and this one (a test holds it).
  */
 export function withCorpus(ledger: BackendAdmission, tally: CorpusTally): BackendAdmission {
   if (tally.spec.kind === "fresh") throw new AdmissionError("a fresh corpus is part of the ledger it admits from, never added later");
@@ -236,7 +240,13 @@ const validate = ajvFor("contract").compile(schema);
 
 const sortedUnique = (values: readonly string[]): boolean => values.every((v, i) => i === 0 || (values[i - 1] as string) < v);
 
-/** Ledgers that went through the reader: the only ones `admissionRouter` takes. */
+/** Freeze a value and everything in it, so a ledger the reader vouched for cannot change after it was read. */
+function deepFreeze(value: object): void {
+  for (const inner of Object.values(value)) if (typeof inner === "object" && inner !== null) deepFreeze(inner as object);
+  Object.freeze(value);
+}
+
+/** Ledgers that went through the reader (deeply frozen): the only ones `admissionRouter` takes. */
 const read = new WeakSet<BackendAdmission>();
 
 /**
@@ -255,6 +265,7 @@ export function readBackendAdmission(value: unknown, expected: { showdown_commit
   if (fresh.length > 1) fail("a ledger holds at most one fresh corpus");
   const items = new Map(ledger.corpora.map((c) => [c.id, c.items]));
   if (fresh[0] !== undefined && fresh[0].seed !== freshSeed(ledger.backend)) fail("the fresh corpus's seed is not the backend version's fresh seed");
+  if (ledger.corpora.some((c) => c.distinct_items > c.items || (c.kind === "fresh" && c.distinct_items !== c.items))) fail("a corpus holds at most its items distinct, and a fresh corpus each item once");
   if (!sortedUnique(ledger.entities.map((e) => e.id))) fail("entities must be sorted by id and unique");
   const known = new Set(ledger.entities.map((e) => e.id));
   const order = new Map(ledger.corpora.map((c, i) => [c.id, i]));
@@ -300,16 +311,18 @@ export function readBackendAdmission(value: unknown, expected: { showdown_commit
     if (!frequent(p.co_present, freshItems)) fail("a listed pair is present in at least 1 in 10^4 fresh items");
     if (p.admitted !== admitsPair(p)) fail("a pair's admitted flag must equal the recomputed admission");
   });
+  deepFreeze(ledger);
   read.add(ledger);
   return ledger;
 }
 
 /** Why a query was routed to the oracle (counted per entity in run metrics), or null when the backend may answer it. */
-export type Refusal = { entity: string } | { pair: [string, string] } | null;
+export type Refusal = { entity: string } | { pair: [string, string] } | { kinds: number } | null;
 
 /**
- * The routing rule of a ledger the reader returned: the backend answers a query only if every entity is admitted, each was
- * co-exercised at least `N_PAIR` times, all equal, with each query kind the query names, and no listed unadmitted pair is in it.
+ * The routing rule of a ledger the reader returned: the backend answers a query only if it names exactly one query kind, every
+ * entity is admitted, each was co-exercised at least `N_PAIR` times, all equal, with that kind, and no listed unadmitted pair is
+ * in it.
  */
 export function admissionRouter(ledger: BackendAdmission | null): { route(entities: readonly string[]): Refusal } {
   if (ledger !== null && !read.has(ledger)) throw new AdmissionError("route only by a ledger readBackendAdmission returned");
@@ -321,7 +334,10 @@ export function admissionRouter(ledger: BackendAdmission | null): { route(entiti
       const sorted = [...new Set(entities)].sort();
       for (const id of sorted) if (!admitted.has(id)) return { entity: id };
       const kinds = sorted.filter(isKind);
-      for (const kind of kinds) for (const id of sorted) if (!isKind(id) && !withKind.has(`${kind}|${id}`)) return { pair: [kind, id] };
+      // A query names exactly one kind; anything else is not a query this ledger can route.
+      if (kinds.length !== 1) return { kinds: kinds.length };
+      const kind = kinds[0] as string;
+      for (const id of sorted) if (!isKind(id) && !withKind.has(`${kind}|${id}`)) return { pair: [kind, id] };
       for (let i = 0; i < sorted.length; i++) {
         for (let j = i + 1; j < sorted.length; j++) {
           const a = sorted[i] as string;

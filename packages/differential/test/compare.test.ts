@@ -77,7 +77,7 @@ describe("compareBatch and runCorpus", () => {
     expect(() => runCorpus(toyLevel, oracle, oracle, REGRESSION, inputs, 0)).toThrow(RunError);
   });
   it("keeps pairs for a fresh corpus only", () => {
-    const tally = runCorpus(toyLevel, oracle, oracle, FRESH, [input(1), input(1)]);
+    const tally = runCorpus(toyLevel, oracle, oracle, FRESH, [input(1), { ...input(1), n: 2 }]);
     expect(tally.pairs.get(pairKey("move:m1", "kind:damage"))).toEqual({ co_present: 2, co_exercised: 0, co_equal: 0 });
     expect(pairKey("b", "a")).toBe("a|b");
   });

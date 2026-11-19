@@ -68,3 +68,16 @@ describe("should-fix 2 and 4 of the review", () => {
     expect((caught as ShadowDivergence).entities).toEqual(inputs.map((i) => `move:m${i.n}`).sort());
   });
 });
+
+describe("B3: repeated items are not fresh-scale evidence", () => {
+  it("200,000 copies of 100 queries admit nothing", () => {
+    const inputs: ToyIn[] = Array.from({ length: BIG }, (_, i) => ({ n: i % 100, entities: ["kind:damage", `move:m${i % 100}`], reads: ["kind:damage", `move:m${i % 100}`] }));
+    let ledger: ReturnType<typeof ledgerOf> | null = null;
+    try {
+      ledger = ledgerOf(runCorpus(toyLevel, oracle, oracle, FRESH, inputs, 4096));
+    } catch (error) {
+      expect((error as Error).message).toContain("repeated");
+    }
+    expect(ledger?.entities.filter((e) => e.admitted) ?? []).toEqual([]);
+  }, 120_000);
+});

@@ -95,6 +95,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/backend-admission/reader-invalid/count-mismatch.json",
       "v1/backend-admission/reader-invalid/counts-not-nested.json",
       "v1/backend-admission/reader-invalid/fresh-below-minimum.json",
+      "v1/backend-admission/reader-invalid/fresh-repeated-items.json",
       "v1/backend-admission/reader-invalid/kinds-not-query-kind.json",
       "v1/backend-admission/reader-invalid/kinds-on-query-kind.json",
       "v1/backend-admission/reader-invalid/missing-revocation.json",

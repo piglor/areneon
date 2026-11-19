@@ -27,7 +27,7 @@ import {
 } from "@areneon/differential";
 import { jcs as bridgeJcs, loadEngine, MechanicsProbeError, type MechanicsResult, mechanicsQueryHash, type ParsedMechanicsQuery, probeBackend, RANDOM_DIR, sampleTarget, type Settled } from "@areneon/showdown-bridge";
 import { beforeAll, describe, expect, it } from "vitest";
-import { collectQueries, corpusBattles, corpusHash, differentialCorpus, harnessConfigs, secondProbe, mechanicsHarnessLevel, remembering, reportInputs, SELF_REPORT_DIR, SELF_REPORT_TITLE, selfDifferential } from "../src/differential-mechanics.ts";
+import { collectQueries, corpusBattles, corpusHash, differentialCorpus, sourceFiles, sourcesHash, harnessConfigs, secondProbe, mechanicsHarnessLevel, remembering, reportInputs, SELF_REPORT_DIR, SELF_REPORT_TITLE, selfDifferential } from "../src/differential-mechanics.ts";
 
 const engine = loadEngine();
 const second = loadEngine();
@@ -247,4 +247,19 @@ describe("differentialCorpus", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   }, 300_000);
+});
+
+describe("sourcesHash (the report's staleness input)", () => {
+  it("follows the probe's and builders' imports, so a file they import changes it", () => {
+    const files = sourceFiles().map((f) => f.slice(f.lastIndexOf("packages/")));
+    for (const file of ["packages/showdown-bridge/src/teams.ts", "packages/showdown-bridge/src/mechanics-damage.ts", "packages/showdown-bridge/src/candidate-features-outcome.ts", "packages/public-state/src/interpreter.cjs", "packages/schema/contracts/v1/mechanics-query.schema.json", "packages/differential/src/admission.ts"]) {
+      expect(files, file).toContain(file);
+    }
+    // The bridge's index (every export, evaluation code included) is not part of the probe's graph.
+    expect(files).not.toContain("packages/showdown-bridge/src/index.ts");
+    const base = sourcesHash();
+    const doctored = sourcesHash((path) => (path.endsWith("showdown-bridge/src/teams.ts") ? Buffer.concat([readFileSync(path), Buffer.from("\n")]) : readFileSync(path)));
+    expect(doctored).not.toBe(base);
+    expect(sourcesHash()).toBe(base);
+  });
 });

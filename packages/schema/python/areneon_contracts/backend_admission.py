@@ -152,7 +152,7 @@ def _evidence_holds(ledger: dict[str, Any]) -> bool:
     fresh = [c for c in ledger["corpora"] if c["kind"] == "fresh"]
     return (
         bool(fresh)
-        and fresh[0]["items"] >= MIN_FRESH_ITEMS[ledger["level"]]
+        and fresh[0]["distinct_items"] >= MIN_FRESH_ITEMS[ledger["level"]]
         and all(c["count_mismatches"] == 0 for c in ledger["corpora"])
     )
 
@@ -198,6 +198,14 @@ def read_backend_admission(value: object, showdown_commit: str) -> dict[str, Any
         backend["backend_commit"], backend["backend_format"]
     ):
         raise AdmissionError("the fresh corpus's seed is not the backend version's fresh seed")
+    if any(
+        c["distinct_items"] > c["items"]
+        or (c["kind"] == "fresh" and c["distinct_items"] != c["items"])
+        for c in corpora
+    ):
+        raise AdmissionError(
+            "a corpus holds at most its items distinct, and a fresh corpus each item once"
+        )
     entities = ledger["entities"]
     if not _sorted_unique([e["id"] for e in entities]):
         raise AdmissionError("entities must be sorted by id and unique")
