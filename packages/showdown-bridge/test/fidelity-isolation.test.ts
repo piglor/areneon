@@ -12,9 +12,10 @@ const ROOT = join(import.meta.dirname, "..", "..", "..");
 export const ORACLE_IDENTIFIERS = ["copyRandomState", "captureDecisions", "translateChoice", "stateDelta", "OracleSpec", "prng.clone(", "oracleRollout", "oracleValues", "foeChannelAt", "rolloutSeed"] as const;
 
 /** Files outside tests that may rebuild a battle from JSON: each forks a battle IT built (a scenario world or a probe clone), reviewed here. */
-export const FROM_JSON_ALLOWED = ["choice-judge.ts", "mechanics-damage.ts", "reply-model.ts", "search-turn.ts"];
+export const FROM_JSON_ALLOWED = ["choice-judge.ts", "mechanics-damage.ts", "mechanics-scenario.ts", "reply-model.ts", "search-turn.ts"];
 /** Files outside tests that may assign a battle's `prng`: the mechanics probes install their own recording source (mechanics-outcome.ts also replaces `hitStepAccuracy`, `moveHit` and `getRandomTarget` on its own scenario battle). */
 export const PRNG_ASSIGN_ALLOWED = ["mechanics-damage.ts", "mechanics-history.ts", "mechanics-outcome.ts", "mechanics-speed.ts", "search-turn.ts"];
+// mechanics-scenario.ts (#1453): `keptScenario` and `restoreScenario` rebuild a probe's OWN kept scenario start (the serialisation of a scenario battle the probe started itself), never a live battle.
 // mechanics-history.ts (ADR-022 E-22.5): `withStartDraws` wraps the PRNG of the probe's OWN scenario battle (never a live battle) in a Proxy that answers a declared
 // volatile's start handler at one end of its draws, and puts the scenario's source back afterwards; it copies no random state from any battle.
 // search-turn.ts (ADR-026 slice R): clones the search's OWN scenario world (a battle the world builder made, never the live battle) and installs

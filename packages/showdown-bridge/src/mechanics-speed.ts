@@ -18,7 +18,7 @@ import { RandomDraw, firstTarget, need, refusingSource } from "./mechanics-guard
 import { declareHistory, type HBattle, type HistoryDeclaration } from "./mechanics-history.ts";
 import type { MechanicsQuery } from "./mechanics-query.ts";
 import type { Outcome } from "./mechanics-result.ts";
-import { startScenario } from "./mechanics-scenario.ts";
+import { keptScenario } from "./mechanics-scenario.ts";
 
 type SpeedOrderQuery = Extract<MechanicsQuery["query"], { kind: "speed_order" }>;
 
@@ -289,7 +289,7 @@ export function evolve(battle: ProbeBattle, resolved: ResolvedAction[], at: (ind
  * `MechanicsProbeError` for a declared state or action the engine refuses.
  */
 export function probeSpeedOrder(engine: Engine, scenarioId: string, query: SpeedOrderQuery, sets: PokemonSet[], history: HistoryDeclaration | null = null): Outcome {
-  const battle = startScenario(engine, scenarioId, teams(query, sets)) as unknown as ProbeBattle;
+  const battle = keptScenario(engine, scenarioId, teams(query, sets)) as unknown as ProbeBattle;
   retireCopies(battle, query);
   const refusing = refusingSource(battle.prng);
   battle.prng = refusing;
