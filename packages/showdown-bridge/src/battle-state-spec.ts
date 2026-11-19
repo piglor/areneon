@@ -126,7 +126,7 @@ export interface Viewer {
  * is the value where the reader's own reveal mask is set and the unknown marker elsewhere (`masked`). A group's
  * `gate` (a roster entry the reader has not seen) masks every field of the entry for another seat in addition.
  */
-export function seatView(field: Field, viewer: Viewer): "exact" | "percent" | "masked" | "none" {
+export function seatView(field: Field, viewer: Viewer): "exact" | "masked" | "none" {
   switch (field.visibility) {
     case "seat":
       return viewer.seat ? "exact" : "none";
@@ -137,7 +137,7 @@ export function seatView(field: Field, viewer: Viewer): "exact" | "percent" | "m
     case "revealed-only":
       return "masked";
     case "own-exact":
-      return viewer.owner ? "exact" : field.projection === "hp_percent" ? "percent" : "none";
+      return viewer.owner ? "exact" : "none";
   }
 }
 

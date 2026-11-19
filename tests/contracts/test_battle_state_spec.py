@@ -30,7 +30,7 @@ FORMAT = "gen9championsvgc2026regmc"
 COMMITTED = ROOT / f"config/engine-state/{FORMAT}/battle-state-spec.v1.json"
 TABLE = json.loads((ROOT / f"fixtures/showdown/{FORMAT}/engine-data-2.json").read_text())
 # Pinned by the TS test too (`battle-state-spec.test.ts`): a change of the record is a new record.
-HASH = "9be74a26764ab9c7d9c7a5ee1b56762af70a989b1eca15295898360d39593247"
+HASH = "044a8a0863f86c9795740e0f02097cdcee548e121ec99cbc551db5a2fcd574ec"
 
 
 def load(path: Path) -> Any:
@@ -147,7 +147,6 @@ def test_the_projection_rules() -> None:
     assert views("public") == ["exact"] * 4
     assert views("hidden") == ["none"] * 4
     assert views("revealed-only") == ["masked"] * 4
-    assert views("own-exact", "hp_percent") == ["exact", "exact", "percent", "percent"]
     assert views("own-exact", "none") == ["exact", "exact", "none", "none"]
     # a seat field is exact only at the reader's own seat index
     assert views("seat") == ["exact", "none", "exact", "none"]

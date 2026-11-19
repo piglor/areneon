@@ -237,9 +237,9 @@ export interface Field {
    */
   visibility: "public" | "own-exact" | "revealed-only" | "hidden" | "seat";
   /**
-   * What another seat sees of an own-exact field (reader rule: present exactly for own-exact).
+   * What another seat sees of an own-exact field: none (reader rule: present exactly for own-exact). A display projection (such as the shown hit-point percentage) is a seat field, the seat's own view, never a projection of the engine's value.
    */
-  projection?: "hp_percent" | "none";
+  projection?: "none";
   /**
    * The seat mask field that gates a revealed-only field (reader rule: present exactly for revealed-only).
    */

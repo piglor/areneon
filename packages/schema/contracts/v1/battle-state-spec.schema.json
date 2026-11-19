@@ -351,9 +351,8 @@
           ]
         },
         "projection": {
-          "description": "What another seat sees of an own-exact field (reader rule: present exactly for own-exact).",
+          "description": "What another seat sees of an own-exact field: none (reader rule: present exactly for own-exact). A display projection (such as the shown hit-point percentage) is a seat field, the seat's own view, never a projection of the engine's value.",
           "enum": [
-            "hp_percent",
             "none"
           ]
         },

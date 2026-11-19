@@ -2071,10 +2071,10 @@
       "source": {
         "kind": "derived",
         "from": "reducer_history",
-        "name": "roster.ate_berry"
+        "name": "roster"
       },
       "visibility": "seat",
-      "description": "Whether the seat can settle the Pokemon's own facts: 0 no entry, 1 unknown, 2 known."
+      "description": "Whether the seat can settle the Pokemon's own facts (its entry in the history facts' roster map): 0 no entry, 1 unknown (the entry's facts are null), 2 known."
     },
     {
       "id": "seat_roster.history_state",

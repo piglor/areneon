@@ -261,9 +261,9 @@ class FieldModel(BaseModel):
     """
     public: every seat sees it exactly; own-exact: the owner exactly, another seat its projection; revealed-only: a seat sees it only where its reveal mask is set; hidden: no seat; seat: a seat field, exact only at the owning seat index (the seat's own derivation).
     """
-    projection: Literal["hp_percent", "none"] | MISSING = MISSING
+    projection: Literal["none"] | MISSING = MISSING
     """
-    What another seat sees of an own-exact field (reader rule: present exactly for own-exact).
+    What another seat sees of an own-exact field: none (reader rule: present exactly for own-exact). A display projection (such as the shown hit-point percentage) is a seat field, the seat's own view, never a projection of the engine's value.
     """
     reveal: Annotated[
         StrictStr | MISSING,

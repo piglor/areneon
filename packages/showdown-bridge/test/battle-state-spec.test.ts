@@ -24,7 +24,7 @@ import { readWorldFactsData } from "./world-facts-data.ts";
 const CORPUS_TIMEOUT_MS = 400_000;
 const SPEC_PATH = new URL(`../../../config/engine-state/${GOLDEN_FORMAT}/battle-state-spec.v1.json`, import.meta.url);
 const committedSpec = (): any => JSON.parse(readFileSync(SPEC_PATH, "utf8"));
-const SPEC_HASH = "9be74a26764ab9c7d9c7a5ee1b56762af70a989b1eca15295898360d39593247";
+const SPEC_HASH = "044a8a0863f86c9795740e0f02097cdcee548e121ec99cbc551db5a2fcd574ec";
 
 let engine: Engine;
 let spec: BattleStateSpec;
@@ -239,9 +239,12 @@ const COMPARE: Record<string, Compare> = {
     return out;
   },
   "active.active_turns": (c) => activeFacts(c, (fact, mon) => same("active turns", mon.activeTurns, fact.active_turns)),
-  // Only a deliberately misclassified record reaches these: another seat sees no exact hit points, and the current
-  // item can differ from the one it was shown.
-  "roster.hp": each((p) => same("exact hp", p.state.hp, p.entry.hp_num)),
+  // Only a deliberately misclassified record reaches these (the committed record gives them class own-exact): they
+  // compare like for like, so a record that calls them public fails on a value. Hit points as a share of the
+  // maximum (the seat sees points of 100, the last ones it was shown), the status the seat was last shown (the
+  // engine's fnt marker is the reader's fainted flag) and the held item.
+  "roster.hp": each((p) => (p.entry.hp_num === null || p.entry.hp_den === null ? null : same("hp share", p.state.hp * p.entry.hp_den, p.entry.hp_num * p.state.maxhp))),
+  "roster.status": each((p) => same("status", p.state.status === "fnt" ? "" : toId(p.state.status), toId(p.entry.status ?? ""))),
   "roster.item": each((p) => (p.entry.item_known ? same("item", engineId(p.state.item), p.entry.item_lost ? "" : (p.entry.item ?? "")) : null)),
 };
 
@@ -397,7 +400,6 @@ describe("the projection rules (privacy by construction)", () => {
     expect(views(field("public"))).toEqual(["exact", "exact", "exact", "exact"]);
     expect(views(field("hidden"))).toEqual(["none", "none", "none", "none"]);
     expect(views(field("revealed-only"))).toEqual(["masked", "masked", "masked", "masked"]);
-    expect(views(field("own-exact", "hp_percent"))).toEqual(["exact", "exact", "percent", "percent"]);
     expect(views(field("own-exact", "none"))).toEqual(["exact", "exact", "none", "none"]);
     // A seat field is exact only at the reader's own seat index: seat 1 never reads seat 0's hp_shown or request.
     expect(views(field("seat"))).toEqual(["exact", "none", "exact", "none"]);
@@ -425,9 +427,10 @@ describe("the spec against every committed corpus (the drift gate and the indepe
   const dimIds = new Map<string, Set<string>>();
   const unknownIds: string[] = [];
   const failures: string[] = [];
-  const doctored: Record<string, number> = {};
+  const doctored: Record<string, string> = {};
+  let statusMisclassified = 0;
+  let statusPublic: BattleStateSpec;
   const compared = { points: 0, skipped: 0, entries: 0, disguised: 0, unseen: 0, sources: new Set<string>() };
-  const gate = { states: 0, differs: 0 };
   const canary = { states: 0, leaks: [] as string[], control: 0 };
   let requests = 0;
   const data = readWorldFactsData();
@@ -441,7 +444,12 @@ describe("the spec against every committed corpus (the drift gate and the indepe
     delete f.projection;
     return copy;
   };
-  const DOCTORED = ["roster.hp", "roster.status", "roster.move_pp", "roster.item"];
+  // Each with the reason it must fail for: a value the seat's reader shows otherwise, or no derivation of the seat at all.
+  const DOCTORED: Record<string, RegExp> = {
+    "roster.hp": /^roster\.hp: hp share: engine \d+, seat \d+/,
+    "roster.item": /^roster\.item: item: engine "[a-z0-9]*", seat "[a-z0-9]*"/,
+    "roster.move_pp": /^roster\.move_pp: no derivation of another seat shows it$/,
+  };
 
   beforeAll(async () => {
     for (const f of spec.fields) if (f.value.kind === "vocabulary") vocab.set(f.id, new Set(vocabularyIds(binding.engine_data, f.value.lists)));
@@ -450,7 +458,8 @@ describe("the spec against every committed corpus (the drift gate and the indepe
     // condition, Transform's is roster.transformed.
     const rows = loadWorldWriters(engine, GOLDEN_FORMAT).items;
     slotIds = new Set(rows.filter((i) => i.id === "slot_conditions" || i.id === "illusion_transform").flatMap((i) => i.ids ?? []));
-    const variants = DOCTORED.map((id) => [id, misclassified(id)] as const);
+    statusPublic = misclassified("roster.status");
+    const variants = Object.keys(DOCTORED).map((id) => [id, misclassified(id)] as const);
     requests = await points(({ id: battle, player, json, channel }) => {
       stateKeys(json, keys);
       for (const f of spec.fields) {
@@ -497,18 +506,13 @@ describe("the spec against every committed corpus (the drift gate and the indepe
         compared.unseen += state.opponent.roster.filter((m) => m.hp_num === null && m.phantom !== true).length;
         const ctx: Context = { json, foe, state, facts, packed, vocab: (s) => dimIds.get(s) as Set<string>, slotIds };
         for (const miss of oracle(spec, ctx)) failures.push(`${miss} @ ${battle} ${player} turn ${json.turn}`);
-        for (const [id, record] of variants) if (oracle(record, ctx).some((m) => m.startsWith(`${id}:`))) doctored[id] = (doctored[id] ?? 0) + 1;
+        statusMisclassified += oracle(statusPublic, ctx).filter((m) => m.startsWith("roster.status:")).length;
+        for (const [id, record] of variants) {
+          const miss = oracle(record, ctx).find((m) => m.startsWith(`${id}:`));
+          if (miss !== undefined) doctored[id] ??= miss;
+        }
         for (const f of spec.fields) if (f.source.kind === "derived" && f.source.from === "shared_reader") resolveReader(f.source.name, state, compared.sources);
 
-        // The roster gate: an unseen brought entry and a non-brought one pack alike (both unknown), though the engine
-        // holds only the first. An unseen entry has no nickname yet: it is known by its preview species.
-        const brought = new Set(foe.pokemon.map((m: any) => toId(m.set.species)));
-        const unseen = state.opponent.roster.filter((m) => m.hp_num === null && m.phantom !== true);
-        if (unseen.some((m) => brought.has(m.base_species)) && unseen.some((m) => !brought.has(m.base_species))) {
-          gate.states++;
-          const ungated = unseen.map((m) => (brought.has(m.base_species) ? "engine" : "absent"));
-          if (new Set(ungated).size > 1) gate.differs++;
-        }
       }
 
       // Canary: plant markers in every value another seat may not see, then project the state for this seat.
@@ -577,18 +581,23 @@ describe("the spec against every committed corpus (the drift gate and the indepe
     expect(compared.unseen, "unseen entries (brought or not) exist and are gated").toBeGreaterThan(1000);
   });
 
-  it("a deliberately misclassified field fails the oracle (negative control)", () => {
-    for (const id of DOCTORED) expect(doctored[id] ?? 0, id).toBeGreaterThan(0);
+  it("a deliberately misclassified field fails the oracle, for the reason it must (negative control)", () => {
+    for (const [id, reason] of Object.entries(DOCTORED)) expect(doctored[id] ?? "never failed", id).toMatch(reason);
+  });
+
+  it("status: the engine's status equals the reader's on every seen entry at this pin, so its own-exact class is a margin, not a measured leak", () => {
+    // Finding: the Champions mod prints every Natural Cure cure, so no committed request shows another seat a status
+    // other than the engine's. The class stays own-exact (a pin whose Natural Cure hides the cure would leak), and the
+    // comparison itself has teeth: a status the seat was not shown fails it.
+    expect(statusMisclassified).toBe(0);
+    const entry = { name: "X", species: "x", status: "brn" } as unknown as PublicMon;
+    const ctx = { packed: [{ entry, state: { status: "par" }, identity: {} }] } as unknown as Context;
+    expect((COMPARE["roster.status"] as Compare)(ctx)).toEqual(['status: engine "par", seat "brn" (X, x)']);
   });
 
   it("every shared-reader derivation a seat field names exists in the seat's reader state", () => {
     const named = new Set(spec.fields.flatMap((f) => (f.source.kind === "derived" && f.source.from === "shared_reader" ? [f.source.name] : [])));
     expect([...named].filter((n) => !compared.sources.has(n)).sort()).toEqual([]);
-  });
-
-  it("the roster gate packs an unseen brought entry like a non-brought one; without it the engine would tell them apart", () => {
-    expect(gate.states).toBeGreaterThan(100);
-    expect(gate.differs).toBe(gate.states);
   });
 
   it("projects no hidden or unprojectable value to another seat (canary), and the scan has teeth (negative control)", () => {
@@ -605,9 +614,10 @@ function resolveReader(name: string, state: PublicState, into: Set<string>): voi
 }
 
 /**
- * A reference projection of the engine-sourced fields for one seat: what the rules let the seat read of the other
- * side (a masked value stays unknown here: this test has no reveal masks, so it is never read). The test's own
- * projection, so the canary checks the rules, not an implementation.
+ * The canary's projection of the engine-sourced fields for one seat, by `view` alone: every field the class lets the
+ * seat read exactly, on every entry of both sides. It reads no reveal mask (a revealed-only field is never read here)
+ * and applies no roster gate (every entry, seen or not, is projected), so it is the most a class could let through:
+ * if no marker survives it, none survives the gated, masked packing either.
  */
 function project(record: BattleStateSpec, json: any, seat: Player, view: (field: Field, viewer: { owner: boolean; seat: boolean }) => string): Record<string, unknown> {
   const out: Record<string, unknown> = {};

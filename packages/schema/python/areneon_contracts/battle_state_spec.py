@@ -87,8 +87,8 @@ def vocabulary_ids(table: Mapping[str, Any], lists: Sequence[str]) -> list[str]:
     return sorted(ids)
 
 
-def seat_view(field: Mapping[str, Any], owner: bool, seat: bool = True) -> str:
-    """What a seat sees of a field (the projection rules): exact, percent, masked or none.
+def seat_view(field: Mapping[str, Any], owner: bool, seat: bool) -> str:
+    """What a seat sees of a field (the projection rules): exact, masked or none.
 
     ``owner``: the field's side is the reader's own; ``seat``: a seat field is read at the reader's
     own seat index (a seat field is exact only there)."""
@@ -101,9 +101,7 @@ def seat_view(field: Mapping[str, Any], owner: bool, seat: bool = True) -> str:
         return "exact"
     if visibility == "revealed-only":
         return "masked"
-    if owner:
-        return "exact"
-    return "percent" if field.get("projection") == "hp_percent" else "none"
+    return "exact" if owner else "none"
 
 
 def _is_flag(field: Mapping[str, Any]) -> bool:
@@ -312,7 +310,7 @@ def _check_refs(row: Mapping[str, Any], fields: Mapping[str, Mapping[str, Any]],
                 raise BattleStateSpecError(f"{what} {side}: {ref} is not a field")
             if field["visibility"] == "hidden":
                 raise BattleStateSpecError(f"{what} {side}: {ref} is hidden: no seat may read it")
-            if seat_view(field, owner=not opponent) == "none":
+            if seat_view(field, owner=not opponent, seat=True) == "none":
                 raise BattleStateSpecError(
                     f"{what} {side}: {ref} is not projectable to another seat"
                 )
