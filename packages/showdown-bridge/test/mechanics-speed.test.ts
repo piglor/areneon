@@ -8,6 +8,7 @@ import { loadMechanicsConfig, type MechanicsConfig, mechanicsConfigHash } from "
 import { MechanicsProbeError, probeMechanics } from "../src/mechanics-probe.ts";
 import { MechanicsQueryError, readMechanicsQuery } from "../src/mechanics-query.ts";
 import { readMechanicsResult } from "../src/mechanics-result.ts";
+import { probeCaches } from "../src/mechanics-scenario.ts";
 import { fullSpeedQuery, SPEED_FIXTURE, type SpeedCase } from "./mechanics-speed-cases.ts";
 
 // ADR-016 slice 2: the speed_order probe against hand-worked fixtures. The
@@ -193,7 +194,13 @@ describe("a declared state or action the engine refuses is no result", () => {
       }
     };
     const stand = { ...engine, sim: { ...engine.sim, Battle: fractional } } as unknown as Engine;
-    expect(() => probe(byId("tailwind-doubles-speed"), undefined, { engine: stand, config })).toThrow("not a whole number");
+    // A kept start is rebuilt by the real engine's `fromJSON`, which cannot see a stand-in `Battle` class: this test starts its scenario itself.
+    probeCaches.enabled = false;
+    try {
+      expect(() => probe(byId("tailwind-doubles-speed"), undefined, { engine: stand, config })).toThrow("not a whole number");
+    } finally {
+      probeCaches.enabled = true;
+    }
   });
 });
 

@@ -18,7 +18,7 @@ import { declareHistory, type HBattle, type HistoryDeclaration } from "./mechani
 import type { MechanicsQuery } from "./mechanics-query.ts";
 import { type Draw, recordingRandom } from "./mechanics-random.ts";
 import type { Outcome } from "./mechanics-result.ts";
-import { startScenario } from "./mechanics-scenario.ts";
+import { keptScenario } from "./mechanics-scenario.ts";
 import { declare, evolve, type Mon, type ProbeBattle, type Queued, resolveActions, restoreStagesAndItems, retireCopies, teams } from "./mechanics-speed.ts";
 
 /** Bumped when the probe computes an outcome differently for the same query (named by the `probe-outcome/1` feature set's identity). */
@@ -203,7 +203,7 @@ export function combine(leaves: readonly Leaf[], asked: number): Outcome {
  * `script` answering its chances in order (a missing answer is `true`), then, if it passed, the engine's move step to its hit step.
  */
 function attempt(engine: Engine, scenarioId: string, query: MoveOutcomeQuery, sets: PokemonSet[], history: HistoryDeclaration | null, script: boolean[]): Leaf {
-  const battle = startScenario(engine, scenarioId, teams(query, sets)) as unknown as OutcomeBattle;
+  const battle = keptScenario(engine, scenarioId, teams(query, sets)) as unknown as OutcomeBattle;
   retireCopies(battle, query);
   const refusing = refusingSource(battle.prng);
   battle.prng = refusing;
@@ -344,7 +344,7 @@ const ignore = (): void => undefined;
  * live battle's. Nothing is played.
  */
 export function declaredOutcomeScenario(engine: Engine, scenarioId: string, query: Pick<MoveOutcomeQuery, "sides" | "actions" | "state">, sets: PokemonSet[], history: HistoryDeclaration | null): HBattle {
-  const battle = startScenario(engine, scenarioId, teams(query, sets)) as unknown as OutcomeBattle;
+  const battle = keptScenario(engine, scenarioId, teams(query, sets)) as unknown as OutcomeBattle;
   retireCopies(battle, query);
   battle.prng = refusingSource(battle.prng);
   declare(battle, query, ignore);

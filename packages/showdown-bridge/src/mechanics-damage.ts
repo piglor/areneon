@@ -15,7 +15,7 @@ import { RandomDraw, refusingSource } from "./mechanics-guard.ts";
 import { declareHistory, type HBattle, type HistoryDeclaration } from "./mechanics-history.ts";
 import { koBlocked, koCounts } from "./mechanics-ko.ts";
 import { acceptedDraws, critDraw, type Draw, type RecordingRandom, recordingRandom } from "./mechanics-random.ts";
-import { scenarioPokemon, startScenario } from "./mechanics-scenario.ts";
+import { probeCaches, restoreScenario, scenarioPokemon, startScenario } from "./mechanics-scenario.ts";
 import type { MechanicsQuery } from "./mechanics-query.ts";
 import type { MechanicsResult } from "./mechanics-result.ts";
 
@@ -165,6 +165,7 @@ export const scenarioStartStats = { started: 0, reused: 0 };
  * gets its own battle from that serialisation, as a clone of the reference path does, so the result never depends on the table's contents.
  */
 function startedScenario(engine: Engine, scenarioId: string, attackerSet: PokemonSet, defenderSet: PokemonSet): DmgBattle {
+  if (!probeCaches.enabled) return asDmg(startScenario(engine, scenarioId, { p1: [attackerSet, partnerOf(attackerSet)], p2: [defenderSet, partnerOf(defenderSet)] }));
   const table = startedTables.get(engine) ?? new Map<string, string>();
   startedTables.set(engine, table);
   // The sets are the validated, canonical ones, which serialise the same way every time; a different order of keys would only miss.
@@ -177,7 +178,7 @@ function startedScenario(engine: Engine, scenarioId: string, attackerSet: Pokemo
     if (table.size >= STARTED_LIMIT) table.clear();
     table.set(key, json);
   } else scenarioStartStats.reused++;
-  return asDmg(engine.sim.Battle.fromJSON(json));
+  return asDmg(restoreScenario(engine, json));
 }
 
 /** The scenario battle with the whole declared state, ready to be cloned. */
@@ -248,7 +249,7 @@ interface Run {
  * engine's `randomChance` answers.
  */
 function run(engine: Engine, json: string, moveId: string, roll: number, crit: boolean | undefined, forceChance: boolean): Run {
-  const battle = asDmg(engine.sim.Battle.fromJSON(json));
+  const battle = asDmg(restoreScenario(engine, json));
   const random = recordingRandom({ roll, chance: forceChance });
   battle.prng = random;
   const attacker = battle.sides[0]?.pokemon[0] as DmgPokemon;
