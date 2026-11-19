@@ -25,11 +25,14 @@ drifted:
 | --- | --- |
 | `PASS` | every command of the check passed and no golden changed on disk |
 | `DRIFT` | a command failed; the lines name the failing tests, which name the golden |
-| `REWRITTEN` | the check passed but a golden file changed while comparing (a defect in the check) |
-| `ERROR` | the check could not run (tool missing, timeout, a recapture command failed) |
+| `REWRITTEN` | the check passed but a tracked file under `fixtures/`, `config/`, `docs/`, `ml/areneon_ml/reducer/data`, `packages/*/generated` or `packages/*/src` changed while comparing (a defect in the check); detected with `git status` hashes before and after each check |
+| `SKIPPED` | a test in the check was skipped (vitest JSON report, pytest `-rs`); a skip is not evidence, so the check is red |
+| `ERROR` | the check could not run: interpreter (`--python`, default the running one; `.venv` at the root for the TS parity tests) or built engine missing, timeout (the whole process group is killed), a recapture command failed |
 | `ABSENT` | a check listed but not built yet (none at present) |
 
-The exit code is 1 on any `DRIFT`, `REWRITTEN` or `ERROR`. A diff is a review item: the
+Compare mode scrubs write-enabling variables (`ARENEON_UPDATE_GOLDEN`, `ARENEON_PRINT_*`, `ARENEON_HISTORY_PARITY_DUMP` and any `ARENEON_UPDATE|RECAPTURE|DUMP|WRITE*`) from the environment, and sets `ARENEON_PYTHON`, `ARENEON_REQUIRE_PYTHON_WORKER=1` and `CI=1` so a missing interpreter fails instead of skipping. Test files are named exactly: vitest's JSON report must list every named file.
+
+The exit code is 1 on any `DRIFT`, `REWRITTEN`, `SKIPPED` or `ERROR`. A diff is a review item: the
 compare run never writes a golden. `--recapture` runs each check's recapture commands (the
 "Re-capture golden fixtures" list of CLAUDE.md), then compares, and prints every golden whose
 bytes changed so each diff can be reviewed with `git diff` before it is committed.
@@ -76,6 +79,29 @@ anything else is a regression to investigate, not to recapture.
 | `reduced/`, `random/`, `unavailable/`, `search-fidelity/` and its report | seeded battles replay differently if the engine's RNG use changed | recapture the corpora, then the fidelity report (about 5 minutes), then edit `admitted` in `config/search/world-writers.v1.json` to the report |
 | contract samples, `hashes.json` | the capture reads the golden vocabulary; identity hashes (damage-aware, feature set, belief, search) move with the pin | review that only hash fields and engine-derived values changed |
 | `docs/showdown-champions-gaps.md`, `docs/mechanics-parity.md`, `docs/mechanics-inventory.md` | generated from records, fixtures and exports | edit the records, never the docs |
+
+## What `--recapture` rewrites, and the manual steps
+
+Wired (run in this order inside their check, with `ARENEON_UPDATE_GOLDEN=1` set for the reduced
+snapshot rewrites): `capture-golden` and `capture-random-corpus` (golden-fixtures);
+`capture-choices` and `capture-choice-channels` (choice-corpus); the exports in
+`engine-tables` (engine-data v1 and v2, team vocabulary, role sets, move classes, volatile
+copy, stall moves, history facts, mechanics inventory); `mechanics-parity` (the generated
+report); `capture-unavailable-corpus`, `capture-illusion-battle`, `capture-fling-battle`,
+`capture-baton-pass-battle` and the reduced-snapshot rewrites (reader-parity);
+`capture-encoder-pairs` (a1-a2-equality); `capture-samples` (contract-corpus, after the
+vocabulary export). The gap doc and the parity report are generated from records and
+fixtures: edit those, never the docs.
+
+Manual, in order, after `--recapture` (they need inputs or minutes that a one-command suite
+should not hide): (1) `capture-search-fidelity-corpus.ts` (`--extend`, `--dataset DIR`; the
+corpus README names the keys), (2) `test/fidelity/report-cli.ts --json
+fixtures/showdown/<format>/search-fidelity/fidelity-report.json` redirected to
+`fidelity-report.md` (about 5 minutes), then edit `admitted` in
+`config/search/world-writers.v1.json` to the report, (3) `export-generator-prior.ts --commit <hex>`
+and `export-role-sets-prior.ts` when the generator or role-set table moved, (4) the usage prior
+derivations from the recorded Smogon inputs, (5) `capture-samples.ts` again if a step above
+changed a contract input, (6) `make migrate-check` green.
 
 ## Reviewing a recapture
 

@@ -16,24 +16,43 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
 PASS = "PASS"
-DRIFT = "DRIFT"  # the check failed: a golden, table or parity result differs
-REWRITTEN = "REWRITTEN"  # the check passed but a golden changed on disk while it ran
-ERROR = "ERROR"  # the check could not run (tool missing, timeout)
-ABSENT = "ABSENT"  # listed by the ticket, not on main yet
-FAILING = (DRIFT, REWRITTEN, ERROR)
+DRIFT = "DRIFT"  # a command failed: a golden, table or parity result differs
+REWRITTEN = "REWRITTEN"  # the check passed but a tracked data file changed while it ran
+SKIPPED = "SKIPPED"  # a test in the check was skipped: a skip is not evidence
+ERROR = "ERROR"  # the check could not run (interpreter or engine missing, timeout)
+ABSENT = "ABSENT"  # listed but not built yet
+FAILING = (DRIFT, REWRITTEN, SKIPPED, ERROR)
 
 SHOWDOWN = "fixtures/showdown/gen9championsvgc2026regmc"
 BRIDGE = "packages/showdown-bridge"
 VITEST = ("pnpm", "exec", "vitest", "run")
-PYTEST = ("{py}", "-m", "pytest", "--no-cov", "-q", "-p", "no:cacheprovider")
+PYTEST = ("{py}", "-m", "pytest", "--no-cov", "-q", "-rs", "-p", "no:cacheprovider")
+
+# Every place a golden, table, generated type or generated doc lives. A compare run must
+# leave all of them exactly as it found them, whatever the check's own globs say.
+WATCHED = (
+    "fixtures",
+    "config",
+    "docs",
+    "ml/areneon_ml/reducer/data",
+    "packages/*/generated",
+    "packages/*/src",
+)
+
+# Variables that make a test or script write or dump a golden. Removed in compare mode.
+WRITE_ENV = re.compile(
+    r"^ARENEON_(UPDATE|RECAPTURE|PRINT|DUMP|WRITE)|^ARENEON_HISTORY_PARITY_DUMP$"
+)
 
 
 @dataclass(frozen=True)
@@ -41,11 +60,10 @@ class Check:
     id: str
     title: str
     commands: tuple[tuple[str, ...], ...] = ()
-    # Glob patterns (repo relative) of the goldens this check compares against.
-    goldens: tuple[str, ...] = ()
-    # Commands that rewrite those goldens, run only with --recapture.
+    # Commands that rewrite the goldens, run only with --recapture (in this order).
     recapture: tuple[tuple[str, ...], ...] = ()
     absent: str = ""  # reason when the check does not exist yet
+    needs: tuple[str, ...] = ("python", "engine")
     timeout_s: int = 1800
 
 
@@ -64,30 +82,22 @@ def pytest(*paths: str) -> tuple[str, ...]:
 CHECKS: tuple[Check, ...] = (
     Check(
         "pin-and-rules",
-        "pinned engine, rules records and channels agree",
+        "pinned engine, rules records, channels and generated gap doc agree",
         (
-            vitest("engine.test.ts", "rules-channel.test.ts"),
+            vitest("engine.test.ts", "rules-channel.test.ts", "gaps-doc.test.ts"),
             node("check-rules.ts"),
         ),
     ),
     Check(
         "golden-fixtures",
-        "golden request fixtures, team verdicts, battle summary, channels (fresh == committed)",
-        (vitest("golden.test.ts", "teams.test.ts"),),
-        (
-            f"{SHOWDOWN}/*.request.json",
-            f"{SHOWDOWN}/battle.summary.json",
-            f"{SHOWDOWN}/capture.provenance.json",
-            f"{SHOWDOWN}/channels/*",
-            "fixtures/teams/*/verdicts.json",
-        ),
-        (node("capture-golden.ts"),),
+        "golden request fixtures, team verdicts, battle summary, channels, random corpus",
+        (vitest("golden.test.ts", "teams.test.ts", "random-corpus.test.ts"),),
+        (node("capture-golden.ts"), node("capture-random-corpus.ts")),
     ),
     Check(
         "choice-corpus",
         "choice corpus replay, brute-force missedActions oracle, choice channels",
         (vitest("choice-corpus.test.ts", "choice-channels.test.ts", "choices.test.ts"),),
-        (f"{SHOWDOWN}/choices/*", f"{SHOWDOWN}/choice-channels/*"),
         (node("capture-choices.ts"), node("capture-choice-channels.ts")),
     ),
     Check(
@@ -106,16 +116,7 @@ CHECKS: tuple[Check, ...] = (
                 "mechanics-inventory.test.ts",
                 "mechanics-inventory-weights.test.ts",
             ),
-            (*PYTEST, "tests/ml/reducer/test_protocol_volatiles.py"),
-        ),
-        (
-            f"{SHOWDOWN}/engine-data*.json",
-            f"{SHOWDOWN}/team-vocabulary*.json",
-            f"{SHOWDOWN}/role-sets*.json",
-            f"{SHOWDOWN}/move-classes*.json",
-            f"{SHOWDOWN}/mechanics-inventory*.json",
-            "ml/areneon_ml/reducer/data/*.json",
-            "docs/mechanics-inventory.md",
+            pytest("tests/ml/reducer/test_protocol_volatiles.py"),
         ),
         (
             node("export-engine-data.ts"),
@@ -146,18 +147,16 @@ CHECKS: tuple[Check, ...] = (
             node("check-mechanics-config.ts"),
             node("check-damage-aware-config.ts"),
         ),
-        ("fixtures/mechanics/*/*/cases.json", "docs/mechanics-parity.md"),
         (node("mechanics-parity.ts"),),
     ),
     Check(
         "calc-differential",
         "@smogon/calc differential against the probe",
         (vitest("mechanics-differential.test.ts"),),
-        ("fixtures/mechanics/gen9championsvgc2026regmc/calc-divergences.json",),
     ),
     Check(
         "reader-parity",
-        "shared reader vs Python reducer, world facts and history facts parity",
+        "shared reader vs Python reducer, world facts and history facts parity, reduced goldens",
         (
             vitest(
                 "packages/public-state/test/parity.test.ts",
@@ -166,25 +165,45 @@ CHECKS: tuple[Check, ...] = (
                 f"{BRIDGE}/test/world-facts-parity.test.ts",
                 f"{BRIDGE}/test/history-facts-parity.test.ts",
             ),
-            (*PYTEST, "tests/ml/reducer/test_golden.py", "tests/ml/reducer/test_corpus.py"),
+            pytest(
+                "tests/ml/reducer/test_golden.py",
+                "tests/ml/reducer/test_corpus.py",
+                "tests/ml/reducer/test_unavailable.py",
+                "tests/ml/reducer/test_illusion_battle.py",
+                "tests/ml/reducer/test_fling.py",
+                "tests/ml/reducer/test_baton_pass.py",
+                "tests/ml/reducer/test_baton_pass_volatiles.py",
+            ),
         ),
-        (f"{SHOWDOWN}/reduced/*",),
+        (
+            node("capture-unavailable-corpus.ts"),
+            node("capture-illusion-battle.ts"),
+            node("capture-fling-battle.ts"),
+            node("capture-baton-pass-battle.ts"),
+            # Rewrite the reduced snapshots (ARENEON_UPDATE_GOLDEN=1 is set for recapture commands).
+            pytest(
+                "tests/ml/reducer/test_golden.py",
+                "tests/ml/reducer/test_unavailable.py",
+                "tests/ml/reducer/test_illusion_battle.py",
+                "tests/ml/reducer/test_fling.py",
+                "tests/ml/reducer/test_baton_pass.py",
+                "tests/ml/reducer/test_baton_pass_volatiles.py",
+            ),
+        ),
     ),
     Check(
         "battle-state-spec-oracle",
         "battle-state spec oracle (ADR-030): engine fields, reducer map and encoder map agree",
         (
             vitest("battle-state-spec.test.ts"),
-            (*PYTEST, "tests/ml/model/test_battle_state_spec.py"),
+            pytest("tests/ml/model/test_battle_state_spec.py"),
         ),
-        ("config/engine-state/*", "fixtures/contracts/v1/battle-state-spec/*"),
     ),
     Check(
         "encoder-golden",
         "encoder golden digests and encoder_version",
         (
-            (
-                *PYTEST,
+            pytest(
                 "tests/ml/model/test_encoder.py",
                 "tests/ml/model/test_options.py",
                 "tests/ml/model/test_gamedata.py",
@@ -200,13 +219,12 @@ CHECKS: tuple[Check, ...] = (
                 "packages/bot-client/test/encoder-pairs.test.ts",
             ),
         ),
-        (f"{SHOWDOWN}/a2-pairs.json",),
+        (("node", "packages/bot-client/scripts/capture-encoder-pairs.ts"),),
     ),
     Check(
         "fidelity-corpus",
         "fidelity corpus replay and report freshness",
         (vitest("search-fidelity-corpus.test.ts", "fidelity.test.ts"),),
-        (f"{SHOWDOWN}/search-fidelity/*.json", f"{SHOWDOWN}/search-fidelity/*.md"),
     ),
     Check(
         "contract-corpus",
@@ -214,9 +232,8 @@ CHECKS: tuple[Check, ...] = (
         (
             vitest("samples.test.ts"),
             ("node", "packages/schema/scripts/contracts.ts"),
-            (*PYTEST, "tests/contracts"),
+            pytest("tests/contracts"),
         ),
-        ("fixtures/contracts/**/*.json",),
         (node("capture-samples.ts"),),
     ),
 )
@@ -233,21 +250,65 @@ class Result:
 
 
 @dataclass
+class Proc:
+    returncode: int
+    output: str
+
+
+def run_group(argv: Sequence[str], cwd: Path, env: dict[str, str], timeout: float) -> Proc:
+    """Run argv in its own process group; kill the whole group on timeout."""
+    proc = subprocess.Popen(
+        list(argv),
+        cwd=cwd,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        out, _ = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.communicate()
+        raise
+    return Proc(proc.returncode, out or "")
+
+
+@dataclass
 class Env:
     root: Path
     python: str = "python3"
     nice: bool = True
     timeout_s: int | None = None
-    run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run
+    run: Callable[[Sequence[str], Path, dict[str, str], float], Proc] = run_group
 
-    def environ(self) -> dict[str, str]:
-        env = dict(os.environ)
+    def environ(self, *, recapture: bool = False) -> dict[str, str]:
+        env = {k: v for k, v in os.environ.items() if not WRITE_ENV.match(k)}
         parts = [self.root, self.root / "packages/schema/python", self.root / "ml"]
-        # The TS parity tests spawn this interpreter as their Python reference.
-        env.setdefault("ARENEON_PYTHON", self.python)
         extra = env.get("PYTHONPATH")
         env["PYTHONPATH"] = os.pathsep.join([*map(str, parts), *([extra] if extra else [])])
+        # The TS parity tests spawn this interpreter as their Python reference, and a missing
+        # one must fail there instead of skipping.
+        env["ARENEON_PYTHON"] = self.python
+        env["ARENEON_REQUIRE_PYTHON_WORKER"] = "1"
+        env["CI"] = "1"
+        if recapture:
+            env["ARENEON_UPDATE_GOLDEN"] = "1"
         return env
+
+    def problems(self, check: Check) -> list[str]:
+        out = []
+        if "python" in check.needs and not (
+            Path(self.python).exists() or shutil.which(self.python)
+        ):
+            out.append(f"python interpreter missing: {self.python}")
+        if (
+            "engine" in check.needs
+            and not (self.root / "vendor/pokemon-showdown/dist/sim").is_dir()
+        ):
+            out.append("engine checkout missing or not built (make showdown)")
+        return out
 
 
 def expand(argv: Sequence[str], env: Env) -> list[str]:
@@ -257,26 +318,36 @@ def expand(argv: Sequence[str], env: Env) -> list[str]:
     return out
 
 
-def golden_files(root: Path, patterns: Sequence[str]) -> list[Path]:
-    found: set[Path] = set()
-    for pattern in patterns:
-        found.update(p for p in root.glob(pattern) if p.is_file())
-    return sorted(found)
+def tracked_state(root: Path) -> dict[str, str | None]:
+    """Path -> content hash of every modified or untracked file under WATCHED (git status)."""
+    proc = subprocess.run(
+        ["git", "status", "--porcelain", "-uall", "-z", "--", *WATCHED],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    state: dict[str, str | None] = {}
+    entries = iter(proc.stdout.split("\0"))
+    for entry in entries:
+        if not entry:
+            continue
+        code, path = entry[:2], entry[3:]
+        if "R" in code or "C" in code:
+            next(entries, None)  # the rename's source path
+        f = root / path
+        state[path] = hashlib.sha256(f.read_bytes()).hexdigest() if f.is_file() else None
+    return state
 
 
-def digest(root: Path, patterns: Sequence[str]) -> dict[str, str]:
-    return {
-        str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
-        for p in golden_files(root, patterns)
-    }
-
-
-def changed(before: dict[str, str], after: dict[str, str]) -> list[str]:
+def changed(before: dict[str, str | None], after: dict[str, str | None]) -> list[str]:
     return sorted(k for k in before.keys() | after.keys() if before.get(k) != after.get(k))
 
 
-_FAIL_LINE = re.compile(r"^\s*(?:FAIL|FAILED|\u00d7|✗|✘)\s+(.*\S)\s*$")
+_FAIL_LINE = re.compile(r"^\s*(?:FAIL|FAILED|✗|✘)\s+(.*\S)\s*$")
 _ERROR_LINE = re.compile(r"^(?:\w*Error|AssertionError|Error):.*$")
+_PYTEST_SKIPPED = re.compile(r"(\d+) skipped")
+_PYTEST_SKIP_LINE = re.compile(r"^SKIPPED \[\d+\] (.*)$")
 
 
 def drift_lines(output: str, limit: int = 8) -> list[str]:
@@ -294,65 +365,134 @@ def drift_lines(output: str, limit: int = 8) -> list[str]:
     return seen[:limit]
 
 
-def run_check(check: Check, env: Env, *, recapture: bool = False) -> Result:
-    start = time.monotonic()
-    if check.absent:
-        return Result(check.id, check.title, ABSENT, 0.0, [check.absent])
-    before = digest(env.root, check.goldens)
-    status, drift = PASS, []
-    changed_files: list[str] = []
-    if recapture:
-        for argv in check.recapture:
-            proc = _exec(argv, env, check)
-            if isinstance(proc, str):
-                status, drift = ERROR, [proc]
-                break
-            if proc.returncode != 0:
-                status, drift = (
-                    ERROR,
-                    [
-                        f"recapture failed: {' '.join(argv)}",
-                        *drift_lines(proc.stdout + proc.stderr, 3),
-                    ],
-                )
-                break
-        changed_files = changed(before, digest(env.root, check.goldens))
-        before = digest(
-            env.root, check.goldens
-        )  # compare runs below start from the recaptured goldens
-    if status == PASS:
-        for argv in check.commands:
-            proc = _exec(argv, env, check)
-            if isinstance(proc, str):
-                status, drift = ERROR, [proc]
-                break
-            if proc.returncode != 0:
-                status = DRIFT
-                drift += [line for line in drift_lines(proc.stdout + proc.stderr)]
-    after = digest(env.root, check.goldens)
-    rewritten = changed(before, after)
-    if rewritten:
-        # A compare run must never touch a golden: say so even when the check passed.
-        status = REWRITTEN if status == PASS else status
-        drift += [f"golden modified while comparing: {p}" for p in rewritten]
-    return Result(check.id, check.title, status, time.monotonic() - start, drift, changed_files)
+def is_vitest(argv: Sequence[str]) -> bool:
+    return tuple(argv[:4]) == VITEST
 
 
-def _exec(argv: Sequence[str], env: Env, check: Check) -> subprocess.CompletedProcess[str] | str:
+def is_pytest(argv: Sequence[str]) -> bool:
+    return tuple(argv[:3]) == PYTEST[:3] or tuple(argv[1:3]) == ("-m", "pytest")
+
+
+@dataclass
+class Outcome:
+    failed: list[str] = field(default_factory=list)
+    skipped: list[str] = field(default_factory=list)
+
+
+def read_vitest(
+    argv: Sequence[str], report: Path, root: Path, returncode: int, output: str
+) -> Outcome:
+    """Failures, skips and files that never ran, from vitest's JSON report (exact paths)."""
+    out = Outcome()
+    wanted = {a for a in argv[4:] if not a.startswith("-")}
     try:
-        return env.run(
-            expand(argv, env),
-            cwd=env.root,
-            env=env.environ(),
-            capture_output=True,
-            text=True,
-            timeout=env.timeout_s or check.timeout_s,
-            check=False,
+        data = json.loads(report.read_text())
+    except (OSError, ValueError):
+        out.failed = drift_lines(output) if returncode else ["vitest wrote no report"]
+        return out
+    ran: set[str] = set()
+    for file in data.get("testResults", []):
+        rel = os.path.relpath(file["name"], root)
+        ran.add(rel)
+        tests = file.get("assertionResults", [])
+        failed = [t for t in tests if t.get("status") == "failed"]
+        out.failed += [f"{rel} > {t.get('fullName', '?')}" for t in failed]
+        if file.get("status") == "failed" and not failed:
+            out.failed.append(f"{rel}: {str(file.get('message') or 'suite failed')[:120]}")
+        skipped = [t for t in tests if t.get("status") in ("skipped", "pending", "todo")]
+        if skipped:
+            out.skipped.append(f"{rel}: {len(skipped)} skipped")
+    out.failed += [f"{w}: did not run" for w in sorted(wanted - ran)]
+    if returncode and not out.failed:
+        out.failed = drift_lines(output)
+    return out
+
+
+def read_pytest(returncode: int, output: str) -> Outcome:
+    out = Outcome()
+    if returncode:
+        out.failed = drift_lines(output)
+    lines = [m.group(1) for ln in output.splitlines() if (m := _PYTEST_SKIP_LINE.match(ln))]
+    counted = [m for ln in output.splitlines() if (m := _PYTEST_SKIPPED.search(ln))]
+    if lines or counted:
+        out.skipped = lines[:5] or [f"{counted[-1].group(1)} skipped"]
+    return out
+
+
+def execute(
+    argv: Sequence[str], env: Env, check: Check, *, recapture: bool = False
+) -> Outcome | str:
+    """Run one command; an Outcome (failures, skips) or a string when it could not run."""
+    full = list(argv)
+    report: Path | None = None
+    tmp = None
+    if is_vitest(full) and not recapture:
+        tmp = tempfile.mkdtemp(prefix="migrate-check-")
+        report = Path(tmp) / "report.json"
+        full += ["--reporter=json", f"--outputFile={report}"]
+    try:
+        proc = env.run(
+            expand(full, env),
+            env.root,
+            env.environ(recapture=recapture),
+            env.timeout_s or check.timeout_s,
         )
     except FileNotFoundError as exc:
         return f"cannot run {argv[0]}: {exc.filename}"
     except subprocess.TimeoutExpired:
         return f"timed out: {' '.join(argv[:4])}"
+    try:
+        if report is not None:
+            return read_vitest(full, report, env.root, proc.returncode, proc.output)
+        if is_pytest(full) and not recapture:
+            return read_pytest(proc.returncode, proc.output)
+        return Outcome(failed=drift_lines(proc.output) if proc.returncode else [])
+    finally:
+        if tmp:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+def run_check(check: Check, env: Env, *, recapture: bool = False) -> Result:
+    start = time.monotonic()
+    if check.absent:
+        return Result(check.id, check.title, ABSENT, 0.0, [check.absent])
+    missing = env.problems(check)
+    if missing:
+        return Result(check.id, check.title, ERROR, 0.0, missing)
+    before = tracked_state(env.root)
+    status, drift = PASS, []
+    changed_files: list[str] = []
+    if recapture:
+        for argv in check.recapture:
+            res = execute(argv, env, check, recapture=True)
+            if isinstance(res, str):
+                status, drift = ERROR, [res]
+                break
+            if res.failed:
+                status, drift = ERROR, [f"recapture failed: {' '.join(argv[:4])}", *res.failed[:3]]
+                break
+        after_recapture = tracked_state(env.root)
+        changed_files = changed(before, after_recapture)
+        before = after_recapture  # compare runs below start from the recaptured goldens
+    if status == PASS:
+        skips: list[str] = []
+        for argv in check.commands:
+            res = execute(argv, env, check)
+            if isinstance(res, str):
+                status, drift = ERROR, [res]
+                break
+            if res.failed:
+                status = DRIFT
+                drift += res.failed[:8]
+            skips += res.skipped
+        if status == PASS and skips:
+            status, drift = SKIPPED, [f"skipped (not evidence): {s}" for s in skips]
+    rewritten = changed(before, tracked_state(env.root))
+    if rewritten:
+        # A compare run must never touch tracked data: say so even when the check passed.
+        status = REWRITTEN if status in (PASS, SKIPPED) else status
+        drift += [f"modified while comparing: {p}" for p in rewritten]
+    return Result(check.id, check.title, status, time.monotonic() - start, drift, changed_files)
 
 
 def run_checks(
@@ -383,11 +523,8 @@ def summary(results: Sequence[Result]) -> str:
         lines += ["", "recaptured goldens that changed (review each diff before committing):"]
         lines += [f"  {f}" for f in changed_files]
     bad = [r.id for r in results if r.status in FAILING]
-    lines += [
-        "",
-        f"{len(results) - len(bad)}/{len(results)} checks without drift"
-        + (f"; REVIEW: {', '.join(bad)}" if bad else ""),
-    ]
+    tail = f"; REVIEW: {', '.join(bad)}" if bad else ""
+    lines += ["", f"{len(results) - len(bad)}/{len(results)} checks without drift{tail}"]
     return "\n".join(lines)
 
 
@@ -405,9 +542,7 @@ def main(
 ) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
-        "--recapture",
-        action="store_true",
-        help="rewrite the goldens, then compare and list changed files",
+        "--recapture", action="store_true", help="rewrite goldens, compare, list changes"
     )
     ap.add_argument("--only", action="append", help="check id (glob), repeatable")
     ap.add_argument("--list", action="store_true", help="list the checks and exit")
