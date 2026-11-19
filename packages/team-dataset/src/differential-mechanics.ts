@@ -1,5 +1,5 @@
 // The composition root of the differential harness at level 1, the mechanics-query level (ADR-030 groundwork G1, #1461): it
-// joins the engine-free core (`@areneon/differential`) with the bridge's oracle side (`probeOracle`, `queryFacts`), which does
+// joins the engine-free core (`@areneon/differential`) with the bridge's oracle side (`probeBackend`, `queryFacts`), which does
 // not import the core. Its queries are the ones the feature builders themselves issue: every request of each seat of a
 // committed battle is built with `probe-damage/2` and `probe-outcome/1` (`buildFeaturesG`, the builders' generator form) and
 // every query they yield is recorded, as `feature-bench.ts` replays real decisions. Evaluation code never imports this module.
@@ -32,7 +32,6 @@ import {
   FEATURE_SET_OUTCOME,
   type FeatureConfigs,
   FeatureBuildError,
-  FIDELITY_DIR,
   GOLDEN_FORMAT,
   goldenTeamVocabulary,
   loadDamageAwareConfig,
@@ -43,13 +42,13 @@ import {
   mechanicsConfigHash,
   type MechanicsResult,
   mechanicsQueryHash,
-  type OracleBackend,
+  type ProbeBackend,
   outcomeConfigHash,
   type ParsedMechanicsQuery,
   type Player,
   playerChannel,
   type PokemonSet,
-  probeOracle,
+  probeBackend,
   queryFacts,
   RANDOM_DIR,
   type RandomBattleFile,
@@ -64,7 +63,8 @@ export const DIFFERENTIAL_FEATURE_SETS = ["probe-damage/2", FEATURE_SET_OUTCOME]
 /** The committed corpora the self-differential runs over. */
 export const COMMITTED_CORPORA: readonly { id: string; dir: string }[] = [
   { id: "random", dir: RANDOM_DIR },
-  { id: "search-fidelity", dir: FIDELITY_DIR },
+  // The targeted corpus of ADR-026 slice T, beside the random one (the bridge keeps its directory constant off its index).
+  { id: "search-fidelity", dir: join(RANDOM_DIR, "..", "search-fidelity") },
   { id: "unavailable", dir: UNAVAILABLE_DIR },
 ];
 
@@ -101,7 +101,7 @@ export function harnessConfigs(engine: Engine, format: string = GOLDEN_FORMAT): 
 }
 
 /** A backend that remembers the outcome of each query (by its hash): the builders' run and the comparison share one probe call. */
-export function remembering(base: OracleBackend): OracleBackend {
+export function remembering(base: ProbeBackend): ProbeBackend {
   const seen = new Map<string, Settled>();
   return {
     id: base.id,
@@ -128,7 +128,7 @@ export interface Collected {
  * Every distinct query the feature builders issue at every request of both seats of `battles`, the oracle answering each as it is
  * asked (one memo per game and set, as in play). A query's answer is a pure function of the query, so recording it is enough.
  */
-export function collectQueries(engine: Engine, configs: HarnessConfigs, battles: readonly RandomBattleFile[], oracle: OracleBackend): Collected {
+export function collectQueries(engine: Engine, configs: HarnessConfigs, battles: readonly RandomBattleFile[], oracle: ProbeBackend): Collected {
   const queries: ParsedMechanicsQuery[] = [];
   const known = new Set<string>();
   const refused: Record<string, number> = {};
@@ -224,7 +224,7 @@ export function differentialCorpus(
   const refused: Record<string, number> = {};
   let builds = 0;
   for (const battle of corpusBattles(corpus.dir, limit)) {
-    const oracle = remembering(probeOracle(engine, { config: configs.oracle, snapshot: configs.snapshot }));
+    const oracle = remembering(probeBackend(engine, { config: configs.oracle, snapshot: configs.snapshot }));
     const found = collectQueries(engine, configs, [battle], oracle);
     builds += found.builds;
     for (const [code, n] of Object.entries(found.refused)) refused[code] = (refused[code] ?? 0) + n;
@@ -243,7 +243,7 @@ export function differentialCorpus(
 
 /** The backend of the self-differential: the same probe on another engine object (its own per-engine probe tables). */
 export const secondProbe = (second: Engine, configs: HarnessConfigs): Backend<ParsedMechanicsQuery, MechanicsResult> =>
-  probeOracle(second, { config: configs.oracle, snapshot: loadRulesSnapshot(second.commit), id: "showdown-probe-second" }) as Backend<ParsedMechanicsQuery, MechanicsResult>;
+  probeBackend(second, { config: configs.oracle, snapshot: loadRulesSnapshot(second.commit), id: "showdown-probe-second" }) as Backend<ParsedMechanicsQuery, MechanicsResult>;
 
 /**
  * The probe against itself (gate 1 of #1461): the oracle on `engine`, the backend the same probe on `second`, every committed

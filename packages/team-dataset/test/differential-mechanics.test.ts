@@ -23,7 +23,7 @@ import {
   shadowSize,
   type DifferentialReport,
 } from "@areneon/differential";
-import { jcs as bridgeJcs, loadEngine, type MechanicsResult, mechanicsQueryHash, type ParsedMechanicsQuery, probeOracle, RANDOM_DIR, sampleTarget, type Settled } from "@areneon/showdown-bridge";
+import { jcs as bridgeJcs, loadEngine, type MechanicsResult, mechanicsQueryHash, type ParsedMechanicsQuery, probeBackend, RANDOM_DIR, sampleTarget, type Settled } from "@areneon/showdown-bridge";
 import { beforeAll, describe, expect, it } from "vitest";
 import { collectQueries, corpusBattles, harnessConfigs, mechanicsHarnessLevel, remembering, reportInputs, SELF_REPORT_DIR, SELF_REPORT_TITLE, selfDifferential } from "../src/differential-mechanics.ts";
 
@@ -31,7 +31,7 @@ const engine = loadEngine();
 const second = loadEngine();
 const configs = harnessConfigs(engine);
 const level = mechanicsHarnessLevel(engine);
-const oracle = remembering(probeOracle(engine, { config: configs.oracle, snapshot: configs.snapshot })) as Backend<ParsedMechanicsQuery, MechanicsResult>;
+const oracle = remembering(probeBackend(engine, { config: configs.oracle, snapshot: configs.snapshot })) as Backend<ParsedMechanicsQuery, MechanicsResult>;
 
 describe("gate 1: the probe against itself", () => {
   it("finds no difference over every query the builders issue on the first battle of each committed corpus", () => {
@@ -187,7 +187,7 @@ describe("the core reuses the bridge's rules", () => {
 
 describe("a ledger from a fresh corpus drawn by the backend's own seed", () => {
   const backendId = { kind: "probe-second", backend_format: 1, backend_commit: "d".repeat(40) };
-  const backend = probeOracle(second, { config: configs.oracle, snapshot: configs.snapshot }) as Backend<ParsedMechanicsQuery, MechanicsResult>;
+  const backend = probeBackend(second, { config: configs.oracle, snapshot: configs.snapshot }) as Backend<ParsedMechanicsQuery, MechanicsResult>;
   it("admits what at least 20 equal exercising items show, routes by it, and is refused at another pin", () => {
     const fresh = freshCorpus(backendId, (seed) => shadowSample(queries.map((q, i) => `${seed}:${i}`), { share_ppm: 500_000, min: 0 }).map((p) => queries[p] as ParsedMechanicsQuery));
     const tally = runCorpus(level, oracle, backend, fresh.spec, fresh.items);

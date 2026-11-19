@@ -3,7 +3,7 @@
 // pinned engine from the query's own sets and declared state.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { probeOracle, queryFacts } from "../src/differential-oracle.ts";
+import { probeBackend, queryFacts } from "../src/differential-probe.ts";
 import { loadEngine } from "../src/engine.ts";
 import { GOLDEN_FORMAT } from "../src/golden.ts";
 import { loadMechanicsConfig, withMoveOutcome } from "../src/mechanics-config.ts";
@@ -24,9 +24,9 @@ const edit = (query: ParsedMechanicsQuery, change: (q: any) => void): ParsedMech
   return readMechanicsQuery(copy);
 };
 
-describe("probeOracle", () => {
+describe("probeBackend", () => {
   it("answers a batch in order through the probe, equal queries once, a refusal kept as the query's outcome", () => {
-    const oracle = probeOracle(engine, { config });
+    const oracle = probeBackend(engine, { config });
     expect(oracle).toMatchObject({ id: "showdown-probe", backend_format: MECHANICS_ADAPTER_FORMAT, backend_commit: engine.commit });
     const stats = sample("stats");
     const bad = edit(sample("damage"), (q) => (q.query.move = "notamove"));
@@ -34,7 +34,7 @@ describe("probeOracle", () => {
     expect(out.map((s) => s.ok)).toEqual([true, false, true]);
     expect(out[0]).toBe(out[2]);
     expect((out[0] as { result: { query_hash: string } }).result.query_hash).toBe(mechanicsQueryHash(stats));
-    expect(probeOracle(engine, { config, id: "second", damage_path: "per-roll", snapshot: loadRulesSnapshot(engine.commit) }).id).toBe("second");
+    expect(probeBackend(engine, { config, id: "second", damage_path: "per-roll", snapshot: loadRulesSnapshot(engine.commit) }).id).toBe("second");
   });
 });
 

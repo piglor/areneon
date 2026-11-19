@@ -16,7 +16,7 @@ import type { RulesSnapshot } from "./rules.ts";
 import { importPaste } from "./teams.ts";
 
 /** A backend as the harness's port declares it: a batch in, the outcomes in input order. */
-export interface OracleBackend {
+export interface ProbeBackend {
   readonly id: string;
   readonly backend_format: number;
   readonly backend_commit: string;
@@ -45,7 +45,7 @@ export interface QueryFacts {
   slot_conditions: string[];
 }
 
-export interface OracleOptions {
+export interface ProbeBackendOptions {
   config: MechanicsConfig;
   snapshot?: RulesSnapshot;
   damage_path?: DamagePath;
@@ -58,7 +58,7 @@ export interface OracleOptions {
  * once (`batchOf`). Its format is the probe's adapter format and its commit the engine's. A second `Engine` object (another
  * `loadEngine()`) has its own per-engine probe tables, so two oracles over two engine objects are two instances.
  */
-export function probeOracle(engine: Engine, options: OracleOptions): OracleBackend {
+export function probeBackend(engine: Engine, options: ProbeBackendOptions): ProbeBackend {
   const context = { engine, config: options.config, ...(options.snapshot === undefined ? {} : { snapshot: options.snapshot }), ...(options.damage_path === undefined ? {} : { damage_path: options.damage_path }) };
   const run = batchOf((query) => probeMechanics(context, query).result);
   return { id: options.id ?? "showdown-probe", backend_format: MECHANICS_ADAPTER_FORMAT, backend_commit: engine.commit, run: (batch) => run(batch) };

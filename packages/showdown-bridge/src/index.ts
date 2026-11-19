@@ -825,13 +825,12 @@ export { ENGINE_SHEET_FEATURE_SET, ENGINE_SHEET_HASH, REVEALED_ONLY_FEATURE_SET,
 export { MAX_REFUSED_PPM, refusedSharePpm, sheetCountsProblem, sheetCountsValid, sumSheetCounts } from "./sheet-counts.ts";
 export * from "./s0-measures.ts";
 export { type CostComponent, type CostSink, COST_COMPONENTS } from "./search-cost.ts";
-// The differential harness's oracle side and what its composition root reads (ADR-030 groundwork G1, #1461).
-export { type OracleBackend, type OracleOptions, probeOracle, type QueryFacts, type QueryMon, queryFacts } from "./differential-oracle.ts";
+// The differential harness's engine side and what its composition root reads (ADR-030 groundwork G1, #1461).
+export { type ProbeBackend, type ProbeBackendOptions, probeBackend, type QueryFacts, type QueryMon, queryFacts } from "./differential-probe.ts";
 export { batchOf, type BatchRunner, driveSync, type Gen, type ProbeCall, type Settled } from "./probe-batch.ts";
 export { buildFeaturesG } from "./feature-build.ts";
 export { FEATURE_SET_OUTCOME } from "./candidate-features.ts";
 export { loadRandomCorpus, RANDOM_DIR, type RandomBattleFile, UNAVAILABLE_DIR } from "./random-corpus.ts";
-export { FIDELITY_DIR } from "./search-fidelity-corpus.ts";
 export { loadOutcomeConfig, outcomeConfigHash } from "./outcome-config.ts";
 export { withMoveOutcome } from "./mechanics-config.ts";
 export { GOLDEN_FORMAT, goldenTeamVocabulary } from "./golden.ts";
