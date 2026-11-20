@@ -1,0 +1,321 @@
+{
+  "data_class": "synthetic",
+  "format_id": "gen9championsvgc2026regmc",
+  "description": "Targeted damage queries for any non-Showdown damage backend (ADR-030 step 3, #1457): every case a review, a fresh admission corpus or a per-generation shadow check found gets an entry here, with its reason, so it can never come back. The admission flow runs this file as a regression corpus that must be fully equal or abstained. Each entry is a query spec (engine ids; the sets are written by the engine's own export, level 50, 11 Stat Points in each stat, Hardy unless given). Combinations the roster cannot hold at this pin are not listed (Body Press with Fur Coat, Huge Power or Guts; snow or sand beside another defence modifier; Photon Geyser): the stat-event tests of the bridge cover their arithmetic.",
+  "entries": [
+    {
+      "id": "bodypress-snow-ice-user",
+      "source": "review",
+      "reason": "Body Press attacks with the user's Defense, but the engine runs the category's stat event (ModifyAtk) on the user: snow's Defense boost of an Ice-type user is not applied (review of PR #415, B1).",
+      "attacker": {
+        "species": "abomasnow",
+        "ability": "snowwarning",
+        "moves": [
+          "bodypress"
+        ]
+      },
+      "defender": {
+        "species": "snorlax",
+        "ability": "thickfat",
+        "moves": [
+          "bodyslam"
+        ]
+      },
+      "move": "bodypress",
+      "state": {
+        "weather": "snowscape"
+      }
+    },
+    {
+      "id": "bodypress-snow-ice-target",
+      "source": "review",
+      "reason": "Body Press into an Ice type in snow: the defending stat is Defense, so snow's boost applies there (review of PR #415, B1).",
+      "attacker": {
+        "species": "abomasnow",
+        "ability": "snowwarning",
+        "moves": [
+          "bodypress"
+        ]
+      },
+      "defender": {
+        "species": "abomasnow",
+        "ability": "soundproof",
+        "moves": [
+          "blizzard"
+        ]
+      },
+      "move": "bodypress",
+      "state": {
+        "weather": "snowscape"
+      }
+    },
+    {
+      "id": "bodypress-staged",
+      "source": "review",
+      "reason": "Body Press with Defense and Attack stages: the Defense stage counts, a crit ignores only a negative one (review of PR #415, B1).",
+      "attacker": {
+        "species": "abomasnow",
+        "ability": "snowwarning",
+        "moves": [
+          "bodypress"
+        ],
+        "boosts": {
+          "def": 2,
+          "atk": -2
+        }
+      },
+      "defender": {
+        "species": "snorlax",
+        "ability": "thickfat",
+        "moves": [
+          "bodyslam"
+        ]
+      },
+      "move": "bodypress",
+      "state": {}
+    },
+    {
+      "id": "psyshock-snow-ice",
+      "source": "review",
+      "reason": "Psyshock attacks Defense: snow's Defense boost of an Ice-type defender applies (review of PR #415, the stat chosen by the move).",
+      "attacker": {
+        "species": "alakazam",
+        "ability": "synchronize",
+        "moves": [
+          "psyshock"
+        ]
+      },
+      "defender": {
+        "species": "abomasnow",
+        "ability": "soundproof",
+        "moves": [
+          "blizzard"
+        ]
+      },
+      "move": "psyshock",
+      "state": {
+        "weather": "snowscape"
+      }
+    },
+    {
+      "id": "psyshock-sand-rock",
+      "source": "review",
+      "reason": "Psyshock into a Rock type in sand: sand raises Sp. Def, which Psyshock does not attack (review of PR #415).",
+      "attacker": {
+        "species": "alakazam",
+        "ability": "synchronize",
+        "moves": [
+          "psyshock"
+        ]
+      },
+      "defender": {
+        "species": "tyranitar",
+        "ability": "unnerve",
+        "moves": [
+          "rockslide"
+        ]
+      },
+      "move": "psyshock",
+      "state": {
+        "weather": "sandstorm"
+      }
+    },
+    {
+      "id": "psyshock-fur-coat",
+      "source": "review",
+      "reason": "Psyshock into Fur Coat: the doubled Defense is the one Psyshock attacks (review of PR #415).",
+      "attacker": {
+        "species": "alakazam",
+        "ability": "synchronize",
+        "moves": [
+          "psyshock"
+        ]
+      },
+      "defender": {
+        "species": "furfrou",
+        "ability": "furcoat",
+        "moves": [
+          "tackle"
+        ]
+      },
+      "move": "psyshock",
+      "state": {}
+    },
+    {
+      "id": "snow-ice-physical",
+      "source": "review",
+      "reason": "Snow's Defense boost is a direct modify, not a chained one (review of PR #415, should-fix 1).",
+      "attacker": {
+        "species": "garchomp",
+        "ability": "roughskin",
+        "moves": [
+          "dragonclaw",
+          "earthquake",
+          "rockslide",
+          "firefang"
+        ]
+      },
+      "defender": {
+        "species": "abomasnow",
+        "ability": "soundproof",
+        "moves": [
+          "blizzard"
+        ]
+      },
+      "move": "earthquake",
+      "state": {
+        "weather": "snowscape"
+      }
+    },
+    {
+      "id": "sand-rock-special",
+      "source": "review",
+      "reason": "Sand's Sp. Def boost is a direct modify, not a chained one (review of PR #415, should-fix 1).",
+      "attacker": {
+        "species": "alakazam",
+        "ability": "synchronize",
+        "moves": [
+          "psychic"
+        ]
+      },
+      "defender": {
+        "species": "tyranitar",
+        "ability": "unnerve",
+        "moves": [
+          "rockslide"
+        ]
+      },
+      "move": "psychic",
+      "state": {
+        "weather": "sandstorm"
+      }
+    },
+    {
+      "id": "foulplay-huge-power",
+      "source": "review",
+      "reason": "Foul Play attacks with the target's Attack and stages, but the user's ModifyAtk hooks (Huge Power) run (review of PR #415).",
+      "attacker": {
+        "species": "diggersby",
+        "ability": "hugepower",
+        "moves": [
+          "foulplay"
+        ]
+      },
+      "defender": {
+        "species": "garchomp",
+        "ability": "roughskin",
+        "moves": [
+          "dragonclaw",
+          "earthquake",
+          "rockslide",
+          "firefang"
+        ],
+        "boosts": {
+          "atk": 2
+        }
+      },
+      "move": "foulplay",
+      "state": {}
+    },
+    {
+      "id": "foulplay-lowered",
+      "source": "review",
+      "reason": "Foul Play into a lowered Attack: the target's negative stage counts, a crit ignores it (review of PR #415).",
+      "attacker": {
+        "species": "liepard",
+        "ability": "prankster",
+        "moves": [
+          "foulplay"
+        ]
+      },
+      "defender": {
+        "species": "garchomp",
+        "ability": "roughskin",
+        "moves": [
+          "dragonclaw",
+          "earthquake",
+          "rockslide",
+          "firefang"
+        ],
+        "boosts": {
+          "atk": -2
+        }
+      },
+      "move": "foulplay",
+      "state": {}
+    },
+    {
+      "id": "shellsidearm",
+      "source": "review",
+      "reason": "Shell Side Arm picks its category in a hook (onModifyMove): the kernel must abstain (review of PR #415).",
+      "attacker": {
+        "species": "slowbrogalar",
+        "ability": "regenerator",
+        "moves": [
+          "shellsidearm"
+        ]
+      },
+      "defender": {
+        "species": "snorlax",
+        "ability": "thickfat",
+        "moves": [
+          "bodyslam"
+        ]
+      },
+      "move": "shellsidearm",
+      "state": {}
+    },
+    {
+      "id": "magician-draw",
+      "source": "fresh corpus of kernel format 1",
+      "reason": "Magician's onAfterMoveSecondarySelf picks a target with the engine's random source, so the probe answers random_effect (format 1's fresh corpus).",
+      "attacker": {
+        "species": "delphox",
+        "ability": "magician",
+        "moves": [
+          "hypervoice"
+        ]
+      },
+      "defender": {
+        "species": "typhlosion",
+        "ability": "blaze",
+        "moves": [
+          "overheat"
+        ]
+      },
+      "move": "hypervoice",
+      "state": {
+        "sides": [
+          {
+            "reflect": true
+          },
+          {}
+        ]
+      }
+    },
+    {
+      "id": "electric-surge-status",
+      "source": "fresh corpus of kernel format 1",
+      "reason": "Electric Surge starts Electric Terrain at the scenario start, which refuses a declared sleep, so the probe throws (format 1's fresh corpus).",
+      "attacker": {
+        "species": "pincurchin",
+        "ability": "electricsurge",
+        "moves": [
+          "bodyslam"
+        ]
+      },
+      "defender": {
+        "species": "steelix",
+        "ability": "rockhead",
+        "moves": [
+          "irontail"
+        ],
+        "status": "slp"
+      },
+      "move": "bodyslam",
+      "state": {
+        "weather": "snowscape"
+      }
+    }
+  ]
+}

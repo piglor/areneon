@@ -142,7 +142,17 @@ export function probeMechanics(context: MechanicsContext, query: ParsedMechanics
   return query.query.kind === "move_outcome" ? observeOutcome(() => probeOnce(context, query)) : probeOnce(context, query);
 }
 
-function probeOnce(context: MechanicsContext, query: ParsedMechanicsQuery): ProbeOutcome {
+/**
+ * What every backend of a query shares before its mechanics are asked (ADR-016 figure 4): the result's identity, the set check
+ * (`refused`), the scope check and the scenario check (`unsupported`). A backend that answers a query instead of the probe
+ * (ADR-030 step 3's damage kernel) takes this envelope as it is, so a result differs only in what the backend computed.
+ */
+export type ProbeEnvelope =
+  | { kind: "done"; outcome: ProbeOutcome }
+  | { kind: "ready"; identity: ResultIdentity; sets: PokemonSet[]; scenario_id: string; done(outcome: Outcome, diagnostics?: string[]): ProbeOutcome };
+
+/** The envelope of a query: a finished outcome (refused, out of scope, a scenario that differs), or what the mechanics need. */
+export function probeEnvelope(context: MechanicsContext, query: ParsedMechanicsQuery): ProbeEnvelope {
   const { engine, config } = context;
   if (config.format_id !== query.format_id) throw new MechanicsProbeError("the mechanics config is for another format");
   const entry = prepare(engine, config, query.format_id, context.snapshot ?? loadRulesSnapshot(engine.commit));
@@ -159,17 +169,25 @@ function probeOnce(context: MechanicsContext, query: ParsedMechanicsQuery): Prob
   const sets: PokemonSet[] = [];
   for (const [position, paste] of declaredSets(query).entries()) {
     const checked = declaredSetMemo(engine, query.format_id, paste);
-    if ("problems" in checked) return done({ kind: "refused", code: "invalid_set", position }, [...checked.problems]);
+    if ("problems" in checked) return { kind: "done", outcome: done({ kind: "refused", code: "invalid_set", position }, [...checked.problems]) };
     sets.push(checked.set);
   }
-  if (!config.scope.query_kinds.some((entry) => entry.kind === kind)) return done({ kind: "unsupported", reason: "query_kind", position: null });
+  if (!config.scope.query_kinds.some((entry) => entry.kind === kind)) return { kind: "done", outcome: done({ kind: "unsupported", reason: "query_kind", position: null }) };
   let scenarioId: string;
   try {
     scenarioId = entry.scenario_id ?? checkScenario(engine, config);
     entry.scenario_id = scenarioId;
   } catch (error) {
-    return done({ kind: "unsupported", reason: "scenario_rule_table", position: null }, (error as ScenarioError).problems);
+    return { kind: "done", outcome: done({ kind: "unsupported", reason: "scenario_rule_table", position: null }, (error as ScenarioError).problems) };
   }
+  return { kind: "ready", identity, sets, scenario_id: scenarioId, done };
+}
+
+function probeOnce(context: MechanicsContext, query: ParsedMechanicsQuery): ProbeOutcome {
+  const { engine, config } = context;
+  const envelope = probeEnvelope(context, query);
+  if (envelope.kind === "done") return envelope.outcome;
+  const { sets, scenario_id: scenarioId, done } = envelope;
   // The query's history, one resolution per end of an unknown fact (the two ends rule): equal answers are kept, different ones are `unsupported`.
   const variants = historyVariants(query.query);
   const stall = variants.some((variant) => variant !== null) ? stallCondition(engine, query.format_id) : "";

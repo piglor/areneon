@@ -12,7 +12,7 @@
       "probe-damage/2": "04f70b601f5222ae45da41bd8980f06a4ba43f668f91c62579605c7eb5291cab",
       "probe-outcome/1": "c0ba6961fb75fcca35b5c090cfb46de400bcecf7557b0a1b65f6b1945f489512"
     },
-    "sources_sha256": "22a013ff1e49a05c01c0fe0bfe220789d99509af57484bb02889c37cd267f2c1",
+    "sources_sha256": "5d5b13d66a1278aa1659377d977327207049e3a9a8f7e19e472bb3d0daf83837",
     "mechanics_config_hash": "34fc05a61649a3a9c02e9cbc78dea0e8ad86a248a8ab4131ba706a0903028420",
     "damage_aware_config_hash": "1df63656d4747a06f3e8b47e18959c1f7763f83ac500d317e3ae0e4a5db9ec14",
     "outcome_config_hash": "e3e124d891cb814e61621ea3e3e21a50b3aa13d1c9b5c40378aeda01b1431da1",

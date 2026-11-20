@@ -138,3 +138,66 @@ def test_doctored_ledgers_are_refused(change: Any, message: str) -> None:
 def test_an_empty_ledger_admits_nothing() -> None:
     ledger = load(f"{DIR}/valid/empty-after-pin-bump.json")
     assert read_backend_admission(ledger, PIN)["entities"] == []
+
+
+# ---------------------------------------------------------------- the committed lines form (#1457)
+
+from areneon_contracts.backend_admission import (  # noqa: E402
+    backend_admission_lines,
+    read_backend_admission_lines,
+)
+
+
+@pytest.mark.parametrize("name", sorted(p.name for p in (SAMPLES / DIR / "valid").iterdir()))
+def test_lines_round_trip(name: str) -> None:
+    ledger = read_backend_admission(load(f"{DIR}/valid/{name}"), PIN)
+    text = backend_admission_lines(ledger)
+    assert text.endswith("\n")
+    assert read_backend_admission_lines(text, PIN) == ledger
+    assert admission_hash(read_backend_admission_lines(text, PIN)) == admission_hash(ledger)
+
+
+def test_lines_refusals() -> None:
+    name = sorted(p.name for p in (SAMPLES / DIR / "valid").iterdir())[0]
+    ledger = read_backend_admission(load(f"{DIR}/valid/{name}"), PIN)
+    lines = backend_admission_lines(ledger).splitlines()
+
+    def read(ls: list[str]) -> Any:
+        return read_backend_admission_lines("".join(f"{line}\n" for line in ls), PIN)
+
+    with pytest.raises(AdmissionError):
+        read([])
+    with pytest.raises(AdmissionError, match="header"):
+        read(lines[1:])
+    with pytest.raises(AdmissionError, match="one kind"):
+        read([lines[0], lines[0]])
+    with pytest.raises(AdmissionError, match="one kind"):
+        read([*lines, '{"other":{}}'])
+    with pytest.raises(AdmissionError):
+        read([*lines, "not json"])
+    with pytest.raises(AdmissionError, match="canonical"):
+        read([*lines[:-1], " " + lines[-1]])
+    with pytest.raises(AdmissionError, match="newline"):
+        read_backend_admission_lines(backend_admission_lines(ledger).rstrip("\n"), PIN)
+
+
+# The kernel version's committed ledger (ADR-030 step 3): its lines form, read by the
+# Python reader, has the pinned hash.
+KERNEL_LEDGER = (
+    Path(__file__).resolve().parents[2]
+    / "config/backends/gen9championsvgc2026regmc.damage-kernel.admission.jsonl"
+)
+KERNEL_ADMISSION_HASH = "11a5f2767cd644b9bb322e9761ff4c56d61eaeb53504860a0d4f5198a3d74fe9"
+
+
+def test_the_committed_kernel_ledger_has_the_pinned_hash() -> None:
+    text = KERNEL_LEDGER.read_text(encoding="utf-8")
+    ledger = read_backend_admission_lines(text, PIN)
+    assert backend_admission_lines(ledger) == text
+    assert admission_hash(ledger) == KERNEL_ADMISSION_HASH
+    assert ledger["backend"]["kind"] == "damage-kernel"
+    fresh = [c for c in ledger["corpora"] if c["kind"] == "fresh"]
+    assert len(fresh) == 1
+    assert fresh[0]["distinct_items"] >= 200_000
+    backend = ledger["backend"]
+    assert fresh[0]["seed"] == fresh_seed(backend["backend_commit"], backend["backend_format"])

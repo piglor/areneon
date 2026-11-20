@@ -15,6 +15,7 @@ corpus that found a difference, and the listed pairs (both admitted, present tog
 from __future__ import annotations
 
 import itertools
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -227,3 +228,59 @@ def read_backend_admission(value: object, showdown_commit: str) -> dict[str, Any
     admitted = {e["id"] for e in entities if e["admitted"]}
     _check_pairs(ledger["pairs"], admitted, fresh[0]["items"] if fresh else 0)
     return ledger
+
+
+# ---------------------------------------------------------------- the committed lines form (#1457)
+
+_SECTIONS = ("entity", "pair", "revoked")
+_FIELD = {"entity": "entities", "pair": "pairs", "revoked": "revoked"}
+
+
+def backend_admission_lines(ledger: dict[str, Any]) -> str:
+    """The committed form of a ledger, as ``admissionLines`` of ``@areneon/differential`` writes it.
+
+    A header line (the ledger without its entities, pairs and revocations), then one JCS line
+    ``{"<kind>": value}`` per entity, pair and revocation in the ledger's order; each line ends
+    with a newline. It reads back to the very ledger, so ``admission_hash`` is unchanged.
+    """
+    header = {k: v for k, v in ledger.items() if k not in ("entities", "pairs", "revoked")}
+    lines = [jcs({"header": header}).decode("utf-8")]
+    for kind in _SECTIONS:
+        lines.extend(jcs({kind: value}).decode("utf-8") for value in ledger[_FIELD[kind]])
+    return "".join(f"{line}\n" for line in lines)
+
+
+def read_backend_admission_lines(text: str, showdown_commit: str) -> dict[str, Any]:
+    """Read the lines form back (the same rules as the TS reader), then the ledger's reader."""
+    if not text.endswith("\n"):
+        raise AdmissionError("the admission lines end with a newline")
+    parsed: list[dict[str, Any]] = []
+    for line in text[:-1].split("\n"):
+        try:
+            value = json.loads(line)
+        except ValueError as exc:
+            raise AdmissionError("an admission line is not JSON") from exc
+        if not isinstance(value, dict) or len(value) != 1:
+            raise AdmissionError("an admission line holds one kind of value")
+        if jcs(value).decode("utf-8") != line:
+            raise AdmissionError("an admission line is not canonical (RFC 8785)")
+        parsed.append(value)
+    if not parsed or "header" not in parsed[0]:
+        raise AdmissionError("the admission lines start with the header")
+    ledger: dict[str, Any] = {**parsed[0]["header"], "entities": [], "pairs": [], "revoked": []}
+    section = 0
+    for value in parsed[1:]:
+        kind = next(iter(value))
+        if kind not in _SECTIONS:
+            raise AdmissionError(
+                "an admission line holds one kind of value: entity, pair or revoked"
+                " after the header"
+            )
+        at = _SECTIONS.index(kind)
+        if at < section:
+            raise AdmissionError(
+                "the admission lines hold entities, then pairs, then revocations, in that order"
+            )
+        section = at
+        ledger[_FIELD[kind]].append(value[kind])
+    return read_backend_admission(ledger, showdown_commit)
