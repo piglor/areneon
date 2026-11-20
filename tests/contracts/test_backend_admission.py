@@ -187,7 +187,7 @@ KERNEL_LEDGER = (
     Path(__file__).resolve().parents[2]
     / "config/backends/gen9championsvgc2026regmc.damage-kernel.admission.jsonl"
 )
-KERNEL_ADMISSION_HASH = "0" * 64
+KERNEL_ADMISSION_HASH = "11a5f2767cd644b9bb322e9761ff4c56d61eaeb53504860a0d4f5198a3d74fe9"
 
 
 def test_the_committed_kernel_ledger_has_the_pinned_hash() -> None:
