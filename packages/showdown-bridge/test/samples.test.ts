@@ -92,6 +92,23 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
   it("holds every reader-invalid sample under its contract's directory, and each is refused above", () => {
     const readerInvalid = Object.keys(fresh).filter((f) => f.includes("/reader-invalid/"));
     expect(readerInvalid.sort()).toEqual([
+      "v1/backend-admission/reader-invalid/count-mismatch.json",
+      "v1/backend-admission/reader-invalid/counts-not-nested.json",
+      "v1/backend-admission/reader-invalid/fresh-below-minimum.json",
+      "v1/backend-admission/reader-invalid/fresh-repeated-items.json",
+      "v1/backend-admission/reader-invalid/kinds-not-query-kind.json",
+      "v1/backend-admission/reader-invalid/kinds-on-query-kind.json",
+      "v1/backend-admission/reader-invalid/missing-revocation.json",
+      "v1/backend-admission/reader-invalid/nineteen-exercising.json",
+      "v1/backend-admission/reader-invalid/other-pin.json",
+      "v1/backend-admission/reader-invalid/pair-flag.json",
+      "v1/backend-admission/reader-invalid/pair-not-admitted-entity.json",
+      "v1/backend-admission/reader-invalid/rare-pair.json",
+      "v1/backend-admission/reader-invalid/regression-evidence.json",
+      "v1/backend-admission/reader-invalid/revocation-past-corpus.json",
+      "v1/backend-admission/reader-invalid/two-fresh.json",
+      "v1/backend-admission/reader-invalid/unsorted-entities.json",
+      "v1/backend-admission/reader-invalid/wrong-fresh-seed.json",
       "v1/battle-state-spec/reader-invalid/encoder-reads-hidden.json",
       "v1/battle-state-spec/reader-invalid/encoder-unknown-field.json",
       "v1/battle-state-spec/reader-invalid/gate-not-seat.json",

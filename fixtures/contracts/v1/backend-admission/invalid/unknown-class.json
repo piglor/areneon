@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "data_class": "public",
+  "rule": "admission/1",
+  "level": "mechanics-query",
+  "backend": {
+    "kind": "damage-kernel",
+    "backend_format": 1,
+    "backend_commit": "4444444444444444444444444444444444444444"
+  },
+  "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+  "corpora": [
+    {
+      "id": "committed-random",
+      "kind": "regression",
+      "seed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "pool_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "content_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "tally_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "items": 300,
+      "distinct_items": 300,
+      "count_mismatches": 0
+    },
+    {
+      "id": "fresh-01ca26162a3a73fc",
+      "kind": "fresh",
+      "seed": "01ca26162a3a73fc5e8df8956f2d82db7b3bdcb9d2526087ed4a8f4e26a9d76c",
+      "pool_hash": "9999999999999999999999999999999999999999999999999999999999999999",
+      "content_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+      "tally_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+      "items": 200000,
+      "distinct_items": 200000,
+      "count_mismatches": 0
+    }
+  ],
+  "entities": [
+    {
+      "id": "ability:roughskin",
+      "admitted": false,
+      "counts": [
+        {
+          "corpus": "committed-random",
+          "present": 5,
+          "exercised": 5,
+          "equal": 4,
+          "differing": 1
+        },
+        {
+          "corpus": "fresh-01ca26162a3a73fc",
+          "present": 25,
+          "exercised": 25,
+          "equal": 25,
+          "differing": 0
+        }
+      ],
+      "kinds": [
+        {
+          "kind": "kind:damage",
+          "co_exercised": 25,
+          "co_equal": 25
+        }
+      ]
+    },
+    {
+      "id": "item:choiceband",
+      "admitted": false,
+      "counts": [
+        {
+          "corpus": "committed-random",
+          "present": 300,
+          "exercised": 300,
+          "equal": 300,
+          "differing": 0
+        }
+      ],
+      "kinds": []
+    },
+    {
+      "id": "kind:damage",
+      "admitted": true,
+      "counts": [
+        {
+          "corpus": "committed-random",
+          "present": 250,
+          "exercised": 250,
+          "equal": 250,
+          "differing": 0
+        },
+        {
+          "corpus": "fresh-01ca26162a3a73fc",
+          "present": 40,
+          "exercised": 40,
+          "equal": 40,
+          "differing": 0
+        }
+      ],
+      "kinds": []
+    },
+    {
+      "id": "move:earthquake",
+      "admitted": true,
+      "counts": [
+        {
+          "corpus": "fresh-01ca26162a3a73fc",
+          "present": 30,
+          "exercised": 30,
+          "equal": 30,
+          "differing": 0
+        }
+      ],
+      "kinds": [
+        {
+          "kind": "kind:damage",
+          "co_exercised": 30,
+          "co_equal": 30
+        }
+      ]
+    },
+    {
+      "id": "move:protect",
+      "admitted": false,
+      "counts": [
+        {
+          "corpus": "fresh-01ca26162a3a73fc",
+          "present": 30,
+          "exercised": 0,
+          "equal": 0,
+          "differing": 0
+        }
+      ],
+      "kinds": [
+        {
+          "kind": "kind:damage",
+          "co_exercised": 0,
+          "co_equal": 0
+        }
+      ]
+    },
+    {
+      "id": "species:garchomp",
+      "admitted": true,
+      "counts": [
+        {
+          "corpus": "committed-random",
+          "present": 300,
+          "exercised": 120,
+          "equal": 120,
+          "differing": 0
+        },
+        {
+          "corpus": "fresh-01ca26162a3a73fc",
+          "present": 22,
+          "exercised": 21,
+          "equal": 21,
+          "differing": 0
+        }
+      ],
+      "kinds": [
+        {
+          "kind": "kind:damage",
+          "co_exercised": 21,
+          "co_equal": 21
+        }
+      ]
+    }
+  ],
+  "pairs": [
+    {
+      "a": "kind:damage",
+      "b": "move:earthquake",
+      "co_present": 30,
+      "co_exercised": 30,
+      "co_equal": 30,
+      "admitted": true
+    },
+    {
+      "a": "kind:damage",
+      "b": "species:garchomp",
+      "co_present": 22,
+      "co_exercised": 3,
+      "co_equal": 3,
+      "admitted": false
+    }
+  ],
+  "revoked": [
+    {
+      "id": "ability:roughskin",
+      "corpus": "committed-random",
+      "position": 17
+    }
+  ]
+}

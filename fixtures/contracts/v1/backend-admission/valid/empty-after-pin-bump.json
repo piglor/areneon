@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "rule": "admission/1",
+  "level": "mechanics-query",
+  "backend": {
+    "kind": "damage-kernel",
+    "backend_format": 1,
+    "backend_commit": "4444444444444444444444444444444444444444"
+  },
+  "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+  "corpora": [],
+  "entities": [],
+  "pairs": [],
+  "revoked": []
+}

@@ -1,0 +1,129 @@
+// The differential report: JSON and Markdown, generated like ADR-026's `fidelity-report.{json,md}`. Its `inputs` are whatever
+// the caller hashes (corpora bytes, pin, configs, the harness format): a test recomputes them and fails on a stale report. Counts
+// only: entity ids, corpus ids, reasons and field paths; no query, set or answer.
+import type { Json } from "./canonical.ts";
+import type { DifferenceReason } from "./compare.ts";
+import { N_EXERCISED, N_PAIR, PAIR_ODDS } from "./admission.ts";
+import type { CorpusKind, CorpusTally } from "./tally.ts";
+
+/** Bumped when the harness compares, counts or names anything differently. */
+export const HARNESS_FORMAT = 1;
+
+/** Differences listed one by one in a report (the counts by reason and field hold all of them). */
+export const LISTED_DIFFERENCES = 50;
+
+export interface CorpusSummary {
+  id: string;
+  kind: CorpusKind;
+  items: number;
+  differences: number;
+  count_mismatches: number;
+  by_reason: Record<string, number>;
+  by_field: Record<string, number>;
+  /** Fresh corpora only: pairs present together, those frequent (at least 1 in 10^4 items), those co-exercised at least N_PAIR times. */
+  pairs: { present: number; frequent: number; co_exercised_enough: number } | null;
+}
+
+export interface EntitySummary {
+  id: string;
+  present: number;
+  exercised: number;
+  equal: number;
+  differing: number;
+}
+
+export interface DifferentialReport {
+  harness_format: number;
+  inputs: Json;
+  rule: { n_exercised: number; n_pair: number; pair_odds: number };
+  corpora: CorpusSummary[];
+  /** Summed over the corpora, sorted by id. */
+  entities: EntitySummary[];
+  /** Entity kinds (the part before the colon) and how many distinct entities of each occurred. */
+  kinds: Record<string, number>;
+  differences: { corpus: string; position: number; reason: DifferenceReason; field: string; entities: string[] }[];
+}
+
+const bump = (record: Record<string, number>, key: string): void => void (record[key] = (record[key] ?? 0) + 1);
+const sortedRecord = (record: Record<string, number>): Record<string, number> => Object.fromEntries(Object.entries(record).sort(([a], [b]) => (a < b ? -1 : 1)));
+
+/** The report of `tallies` under `inputs`. */
+export function differentialReport(inputs: Json, tallies: readonly CorpusTally[]): DifferentialReport {
+  const ordered = [...tallies].sort((a, b) => (a.spec.id < b.spec.id ? -1 : 1));
+  const corpora = ordered.map((t): CorpusSummary => {
+    const by_reason: Record<string, number> = {};
+    const by_field: Record<string, number> = {};
+    for (const d of t.differences) {
+      bump(by_reason, d.reason);
+      bump(by_field, d.field);
+    }
+    let pairs: CorpusSummary["pairs"] = null;
+    if (t.spec.kind === "fresh") {
+      const rows = [...t.pairs.values()];
+      pairs = { present: rows.length, frequent: rows.filter((r) => r.co_present * PAIR_ODDS >= t.items).length, co_exercised_enough: rows.filter((r) => r.co_exercised >= N_PAIR).length };
+    }
+    return { id: t.spec.id, kind: t.spec.kind, items: t.items, differences: t.differences.length, count_mismatches: t.count_mismatches, by_reason: sortedRecord(by_reason), by_field: sortedRecord(by_field), pairs };
+  });
+  const sums = new Map<string, EntitySummary>();
+  for (const t of ordered) {
+    for (const [id, row] of t.entities) {
+      const s = sums.get(id) ?? { id, present: 0, exercised: 0, equal: 0, differing: 0 };
+      s.present += row.present;
+      s.exercised += row.exercised;
+      s.equal += row.equal;
+      s.differing += row.differing;
+      sums.set(id, s);
+    }
+  }
+  const entities = [...sums.values()].sort((a, b) => (a.id < b.id ? -1 : 1));
+  const kinds: Record<string, number> = {};
+  for (const e of entities) bump(kinds, e.id.slice(0, e.id.indexOf(":")));
+  const differences = ordered.flatMap((t) => t.differences.map((d) => ({ corpus: t.spec.id, position: d.position, reason: d.reason, field: d.field, entities: d.entities }))).slice(0, LISTED_DIFFERENCES);
+  return { harness_format: HARNESS_FORMAT, inputs, rule: { n_exercised: N_EXERCISED, n_pair: N_PAIR, pair_odds: PAIR_ODDS }, corpora, entities, kinds: sortedRecord(kinds), differences };
+}
+
+const table = (head: string[], rows: (string | number)[][]): string[] => [`| ${head.join(" | ")} |`, `|${head.map(() => "---").join("|")}|`, ...rows.map((r) => `| ${r.join(" | ")} |`)];
+const pairsCell = (p: CorpusSummary["pairs"]): string => (p === null ? "not kept" : `${p.present} / ${p.frequent} / ${p.co_exercised_enough}`);
+const record = (r: Record<string, number>): string => {
+  const entries = Object.entries(r);
+  return entries.length === 0 ? "none" : entries.map(([k, v]) => `${k} ${v}`).join(", ");
+};
+
+/** The Markdown form of a report (generated; edit the inputs, never the file). */
+export function renderReport(report: DifferentialReport, title: string): string {
+  const total = report.corpora.reduce((n, c) => n + c.differences, 0);
+  const lines = [
+    `# ${title}`,
+    "",
+    `Generated by the differential harness (format ${report.harness_format}); do not edit. Inputs: \`${JSON.stringify(report.inputs)}\`.`,
+    "",
+    `Admission rule: at least ${report.rule.n_exercised} exercising items of the fresh corpus, all equal, and no difference anywhere; pairs present in at least 1 in ${report.rule.pair_odds} fresh items need ${report.rule.n_pair} co-exercised items, all equal. Regression and shadow corpora never count as admission evidence.`,
+    "",
+    "## Corpora",
+    "",
+    ...table(
+      ["Corpus", "Kind", "Items", "Differences", "Count mismatches", "By reason", "By first differing field", "Pairs (present / frequent / >= 5 co-exercised)"],
+      report.corpora.map((c) => [c.id, c.kind, c.items, c.differences, c.count_mismatches, record(c.by_reason), record(c.by_field), pairsCell(c.pairs)]),
+    ),
+    "",
+    `Differences in all: ${total}. Distinct entities: ${report.entities.length} (${record(report.kinds)}).`,
+    "",
+    "## Differences",
+    "",
+    ...(report.differences.length === 0
+      ? ["None."]
+      : table(
+          ["Corpus", "Position", "Reason", "Field", "Entities"],
+          report.differences.map((d) => [d.corpus, d.position, d.reason, `\`${d.field}\``, d.entities.join(", ")]),
+        )),
+    "",
+    "## Entities (summed over the corpora)",
+    "",
+    ...table(
+      ["Entity", "Present", "Exercised", "Equal", "Differing"],
+      report.entities.map((e) => [e.id, e.present, e.exercised, e.equal, e.differing]),
+    ),
+    "",
+  ];
+  return lines.join("\n");
+}

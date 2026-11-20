@@ -49,6 +49,12 @@ importers:
         specifier: 4.10.2
         version: 4.10.2
 
+  packages/differential:
+    dependencies:
+      '@areneon/schema':
+        specifier: workspace:*
+        version: link:../schema
+
   packages/local-server:
     dependencies:
       '@areneon/showdown-bridge':
@@ -146,6 +152,9 @@ importers:
 
   packages/team-dataset:
     dependencies:
+      '@areneon/differential':
+        specifier: workspace:*
+        version: link:../differential
       '@areneon/object-store':
         specifier: workspace:*
         version: link:../object-store

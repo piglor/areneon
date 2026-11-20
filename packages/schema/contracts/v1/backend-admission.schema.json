@@ -1,0 +1,334 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:backend-admission",
+  "title": "BackendAdmission",
+  "description": "The admission ledger of one non-Showdown backend version (ADR-030 common rules 2, 4 and 7; ADR-028 section 5): which entities (species forme, move, ability, item, status, volatile, weather, terrain, field and side condition, query kind) it may answer for training games, from byte-equal comparisons with the pinned engine (the oracle). Per entity and corpus: the items it was present in, the items whose answer read it (exercising), how many of those were equal, and the items with a difference. Nothing is admitted without one fresh corpus of at least 200,000 distinct items (a fresh corpus holds each item once) (both levels; ADR-030 step 3 gate 3, ADR-028 section 5) or with a count mismatch in any corpus. An entity is admitted only with at least 20 exercising items of the FRESH corpus, all equal, no difference in any corpus, and no revocation; the fresh corpus's seed is SHA-256 over the JCS of {backend_commit, backend_format, purpose: differential-fresh/1}, so it cannot exist before the backend version is frozen, and regression (debugging) and shadow corpora never count as admission evidence. Entities are not scoped by query kind, so each lists per query kind its co-exercised fresh items; a query routes to the backend only if each entity was co-exercised at least 5 times, all equal, with the query's kind. Every corpus names its draw pool, a hash of its content (the sorted item keys) and a hash of its tally. Pairs of admitted entities present together in at least 1 in 10^4 fresh items are listed and admitted only with at least 5 co-exercised items, all equal; a listed pair that is not admitted routes to the engine. Bound to one showdown_commit: a ledger of another pin is refused, so every query routes to the engine. Integers only; its RFC 8785 SHA-256 is admission_hash. Reader rules (sorted and unique lists, the recomputed admission, the fresh seed) are in both readers.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "data_class",
+    "rule",
+    "level",
+    "backend",
+    "showdown_commit",
+    "corpora",
+    "entities",
+    "pairs",
+    "revoked"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "data_class": {
+      "description": "The comparison corpora are synthetic.",
+      "const": "synthetic"
+    },
+    "rule": {
+      "description": "The admission arithmetic: 20 exercising items, all equal, on the fresh corpus; pairs at 10^-4 need 5 co-exercised items, all equal.",
+      "const": "admission/1"
+    },
+    "level": {
+      "description": "What is compared: a mechanics query and its MechanicsResult, or a battle step with its player view.",
+      "enum": [
+        "mechanics-query",
+        "battle-step"
+      ]
+    },
+    "backend": {
+      "$ref": "#/$defs/Backend"
+    },
+    "showdown_commit": {
+      "description": "The pinned engine the oracle ran; a reader at another pin refuses the ledger.",
+      "$ref": "#/$defs/Commit"
+    },
+    "corpora": {
+      "description": "Every corpus counted, ascending by id (reader rule: unique; at most one fresh, whose seed is the backend's fresh seed).",
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/Corpus"
+      }
+    },
+    "entities": {
+      "description": "Every entity seen, ascending by id (reader rule: unique).",
+      "type": "array",
+      "maxItems": 65536,
+      "items": {
+        "$ref": "#/$defs/Entity"
+      }
+    },
+    "pairs": {
+      "description": "The pairs of admitted entities present together in at least 1 in 10^4 fresh items, ascending by a then b (reader rule: a below b, both admitted).",
+      "type": "array",
+      "maxItems": 1000000,
+      "items": {
+        "$ref": "#/$defs/Pair"
+      }
+    },
+    "revoked": {
+      "description": "Each entity named by a difference, with the first item that named it, ascending by id (reader rule: exactly the entities with a difference).",
+      "type": "array",
+      "maxItems": 65536,
+      "items": {
+        "$ref": "#/$defs/Revoked"
+      }
+    }
+  },
+  "$defs": {
+    "Commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "Hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "Token": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "EntityId": {
+      "description": "<kind>:<engine id>, the kind one of the closed words of the level's entity rule.",
+      "type": "string",
+      "pattern": "^[a-z]+:[a-z0-9_]+$",
+      "minLength": 3,
+      "maxLength": 96
+    },
+    "Count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "Backend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "backend_format",
+        "backend_commit"
+      ],
+      "properties": {
+        "kind": {
+          "description": "What the backend is (a damage kernel, a battle step, ...).",
+          "$ref": "#/$defs/Token"
+        },
+        "backend_format": {
+          "description": "Bumped when the backend computes anything differently.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "backend_commit": {
+          "description": "The frozen commit of the backend's code.",
+          "$ref": "#/$defs/Commit"
+        }
+      }
+    },
+    "Corpus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "seed",
+        "pool_hash",
+        "content_hash",
+        "tally_hash",
+        "items",
+        "distinct_items",
+        "count_mismatches"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Token"
+        },
+        "kind": {
+          "description": "fresh: drawn from the backend's fresh seed, the only admission evidence; regression: a debugging or committed corpus, counted and never evidence; shadow: a generation's shadow sample.",
+          "enum": [
+            "fresh",
+            "regression",
+            "shadow"
+          ]
+        },
+        "seed": {
+          "description": "For fresh, the backend's fresh seed (reader rule); otherwise the hash that names the corpus's content.",
+          "$ref": "#/$defs/Hash"
+        },
+        "pool_hash": {
+          "description": "The identity of what the items were drawn from: the generator pool of a fresh corpus, the files of a committed one.",
+          "$ref": "#/$defs/Hash"
+        },
+        "content_hash": {
+          "description": "SHA-256 over the JCS of the pool hash and the sorted item keys (level 1: query hashes); checked against the corpus by verifyLedger.",
+          "$ref": "#/$defs/Hash"
+        },
+        "tally_hash": {
+          "description": "SHA-256 over the JCS of every count of the corpus (entities, pairs, items, count mismatches); checked against the tally by verifyLedger.",
+          "$ref": "#/$defs/Hash"
+        },
+        "items": {
+          "description": "Items compared.",
+          "$ref": "#/$defs/Count"
+        },
+        "distinct_items": {
+          "description": "Items with distinct keys (reader rule: at most items; a fresh corpus holds each item once, so equal to items there, and the minimum size counts distinct items).",
+          "$ref": "#/$defs/Count"
+        },
+        "count_mismatches": {
+          "description": "Batches the backend returned another number of outcomes than inputs for (reader rule: any one admits nothing).",
+          "$ref": "#/$defs/Count"
+        }
+      }
+    },
+    "Entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "admitted",
+        "counts",
+        "kinds"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EntityId"
+        },
+        "admitted": {
+          "description": "Reader rule: equal to the recomputed admission.",
+          "type": "boolean"
+        },
+        "counts": {
+          "description": "One row per corpus the entity was present in, ascending by corpus.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/EntityCount"
+          }
+        },
+        "kinds": {
+          "description": "Per query kind (a kind: entity), the fresh items that exercised this entity with it, ascending by kind (reader rule: none for a query kind or an entity the fresh corpus lacks).",
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/KindCount"
+          }
+        }
+      }
+    },
+    "EntityCount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "corpus",
+        "present",
+        "exercised",
+        "equal",
+        "differing"
+      ],
+      "properties": {
+        "corpus": {
+          "$ref": "#/$defs/Token"
+        },
+        "present": {
+          "description": "Items whose input holds the entity (reader rule: at least 1, at most the corpus's items).",
+          "$ref": "#/$defs/Count"
+        },
+        "exercised": {
+          "description": "Of those, items whose answer reads it.",
+          "$ref": "#/$defs/Count"
+        },
+        "equal": {
+          "description": "Of the exercising items, those byte-equal to the oracle.",
+          "$ref": "#/$defs/Count"
+        },
+        "differing": {
+          "description": "Items holding the entity with any difference.",
+          "$ref": "#/$defs/Count"
+        }
+      }
+    },
+    "Pair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "a",
+        "b",
+        "co_present",
+        "co_exercised",
+        "co_equal",
+        "admitted"
+      ],
+      "properties": {
+        "a": {
+          "$ref": "#/$defs/EntityId"
+        },
+        "b": {
+          "$ref": "#/$defs/EntityId"
+        },
+        "co_present": {
+          "description": "Fresh items holding both.",
+          "$ref": "#/$defs/Count"
+        },
+        "co_exercised": {
+          "description": "Fresh items exercising both.",
+          "$ref": "#/$defs/Count"
+        },
+        "co_equal": {
+          "description": "Of those, the equal ones.",
+          "$ref": "#/$defs/Count"
+        },
+        "admitted": {
+          "description": "Reader rule: at least 5 co-exercised items, all equal.",
+          "type": "boolean"
+        }
+      }
+    },
+    "Revoked": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "corpus",
+        "position"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EntityId"
+        },
+        "corpus": {
+          "description": "The corpus of the first difference that named the entity (corpora in ledger order).",
+          "$ref": "#/$defs/Token"
+        },
+        "position": {
+          "description": "The index of that item in its corpus.",
+          "$ref": "#/$defs/Count"
+        }
+      }
+    },
+    "KindCount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "co_exercised",
+        "co_equal"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/EntityId"
+        },
+        "co_exercised": {
+          "$ref": "#/$defs/Count"
+        },
+        "co_equal": {
+          "$ref": "#/$defs/Count"
+        }
+      }
+    }
+  }
+}
