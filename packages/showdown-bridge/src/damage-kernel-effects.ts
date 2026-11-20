@@ -17,11 +17,11 @@ const ID = /^[a-z0-9]+$/;
 
 /** One effect an ability or item has on a `damage` answer. Modifiers are the engine's 4096-based integers. */
 export type KernelEffect =
-  | { kind: "pinch"; type: string } // the holder's Atk / Sp. Atk 1.5 for a move of the type at a third of its HP or less
+  | { kind: "pinch"; type: string; modifier: number; threshold: { numerator: number; denominator: number } } // the holder's Atk / Sp. Atk for a move of the type at HP at most the threshold of its maximum
   | { kind: "base_power_flag"; flag: string; modifier: number } // base power, a move with the flag
   | { kind: "stab"; modifier: number } // the same-type modifier
   | { kind: "no_crit" } // the holder is never hit critically
-  | { kind: "guts" } // Atk 1.5 with any status, and a burn does not halve
+  | { kind: "guts"; modifier: number } // Atk with any status, and a burn does not halve
   | { kind: "attack_multiplier"; stat: "atk" | "spa"; modifier: number; weather?: string } // the holder's attacking stat
   | { kind: "source_type_attack"; types: string[]; modifier: number } // the attacker's attacking stat, a move of the types into the holder
   | { kind: "technician"; threshold: number; modifier: number } // base power at most the threshold
@@ -37,7 +37,7 @@ export type KernelEffect =
   | { kind: "infiltrator" } // the holder's moves ignore the target's screens
   | { kind: "no_damage_effect"; hides: string[] } // the hooks (named) it has on the damage path never change a damaging move's answer
   | { kind: "type_boost"; type: string; modifier: number } // base power, a move of the type
-  | { kind: "resist_berry"; type: string; super_effective: boolean } // final damage halved into the holder (eaten)
+  | { kind: "resist_berry"; type: string; super_effective: boolean; modifier: number } // final damage into the holder of a move of the type (eaten)
   | { kind: "final_modifier"; modifier: number } // final damage of the holder's move
   | { kind: "super_effective_dealt"; modifier: number } // final damage of the holder's super-effective move
   | { kind: "category_power"; category: "Physical" | "Special"; modifier: number } // base power, a move of the category
@@ -87,14 +87,20 @@ const fail = (message: string): never => {
   throw new KernelEffectsError(message);
 };
 const isModifier = (v: unknown): boolean => Number.isSafeInteger(v) && (v as number) > 0 && (v as number) <= 65536;
+/** A fraction of a whole in (0, 1]: `{numerator, denominator}`, small positive integers. */
+const isFraction = (v: unknown): boolean => {
+  if (v === null || typeof v !== "object" || Array.isArray(v) || Object.keys(v).sort().join() !== "denominator,numerator") return false;
+  const { numerator: n, denominator: d } = v as { numerator: unknown; denominator: unknown };
+  return Number.isSafeInteger(n) && Number.isSafeInteger(d) && (n as number) > 0 && (n as number) <= (d as number) && (d as number) <= 100;
+};
 
 /** The fields each kind takes, and how each is checked. */
 const FIELDS: Record<KernelEffect["kind"], Record<string, (v: unknown) => boolean>> = {
-  pinch: { type: (v) => typeof v === "string" && TYPE.test(v) },
+  pinch: { type: (v) => typeof v === "string" && TYPE.test(v), modifier: isModifier, threshold: isFraction },
   base_power_flag: { flag: (v) => typeof v === "string" && ID.test(v), modifier: isModifier },
   stab: { modifier: isModifier },
   no_crit: {},
-  guts: {},
+  guts: { modifier: isModifier },
   attack_multiplier: { stat: (v) => v === "atk" || v === "spa", modifier: isModifier, weather: (v) => v === undefined || (typeof v === "string" && ID.test(v)) },
   source_type_attack: { types: (v) => Array.isArray(v) && v.length > 0 && v.every((t) => typeof t === "string" && TYPE.test(t)), modifier: isModifier },
   technician: { threshold: (v) => Number.isSafeInteger(v) && (v as number) > 0, modifier: isModifier },
@@ -110,7 +116,7 @@ const FIELDS: Record<KernelEffect["kind"], Record<string, (v: unknown) => boolea
   infiltrator: {},
   no_damage_effect: { hides: (v) => Array.isArray(v) && v.length > 0 && v.every((h, i) => typeof h === "string" && (i === 0 || h > (v[i - 1] as string))) },
   type_boost: { type: (v) => typeof v === "string" && TYPE.test(v), modifier: isModifier },
-  resist_berry: { type: (v) => typeof v === "string" && TYPE.test(v), super_effective: (v) => typeof v === "boolean" },
+  resist_berry: { type: (v) => typeof v === "string" && TYPE.test(v), super_effective: (v) => typeof v === "boolean", modifier: isModifier },
   final_modifier: { modifier: isModifier },
   super_effective_dealt: { modifier: isModifier },
   category_power: { category: (v) => v === "Physical" || v === "Special", modifier: isModifier },

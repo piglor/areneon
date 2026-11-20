@@ -14,9 +14,10 @@
 // Integers only: every value is an integer and every division an exact integer division (`div`). A batch is decoded into
 // struct-of-arrays columns (`Int32Array`) and the 32 rolls of every query are computed in one loop over them (`computeBatch`).
 //
-// What KERNEL_FORMAT 3 covers, abstaining on everything else. Format 1's fresh corpus found two classes it got wrong (an
+// What KERNEL_FORMAT 4 covers, abstaining on everything else. Format 1's fresh corpus found two classes it got wrong (an
 // after-move hook that draws; a switch-in terrain refusing a declared status), now abstained; format 3 takes every condition's
-// ids and values from the effects record, models a weather's direct stat modify, and makes `onUpdate` blocking:
+// ids and values from the effects record, models a weather's direct stat modify, and makes `onUpdate` blocking; format 4 reads
+// the pinch, Guts and resist-berry modifiers and the pinch HP threshold from the record too (the same answers as format 3):
 // - attacker and defender: the set's species forme (a Mega or battle-only forme as a set's own species is abstained on), or the
 //   Mega forme its stone makes when the query declares a Mega Evolution (its first ability then); Champions Stat Point stats;
 //   absolute stages; declared HP (at most the maximum); a declared status the engine knows;
@@ -44,7 +45,7 @@ import { type KernelData, type KernelSpecies, STATS, type Stat } from "./damage-
 import type { KernelCondition, KernelEffect, KernelEffects } from "./damage-kernel-effects.ts";
 
 /** Bumped whenever the kernel computes anything differently, or covers more (its admission starts again). */
-export const KERNEL_FORMAT = 3;
+export const KERNEL_FORMAT = 4;
 
 type DamageQuery = Extract<MechanicsQuery["query"], { kind: "damage" }>;
 type Combatant = DamageQuery["attacker"];
@@ -74,7 +75,12 @@ const SIDE_IDS: [keyof DamageQuery["state"]["sides"][number], string][] = [
   ["tailwind", "tailwind"],
 ];
 
-/** The engine's 4096-based modifiers. */
+/**
+ * The engine's 4096-based modifiers of the damage FORMULA itself (`getDamage` and `modifyDamage`: the spread reduction, the
+ * same-type bonus, the burn halving, the critical-hit multiplier and crit ratios). They are the formula, not the rule of any one
+ * ability, item, move or condition; every per-entity value (a pinch ability's modifier and HP threshold, Guts, a resist berry, a
+ * weather, terrain or screen) is read from the reviewed effects record (owner rule R7).
+ */
 const M_ONE = 4096;
 const M_SPREAD = 3072;
 const M_HALF = 2048;
@@ -523,9 +529,9 @@ export function prepareQuery(ctx: KernelContext, query: DamageQuery, attackerSet
     const f = h.holder === "attacker" ? attacker : h.holder === "defender" ? defender : null;
     const e = f === null ? null : effectOf(f, h);
     if (f === attacker && e?.kind === "pinch") {
-      if (moveType === e.type && attacker.hp * 3 <= (attacker.stats[0] as number)) atkChain = chain(atkChain, M_ONE_AND_HALF);
+      if (moveType === e.type && attacker.hp * e.threshold.denominator <= (attacker.stats[0] as number) * e.threshold.numerator) atkChain = chain(atkChain, e.modifier);
     } else if (f === attacker && e?.kind === "guts" && physical) {
-      if (attacker.status !== null) atkChain = chain(atkChain, M_ONE_AND_HALF);
+      if (attacker.status !== null) atkChain = chain(atkChain, e.modifier);
     } else if (f === attacker && e?.kind === "attack_multiplier" && (e.stat === "atk") === physical) {
       if (e.weather === undefined || e.weather === weatherId) atkChain = chain(atkChain, e.modifier);
     } else if (f === defender && e?.kind === "source_type_attack") {
@@ -607,7 +613,7 @@ export function prepareQuery(ctx: KernelContext, query: DamageQuery, attackerSet
         if (defender.hp >= (defender.stats[0] as number)) m = chain(m, e.modifier);
       } else if (f === defender && e?.kind === "resist_berry") {
         // A berry is eaten only if the attacker does not stop its foes eating (Unnerve).
-        if (moveType === e.type && (!e.super_effective || typeMod > 0) && attacker.ability_effect?.kind !== "unnerve") m = chain(m, M_HALF);
+        if (moveType === e.type && (!e.super_effective || typeMod > 0) && attacker.ability_effect?.kind !== "unnerve") m = chain(m, e.modifier);
       } else throw new KernelAbstain(`${h.kind}:${h.id}`, "ModifyDamage");
     }
     return m;

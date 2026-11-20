@@ -72,6 +72,16 @@ describe("1b. the targeted corpus and the interaction sweep: fully equal or abst
     for (const id of Object.keys(effects.items)) expect(sweep.some((s) => s.id.startsWith(`ai:${id}:`)), id).toBe(true);
     for (const id of Object.keys(effects.conditions)) expect(sweep.some((s) => s.id.startsWith(`c:${id}:`)), id).toBe(true);
     for (const move of ["bodypress", "foulplay", "psyshock"]) expect(sweep.some((s) => s.move === move), move).toBe(true);
+    // Condition x entity crossings: every weather, terrain and screen meets the stat- and damage-modifying entities on both sides.
+    const crossed = Object.entries(effects.conditions).filter(([, c]) => c.kind === "weather_damage" || c.kind === "weather_stat" || c.kind === "terrain" || c.kind === "screen");
+    for (const [id] of crossed) expect(sweep.some((s) => s.id.startsWith(`x:${id}:`)), id).toBe(true);
+    const crossings = sweep.filter((s) => s.id.startsWith("x:"));
+    expect(crossings.length).toBeGreaterThan(1_000);
+    for (const s of crossings) expect(s.state.weather ?? s.state.terrain ?? s.state.sides, s.id).toBeTruthy();
+    expect(crossings.some((s) => s.id.startsWith("x:snowscape:") && s.defender.ability === "furcoat") || crossings.some((s) => s.id.startsWith("x:snowscape:d:"))).toBe(true);
+    expect(crossings.some((s) => s.id.startsWith("x:sunnyday:a:") && s.attacker.item !== undefined)).toBe(true);
+    expect(crossings.some((s) => s.id.startsWith("x:reflect:d:") && s.defender.item !== undefined)).toBe(true);
+    expect(crossings.some((s) => s.id.startsWith("x:electricterrain:a:"))).toBe(true);
     // The whole sweep runs in the admission flow; CI runs every 20th spec.
     const run = kernelSpecs(h, "interaction-sweep", sweep.filter((_, i) => i % 20 === 0));
     expect(run.tally.differences).toEqual([]);
@@ -153,7 +163,18 @@ describe("3. the ledger", () => {
   });
 
   it("names every input that changes a kernel answer", () => {
-    for (const path of ["packages/showdown-bridge/src/damage-kernel.ts", "packages/showdown-bridge/src/mechanics-probe.ts", "packages/showdown-bridge/src/mechanics-ko.ts", "fixtures/showdown/gen9championsvgc2026regmc/mechanics-inventory.json", "config/backends/gen9championsvgc2026regmc.damage-kernel.effects.json"]) {
+    for (const path of [
+      "packages/showdown-bridge/src/damage-kernel.ts",
+      "packages/showdown-bridge/src/mechanics-probe.ts",
+      "packages/showdown-bridge/src/mechanics-ko.ts",
+      "packages/showdown-bridge/src/mechanics-scenario.ts",
+      "packages/showdown-bridge/src/mechanics-query.ts",
+      "packages/showdown-bridge/src/mechanics-result.ts",
+      "packages/showdown-bridge/src/canonical-json.ts",
+      "config/mechanics/gen9championsvgc2026regmc.json",
+      "fixtures/showdown/gen9championsvgc2026regmc/mechanics-inventory.json",
+      "config/backends/gen9championsvgc2026regmc.damage-kernel.effects.json",
+    ]) {
       expect(KERNEL_INPUTS).toContain(path);
     }
   });
@@ -192,6 +213,19 @@ describe("4. isolation: no evaluation path reaches the kernel", () => {
     expect(importsKernel('const m = require("../src/damage-kernel-backend.ts");', names)).toBe(true);
     expect(importsKernel('import { loadEngine } from "@areneon/showdown-bridge";', names)).toBe(false);
     expect(importsKernel('const kind = "damage-kernel";', names)).toBe(false);
+    // A namespace or whole-module import of the package index: flagged when it reaches a kernel name, through any binding form.
+    expect(importsKernel('import * as bridge from "@areneon/showdown-bridge";\nbridge.computeBatch(c);', names)).toBe(true);
+    expect(importsKernel('import * as b from "@areneon/showdown-bridge";\nconst k = b["kernelBackend"];', names)).toBe(true);
+    expect(importsKernel('import * as b from "@areneon/showdown-bridge";\nb?.prepareQuery(x);', names)).toBe(true);
+    expect(importsKernel('const b = await import("@areneon/showdown-bridge");\nb.kernelData(e, f);', names)).toBe(true);
+    expect(importsKernel('const b = require("@areneon/showdown-bridge");\nb.abstained(s);', names)).toBe(true);
+    expect(importsKernel('const { loadEngine, computeBatch: run } = await import("@areneon/showdown-bridge");', names)).toBe(true);
+    expect(importsKernel('export * from "@areneon/showdown-bridge";', names)).toBe(true);
+    expect(importsKernel('export * as bridge from "@areneon/showdown-bridge";', names)).toBe(true);
+    // Negative controls: a namespace import that reaches no kernel name, and a kernel name on another object.
+    expect(importsKernel('import * as bridge from "@areneon/showdown-bridge";\nbridge.loadEngine();', names)).toBe(false);
+    expect(importsKernel('import * as other from "./elsewhere.ts";\nother.computeBatch(c);', names)).toBe(false);
+    expect(importsKernel('const { loadEngine } = require("@areneon/showdown-bridge");', names)).toBe(false);
   });
   it("its abstention is a typed refusal the router can count", () => {
     const error = new KernelAbstain("ability:x", "hook");

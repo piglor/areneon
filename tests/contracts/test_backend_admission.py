@@ -179,3 +179,25 @@ def test_lines_refusals() -> None:
         read([*lines[:-1], " " + lines[-1]])
     with pytest.raises(AdmissionError, match="newline"):
         read_backend_admission_lines(backend_admission_lines(ledger).rstrip("\n"), PIN)
+
+
+# The kernel version's committed ledger (ADR-030 step 3): its lines form, read by the
+# Python reader, has the pinned hash.
+KERNEL_LEDGER = (
+    Path(__file__).resolve().parents[2]
+    / "config/backends/gen9championsvgc2026regmc.damage-kernel.admission.jsonl"
+)
+KERNEL_ADMISSION_HASH = "0" * 64
+
+
+def test_the_committed_kernel_ledger_has_the_pinned_hash() -> None:
+    text = KERNEL_LEDGER.read_text(encoding="utf-8")
+    ledger = read_backend_admission_lines(text, PIN)
+    assert backend_admission_lines(ledger) == text
+    assert admission_hash(ledger) == KERNEL_ADMISSION_HASH
+    assert ledger["backend"]["kind"] == "damage-kernel"
+    fresh = [c for c in ledger["corpora"] if c["kind"] == "fresh"]
+    assert len(fresh) == 1
+    assert fresh[0]["distinct_items"] >= 200_000
+    backend = ledger["backend"]
+    assert fresh[0]["seed"] == fresh_seed(backend["backend_commit"], backend["backend_format"])

@@ -169,16 +169,25 @@ export function kernelLedger(h: KernelHarness, runs: readonly KernelCorpusRun[])
 
 // ---------------------------------------------------------------- inputs, the committed ledger and the isolation scan
 
-/** Every file whose bytes can change a kernel answer: the kernel, the probe envelope it shares, the KO counts, its data. */
+/**
+ * Every file whose bytes can change a kernel answer: the kernel, the probe envelope it shares (identity, set check, scope, the
+ * scenario format check, the query and result readers, the canonical JSON every hash is taken over), the KO counts, the
+ * mechanics config the envelope reads, and its data.
+ */
 export const KERNEL_INPUTS: readonly string[] = [
   "config/backends/gen9championsvgc2026regmc.damage-kernel.effects.json",
+  "config/mechanics/gen9championsvgc2026regmc.json",
   "fixtures/showdown/gen9championsvgc2026regmc/mechanics-inventory.json",
+  "packages/showdown-bridge/src/canonical-json.ts",
   "packages/showdown-bridge/src/damage-kernel-backend.ts",
   "packages/showdown-bridge/src/damage-kernel-data.ts",
   "packages/showdown-bridge/src/damage-kernel-effects.ts",
   "packages/showdown-bridge/src/damage-kernel.ts",
   "packages/showdown-bridge/src/mechanics-ko.ts",
   "packages/showdown-bridge/src/mechanics-probe.ts",
+  "packages/showdown-bridge/src/mechanics-query.ts",
+  "packages/showdown-bridge/src/mechanics-result.ts",
+  "packages/showdown-bridge/src/mechanics-scenario.ts",
 ];
 
 /** The committed ledger of the kernel version (its lines form, `admissionLines`) and the hash it must have. */
@@ -201,9 +210,25 @@ export function kernelExportNames(indexSource: string): string[] {
 export function importsKernel(source: string, names: readonly string[]): boolean {
   // A module specifier (static import or re-export, dynamic import, require) that names a kernel module or this composition root.
   if (/(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*)["'][^"']*(damage-kernel|differential-kernel)[^"']*["']/.test(source)) return true;
-  for (const m of source.matchAll(/import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*["']@areneon\/showdown-bridge["']/g)) {
-    const imported = (m[1] as string).split(",").map((p) => p.replace(/^\s*type\s+/, "").trim().split(/\s+as\s+/)[0]?.trim());
-    if (imported.some((n) => n !== undefined && names.includes(n))) return true;
+  const BRIDGE = String.raw`["']@areneon\/showdown-bridge["']`;
+  // Named imports, and destructuring of a dynamic import or a require of the index (`{ a, b: c }`: the property is the name).
+  const named = [new RegExp(String.raw`import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*${BRIDGE}`, "g"), new RegExp(String.raw`\{([^}]*)\}\s*=\s*(?:await\s+)?(?:import|require)\s*\(\s*${BRIDGE}\s*\)`, "g")];
+  for (const pattern of named) {
+    for (const m of source.matchAll(pattern)) {
+      const imported = (m[1] as string).split(",").map((p) => p.replace(/^\s*type\s+/, "").trim().split(/\s+as\s+|\s*:\s*/)[0]?.trim());
+      if (imported.some((n) => n !== undefined && names.includes(n))) return true;
+    }
+  }
+  // A whole-module re-export passes every kernel name on.
+  if (new RegExp(String.raw`export\s*\*\s*(?:as\s+\w+\s*)?from\s*${BRIDGE}`).test(source)) return true;
+  // A namespace binding (`import * as b`, `const b = await import(...)`, `const b = require(...)`): flagged when the source reads a
+  // kernel name off it (`b.name`, `b?.name`, `b["name"]`).
+  const bindings = [new RegExp(String.raw`import\s*\*\s*as\s+([A-Za-z_$][\w$]*)\s*from\s*${BRIDGE}`, "g"), new RegExp(String.raw`([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?(?:import|require)\s*\(\s*${BRIDGE}\s*\)`, "g")];
+  for (const pattern of bindings) {
+    for (const m of source.matchAll(pattern)) {
+      const ns = (m[1] as string).replace(/\$/g, "\\$");
+      for (const name of names) if (new RegExp(String.raw`\b${ns}\s*(?:\?\.|\.)\s*${name}\b|\b${ns}\s*(?:\?\.)?\[\s*["'\`]${name}["'\`]\s*\]`).test(source)) return true;
+    }
   }
   return false;
 }
@@ -337,18 +362,51 @@ export function interactionSweep(engine: Engine, formatId: string, effects: Kern
       add(`di:${item}:${move}`, userOf(move), plainDefender === null ? null : { ...plainDefender, item }, move);
     }
     for (const [id, c] of Object.entries(effects.conditions)) {
-      const state: QuerySpec["state"] =
-        c.kind === "weather_damage" || c.kind === "weather_stat"
-          ? { weather: id }
-          : c.kind === "terrain"
-            ? { terrain: id }
-            : id === "trickroom"
-              ? { trick_room: true }
-              : { sides: [{}, { [id === "lightscreen" ? "light_screen" : id === "auroraveil" ? "aurora_veil" : id]: true }] };
+      const state = conditionState(id, c.kind);
       add(`c:${id}:${move}`, userOf(move), c.kind === "weather_stat" ? holderOf(undefined, c.type) : plainDefender, move, state);
     }
   }
+  // Condition x entity crossings: each weather, terrain and screen with every ability and item of a stat- or damage-modifying kind,
+  // on the side it acts from, with up to two of the sweep's moves the condition changes (a type it boosts or weakens, the stat
+  // or category it modifies); a weather's stat rule takes a defender of its type. Only holders the roster has.
+  for (const [id, c] of Object.entries(effects.conditions)) {
+    if (c.kind !== "weather_damage" && c.kind !== "weather_stat" && c.kind !== "terrain" && c.kind !== "screen") continue;
+    const state = conditionState(id, c.kind);
+    const touched = moves.filter((move) => {
+      const m = data.move(move) as NonNullable<ReturnType<typeof data.move>>;
+      if (c.kind === "weather_damage") return c.types.some((t) => t.type === m.type);
+      if (c.kind === "weather_stat") return (m.defensive_stat ?? (m.category === "Physical" ? "def" : "spd")) === c.stat;
+      if (c.kind === "terrain") return c.boost?.type === m.type || c.halves?.type === m.type || (c.weakens?.moves.includes(move) ?? false);
+      return c.category === null || c.category === m.category;
+    });
+    const type = c.kind === "weather_stat" ? c.type : undefined;
+    for (const move of touched.slice(0, 2)) {
+      for (const [ability, e] of Object.entries(effects.abilities)) {
+        if (!MODIFYING.has(e.kind)) continue;
+        add(`x:${id}:a:${ability}:${move}`, userOf(move, ability), holderOf(undefined, type), move, state);
+        add(`x:${id}:d:${ability}:${move}`, userOf(move), holderOf(ability, type), move, state);
+      }
+      for (const [item, e] of Object.entries(effects.items)) {
+        if (!MODIFYING.has(e.kind)) continue;
+        const user = userOf(move);
+        const target = holderOf(undefined, type);
+        add(`x:${id}:a:${item}:${move}`, user === null ? null : { ...user, item }, target, move, state);
+        add(`x:${id}:d:${item}:${move}`, userOf(move), target === null ? null : { ...target, item }, move, state);
+      }
+    }
+  }
   return [...out.values()];
+}
+
+/** The effect kinds that change a stat or a damage number (the crossings' entities). */
+const MODIFYING = new Set(["pinch", "base_power_flag", "stab", "guts", "attack_multiplier", "source_type_attack", "technician", "super_effective_taken", "full_hp_taken", "crit_damage", "defense_multiplier", "type_boost", "resist_berry", "final_modifier", "super_effective_dealt", "category_power", "ate", "sheer_force"]);
+
+/** The declared state that puts a condition of the record in play, on the defender's side for a side condition. */
+function conditionState(id: string, kind: string): QuerySpec["state"] {
+  if (kind === "weather_damage" || kind === "weather_stat") return { weather: id };
+  if (kind === "terrain") return { terrain: id };
+  if (id === "trickroom") return { trick_room: true };
+  return { sides: [{}, { [id === "lightscreen" ? "light_screen" : id === "auroraveil" ? "aurora_veil" : id]: true }] };
 }
 
 /** A corpus of query specs through the kernel: each query distinct, abstentions counted, the covered ones compared with the oracle. */

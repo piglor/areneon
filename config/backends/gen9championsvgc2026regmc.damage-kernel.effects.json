@@ -29,7 +29,12 @@
     },
     "blaze": {
       "kind": "pinch",
-      "type": "Fire"
+      "type": "Fire",
+      "modifier": 6144,
+      "threshold": {
+        "denominator": 3,
+        "numerator": 1
+      }
     },
     "bulletproof": {
       "kind": "flag_immunity",
@@ -93,7 +98,8 @@
       "terrain": "grassyterrain"
     },
     "guts": {
-      "kind": "guts"
+      "kind": "guts",
+      "modifier": 6144
     },
     "harvest": {
       "kind": "no_damage_effect",
@@ -177,7 +183,12 @@
     },
     "overgrow": {
       "kind": "pinch",
-      "type": "Grass"
+      "type": "Grass",
+      "modifier": 6144,
+      "threshold": {
+        "denominator": 3,
+        "numerator": 1
+      }
     },
     "pickup": {
       "kind": "no_damage_effect",
@@ -306,7 +317,12 @@
     },
     "swarm": {
       "kind": "pinch",
-      "type": "Bug"
+      "type": "Bug",
+      "modifier": 6144,
+      "threshold": {
+        "denominator": 3,
+        "numerator": 1
+      }
     },
     "technician": {
       "kind": "technician",
@@ -332,7 +348,12 @@
     },
     "torrent": {
       "kind": "pinch",
-      "type": "Water"
+      "type": "Water",
+      "modifier": 6144,
+      "threshold": {
+        "denominator": 3,
+        "numerator": 1
+      }
     },
     "toughclaws": {
       "kind": "base_power_flag",
@@ -501,7 +522,8 @@
     "babiriberry": {
       "kind": "resist_berry",
       "type": "Steel",
-      "super_effective": true
+      "super_effective": true,
+      "modifier": 2048
     },
     "blackbelt": {
       "kind": "type_boost",
@@ -521,12 +543,14 @@
     "chartiberry": {
       "kind": "resist_berry",
       "type": "Rock",
-      "super_effective": true
+      "super_effective": true,
+      "modifier": 2048
     },
     "chilanberry": {
       "kind": "resist_berry",
       "type": "Normal",
-      "super_effective": false
+      "super_effective": false,
+      "modifier": 2048
     },
     "choicescarf": {
       "kind": "no_damage_effect",
@@ -537,17 +561,20 @@
     "chopleberry": {
       "kind": "resist_berry",
       "type": "Fighting",
-      "super_effective": true
+      "super_effective": true,
+      "modifier": 2048
     },
     "cobaberry": {
       "kind": "resist_berry",
       "type": "Flying",
-      "super_effective": true
+      "super_effective": true,
+      "modifier": 2048
     },
     "colburberry": {
       "kind": "resist_berry",
       "type": "Dark",
-      "super_effective": true
+      "super_effective": true,
+      "modifier": 2048
     },
     "dragonfang": {
       "kind": "type_boost",
@@ -578,7 +605,8 @@
     "habanberry": {
       "kind": "resist_berry",
       "type": "Dragon",
-      "super_effective": true
+      "super_effective": true,
+      "modifier": 2048
     },
     "hardstone": {
       "kind": "type_boost",
@@ -588,12 +616,14 @@
     "kasibberry": {
       "kind": "resist_berry",
       "type": "Ghost",
-      "super_effective": true
+      "super_effective": true,
+      "modifier": 2048
     },
     "kebiaberry": {
       "kind": "resist_berry",
       "type": "Poison",
-      "super_effective": true
+      "super_effective": true,
+      "modifier": 2048
     },
     "lifeorb": {
       "kind": "final_modifier",
@@ -638,17 +668,20 @@
     "occaberry": {
       "kind": "resist_berry",
       "type": "Fire",
-      "super_effective": true
+      "super_effective": true,
+      "modifier": 2048
     },
     "passhoberry": {
       "kind": "resist_berry",
       "type": "Water",
-      "super_effective": true
+      "super_effective": true,
+      "modifier": 2048
     },
     "payapaberry": {
       "kind": "resist_berry",
       "type": "Psychic",
-      "super_effective": true
+      "super_effective": true,
+      "modifier": 2048
     },
     "poisonbarb": {
       "kind": "type_boost",
@@ -664,12 +697,14 @@
     "rindoberry": {
       "kind": "resist_berry",
       "type": "Grass",
-      "super_effective": true
+      "super_effective": true,
+      "modifier": 2048
     },
     "roseliberry": {
       "kind": "resist_berry",
       "type": "Fairy",
-      "super_effective": true
+      "super_effective": true,
+      "modifier": 2048
     },
     "scopelens": {
       "kind": "crit_ratio",
@@ -683,7 +718,8 @@
     "shucaberry": {
       "kind": "resist_berry",
       "type": "Ground",
-      "super_effective": true
+      "super_effective": true,
+      "modifier": 2048
     },
     "silkscarf": {
       "kind": "type_boost",
@@ -708,7 +744,8 @@
     "tangaberry": {
       "kind": "resist_berry",
       "type": "Bug",
-      "super_effective": true
+      "super_effective": true,
+      "modifier": 2048
     },
     "twistedspoon": {
       "kind": "type_boost",
@@ -718,7 +755,8 @@
     "wacanberry": {
       "kind": "resist_berry",
       "type": "Electric",
-      "super_effective": true
+      "super_effective": true,
+      "modifier": 2048
     },
     "whiteherb": {
       "kind": "no_damage_effect",
@@ -737,7 +775,8 @@
     "yacheberry": {
       "kind": "resist_berry",
       "type": "Ice",
-      "super_effective": true
+      "super_effective": true,
+      "modifier": 2048
     }
   },
   "moves": {

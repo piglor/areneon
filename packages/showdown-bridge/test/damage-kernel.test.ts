@@ -491,7 +491,7 @@ describe("3c. reviewed data, not code: conditions, kinds and their hooks", () =>
     const effects = loadKernelEffects(GOLDEN_FORMAT, engine.commit);
     expect(() => checkKernelEffects(effects, data)).not.toThrow();
     const miskinded = structuredClone(effects);
-    miskinded.abilities.sapsipper = { kind: "pinch", type: "Grass" };
+    miskinded.abilities.sapsipper = { kind: "pinch", type: "Grass", modifier: 6144, threshold: { numerator: 1, denominator: 3 } };
     expect(() => checkKernelEffects(miskinded, data)).toThrow(KernelRecordError);
     const hiding = structuredClone(effects);
     hiding.abilities.limber = { kind: "no_damage_effect", hides: ["onTryHit"] };
@@ -510,6 +510,30 @@ describe("3c. reviewed data, not code: conditions, kinds and their hooks", () =>
     expect(() => checkKernelEffects(miskindedItem, data)).toThrow(/lifeorb/);
   });
 
+  it("the pinch, Guts and resist-berry modifiers and the pinch threshold come from the record (R7)", () => {
+    const plain = ctxWith(() => undefined);
+    const skarmory: Side = { species: "skarmory", ability: "keeneye", moves: ["bravebird"] };
+    const infernape = (hp: number | null): Side => ({ species: "infernape", ability: "blaze", moves: ["flamethrower"], hp });
+    const low = query(infernape(20), skarmory, "flamethrower");
+    const full = query(infernape(null), skarmory, "flamethrower");
+    expect(decoded(plain, low).base[0]).toBeGreaterThan(decoded(plain, full).base[0] as number);
+    const blaze = (patch: object) => ctxWith((e) => Object.assign(e.abilities.blaze as object, patch));
+    // A modifier of one makes the pinch do nothing; a threshold of the whole HP makes it apply at full HP.
+    expect(decoded(blaze({ modifier: 4096 }), low).base[0]).toBe(decoded(plain, full).base[0]);
+    expect(decoded(blaze({ threshold: { numerator: 1, denominator: 1 } }), full).base[0]).toBe(decoded(plain, low).base[0]);
+    const gutsSide = (status: string | null): Side => ({ species: "machamp", ability: "guts", moves: ["closecombat"], status });
+    const guts = (patch: object) => ctxWith((e) => Object.assign(e.abilities.guts as object, patch));
+    const burned = query(gutsSide("brn"), SNORLAX_TARGET, "closecombat");
+    const healthy = query(gutsSide(null), SNORLAX_TARGET, "closecombat");
+    expect(decoded(plain, burned).base[0]).toBeGreaterThan(decoded(plain, healthy).base[0] as number);
+    expect(decoded(guts({ modifier: 4096 }), burned).base[0]).toBe(decoded(plain, healthy).base[0]);
+    const berry = query(GARCHOMP, { ...ARCANINE, item: "shucaberry" }, "earthquake");
+    const noBerry = query(GARCHOMP, ARCANINE, "earthquake");
+    expect(decoded(plain, berry).final[0]).toBe(2048);
+    const shuca = ctxWith((e) => Object.assign(e.items.shucaberry as object, { modifier: 4096 }));
+    expect(decoded(shuca, berry).final[0]).toBe(decoded(plain, noBerry).final[0]);
+  });
+
   it("onUpdate is not inert: a holder of it abstains (Limber's cure, a berry at low HP)", () => {
     expect(INERT_HOOKS.has("onUpdate")).toBe(false);
     expect(abstainsOn(query({ species: "persian", ability: "limber", moves: ["slash"] }, SNORLAX_TARGET, "slash"))).toBe("ability:limber");
@@ -526,7 +550,7 @@ describe("4. the pieces", () => {
     expect(championsStat(100, 0, "spa", { plus: "atk", minus: "spa" })).toBe(108);
     expect(championsStat(100, 0, "spe", neutral)).toBe(120);
     expect([staged(100, 0), staged(100, 1), staged(100, 6), staged(100, -1), staged(100, -6), staged(101, 3)]).toEqual([100, 150, 400, 66, 25, 252]);
-    expect(KERNEL_FORMAT).toBe(3);
+    expect(KERNEL_FORMAT).toBe(4);
   });
 
   it("computes an empty batch", () => {
@@ -551,6 +575,13 @@ describe("4. the pieces", () => {
     expect(bad((v) => (v.abilities = { aa: { kind: "type_boost", type: "Fire", modifier: 1 } }))).toThrow(/a kind it may hold/);
     expect(bad((v) => (v.abilities = { aa: { kind: "pinch", type: "Fire", extra: 1 } }))).toThrow(/does not take/);
     expect(bad((v) => (v.abilities = { aa: { kind: "pinch", type: "fire" } }))).toThrow(/shape/);
+    const third = { numerator: 1, denominator: 3 };
+    expect(bad((v) => (v.abilities = { aa: { kind: "pinch", type: "Fire", modifier: 6144, threshold: { numerator: 4, denominator: 3 } } }))).toThrow(/shape/);
+    expect(bad((v) => (v.abilities = { aa: { kind: "pinch", type: "Fire", modifier: 6144, threshold: { ...third, extra: 1 } } }))).toThrow(/shape/);
+    expect(bad((v) => (v.abilities = { aa: { kind: "pinch", type: "Fire", modifier: 6144, threshold: [1, 3] } }))).toThrow(/shape/);
+    expect(bad((v) => (v.abilities = { aa: { kind: "pinch", type: "Fire", modifier: 6144, threshold: { numerator: 1.5, denominator: 3 } } }))).toThrow(/shape/);
+    expect(bad((v) => (v.abilities = { aa: { kind: "guts" } }))).toThrow(/shape/);
+    expect(bad((v) => (v.items = { aa: { kind: "resist_berry", type: "Fire", super_effective: true } }))).toThrow(/shape/);
     expect(bad((v) => (v.items = { aa: null }))).toThrow(/a kind it may hold/);
     expect(bad((v) => (v.format_id = "other"))).not.toThrow();
     expect(bad((v) => (v.conditions = []))).toThrow(/conditions table is an object/);
