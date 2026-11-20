@@ -24,7 +24,7 @@ import { loadFixtureInputs } from "../src/fixtures.ts";
 import { datasetPoolDetail } from "../src/loop-pool.ts";
 
 const FORMAT = "gen9championsvgc2026regmc";
-const KERNEL_FILES = ["packages/showdown-bridge/src/damage-kernel.ts", "packages/showdown-bridge/src/damage-kernel-data.ts", "packages/showdown-bridge/src/damage-kernel-effects.ts", "packages/showdown-bridge/src/damage-kernel-backend.ts", "config/mechanics/gen9championsvgc2026regmc.damage-kernel.json"];
+const KERNEL_FILES = ["packages/showdown-bridge/src/damage-kernel.ts", "packages/showdown-bridge/src/damage-kernel-data.ts", "packages/showdown-bridge/src/damage-kernel-effects.ts", "packages/showdown-bridge/src/damage-kernel-backend.ts", "config/backends/gen9championsvgc2026regmc.damage-kernel.effects.json"];
 const args = process.argv.slice(2);
 const mode = args[0];
 const flag = (name: string, fallback?: string): string => {

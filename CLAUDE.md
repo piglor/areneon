@@ -114,7 +114,7 @@ One or two sentences per area; each links to its doc under `docs/architecture/`.
 - [`engine-data-vocabulary.md`](docs/architecture/engine-data-vocabulary.md): `engine-data.ts`, `team-vocabulary.ts`, `role-sets.ts`: hashed vocabularies derived from the pinned engine.
 - [`policy-worker.md`](docs/architecture/policy-worker.md): `policy-protocol.ts`, `policy-worker.ts`, `policy-actor.ts` and `ml/areneon_ml/worker`.
 - [`reducer-encoder.md`](docs/architecture/reducer-encoder.md): `ml/areneon_ml/reducer`, `model`, `checkpoint`: clean-room reducer, encoder (+ options), networks, checkpoints.
-- [`mechanics-probe.md`](docs/architecture/mechanics-probe.md): `packages/showdown-bridge/src/mechanics-*.ts`: the engine reads every stat, speed and damage value; Areneon computes none.
+- [`mechanics-probe.md`](docs/architecture/mechanics-probe.md): `packages/showdown-bridge/src/mechanics-*.ts`: the engine reads every stat, speed and damage value; Areneon computes none, except the damage kernel for training games on admitted content (ADR-030).
 - [`opponent-model.md`](docs/architecture/opponent-model.md): `packages/opponent-model` and the prior derivations: belief over the opponent from the player view, the sampler, evidence, usage priors, sheet block.
 - [`opponent-sheet.md`](docs/architecture/opponent-sheet.md): ADR-027: opponent sheet block, builders, open/closed sheet regimes.
 - [`damage-aware.md`](docs/architecture/damage-aware.md): `damage-aware@v1` to `v7`: inputs, actor, v2 over belief worlds, v3 engine choice location, v4 to v7 situational and success-chance scoring, identity and the opponent wiring.
@@ -124,6 +124,7 @@ One or two sentences per area; each links to its doc under `docs/architecture/`.
 - [`population.md`](docs/architecture/population.md): ADR-021: population loop, ladder, Bradley-Terry rating, copy and explore, health, PFSP.
 - [`team-preview.md`](docs/architecture/team-preview.md): ADR-029: solver, hypothetical preview battle, payoff table, best-response gain.
 - [`features.md`](docs/architecture/features.md): ADR-022: candidate feature builders, wire fields, encoder use and cost gates.
+- [`damage-kernel.md`](docs/architecture/damage-kernel.md): `damage-kernel*.ts`, `config/backends/<format>.damage-kernel.effects.json`, `differential-kernel.ts`: ADR-030 step 3's clean-room integer damage kernel behind the probe interface, training games only, admitted by byte-equality; not wired into any run yet.
 - [`training-loop-learner.md`](docs/architecture/training-loop-learner.md): `ml/areneon_ml/learner`, `loop`: PPO learner, cloning, generation loop, run metrics, teacher data.
 - [`league.md`](docs/architecture/league.md): `league-seed.ts`, `league-run-record.ts`.
 - [`progress-evaluation.md`](docs/architecture/progress-evaluation.md): `ml/areneon_ml/progress`, `report`: progress evaluation, head to head, scripted h2h, diagnostics, dashboard.

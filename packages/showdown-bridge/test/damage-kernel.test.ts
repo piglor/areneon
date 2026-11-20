@@ -434,7 +434,7 @@ describe("4. the pieces", () => {
   });
 
   it("the effects record's reader refuses every malformed shape", () => {
-    const good = JSON.parse(readFileSync(new URL("../../../config/mechanics/gen9championsvgc2026regmc.damage-kernel.json", import.meta.url), "utf8")) as Record<string, unknown>;
+    const good = JSON.parse(readFileSync(new URL("../../../config/backends/gen9championsvgc2026regmc.damage-kernel.effects.json", import.meta.url), "utf8")) as Record<string, unknown>;
     expect(readKernelEffects(good)).toBeTruthy();
     expect(kernelEffectsHash(readKernelEffects(good))).toMatch(/^[0-9a-f]{64}$/);
     const bad = (patch: (v: Record<string, unknown>) => void) => {

@@ -113,6 +113,10 @@ describe("3. the ledger", () => {
     expect(admissionHash(ledger)).toMatch(/^[0-9a-f]{64}$/);
     const fresh = ledger.corpora.find((c) => c.kind === "fresh");
     expect(fresh?.distinct_items).toBeGreaterThanOrEqual(MIN_FRESH_ITEMS["mechanics-query"]);
+    // The ledger is the current kernel version's, and its fresh corpus found no difference (nothing revoked).
+    expect(ledger.backend.backend_format).toBe(h.kernel.backend_format);
+    expect(ledger.revoked).toEqual([]);
+    expect(ledger.entities.some((e) => e.admitted)).toBe(true);
   });
 });
 

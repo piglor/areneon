@@ -143,7 +143,7 @@ export const kernelEffectsHash = (effects: KernelEffects): string => sha256Hex(j
 
 /** The committed record of a format, bound to the engine's pin (another pin's record is refused: the kernel abstains on everything). */
 export function loadKernelEffects(formatId: string, commit: string): KernelEffects {
-  const path = fileURLToPath(new URL(`../../../config/mechanics/${formatId}.damage-kernel.json`, import.meta.url));
+  const path = fileURLToPath(new URL(`../../../config/backends/${formatId}.damage-kernel.effects.json`, import.meta.url));
   const effects = readKernelEffects(JSON.parse(readFileSync(path, "utf8")));
   if (effects.format_id !== formatId) fail("the effects record is for another format");
   if (effects.showdown_commit !== commit) fail("the effects record is for another engine pin");
