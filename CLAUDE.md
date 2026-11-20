@@ -125,7 +125,7 @@ One or two sentences per area; each links to its doc under `docs/architecture/`.
 - [`population.md`](docs/architecture/population.md): ADR-021: population loop, ladder, Bradley-Terry rating, copy and explore, health, PFSP.
 - [`team-preview.md`](docs/architecture/team-preview.md): ADR-029: solver, hypothetical preview battle, payoff table, best-response gain.
 - [`features.md`](docs/architecture/features.md): ADR-022: candidate feature builders, wire fields, encoder use and cost gates.
-- [`damage-kernel.md`](docs/architecture/damage-kernel.md): `damage-kernel*.ts`, `config/backends/<format>.damage-kernel.effects.json`, `differential-kernel.ts`: ADR-030 step 3's clean-room integer damage kernel behind the probe interface, training games only, admitted by byte-equality; not wired into any run yet.
+- [`damage-kernel.md`](docs/architecture/damage-kernel.md): `damage-kernel*.ts`, `config/backends/<format>.damage-kernel.{effects.json,admission.jsonl}`, `fixtures/backends/<format>/damage-kernel-targeted.json`, `differential-kernel.ts`: ADR-030 step 3's clean-room integer damage kernel behind the probe interface, training games only, admitted by byte-equality; not wired into any run yet.
 - [`training-loop-learner.md`](docs/architecture/training-loop-learner.md): `ml/areneon_ml/learner`, `loop`: PPO learner, cloning, generation loop, run metrics, teacher data.
 - [`league.md`](docs/architecture/league.md): `league-seed.ts`, `league-run-record.ts`.
 - [`progress-evaluation.md`](docs/architecture/progress-evaluation.md): `ml/areneon_ml/progress`, `report`: progress evaluation, head to head, scripted h2h, diagnostics, dashboard.

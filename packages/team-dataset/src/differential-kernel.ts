@@ -183,7 +183,7 @@ export const KERNEL_INPUTS: readonly string[] = [
 
 /** The committed ledger of the kernel version (its lines form, `admissionLines`) and the hash it must have. */
 export const KERNEL_LEDGER = "config/backends/gen9championsvgc2026regmc.damage-kernel.admission.jsonl";
-export const KERNEL_ADMISSION_HASH = "PENDING";
+export const KERNEL_ADMISSION_HASH = "7d49b2b64da169e89857790dc38977350a73844f9d9b1ff73066085bafbaa091";
 
 /** The names the bridge's index exports from the kernel's modules (read from the index, so a new export is scanned too). */
 export function kernelExportNames(indexSource: string): string[] {
