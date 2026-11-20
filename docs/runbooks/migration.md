@@ -57,7 +57,10 @@ bytes changed so each diff can be reviewed with `git diff` before it is committe
 9. `encoder-golden`: encoder golden digests and `encoder_version`.
 10. `a1-a2-equality`: A1 and A2 channels and observations equal, encoder pairs.
 11. `fidelity-corpus`: the targeted fidelity corpus replays and its committed report is fresh.
-12. `contract-corpus`: Ajv and python-jsonschema classify the corpus identically, generated
+12. `battle-differential`: every committed battle is recorded on the unmodified engine
+    (`BattleTrace`, every draw forced) and replayed on a second engine object with no
+    difference at any request, the broken battle backends are caught (ADR-030 G2).
+13. `contract-corpus`: Ajv and python-jsonschema classify the corpus identically, generated
     types have no drift, digests reproduce.
 
 The order is dependency order: a later check reads artifacts an earlier one proves (the
@@ -77,6 +80,7 @@ anything else is a regression to investigate, not to recapture.
 | encoder digests, `encoder_version` | the engine-data hash is in the version | the version string moves, tensor digests move with it; recapture only with the engine-data change explained |
 | mechanics fixtures, calc divergences, parity report | the hand-worked values are fixed by paper; only the engine may move them | a changed hand-worked value is wrong until worked again on paper; triage a new calc divergence by the fixture, never the calc |
 | `reduced/`, `random/`, `unavailable/`, `search-fidelity/` and its report | seeded battles replay differently if the engine's RNG use changed | recapture the corpora, then the fidelity report (about 5 minutes), then edit `admitted` in `config/search/world-writers.v1.json` to the report |
+| (nothing: `battle-differential` keeps no golden) | traces are recorded fresh on each run, so a pin bump changes nothing it holds; a difference there is a recorder or backend defect, never a recapture | read the difference's kind, step and seat; the corpora it replays are recaptured by the rows above |
 | contract samples, `hashes.json` | the capture reads the golden vocabulary; identity hashes (damage-aware, feature set, belief, search) move with the pin | review that only hash fields and engine-derived values changed |
 | `docs/showdown-champions-gaps.md`, `docs/mechanics-parity.md`, `docs/mechanics-inventory.md` | generated from records, fixtures and exports | edit the records, never the docs |
 

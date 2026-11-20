@@ -67,7 +67,7 @@ const ruleActor: Actor = (request) => {
   });
 };
 
-function actorsOf(mix: SweepMix, seeds: Record<Player, number>): Record<Player, { name: string; actor: Actor }> {
+export function sweepActors(mix: SweepMix, seeds: Record<Player, number>): Record<Player, { name: string; actor: Actor }> {
   const named = (name: string, actor: Actor) => ({ name, actor });
   switch (mix) {
     case "random-legal":
@@ -97,7 +97,7 @@ export async function playSweepBattle(
     p2: pool.teams[streams.team_draws.p2 % pool.teams.length] as PokemonSet[],
   };
   const actorSeeds = { p1: streams.baseline_seed, p2: (streams.baseline_seed ^ 0x9e3779b9) >>> 0 };
-  const chosen = actorsOf(mix, actorSeeds);
+  const chosen = sweepActors(mix, actorSeeds);
   const decisions: Record<Player, SweepDecision[]> = { p1: [], p2: [] };
   const recording =
     (player: Player, inner: Actor): Actor =>

@@ -839,3 +839,9 @@ export { loadOutcomeConfig, outcomeConfigHash } from "./outcome-config.ts";
 export { withMoveOutcome } from "./mechanics-config.ts";
 export { GOLDEN_FORMAT, goldenTeamVocabulary } from "./golden.ts";
 export { sampleTarget } from "./inference-divergence.ts";
+// The battle-level differential's engine side (ADR-030 groundwork G2, ADR-028 section 5 F0, #1462): the forced-draw trace
+// recorder on the unmodified engine, the Showdown battle backend that replays a trace with its draws forced, the committed
+// battles. Read by the composition root's differential-battle files only (battle-trace-isolation.test.ts).
+export { recordBattleTrace, TRACE_FORMAT, TraceRecordError, type TraceSpec } from "./battle-trace.ts";
+export { REPLAY_FORMAT, showdownBattleBackend, type ShowdownBattleBackend } from "./battle-replay.ts";
+export { type CommittedBattle, committedBattles, SINGLE_BATTLES } from "./battle-trace-corpus.ts";

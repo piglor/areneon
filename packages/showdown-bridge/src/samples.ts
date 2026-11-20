@@ -26,6 +26,7 @@ import { usageWeightTableSamples } from "./usage-weight-table-samples.ts";
 import { worldWritersSamples } from "./world-writers-samples.ts";
 import { backendAdmissionSamples } from "./backend-admission-samples.ts";
 import { battleStateSpecSamples } from "./battle-state-spec-samples.ts";
+import { battleTraceSamples } from "./battle-trace-samples.ts";
 import { searchConfigSamples } from "./search-config-samples.ts";
 import { previewSolveConfigSamples } from "./preview-solve-config-samples.ts";
 import { mechanicsSamples } from "./mechanics-samples.ts";
@@ -2071,6 +2072,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const worldWritersOnes = worldWritersSamples(engine, GOLDEN_FORMAT);
   const admissionOnes = backendAdmissionSamples();
   const battleStateOnes = battleStateSpecSamples(engine, GOLDEN_FORMAT);
+  const battleTraceOnes = battleTraceSamples();
   const searchConfigOnes = searchConfigSamples(GOLDEN_FORMAT);
   const previewSolveOnes = previewSolveConfigSamples(GOLDEN_FORMAT);
   const privateManifests = privateSnapshotSamples({ manifest: record.manifest, vocabularyHash: teamVocabularyHash(vocabulary as never), labelSetHash });
@@ -2081,7 +2083,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const ladderOnes = ladderRecordSamples();
   const runInputOnes = runInputManifestSamples();
   for (const kind of ["valid", "invalid", "readerInvalid"] as const) Object.assign(privateOnes[kind], privateManifests[kind], privateTests[kind]);
-  for (const [kind, cases] of [["valid", { ...valid, ...evalSamples.valid, ...progressOnes.valid, ...mechanicsOnes.valid, ...damageAwareOnes.valid, ...usagePriorOnes.valid, ...usageWeightOnes.valid, ...worldWritersOnes.valid, ...admissionOnes.valid, ...battleStateOnes.valid, ...searchConfigOnes.valid, ...previewSolveOnes.valid, ...scriptedOnes.valid, ...bestOnes.valid, ...leagueV2Ones.valid, ...ladderOnes.valid, ...runInputOnes.valid, ...privateOnes.valid }], ["invalid", { ...invalid, ...evalSamples.invalid, ...progressOnes.invalid, ...mechanicsOnes.invalid, ...damageAwareOnes.invalid, ...usagePriorOnes.invalid, ...usageWeightOnes.invalid, ...worldWritersOnes.invalid, ...admissionOnes.invalid, ...battleStateOnes.invalid, ...searchConfigOnes.invalid, ...previewSolveOnes.invalid, ...scriptedOnes.invalid, ...bestOnes.invalid, ...leagueV2Ones.invalid, ...ladderOnes.invalid, ...runInputOnes.invalid, ...privateOnes.invalid }], ["reader-invalid", { ...readerInvalid, ...evalSamples.readerInvalid, ...progressOnes.readerInvalid, ...mechanicsOnes.readerInvalid, ...damageAwareOnes.readerInvalid, ...usagePriorOnes.readerInvalid, ...usageWeightOnes.readerInvalid, ...worldWritersOnes.readerInvalid, ...admissionOnes.readerInvalid, ...battleStateOnes.readerInvalid, ...searchConfigOnes.readerInvalid, ...previewSolveOnes.readerInvalid, ...scriptedOnes.readerInvalid, ...bestOnes.readerInvalid, ...leagueV2Ones.readerInvalid, ...ladderOnes.readerInvalid, ...runInputOnes.readerInvalid, ...privateOnes.readerInvalid }]] as const) {
+  for (const [kind, cases] of [["valid", { ...valid, ...evalSamples.valid, ...progressOnes.valid, ...mechanicsOnes.valid, ...damageAwareOnes.valid, ...usagePriorOnes.valid, ...usageWeightOnes.valid, ...worldWritersOnes.valid, ...admissionOnes.valid, ...battleStateOnes.valid, ...battleTraceOnes.valid, ...searchConfigOnes.valid, ...previewSolveOnes.valid, ...scriptedOnes.valid, ...bestOnes.valid, ...leagueV2Ones.valid, ...ladderOnes.valid, ...runInputOnes.valid, ...privateOnes.valid }], ["invalid", { ...invalid, ...evalSamples.invalid, ...progressOnes.invalid, ...mechanicsOnes.invalid, ...damageAwareOnes.invalid, ...usagePriorOnes.invalid, ...usageWeightOnes.invalid, ...worldWritersOnes.invalid, ...admissionOnes.invalid, ...battleStateOnes.invalid, ...battleTraceOnes.invalid, ...searchConfigOnes.invalid, ...previewSolveOnes.invalid, ...scriptedOnes.invalid, ...bestOnes.invalid, ...leagueV2Ones.invalid, ...ladderOnes.invalid, ...runInputOnes.invalid, ...privateOnes.invalid }], ["reader-invalid", { ...readerInvalid, ...evalSamples.readerInvalid, ...progressOnes.readerInvalid, ...mechanicsOnes.readerInvalid, ...damageAwareOnes.readerInvalid, ...usagePriorOnes.readerInvalid, ...usageWeightOnes.readerInvalid, ...worldWritersOnes.readerInvalid, ...admissionOnes.readerInvalid, ...battleStateOnes.readerInvalid, ...battleTraceOnes.readerInvalid, ...searchConfigOnes.readerInvalid, ...previewSolveOnes.readerInvalid, ...scriptedOnes.readerInvalid, ...bestOnes.readerInvalid, ...leagueV2Ones.readerInvalid, ...ladderOnes.readerInvalid, ...runInputOnes.readerInvalid, ...privateOnes.readerInvalid }]] as const) {
     for (const [key, value] of Object.entries(cases)) {
       const [contract, name] = key.split("/") as [string, string];
       samples[`v1/${contract}/${kind}/${name}.json`] = value;

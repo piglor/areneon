@@ -1,0 +1,300 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "classes": [
+    {
+      "id": "faint_replacement",
+      "description": "Faint and replacement order: a step in which a Pokemon faints (its replacement is the next step).",
+      "all": [
+        [
+          {
+            "line": "faint"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "item_consumption",
+      "description": "Item consumption and removal: a step in which an item is used up, knocked off or otherwise ended.",
+      "all": [
+        [
+          {
+            "line": "-enditem"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "mega_timing",
+      "description": "Mega Evolution timing: a step in which a Pokemon Mega Evolves.",
+      "all": [
+        [
+          {
+            "line": "-mega"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "protection_multi_target",
+      "description": "Protection against multi-target moves: a protection move activates in a step that uses a spread move.",
+      "all": [
+        [
+          {
+            "line": "-activate",
+            "contains": "move: Baneful Bunker"
+          },
+          {
+            "line": "-activate",
+            "contains": "move: Burning Bulwark"
+          },
+          {
+            "line": "-activate",
+            "contains": "move: Detect"
+          },
+          {
+            "line": "-activate",
+            "contains": "move: King's Shield"
+          },
+          {
+            "line": "-activate",
+            "contains": "move: Obstruct"
+          },
+          {
+            "line": "-activate",
+            "contains": "move: Protect"
+          },
+          {
+            "line": "-activate",
+            "contains": "move: Quick Guard"
+          },
+          {
+            "line": "-activate",
+            "contains": "move: Silk Trap"
+          },
+          {
+            "line": "-activate",
+            "contains": "move: Spiky Shield"
+          },
+          {
+            "line": "-activate",
+            "contains": "move: Wide Guard"
+          }
+        ],
+        [
+          {
+            "line": "move",
+            "contains": "[spread]"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "redirection",
+      "description": "Redirection against spread and single targets: a redirecting move or ability acts in the step.",
+      "all": [
+        [
+          {
+            "line": "-singleturn",
+            "contains": "move: Follow Me"
+          },
+          {
+            "line": "-singleturn",
+            "contains": "move: Rage Powder"
+          },
+          {
+            "line": "-singleturn",
+            "contains": "move: Spotlight"
+          },
+          {
+            "line": "-activate",
+            "contains": "ability: Storm Drain"
+          },
+          {
+            "line": "-activate",
+            "contains": "ability: Lightning Rod"
+          },
+          {
+            "line": "-immune",
+            "from": "ability: Storm Drain"
+          },
+          {
+            "line": "-immune",
+            "from": "ability: Lightning Rod"
+          },
+          {
+            "line": "-boost",
+            "from": "ability: Storm Drain"
+          },
+          {
+            "line": "-boost",
+            "from": "ability: Lightning Rod"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "residual_order",
+      "description": "End-of-turn residual order: a step that reaches the upkeep with damage or healing from an effect.",
+      "all": [
+        [
+          {
+            "line": "upkeep"
+          }
+        ],
+        [
+          {
+            "line": "-damage",
+            "from": ""
+          },
+          {
+            "line": "-heal",
+            "from": ""
+          }
+        ]
+      ]
+    },
+    {
+      "id": "speed_control",
+      "description": "Priority and speed ordering by an effect: Trick Room, Tailwind or a Quick-Claw-like effect starts or acts in the step.",
+      "all": [
+        [
+          {
+            "line": "-fieldstart",
+            "contains": "move: Trick Room"
+          },
+          {
+            "line": "-fieldend",
+            "contains": "move: Trick Room"
+          },
+          {
+            "line": "-sidestart",
+            "contains": "move: Tailwind"
+          },
+          {
+            "line": "-sideend",
+            "contains": "move: Tailwind"
+          },
+          {
+            "line": "-activate",
+            "contains": "item: Quick Claw"
+          },
+          {
+            "line": "-activate",
+            "contains": "ability: Quick Draw"
+          },
+          {
+            "line": "-activate",
+            "contains": "item: Custap Berry"
+          },
+          {
+            "line": "-enditem",
+            "contains": "Custap Berry"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "speed_order_tie",
+      "description": "Speed ties: the engine shuffles a group of equal actions or handlers (its speed-tie draw) in the step.",
+      "all": [
+        [
+          {
+            "draw": "shuffle"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "switch_in_trigger",
+      "description": "Switch-in and start triggers and their order: a switch in the step with an ability or item effect.",
+      "all": [
+        [
+          {
+            "line": "switch"
+          },
+          {
+            "line": "drag"
+          }
+        ],
+        [
+          {
+            "line": "-ability"
+          },
+          {
+            "line": "-item"
+          },
+          {
+            "line": "-activate",
+            "contains": "ability: "
+          },
+          {
+            "line": "-weather",
+            "from": "ability: "
+          },
+          {
+            "line": "-fieldstart",
+            "from": "ability: "
+          },
+          {
+            "line": "-unboost",
+            "from": "ability: "
+          },
+          {
+            "line": "-boost",
+            "from": "ability: "
+          },
+          {
+            "line": "-enditem",
+            "from": ""
+          }
+        ]
+      ]
+    },
+    {
+      "id": "weather_terrain_readers",
+      "description": "Weather and terrain setters against the abilities and items that read them: a weather or terrain line with an ability or item effect in the step.",
+      "all": [
+        [
+          {
+            "line": "-weather"
+          },
+          {
+            "line": "-fieldstart",
+            "contains": "Terrain"
+          },
+          {
+            "line": "-fieldend",
+            "contains": "Terrain"
+          }
+        ],
+        [
+          {
+            "line": "-heal",
+            "from": "ability: "
+          },
+          {
+            "line": "-damage",
+            "from": ""
+          },
+          {
+            "line": "-boost",
+            "from": "ability: "
+          },
+          {
+            "line": "-boost",
+            "from": "item: "
+          },
+          {
+            "line": "-activate",
+            "contains": "ability: "
+          },
+          {
+            "line": "-enditem",
+            "contains": "Seed"
+          }
+        ]
+      ]
+    }
+  ]
+}
