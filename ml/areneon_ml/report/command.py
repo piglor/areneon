@@ -75,12 +75,14 @@ def inspector_links(inspect_dir: Path | None, base: Path, generations: list[int]
     return Links(games, replays)
 
 
-def report_run(
+def report_run(  # noqa: PLR0913
     run_dir: Path,
     progress_dir: Path | None,
     out: Path | None,
     inspect_dir: Path | None = None,
     situational: Path | None = None,
+    *,
+    allow_pruned: bool = False,
 ) -> dict[str, Any]:
     """Build and write the page; refuses on any inconsistency before writing anything."""
     run_dir = run_dir.resolve()
@@ -91,7 +93,9 @@ def report_run(
         progress_dir is not None and progress_dir.resolve() in target.parents
     ):
         raise ReportError("the report must not be written inside the run or progress directory")
-    model = read_report_model(run_dir, progress_dir.resolve() if progress_dir else None)
+    model = read_report_model(
+        run_dir, progress_dir.resolve() if progress_dir else None, allow_pruned=allow_pruned
+    )
     if progress_dir is not None and model.progress:
         # The page shows validation results: log the look first, so the page counts it.
         log = looks_path(progress_dir, run_dir)

@@ -29,6 +29,10 @@ from areneon_contracts.contracts import CanonicalError, jcs
 MANIFEST = "manifest.json"
 CONFIG = "run-config.json"
 _GENERATION = re.compile(r"g(\d{6})")
+# The bulk files the storage rule deletes from a committed generation once a run is decided:
+# the training stream, the learner state's tensors and the Episodes, at the generation root or
+# under ``members/<member>/`` (a population run). Everything else of a generation is kept.
+_PRUNABLE = re.compile(r"(?:members/[^/]+/)?(?:stream\.jsonl|learner-\d+\.safetensors|episodes/.+)")
 
 
 class RunDirError(ValueError):
@@ -158,14 +162,32 @@ class Committed:
     manifest: dict[str, Any]
 
 
-def verify_generation(path: Path, generation: int) -> dict[str, Any]:
-    """The manifest of a committed generation, once every file matches it."""
+def prunable(name: str) -> bool:
+    """Whether a generation's file (its path relative to the generation) is pruned bulk data."""
+    return _PRUNABLE.fullmatch(name) is not None
+
+
+def verify_generation(path: Path, generation: int, *, allow_pruned: bool = False) -> dict[str, Any]:
+    """The manifest of a committed generation, once every file matches it.
+
+    With ``allow_pruned`` (read-only evaluation of a run whose bulk data was deleted) a file the
+    manifest lists may be absent if it is ``prunable``; every file present must still hash as
+    committed, and a file the manifest does not list, or any other absent file, still fails.
+    """
     manifest = read_json(path / MANIFEST)
     if not isinstance(manifest, dict) or manifest.get("generation") != generation:
         raise RunDirError(f"{path.name}: its manifest is not generation {generation}'s")
-    if manifest.get("files") != hash_tree(path):
-        raise RunDirError(f"{path.name}: its files differ from its manifest")
-    return manifest
+    stated, found = manifest.get("files"), hash_tree(path)
+    if stated == found:
+        return manifest
+    if (
+        allow_pruned
+        and isinstance(stated, dict)
+        and all(stated.get(name) == digest for name, digest in found.items())
+        and all(prunable(name) for name in stated.keys() - found.keys())
+    ):
+        return manifest
+    raise RunDirError(f"{path.name}: its files differ from its manifest")
 
 
 @contextmanager

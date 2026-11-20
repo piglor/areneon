@@ -41,11 +41,21 @@ def _members(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return held
 
 
-def verified_manifests(run_dir: Path, newest: layout.Committed) -> list[dict[str, Any]]:
-    """Every committed generation's manifest, each checked against its files (once per export)."""
+def verified_manifests(
+    run_dir: Path, newest: layout.Committed, *, allow_pruned: bool = False
+) -> list[dict[str, Any]]:
+    """Every committed generation's manifest, each checked against its files (once per export).
+
+    ``allow_pruned`` (read-only evaluation only) lets a generation older than the newest lack its
+    bulk files (``layout.prunable``); the newest is always verified whole.
+    """
     try:
         return [
-            layout.verify_generation(layout.generation_dir(run_dir, g), g)
+            layout.verify_generation(
+                layout.generation_dir(run_dir, g),
+                g,
+                allow_pruned=allow_pruned and g < newest.generation,
+            )
             for g in range(newest.generation + 1)
         ]
     except (layout.RunDirError, OSError) as exc:
