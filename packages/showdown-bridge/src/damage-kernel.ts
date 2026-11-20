@@ -14,8 +14,9 @@
 // Integers only: every value is an integer and every division an exact integer division (`div`). A batch is decoded into
 // struct-of-arrays columns (`Int32Array`) and the 32 rolls of every query are computed in one loop over them (`computeBatch`).
 //
-// What KERNEL_FORMAT 2 covers, abstaining on everything else (format 1's fresh corpus found two classes it got wrong: an
-// after-move hook that draws, and a switch-in terrain refusing a declared status; both now abstain):
+// What KERNEL_FORMAT 3 covers, abstaining on everything else. Format 1's fresh corpus found two classes it got wrong (an
+// after-move hook that draws; a switch-in terrain refusing a declared status), now abstained; format 3 takes every condition's
+// ids and values from the effects record, models a weather's direct stat modify, and makes `onUpdate` blocking:
 // - attacker and defender: the set's species forme (a Mega or battle-only forme as a set's own species is abstained on), or the
 //   Mega forme its stone makes when the query declares a Mega Evolution (its first ability then); Champions Stat Point stats;
 //   absolute stages; declared HP (at most the maximum); a declared status the engine knows;
@@ -27,8 +28,9 @@
 //   move is answered `unsupported` (`query_kind`), as the probe answers it;
 // - type immunity (Ground by groundedness, the chart's immune cells), absorbing and flag immunities, Psychic Terrain against a
 //   priority move: every roll 0;
-// - rain, sun, sand and snow (unless an ability in play suppresses weather), the four terrains, Reflect, Light Screen and Aurora
-//   Veil on the defender's side, Trick Room and Tailwind (no damage effect), burn;
+// - the weathers, terrains and side and field conditions the effects record lists (`conditions`: weather damage modifiers by type,
+//   a weather's direct stat modify, terrain boosts, weakened moves and halved types, the priority block, screens), unless an
+//   ability in play suppresses weather; burn;
 // - a declared history with no volatile, no pending slot condition and facts the engine accepts.
 // Event chains: the handlers an event finds are ordered as the engine orders them (order, priority, then speed, then sub-order);
 // where two Pokemon's handlers tie on order and priority (their speeds decide, or a draw), or two side or field conditions tie,
@@ -39,10 +41,10 @@ import { koBlocked, koCounts } from "./mechanics-ko.ts";
 import type { MechanicsQuery } from "./mechanics-query.ts";
 import type { Outcome } from "./mechanics-result.ts";
 import { type KernelData, type KernelSpecies, STATS, type Stat } from "./damage-kernel-data.ts";
-import type { KernelEffect, KernelEffects } from "./damage-kernel-effects.ts";
+import type { KernelCondition, KernelEffect, KernelEffects } from "./damage-kernel-effects.ts";
 
 /** Bumped whenever the kernel computes anything differently, or covers more (its admission starts again). */
-export const KERNEL_FORMAT = 2;
+export const KERNEL_FORMAT = 3;
 
 type DamageQuery = Extract<MechanicsQuery["query"], { kind: "damage" }>;
 type Combatant = DamageQuery["attacker"];
@@ -62,12 +64,6 @@ export class KernelAbstain extends Error {
   }
 }
 
-/** The weathers and terrains the kernel implements, by the engine's ids, and the terrain boost's type. */
-const WEATHERS = new Set(["raindance", "sunnyday", "sandstorm", "snowscape"]);
-const TERRAINS = new Set(["electricterrain", "grassyterrain", "psychicterrain", "mistyterrain"]);
-const TERRAIN_TYPE: Record<string, string> = { electricterrain: "Electric", grassyterrain: "Grass", psychicterrain: "Psychic" };
-/** The moves Grassy Terrain halves into a grounded defender (the pinned terrain handler's own list). */
-const GRASSY_WEAKENED = new Set(["earthquake", "bulldoze", "magnitude"]);
 const SINGLE_TARGETS = new Set(["normal", "any", "adjacentFoe", "randomNormal"]);
 const SPREAD_TARGETS = new Set(["allAdjacentFoes", "allAdjacent"]);
 /** Side conditions by the query's names and the engine's ids. */
@@ -83,8 +79,6 @@ const M_ONE = 4096;
 const M_SPREAD = 3072;
 const M_HALF = 2048;
 const M_ONE_AND_HALF = 6144;
-const M_TERRAIN = 5325;
-const M_SCREEN = 2732; // two active Pokemon a side
 const CRIT_MULT = [0, 24, 8, 2, 1];
 /** The sub-order the engine gives a handler with none of its own, by holder kind (`resolvePriority`). */
 const SUB_ORDER = { side: 4, field: 5, ability: 7, item: 8, status: 0 } as const;
@@ -101,6 +95,23 @@ const modify = (value: number, m: number): number => div(value * m + 2047, 4096)
 const chain = (m: number, next: number): number => (m * next + 2048) >> 12;
 
 const toId = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/** One handler of a stat event: a hook that modifies the stat at once (`this.modify`: a weather's), or one that chains (`chainModify`). */
+export type StatHandler = { direct: number } | { chain: number };
+
+/**
+ * A stat event as the engine runs it: each direct hook modifies the value in handler order, the chained modifiers accumulate and
+ * modify the result once at the end (the engine's `runEvent` and `finalModify`), so the two do not commute.
+ */
+export function applyStatHandlers(value: number, list: readonly StatHandler[]): number {
+  let v = value;
+  let m = M_ONE;
+  for (const h of list) {
+    if ("direct" in h) v = modify(v, h.direct);
+    else m = chain(m, h.chain);
+  }
+  return m === M_ONE ? v : modify(v, m);
+}
 
 /** One combatant as the kernel computes with it. */
 interface Fighter {
@@ -360,8 +371,15 @@ export function prepareQuery(ctx: KernelContext, query: DamageQuery, attackerSet
   const { data } = ctx;
   checkHistory(ctx, query, [attackerSet, defenderSet]);
   const { state } = query;
-  if (state.weather !== null && !WEATHERS.has(state.weather)) throw new KernelAbstain(`weather:${state.weather}`, "not_implemented");
-  if (state.terrain !== null && !TERRAINS.has(state.terrain)) throw new KernelAbstain(`terrain:${state.terrain}`, "not_implemented");
+  // Every declared condition must be one the reviewed record implements, of the right kind.
+  const conditionOf = (id: string, kinds: KernelCondition["kind"][], what: string): KernelCondition => {
+    const c = ctx.effects.conditions[id];
+    if (c === undefined || !kinds.includes(c.kind)) throw new KernelAbstain(`${what}:${id}`, "not_implemented");
+    return c;
+  };
+  if (state.weather !== null) conditionOf(state.weather, ["weather_damage", "weather_stat"], "weather");
+  if (state.terrain !== null) conditionOf(state.terrain, ["terrain"], "terrain");
+  if (state.trick_room) conditionOf("trickroom", ["no_damage_effect"], "field");
   const a = fighter(ctx, "attacker", attackerSet, query.attacker);
   const d = fighter(ctx, "defender", defenderSet, query.defender);
   const attacker = finish(ctx, a, d);
@@ -379,9 +397,12 @@ export function prepareQuery(ctx: KernelContext, query: DamageQuery, attackerSet
   if (!spread && !SINGLE_TARGETS.has(move.target)) throw new KernelAbstain(`move:${move.id}`, "target");
   if (move.base_power <= 0) throw new KernelAbstain(`move:${move.id}`, "base_power");
   if (move.flags.has("powder")) throw new KernelAbstain(`move:${move.id}`, "powder");
-  if (state.weather === "sunnyday" && move.id === "hydrosteam") throw new KernelAbstain(`move:${move.id}`, "weather_rule");
+  const weatherCondition = state.weather === null ? null : conditionOf(state.weather, ["weather_damage", "weather_stat"], "weather");
+  if (weatherCondition?.kind === "weather_damage" && weatherCondition.exceptions.includes(move.id)) throw new KernelAbstain(`move:${move.id}`, "weather_rule");
+  const terrainCondition = state.terrain === null ? null : (conditionOf(state.terrain, ["terrain"], "terrain") as Extract<KernelCondition, { kind: "terrain" }>);
 
   const sides = state.sides.map((side) => SIDE_IDS.filter(([key]) => side[key]).map(([, id]) => id));
+  for (const id of sides.flat()) conditionOf(id, ["screen", "no_damage_effect"], "side");
   const suppressed = [attacker, defender].some((f) => f.ability_effect?.kind === "suppress_weather");
   const weatherId = suppressed ? null : state.weather;
   const field = [...(state.weather === null ? [] : [state.weather]), ...(state.terrain === null ? [] : [state.terrain]), ...(state.trick_room ? ["trickroom"] : [])];
@@ -409,7 +430,7 @@ export function prepareQuery(ctx: KernelContext, query: DamageQuery, attackerSet
   const defenderAbility = abilityOf(defender);
   if (defenderAbility?.kind === "absorb" && defenderAbility.type === moveType) return blocked(ctx, defender);
   if (defenderAbility?.kind === "flag_immunity" && move.flags.has(defenderAbility.flag)) return blocked(ctx, defender);
-  if (state.terrain === "psychicterrain" && move.priority > 0 && grounded(defender)) return blocked(ctx, defender);
+  if (terrainCondition?.blocks_priority === true && move.priority > 0 && grounded(defender)) return blocked(ctx, defender);
   const ignores = move.ignore_immunity === true || (move.ignore_immunity !== null && move.ignore_immunity.includes(moveType));
   if (!ignores) {
     const immune = moveType === "Ground" ? !grounded(defender) : defender.types.some((t) => data.chart.get(t)?.get(moveType) === 3);
@@ -464,10 +485,11 @@ export function prepareQuery(ctx: KernelContext, query: DamageQuery, attackerSet
     }
     if (broken(h)) continue;
     if (h.holder === "field") {
-      if (TERRAIN_TYPE[h.id] === moveType && grounded(attacker)) bpChain = chain(bpChain, M_TERRAIN);
-      if (h.id === "grassyterrain" && GRASSY_WEAKENED.has(move.id) && grounded(defender)) bpChain = chain(bpChain, M_HALF);
-      if (h.id === "mistyterrain" && moveType === "Dragon" && grounded(defender)) bpChain = chain(bpChain, M_HALF);
-      if (!TERRAINS.has(h.id)) throw new KernelAbstain(`condition:${h.id}`, "BasePower");
+      const c = ctx.effects.conditions[h.id];
+      if (c?.kind !== "terrain") throw new KernelAbstain(`condition:${h.id}`, "BasePower");
+      if (c.boost !== null && c.boost.type === moveType && grounded(attacker)) bpChain = chain(bpChain, c.boost.modifier);
+      if (c.weakens !== null && c.weakens.moves.includes(move.id) && grounded(defender)) bpChain = chain(bpChain, c.weakens.modifier);
+      if (c.halves !== null && c.halves.type === moveType && grounded(defender)) bpChain = chain(bpChain, c.halves.modifier);
       continue;
     }
     const e = h.holder === "attacker" ? effectOf(attacker, h) : null;
@@ -511,17 +533,19 @@ export function prepareQuery(ctx: KernelContext, query: DamageQuery, attackerSet
     } else if (e?.kind === "no_damage_effect") continue;
     else throw new KernelAbstain(`${h.kind}:${h.id}`, atkEvent);
   }
-  let defChain = M_ONE;
+  // The defending stat's handlers: a weather's stat hook modifies the stat at once (`modify`), the others chain to the end.
+  const defHandlers: StatHandler[] = [];
   for (const h of order[defEvent] as Handler[]) {
     if (broken(h)) continue;
     if (h.holder === "field") {
-      if (h.id !== "sandstorm" && h.id !== "snowscape") throw new KernelAbstain(`condition:${h.id}`, defEvent);
-      if (h.id === weatherId && ((h.id === "sandstorm" && defStat === "spd" && defender.types.includes("Rock")) || (h.id === "snowscape" && defStat === "def" && defender.types.includes("Ice")))) defChain = chain(defChain, M_ONE_AND_HALF);
+      const c = ctx.effects.conditions[h.id];
+      if (c?.kind !== "weather_stat") throw new KernelAbstain(`condition:${h.id}`, defEvent);
+      if (h.id === weatherId && c.stat === defStat && defender.types.includes(c.type)) defHandlers.push({ direct: c.modifier });
       continue;
     }
     const e = h.holder === "defender" ? effectOf(defender, h) : null;
     if (e?.kind === "defense_multiplier" && e.stat === defStat) {
-      if (e.terrain === undefined || e.terrain === state.terrain) defChain = chain(defChain, e.modifier);
+      if (e.terrain === undefined || e.terrain === state.terrain) defHandlers.push({ chain: e.modifier });
     } else throw new KernelAbstain(`${h.kind}:${h.id}`, defEvent);
   }
 
@@ -532,14 +556,14 @@ export function prepareQuery(ctx: KernelContext, query: DamageQuery, attackerSet
     if (crit && atkBoost < 0) atkBoost = 0;
     if ((crit && defBoost > 0) || move.ignore_defensive) defBoost = 0;
     const attack = modify(staged(offensive.stats[STATS.indexOf(atkStat as Stat)] as number, atkBoost), atkChain);
-    const defense = modify(staged(defender.stats[STATS.indexOf(defStat as Stat)] as number, defBoost), defChain);
+    const defense = applyStatHandlers(staged(defender.stats[STATS.indexOf(defStat as Stat)] as number, defBoost), defHandlers);
     const factor = div(2 * level, 5) + 2;
     return div(div(factor * basePower * attack, defense), 50);
   };
 
-  let weather = M_ONE;
-  if (weatherId === "sunnyday") weather = moveType === "Fire" ? M_ONE_AND_HALF : moveType === "Water" ? M_HALF : M_ONE;
-  if (weatherId === "raindance") weather = moveType === "Water" ? M_ONE_AND_HALF : moveType === "Fire" ? M_HALF : M_ONE;
+  // WeatherModifyDamage: the effective weather's modifier for the move's type (none while an ability in play suppresses weather).
+  const effectiveWeather = weatherId === null ? null : ctx.effects.conditions[weatherId];
+  const weather = effectiveWeather?.kind === "weather_damage" ? (effectiveWeather.types.find((t) => t.type === moveType)?.modifier ?? M_ONE) : M_ONE;
 
   let stab = attacker.types.includes(moveType) ? M_ONE_AND_HALF : M_ONE;
   for (const h of order.ModifySTAB as Handler[]) {
@@ -561,9 +585,13 @@ export function prepareQuery(ctx: KernelContext, query: DamageQuery, attackerSet
     for (const h of order.ModifyDamage as Handler[]) {
       if (broken(h)) continue;
       if (h.holder === "side0" || h.holder === "side1") {
-        const applies = h.id === "reflect" ? physical : h.id === "lightscreen" ? !physical : h.id === "auroraveil" ? !sides[1]?.includes(physical ? "reflect" : "lightscreen") : null;
-        if (applies === null) throw new KernelAbstain(`condition:${h.id}`, "ModifyDamage");
-        if (applies && h.holder === "side1" && !crit && !infiltrates) m = chain(m, M_SCREEN);
+        const c = ctx.effects.conditions[h.id];
+        if (c?.kind !== "screen") throw new KernelAbstain(`condition:${h.id}`, "ModifyDamage");
+        const category = physical ? "Physical" : "Special";
+        // A screen of both categories (Aurora Veil) yields to a screen of the move's own category on the same side.
+        const yields = c.yields_to.some((y) => sides[1]?.includes(y) && (ctx.effects.conditions[y] as { category?: string } | undefined)?.category === category);
+        const applies = c.category === null ? !yields : c.category === category;
+        if (applies && h.holder === "side1" && !crit && !infiltrates) m = chain(m, c.modifier);
         continue;
       }
       const f = h.holder === "attacker" ? attacker : h.holder === "defender" ? defender : null;

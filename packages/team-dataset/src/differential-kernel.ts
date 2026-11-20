@@ -10,6 +10,11 @@
 // - The fresh corpus: seeded battles on the generator pool, drawn from the kernel version's fresh seed (ADR-030 rule 7), so it
 //   cannot exist before the kernel's commit is frozen; battles are played until the corpus holds `MIN_FRESH_ITEMS` distinct
 //   covered queries.
+// - The targeted corpus (`fixtures/backends/<format>/damage-kernel-targeted.json`): every case a review, a fresh corpus or a shadow
+//   check found, as a reviewed query spec with its reason; it must be fully equal or abstained before any version is admitted.
+// - The interaction sweep: one query for every reachable (move with an unusual stat or event rule, or one ordinary move per type)
+//   x (every ability, item and condition of the effects record that acts on that move's events), derived from the record and the
+//   engine's data, never by hand; the rare pairs a random draw misses.
 // Evaluation code never imports this module (a source scan in its test).
 import {
   addBatch,
@@ -29,6 +34,13 @@ import {
 import {
   abstained,
   type Engine,
+  exportPaste,
+  goldenTeamVocabulary,
+  kernelData,
+  type KernelEffects,
+  loadKernelEffects,
+  readMechanicsQuery,
+  type PokemonSet,
   type GenerationTeamPool,
   type KernelBackend,
   kernelBackend,
@@ -41,6 +53,8 @@ import {
   type RandomBattleFile,
   type Settled,
 } from "@areneon/showdown-bridge";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { collectQueries, corpusBattles, corpusHash, type HarnessConfigs, harnessConfigs, mechanicsHarnessLevel, remembering } from "./differential-mechanics.ts";
 import { playSweepBattle } from "./reducer-sweep.ts";
 
@@ -151,4 +165,215 @@ export function kernelLedger(h: KernelHarness, runs: readonly KernelCorpusRun[])
     showdown_commit: h.engine.commit,
     tallies: runs.map((r) => r.tally),
   });
+}
+
+// ---------------------------------------------------------------- inputs, the committed ledger and the isolation scan
+
+/** Every file whose bytes can change a kernel answer: the kernel, the probe envelope it shares, the KO counts, its data. */
+export const KERNEL_INPUTS: readonly string[] = [
+  "config/backends/gen9championsvgc2026regmc.damage-kernel.effects.json",
+  "fixtures/showdown/gen9championsvgc2026regmc/mechanics-inventory.json",
+  "packages/showdown-bridge/src/damage-kernel-backend.ts",
+  "packages/showdown-bridge/src/damage-kernel-data.ts",
+  "packages/showdown-bridge/src/damage-kernel-effects.ts",
+  "packages/showdown-bridge/src/damage-kernel.ts",
+  "packages/showdown-bridge/src/mechanics-ko.ts",
+  "packages/showdown-bridge/src/mechanics-probe.ts",
+];
+
+/** The committed ledger of the kernel version (its lines form, `admissionLines`) and the hash it must have. */
+export const KERNEL_LEDGER = "config/backends/gen9championsvgc2026regmc.damage-kernel.admission.jsonl";
+export const KERNEL_ADMISSION_HASH = "PENDING";
+
+/** The names the bridge's index exports from the kernel's modules (read from the index, so a new export is scanned too). */
+export function kernelExportNames(indexSource: string): string[] {
+  const names = new Set<string>();
+  for (const m of indexSource.matchAll(/export\s*\{([^}]*)\}\s*from\s*"\.\/damage-kernel[a-z-]*\.ts"/g)) {
+    for (const part of (m[1] as string).split(",")) {
+      const name = part.replace(/^\s*type\s+/, "").trim().split(/\s+as\s+/)[0]?.trim();
+      if (name) names.add(name);
+    }
+  }
+  return [...names].sort();
+}
+
+/** Whether a source imports the kernel: one of its modules (or the composition root) by path, or one of its names from the index. */
+export function importsKernel(source: string, names: readonly string[]): boolean {
+  // A module specifier (static import or re-export, dynamic import, require) that names a kernel module or this composition root.
+  if (/(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*)["'][^"']*(damage-kernel|differential-kernel)[^"']*["']/.test(source)) return true;
+  for (const m of source.matchAll(/import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*["']@areneon\/showdown-bridge["']/g)) {
+    const imported = (m[1] as string).split(",").map((p) => p.replace(/^\s*type\s+/, "").trim().split(/\s+as\s+/)[0]?.trim());
+    if (imported.some((n) => n !== undefined && names.includes(n))) return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------- the targeted corpus and the interaction sweep
+
+/** One Pokemon of a query spec, in engine ids. */
+export interface SideSpec {
+  species: string;
+  ability: string;
+  item?: string;
+  moves: string[];
+  nature?: string;
+  status?: string | null;
+  hp?: number | null;
+  mega?: boolean;
+  boosts?: Partial<Record<"atk" | "def" | "spa" | "spd" | "spe", number>>;
+}
+export interface QuerySpec {
+  id: string;
+  reason: string;
+  attacker: SideSpec;
+  defender: SideSpec;
+  move: string;
+  state: { weather?: string | null; terrain?: string | null; trick_room?: boolean; sides?: Partial<Record<"aurora_veil" | "light_screen" | "reflect" | "tailwind", boolean>>[] };
+}
+
+export const TARGETED_FILE = fileURLToPath(new URL("../../../fixtures/backends/gen9championsvgc2026regmc/damage-kernel-targeted.json", import.meta.url));
+
+interface NameDex {
+  species: { get(id: string): { name: string } };
+  moves: { get(id: string): { name: string } };
+  abilities: { get(id: string): { name: string } };
+  items: { get(id: string): { name: string } };
+}
+
+/** The parsed query of a spec: the sets written by the engine's own export (level 50, 11 Stat Points each, Hardy unless given). */
+export function specQuery(engine: Engine, spec: QuerySpec, formatId: string): ParsedMechanicsQuery {
+  const dex = (engine.sim.Dex as unknown as { mod(m: string): NameDex }).mod(engine.sim.Dex.formats.get(formatId).mod);
+  const paste = (s: SideSpec): string =>
+    exportPaste(engine, [
+      {
+        name: "",
+        species: dex.species.get(s.species).name,
+        item: s.item === undefined ? "" : dex.items.get(s.item).name,
+        ability: dex.abilities.get(s.ability).name,
+        moves: s.moves.map((m) => dex.moves.get(m).name),
+        nature: s.nature ?? "Hardy",
+        gender: "",
+        evs: { hp: 11, atk: 11, def: 11, spa: 11, spd: 11, spe: 11 },
+        ivs: { hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31 },
+        level: 50,
+      } as PokemonSet,
+    ]);
+  const zero = { atk: 0, def: 0, spa: 0, spd: 0, spe: 0 };
+  const combatant = (s: SideSpec) => ({ set: paste(s), boosts: { ...zero, ...s.boosts }, status: s.status ?? null, hp: s.hp ?? null, mega: s.mega ?? false });
+  const side = (v: Partial<Record<string, boolean>> = {}) => ({ aurora_veil: false, light_screen: false, reflect: false, tailwind: false, ...v });
+  return readMechanicsQuery({
+    schema_version: 1,
+    data_class: "synthetic",
+    format_id: formatId,
+    query: {
+      kind: "damage",
+      attacker: combatant(spec.attacker),
+      defender: combatant(spec.defender),
+      move: spec.move,
+      state: { weather: spec.state.weather ?? null, terrain: spec.state.terrain ?? null, trick_room: spec.state.trick_room ?? false, sides: [side(spec.state.sides?.[0]), side(spec.state.sides?.[1])] },
+    },
+  });
+}
+
+/** The committed targeted specs. */
+export const targetedSpecs = (): QuerySpec[] => (JSON.parse(readFileSync(TARGETED_FILE, "utf8")) as { entries: QuerySpec[] }).entries;
+
+interface Roster {
+  id: string;
+  abilities: string[];
+  moves: string[];
+  required_item?: string;
+}
+
+/**
+ * The interaction sweep: for every move whose data gives it an unusual stat or event rule (a stat override, Foul Play's target,
+ * ignored defence, a set or raised crit, a spread target, priority, ignored immunity) and one ordinary damaging move per type,
+ * every ability, item and condition of the effects record, on the side it acts from: a holder of the ability or item that knows
+ * the move (attacker side) or a holder as the defender against a user of the move; a condition in the declared state, with a
+ * defender of the condition's type for a weather's stat rule. Only combinations the roster can hold (the validator decides at the
+ * probe); each spec once.
+ */
+export function interactionSweep(engine: Engine, formatId: string, effects: KernelEffects = loadKernelEffects(formatId, engine.commit)): QuerySpec[] {
+  const data = kernelData(engine, formatId);
+  const roster = (goldenTeamVocabulary().roster as Roster[]).filter((r) => r.required_item === undefined);
+  const inertAbility = (r: Roster): string | undefined => r.abilities.find((a) => (data.abilityBlockers(a, false) ?? ["x"]).length === 0);
+  const damaging = (id: string): boolean => {
+    const m = data.move(id);
+    return m !== null && m.category !== "Status" && !m.outside_scope && m.base_power > 0;
+  };
+  const learnable = [...new Set(roster.flatMap((r) => r.moves))].filter(damaging).sort();
+  const unusual = learnable.filter((id) => {
+    const m = data.move(id);
+    return m !== null && (m.offensive_stat !== null || m.offensive_target || m.defensive_stat !== null || m.ignore_defensive || m.will_crit || m.crit_ratio > 1 || m.target === "allAdjacentFoes" || m.target === "allAdjacent" || m.priority > 0 || m.ignore_immunity !== null);
+  });
+  const perType = new Map<string, string>();
+  for (const id of learnable) {
+    const m = data.move(id);
+    if (m !== null && m.blockers.length === 0 && !perType.has(m.type)) perType.set(m.type, id);
+  }
+  const moves = [...new Set([...unusual, ...perType.values()])].sort();
+  const userOf = (move: string, ability?: string): SideSpec | null => {
+    const r = roster.find((x) => x.moves.includes(move) && (ability === undefined ? inertAbility(x) !== undefined : x.abilities.includes(ability)));
+    return r === undefined ? null : { species: r.id, ability: ability ?? (inertAbility(r) as string), moves: [move] };
+  };
+  const holderOf = (ability?: string, type?: string): SideSpec | null => {
+    const r = roster.find((x) => (ability === undefined ? inertAbility(x) !== undefined : x.abilities.includes(ability)) && (type === undefined || (data.species(x.id)?.types ?? []).includes(type)) && x.moves.some(damaging));
+    return r === undefined ? null : { species: r.id, ability: ability ?? (inertAbility(r) as string), moves: [r.moves.find(damaging) as string] };
+  };
+  const plainDefender = holderOf();
+  const out = new Map<string, QuerySpec>();
+  const add = (id: string, attacker: SideSpec | null, defender: SideSpec | null, move: string, state: QuerySpec["state"] = {}): void => {
+    if (attacker === null || defender === null || out.has(id)) return;
+    out.set(id, { id, reason: "interaction sweep", attacker, defender, move, state });
+  };
+  for (const move of moves) {
+    for (const ability of Object.keys(effects.abilities)) {
+      add(`a:${ability}:${move}`, userOf(move, ability), plainDefender, move);
+      add(`d:${ability}:${move}`, userOf(move), holderOf(ability), move);
+    }
+    for (const item of Object.keys(effects.items)) {
+      const user = userOf(move);
+      add(`ai:${item}:${move}`, user === null ? null : { ...user, item }, plainDefender, move);
+      add(`di:${item}:${move}`, userOf(move), plainDefender === null ? null : { ...plainDefender, item }, move);
+    }
+    for (const [id, c] of Object.entries(effects.conditions)) {
+      const state: QuerySpec["state"] =
+        c.kind === "weather_damage" || c.kind === "weather_stat"
+          ? { weather: id }
+          : c.kind === "terrain"
+            ? { terrain: id }
+            : id === "trickroom"
+              ? { trick_room: true }
+              : { sides: [{}, { [id === "lightscreen" ? "light_screen" : id === "auroraveil" ? "aurora_veil" : id]: true }] };
+      add(`c:${id}:${move}`, userOf(move), c.kind === "weather_stat" ? holderOf(undefined, c.type) : plainDefender, move, state);
+    }
+  }
+  return [...out.values()];
+}
+
+/** A corpus of query specs through the kernel: each query distinct, abstentions counted, the covered ones compared with the oracle. */
+export function kernelSpecs(h: KernelHarness, id: string, specs: readonly QuerySpec[]): KernelCorpusRun {
+  const source = sha256Jcs(specs as never);
+  const acc = accumulator({ id, kind: "regression", seed: source, pool: source });
+  const probe = defaultOracle(h)();
+  const covered: ParsedMechanicsQuery[] = [];
+  for (const spec of specs) {
+    const query = specQuery(h.engine, spec, h.configs.oracle.format_id);
+    const key = mechanicsQueryHash(query);
+    if (acc.seen.has(key)) continue;
+    acc.seen.add(key);
+    acc.run.damage_queries += 1;
+    const [settled] = h.kernel.run([query]) as [Settled];
+    if (abstained(settled)) {
+      const entity = (settled as { error: { entity: string } }).error.entity;
+      acc.run.abstained.set(entity, (acc.run.abstained.get(entity) ?? 0) + 1);
+      continue;
+    }
+    covered.push(query);
+  }
+  acc.run.covered = covered.length;
+  for (let first = 0; first < covered.length; first += BATCH) {
+    addBatch(acc.run.tally, compareBatch(h.level, probe as Backend<ParsedMechanicsQuery, MechanicsResult>, h.kernel as Backend<ParsedMechanicsQuery, MechanicsResult>, covered.slice(first, first + BATCH), acc.run.tally.items));
+  }
+  return acc.run;
 }

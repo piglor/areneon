@@ -34,6 +34,7 @@ export {
   withCorpus,
 } from "./admission.ts";
 export type { BackendAdmission, BackendIdentity, LedgerInput, Refusal } from "./admission.ts";
+export { admissionLines, readAdmissionLines } from "./admission-lines.ts";
 export { LEVEL_1_RULE, LEVEL_2_RULE, SHADOW_PURPOSE, ShadowDivergence, shadowCheck, shadowKey, shadowSample, shadowSize } from "./shadow.ts";
 export type { SizeRule } from "./shadow.ts";
 export { EntityError, mechanicsEntities, mechanicsExercised, mechanicsLevel } from "./mechanics-level.ts";

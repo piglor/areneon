@@ -6,14 +6,15 @@
 //    below the level's minimum size; the committed admission ledger (when present) is this pin's and admits only what its fresh
 //    corpus showed.
 // 4. Isolation: no evaluation path imports the kernel.
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { admissionHash, type Backend, freshSeed, MIN_FRESH_ITEMS, readBackendAdmission } from "@areneon/differential";
-import { abstained, KernelAbstain, loadEngine, type MechanicsResult, type ParsedMechanicsQuery, type Settled } from "@areneon/showdown-bridge";
+import { admissionHash, admissionLines, type Backend, freshSeed, MIN_FRESH_ITEMS, readAdmissionLines, readBackendAdmission } from "@areneon/differential";
+import { abstained, goldenTeamVocabulary, KernelAbstain, loadEngine, loadKernelEffects, type MechanicsResult, type ParsedMechanicsQuery, type Settled } from "@areneon/showdown-bridge";
 import { beforeAll, describe, expect, it } from "vitest";
 import { COMMITTED_CORPORA } from "../src/differential-mechanics.ts";
-import { freshBattle, KERNEL_KIND, type KernelHarness, kernelFresh, kernelHarness, kernelLedger, kernelRegression, poolHash } from "../src/differential-kernel.ts";
+import { freshBattle, importsKernel, interactionSweep, kernelSpecs, targetedSpecs, KERNEL_ADMISSION_HASH, KERNEL_INPUTS, KERNEL_KIND, KERNEL_LEDGER, kernelExportNames, type KernelHarness, kernelFresh, kernelHarness, kernelLedger, kernelRegression, poolHash } from "../src/differential-kernel.ts";
 import { datasetPoolDetail } from "../src/loop-pool.ts";
 import { datasetHash, readDataset } from "../src/dataset-reader.ts";
 import { loadFixtureInputs } from "../src/fixtures.ts";
@@ -41,6 +42,40 @@ describe("1. regression: the kernel equals the probe on every query it covers", 
     expect(queries).toBeGreaterThan(1000);
     // Measured share on the committed random corpus is about 60%; this floor catches a kernel that stopped covering.
     expect(covered * 100).toBeGreaterThan(queries * 35);
+  }, 600_000);
+});
+
+describe("1b. the targeted corpus and the interaction sweep: fully equal or abstained", () => {
+  it("every committed targeted case (each with its reason) is equal to the probe or abstained", () => {
+    const specs = targetedSpecs();
+    expect(specs.length).toBeGreaterThan(10);
+    for (const spec of specs) expect(spec.reason.length, spec.id).toBeGreaterThan(20);
+    expect(new Set(specs.map((s) => s.id)).size).toBe(specs.length);
+    const run = kernelSpecs(h, "targeted", specs);
+    expect(run.tally.differences).toEqual([]);
+    expect(run.damage_queries).toBe(specs.length);
+    // The format-1 classes stay abstained.
+    expect(run.abstained.get("ability:magician")).toBe(1);
+    expect(run.abstained.get("ability:electricsurge")).toBe(1);
+    expect(run.abstained.get("move:shellsidearm")).toBe(1);
+  }, 300_000);
+
+  it("the interaction sweep is derived from the record and the engine's data, and a sample of it is fully equal or abstained", () => {
+    const sweep = interactionSweep(engine, "gen9championsvgc2026regmc");
+    expect(sweep.length).toBeGreaterThan(10_000);
+    expect(new Set(sweep.map((s) => s.id)).size).toBe(sweep.length);
+    // Every ability, item and condition of the record appears; the unusual moves are there (Body Press, Foul Play, Psyshock).
+    const effects = loadKernelEffects("gen9championsvgc2026regmc", engine.commit);
+    // An ability only a battle-only forme holds (a Mega's) has no holder a set can name: it cannot be swept.
+    const holdable = new Set(goldenTeamVocabulary().roster.filter((r) => r.required_item === undefined).flatMap((r) => r.abilities));
+    for (const id of Object.keys(effects.abilities)) if (holdable.has(id)) expect(sweep.some((s) => s.id.includes(`:${id}:`)), id).toBe(true);
+    for (const id of Object.keys(effects.items)) expect(sweep.some((s) => s.id.startsWith(`ai:${id}:`)), id).toBe(true);
+    for (const id of Object.keys(effects.conditions)) expect(sweep.some((s) => s.id.startsWith(`c:${id}:`)), id).toBe(true);
+    for (const move of ["bodypress", "foulplay", "psyshock"]) expect(sweep.some((s) => s.move === move), move).toBe(true);
+    // The whole sweep runs in the admission flow; CI runs every 20th spec.
+    const run = kernelSpecs(h, "interaction-sweep", sweep.filter((_, i) => i % 20 === 0));
+    expect(run.tally.differences).toEqual([]);
+    expect(run.covered).toBeGreaterThan(run.damage_queries / 2);
   }, 600_000);
 });
 
@@ -100,23 +135,27 @@ describe("3. the ledger", () => {
     expect(readBackendAdmission(JSON.parse(JSON.stringify(ledger)), { showdown_commit: engine.commit })).toEqual(ledger);
   }, 600_000);
 
-  it("the committed admission ledger is this pin's, read by the reader, with every admitted entity backed by its fresh corpus", () => {
-    const path = fileURLToPath(new URL("../../../config/backends/gen9championsvgc2026regmc.damage-kernel.admission.json", import.meta.url));
-    let text: string;
-    try {
-      text = readFileSync(path, "utf8");
-    } catch {
-      return; // not committed yet
-    }
-    const ledger = readBackendAdmission(JSON.parse(text), { showdown_commit: engine.commit });
-    expect(ledger.backend.kind).toBe(KERNEL_KIND);
-    expect(admissionHash(ledger)).toMatch(/^[0-9a-f]{64}$/);
+  it("the committed admission ledger is this kernel version's, frozen at a commit whose kernel inputs equal this checkout's", () => {
+    // The committed lines form; no silent pass when it is missing (readFileSync throws).
+    const text = readFileSync(fileURLToPath(new URL(`../../../${KERNEL_LEDGER}`, import.meta.url)), "utf8");
+    const ledger = readAdmissionLines(text, { showdown_commit: engine.commit });
+    expect(admissionLines(ledger)).toBe(text); // the committed bytes are the canonical lines
+    expect(admissionHash(ledger)).toBe(KERNEL_ADMISSION_HASH);
+    expect(ledger.backend).toEqual({ kind: KERNEL_KIND, backend_format: h.kernel.backend_format, backend_commit: ledger.backend.backend_commit });
     const fresh = ledger.corpora.find((c) => c.kind === "fresh");
+    expect(fresh?.seed).toBe(freshSeed(ledger.backend));
     expect(fresh?.distinct_items).toBeGreaterThanOrEqual(MIN_FRESH_ITEMS["mechanics-query"]);
-    // The ledger is the current kernel version's, and its fresh corpus found no difference (nothing revoked).
-    expect(ledger.backend.backend_format).toBe(h.kernel.backend_format);
     expect(ledger.revoked).toEqual([]);
     expect(ledger.entities.some((e) => e.admitted)).toBe(true);
+    // Every input that changes a kernel answer is as it was at the frozen commit (the typescript CI job has the full history).
+    const root = fileURLToPath(new URL("../../../", import.meta.url));
+    expect(() => execFileSync("git", ["diff", "--quiet", ledger.backend.backend_commit, "--", ...KERNEL_INPUTS], { cwd: root })).not.toThrow();
+  });
+
+  it("names every input that changes a kernel answer", () => {
+    for (const path of ["packages/showdown-bridge/src/damage-kernel.ts", "packages/showdown-bridge/src/mechanics-probe.ts", "packages/showdown-bridge/src/mechanics-ko.ts", "fixtures/showdown/gen9championsvgc2026regmc/mechanics-inventory.json", "config/backends/gen9championsvgc2026regmc.damage-kernel.effects.json"]) {
+      expect(KERNEL_INPUTS).toContain(path);
+    }
   });
 });
 
@@ -126,19 +165,33 @@ describe("4. isolation: no evaluation path reaches the kernel", () => {
     readdirSync(dir).flatMap((name) => {
       const path = join(dir, name);
       if (name === "node_modules" || name.startsWith(".")) return [];
-      return statSync(path).isDirectory() ? files(path) : /\.(ts|py)$/.test(name) ? [path] : [];
+      return statSync(path).isDirectory() ? files(path) : /\.(ts|py|cjs|js)$/.test(name) ? [path] : [];
     });
-  it("only the kernel's own modules, the bridge index and the differential composition root and its script name it", () => {
-    const allowed = [
-      "packages/showdown-bridge/src/damage-kernel.ts",
-      "packages/showdown-bridge/src/damage-kernel-backend.ts",
-      "packages/showdown-bridge/src/index.ts",
-      "packages/team-dataset/src/differential-kernel.ts",
-      "packages/team-dataset/scripts/differential-kernel-admission.ts",
-    ];
-    const sources = [...["packages"].flatMap((p) => files(join(root, p))).filter((f) => /\/(src|scripts)\//.test(f)), ...files(join(root, "ml")), ...files(join(root, "scripts"))];
-    const naming = sources.filter((f) => /["'][^"']*(damage-kernel|differential-kernel)[^"']*\.ts["']|\bkernelBackend\b|\bKernelAbstain\b/.test(readFileSync(f, "utf8"))).map((f) => f.slice(root.length));
-    expect(naming.sort()).toEqual(allowed.sort());
+  const ALLOWED = [
+    "packages/showdown-bridge/src/damage-kernel-backend.ts",
+    "packages/showdown-bridge/src/damage-kernel.ts",
+    "packages/showdown-bridge/src/damage-kernel-effects.ts",
+    "packages/showdown-bridge/src/index.ts",
+    "packages/team-dataset/scripts/differential-kernel-admission.ts",
+    "packages/team-dataset/src/differential-kernel.ts",
+  ];
+  const sources = (): string[] => [...files(join(root, "packages")).filter((f) => /\/(src|scripts|web)\//.test(f)), ...files(join(root, "ml")), ...files(join(root, "scripts"))];
+  it("only the kernel's modules, the bridge index and the differential composition root and its script import it", () => {
+    const names = kernelExportNames(readFileSync(join(root, "packages/showdown-bridge/src/index.ts"), "utf8"));
+    expect(names).toEqual(expect.arrayContaining(["prepareQuery", "rollOutcomes", "computeBatch", "kernelData", "loadKernelEffects", "abstained", "kernelBackend", "KernelAbstain"]));
+    const found = sources().filter((f) => importsKernel(readFileSync(f, "utf8"), names)).map((f) => f.slice(root.length));
+    expect(found.sort()).toEqual([...ALLOWED].sort());
+  });
+  it("negative control: a planted import, by module or by name through the package index, is flagged", () => {
+    const names = kernelExportNames(readFileSync(join(root, "packages/showdown-bridge/src/index.ts"), "utf8"));
+    expect(importsKernel('import { computeBatch } from "@areneon/showdown-bridge";', names)).toBe(true);
+    expect(importsKernel('import {\n  loadEngine,\n  kernelData as d,\n} from "@areneon/showdown-bridge";', names)).toBe(true);
+    expect(importsKernel('import { x } from "../src/damage-kernel-data.ts";', names)).toBe(true);
+    expect(importsKernel('const m = await import("@areneon/team-dataset/src/differential-kernel.ts");', names)).toBe(true);
+    expect(importsKernel('export { a } from "./damage-kernel.ts";', names)).toBe(true);
+    expect(importsKernel('const m = require("../src/damage-kernel-backend.ts");', names)).toBe(true);
+    expect(importsKernel('import { loadEngine } from "@areneon/showdown-bridge";', names)).toBe(false);
+    expect(importsKernel('const kind = "damage-kernel";', names)).toBe(false);
   });
   it("its abstention is a typed refusal the router can count", () => {
     const error = new KernelAbstain("ability:x", "hook");

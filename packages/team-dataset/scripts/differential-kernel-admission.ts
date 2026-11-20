@@ -6,7 +6,7 @@
 //   node packages/team-dataset/scripts/differential-kernel-admission.ts fresh --commit SHA --shard K/S --out SHARD.jsonl [--size N]
 //       one shard of the fresh corpus: battles K, K+S, ... of the kernel version's fresh draw on the generator pool, each
 //       distinct covered damage query with the probe's answer (the shard stops past N/S covered queries).
-//   node packages/team-dataset/scripts/differential-kernel-admission.ts ledger --commit SHA --shards A.jsonl,B.jsonl [--size N] --out LEDGER.json --report REPORT.json
+//   node packages/team-dataset/scripts/differential-kernel-admission.ts ledger --commit SHA --shards A.jsonl,B.jsonl [--size N] [--out LEDGER.jsonl] --report REPORT.json
 //       the fresh corpus from the shards in battle order (its first N distinct covered queries, from battles every shard
 //       played), compared kernel against the recorded probe answers; plus the committed corpora as regression corpora; writes
 //       the BackendAdmission ledger and a counts report.
@@ -15,16 +15,15 @@
 import { execFileSync } from "node:child_process";
 import { closeSync, openSync, readFileSync, writeFileSync, writeSync } from "node:fs";
 import { performance } from "node:perf_hooks";
-import { addBatch, admissionHash, type Backend, compareBatch, freshCorpusId, freshSeed, newTally } from "@areneon/differential";
+import { addBatch, admissionHash, admissionLines, type Backend, compareBatch, freshCorpusId, freshSeed, newTally } from "@areneon/differential";
 import { abstained, jcs, type Json, loadEngine, type MechanicsResult, mechanicsQueryHash, type ParsedMechanicsQuery, probeBackend, type Settled } from "@areneon/showdown-bridge";
 import { collectQueries, COMMITTED_CORPORA, remembering } from "../src/differential-mechanics.ts";
-import { freshBattle, kernelHarness, kernelLedger, kernelRegression, poolHash } from "../src/differential-kernel.ts";
+import { freshBattle, interactionSweep, KERNEL_INPUTS, KERNEL_LEDGER, kernelHarness, kernelLedger, kernelRegression, kernelSpecs, poolHash, targetedSpecs } from "../src/differential-kernel.ts";
 import { datasetHash, readDataset } from "../src/dataset-reader.ts";
 import { loadFixtureInputs } from "../src/fixtures.ts";
 import { datasetPoolDetail } from "../src/loop-pool.ts";
 
 const FORMAT = "gen9championsvgc2026regmc";
-const KERNEL_FILES = ["packages/showdown-bridge/src/damage-kernel.ts", "packages/showdown-bridge/src/damage-kernel-data.ts", "packages/showdown-bridge/src/damage-kernel-effects.ts", "packages/showdown-bridge/src/damage-kernel-backend.ts", "config/backends/gen9championsvgc2026regmc.damage-kernel.effects.json"];
 const args = process.argv.slice(2);
 const mode = args[0];
 const flag = (name: string, fallback?: string): string => {
@@ -41,7 +40,7 @@ const engine = loadEngine();
 /** The kernel's code must be the frozen commit's: the fresh corpus belongs to that version alone (ADR-030 rule 7). */
 function frozen(commit: string): string {
   if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error("--commit is a 40-hex commit");
-  execFileSync("git", ["diff", "--quiet", commit, "--", ...KERNEL_FILES]);
+  execFileSync("git", ["diff", "--quiet", commit, "--", ...KERNEL_INPUTS]);
   return commit;
 }
 
@@ -127,14 +126,21 @@ if (mode === "regression") {
   const recorded: Backend<ParsedMechanicsQuery, MechanicsResult> = { id: "showdown-probe-recorded", backend_format: 2, backend_commit: engine.commit, run: (batch) => batch.map((q) => answers.get(mechanicsQueryHash(q)) as Settled) as never };
   const tally = newTally({ id: freshCorpusId(h.kernel), kind: "fresh", seed: freshSeed(h.kernel), pool: poolHash(pool) });
   for (let first = 0; first < items.length; first += 256) addBatch(tally, compareBatch(h.level, recorded, h.kernel as Backend<ParsedMechanicsQuery, MechanicsResult>, items.slice(first, first + 256), first));
-  const regressions = COMMITTED_CORPORA.map((c) => kernelRegression(h, c));
+  // The targeted corpus (every case a review, a fresh corpus or a shadow check found) and the interaction sweep are regression
+  // corpora that must be fully equal or abstained: a difference there refuses to write a ledger at all.
+  const targeted = kernelSpecs(h, "targeted", targetedSpecs());
+  const sweep = kernelSpecs(h, "interaction-sweep", interactionSweep(engine, FORMAT));
+  for (const run of [targeted, sweep]) if (run.tally.differences.length > 0) throw new Error(`${run.tally.spec.id}: ${run.tally.differences.length} differences; add the cases to the targeted corpus and fix the kernel`);
+  const regressions = [...COMMITTED_CORPORA.map((c) => kernelRegression(h, c)), targeted, sweep];
   const ledger = kernelLedger(h, [{ tally, damage_queries: damage, covered: items.length, abstained: new Map(), battles }, ...regressions]);
-  writeFileSync(flag("out"), `${JSON.stringify(ledger, null, 2)}\n`);
+  // The committed bytes: the lines form (`admissionLines`), canonical, one entity, pair or revocation per line.
+  writeFileSync(flag("out", KERNEL_LEDGER), admissionLines(ledger));
   const admitted = ledger.entities.filter((e) => e.admitted);
   const report = {
     admission_hash: admissionHash(ledger),
     fresh: { battles, damage_queries: damage, covered: items.length, differences: tally.differences.length, count_mismatches: tally.count_mismatches },
     regression: Object.fromEntries(regressions.map((r) => [r.tally.spec.id, { damage_queries: r.damage_queries, covered: r.covered, differences: r.tally.differences.length }])),
+    admission_inputs: KERNEL_INPUTS,
     entities: { listed: ledger.entities.length, admitted: admitted.length, by_kind: Object.fromEntries([...new Set(admitted.map((e) => e.id.split(":")[0] as string))].map((k) => [k, admitted.filter((e) => e.id.startsWith(`${k}:`)).length])) },
     pairs: { listed: ledger.pairs.length, admitted: ledger.pairs.filter((p) => p.admitted).length },
     revoked: ledger.revoked.length,

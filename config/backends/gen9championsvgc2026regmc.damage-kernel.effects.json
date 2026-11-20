@@ -39,10 +39,16 @@
       "kind": "suppress_weather"
     },
     "corrosion": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "sim_literal"
+      ]
     },
     "damp": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onAnyTryMove"
+      ]
     },
     "dazzling": {
       "kind": "priority_block"
@@ -54,10 +60,6 @@
     "filter": {
       "kind": "super_effective_taken",
       "modifier": 3072
-    },
-    "flashfire": {
-      "kind": "absorb",
-      "type": "Fire"
     },
     "furcoat": {
       "kind": "defense_multiplier",
@@ -79,7 +81,10 @@
       ]
     },
     "goodasgold": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onTryHit"
+      ]
     },
     "grasspelt": {
       "kind": "defense_multiplier",
@@ -91,7 +96,10 @@
       "kind": "guts"
     },
     "harvest": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "sim_literal"
+      ]
     },
     "hugepower": {
       "kind": "attack_multiplier",
@@ -107,7 +115,10 @@
       "modifier": 4915
     },
     "keeneye": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onModifyMove"
+      ]
     },
     "levitate": {
       "kind": "ground_immunity"
@@ -117,7 +128,11 @@
       "type": "Electric"
     },
     "magicbounce": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onAllyTryHitSide",
+        "onTryHit"
+      ]
     },
     "megalauncher": {
       "kind": "base_power_flag",
@@ -125,7 +140,10 @@
       "modifier": 6144
     },
     "minus": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onModifySpA"
+      ]
     },
     "moldbreaker": {
       "kind": "mold_breaker"
@@ -139,20 +157,33 @@
       "modifier": 2048
     },
     "noguard": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onAnyInvulnerability"
+      ]
     },
     "oblivious": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onTryHit",
+        "onUpdate"
+      ]
     },
     "overcoat": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onTryHit"
+      ]
     },
     "overgrow": {
       "kind": "pinch",
       "type": "Grass"
     },
     "pickup": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "sim_literal"
+      ]
     },
     "pixilate": {
       "kind": "ate",
@@ -169,17 +200,27 @@
       ]
     },
     "plus": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onModifySpA"
+      ]
     },
     "prankster": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "sim_literal"
+      ]
     },
     "prismarmor": {
       "kind": "super_effective_taken",
       "modifier": 3072
     },
     "propellertail": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onModifyMove",
+        "sim_literal"
+      ]
     },
     "purepower": {
       "kind": "attack_multiplier",
@@ -224,7 +265,10 @@
       "kind": "no_crit"
     },
     "skilllink": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onModifyMove"
+      ]
     },
     "sniper": {
       "kind": "crit_damage",
@@ -245,7 +289,11 @@
       "flag": "sound"
     },
     "stalwart": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onModifyMove",
+        "sim_literal"
+      ]
     },
     "stormdrain": {
       "kind": "absorb",
@@ -266,7 +314,10 @@
       "modifier": 6144
     },
     "telepathy": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onTryHit"
+      ]
     },
     "teravolt": {
       "kind": "mold_breaker"
@@ -292,7 +343,10 @@
       "kind": "mold_breaker"
     },
     "unburden": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "condition.onModifySpe"
+      ]
     },
     "unnerve": {
       "kind": "unnerve"
@@ -310,8 +364,138 @@
       "type": "Fire"
     }
   },
+  "conditions": {
+    "auroraveil": {
+      "kind": "screen",
+      "category": null,
+      "yields_to": [
+        "lightscreen",
+        "reflect"
+      ],
+      "modifier": 2732
+    },
+    "electricterrain": {
+      "kind": "terrain",
+      "boost": {
+        "type": "Electric",
+        "modifier": 5325
+      },
+      "weakens": null,
+      "halves": null,
+      "blocks_priority": false
+    },
+    "grassyterrain": {
+      "kind": "terrain",
+      "boost": {
+        "type": "Grass",
+        "modifier": 5325
+      },
+      "weakens": {
+        "moves": [
+          "bulldoze",
+          "earthquake",
+          "magnitude"
+        ],
+        "modifier": 2048
+      },
+      "halves": null,
+      "blocks_priority": false
+    },
+    "lightscreen": {
+      "kind": "screen",
+      "category": "Special",
+      "yields_to": [],
+      "modifier": 2732
+    },
+    "mistyterrain": {
+      "kind": "terrain",
+      "boost": null,
+      "weakens": null,
+      "halves": {
+        "type": "Dragon",
+        "modifier": 2048
+      },
+      "blocks_priority": false
+    },
+    "psychicterrain": {
+      "kind": "terrain",
+      "boost": {
+        "type": "Psychic",
+        "modifier": 5325
+      },
+      "weakens": null,
+      "halves": null,
+      "blocks_priority": true
+    },
+    "raindance": {
+      "kind": "weather_damage",
+      "types": [
+        {
+          "type": "Fire",
+          "modifier": 2048
+        },
+        {
+          "type": "Water",
+          "modifier": 6144
+        }
+      ],
+      "exceptions": []
+    },
+    "reflect": {
+      "kind": "screen",
+      "category": "Physical",
+      "yields_to": [],
+      "modifier": 2732
+    },
+    "sandstorm": {
+      "kind": "weather_stat",
+      "stat": "spd",
+      "type": "Rock",
+      "modifier": 6144
+    },
+    "snowscape": {
+      "kind": "weather_stat",
+      "stat": "def",
+      "type": "Ice",
+      "modifier": 6144
+    },
+    "sunnyday": {
+      "kind": "weather_damage",
+      "types": [
+        {
+          "type": "Fire",
+          "modifier": 6144
+        },
+        {
+          "type": "Water",
+          "modifier": 2048
+        }
+      ],
+      "exceptions": [
+        "hydrosteam"
+      ]
+    },
+    "tailwind": {
+      "kind": "no_damage_effect",
+      "hides": [
+        "durationCallback",
+        "onModifySpe",
+        "onSideEnd",
+        "onSideStart"
+      ]
+    },
+    "trickroom": {
+      "kind": "no_damage_effect",
+      "hides": [
+        "durationCallback",
+        "onFieldEnd",
+        "onFieldRestart",
+        "onFieldStart"
+      ]
+    }
+  },
   "data_class": "synthetic",
-  "description": "The damage kernel's effects (ADR-030 step 3, #1457): which abilities, items and moves whose hooks reach the probe's damage path the kernel implements, and with which parameters (the pinned engine's own values, read from its data handlers). Reviewed data: an id that is not here, and has a hook the kernel's inert list does not hold, makes the kernel abstain. Every entry is held to the engine by the differential harness.",
+  "description": "The damage kernel's effects (ADR-030 step 3, #1457): which abilities, items and moves whose hooks reach the probe's damage path the kernel implements, and the weathers, terrains and side and field conditions it implements, each by a kind and the pinned engine's own values (types, move lists, 4096-based modifiers). Reviewed data: an id that is not here, and has a hook the kernel's inert list does not hold, makes the kernel abstain; each entry's kind must explain the entity's hooks (a no_damage_effect entry names exactly the hooks it hides). Every answer is held to the engine by the differential harness.",
   "format_id": "gen9championsvgc2026regmc",
   "items": {
     "babiriberry": {
@@ -345,7 +529,10 @@
       "super_effective": false
     },
     "choicescarf": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onModifyMove"
+      ]
     },
     "chopleberry": {
       "kind": "resist_berry",
@@ -368,7 +555,10 @@
       "modifier": 4915
     },
     "electricseed": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onTerrainChange"
+      ]
     },
     "expertbelt": {
       "kind": "super_effective_dealt",
@@ -380,7 +570,10 @@
       "modifier": 4915
     },
     "grassyseed": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onTerrainChange"
+      ]
     },
     "habanberry": {
       "kind": "resist_berry",
@@ -422,7 +615,10 @@
       "modifier": 4915
     },
     "mistyseed": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onTerrainChange"
+      ]
     },
     "muscleband": {
       "kind": "category_power",
@@ -460,7 +656,10 @@
       "modifier": 4915
     },
     "psychicseed": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onTerrainChange"
+      ]
     },
     "rindoberry": {
       "kind": "resist_berry",
@@ -522,7 +721,13 @@
       "super_effective": true
     },
     "whiteherb": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onAnyAfterMega",
+        "onAnyAfterMove",
+        "onAnySwitchIn",
+        "onUse"
+      ]
     },
     "wiseglasses": {
       "kind": "category_power",
@@ -537,7 +742,10 @@
   },
   "moves": {
     "blizzard": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onModifyMove"
+      ]
     },
     "bounce": {
       "kind": "fails"
@@ -557,7 +765,10 @@
       "kind": "fails"
     },
     "hurricane": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onModifyMove"
+      ]
     },
     "payback": {
       "kind": "constant_power",
@@ -578,7 +789,10 @@
       "kind": "fails"
     },
     "thunder": {
-      "kind": "no_damage_effect"
+      "kind": "no_damage_effect",
+      "hides": [
+        "onModifyMove"
+      ]
     }
   },
   "schema_version": 1,

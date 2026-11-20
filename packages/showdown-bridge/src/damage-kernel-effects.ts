@@ -1,12 +1,16 @@
-// The damage kernel's effects record (ADR-030 step 3, #1457): reviewed, hashed data naming the abilities and items whose hooks
-// reach the probe's damage path and that the kernel implements, each by an effect kind and the engine's own parameters (a type,
-// a move flag, a 4096-based modifier). The kernel holds the effect KINDS (how each step of `getDamage` applies one); the ids and
-// values are here, never in code. An id that is not listed and has a hook the kernel's inert list does not hold makes the kernel
-// abstain. The record is bound to the pinned engine commit and its format; a pin bump starts it again.
+// The damage kernel's effects record (ADR-030 step 3, #1457): reviewed, hashed data naming the abilities, items and moves whose
+// hooks reach the probe's damage path and that the kernel implements, and the weathers, terrains and side and field conditions it
+// implements, each by an effect kind and the engine's own parameters (a type, a move flag, a move list, a 4096-based modifier).
+// The kernel holds the effect KINDS (the mechanism: how each step of `getDamage` applies one); the ids and values are here, never
+// in code (owner rule R7). An id that is not listed and has a hook the kernel's inert list does not hold makes the kernel abstain;
+// a condition that is not listed is not implemented. `checkKernelEffects` holds each entry to the engine's data: its kind must
+// explain every damage-path hook the entity has (a `no_damage_effect` entry names exactly the hooks it hides), or the record is
+// refused. The record is bound to the pinned engine commit and its format; a pin bump starts it again.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { type Json, jcs } from "./canonical-json.ts";
 import { sha256Hex } from "./rules.ts";
+import type { KernelData } from "./damage-kernel-data.ts";
 
 const TYPE = /^[A-Z][a-z]+$/;
 const ID = /^[a-z0-9]+$/;
@@ -31,7 +35,7 @@ export type KernelEffect =
   | { kind: "absorb"; type: string } // a move of the type into the holder deals nothing
   | { kind: "flag_immunity"; flag: string } // a move with the flag into the holder deals nothing
   | { kind: "infiltrator" } // the holder's moves ignore the target's screens
-  | { kind: "no_damage_effect" } // hooks on the damage path that never change a damaging move's answer
+  | { kind: "no_damage_effect"; hides: string[] } // the hooks (named) it has on the damage path never change a damaging move's answer
   | { kind: "type_boost"; type: string; modifier: number } // base power, a move of the type
   | { kind: "resist_berry"; type: string; super_effective: boolean } // final damage halved into the holder (eaten)
   | { kind: "final_modifier"; modifier: number } // final damage of the holder's move
@@ -48,6 +52,14 @@ export type KernelEffect =
   | { kind: "boost_power"; per: number } // base power plus `per` for each positive stat stage of the user
   | { kind: "fails" }; // a move the probe's move step never lets reach the damage loop (`unsupported`)
 
+/** A weather, terrain or side or field condition the kernel implements, by the engine's id. */
+export type KernelCondition =
+  | { kind: "weather_damage"; types: { type: string; modifier: number }[]; exceptions: string[] } // WeatherModifyDamage of a move of a type (abstain on an exception)
+  | { kind: "weather_stat"; stat: "def" | "spd"; type: string; modifier: number } // the defender's stat of a holder of the type, modified at once (not chained)
+  | { kind: "terrain"; boost: { type: string; modifier: number } | null; weakens: { moves: string[]; modifier: number } | null; halves: { type: string; modifier: number } | null; blocks_priority: boolean }
+  | { kind: "screen"; category: "Physical" | "Special" | null; yields_to: string[]; modifier: number } // the defender's side, not on a crit; `null` category: both
+  | { kind: "no_damage_effect"; hides: string[] }; // Trick Room, Tailwind
+
 export interface KernelEffects {
   schema_version: 1;
   data_class: "synthetic";
@@ -58,10 +70,17 @@ export interface KernelEffects {
   items: Record<string, KernelEffect>;
   /** Moves whose own hooks the kernel implements or knows change no damage answer. */
   moves: Record<string, KernelEffect>;
+  /** The weathers, terrains and side and field conditions the kernel implements. */
+  conditions: Record<string, KernelCondition>;
 }
 
 export class KernelEffectsError extends Error {
   override name = "KernelEffectsError";
+}
+
+/** A record whose entry does not explain its entity's hooks (a defect of the record, not a pin mismatch). */
+export class KernelRecordError extends Error {
+  override name = "KernelRecordError";
 }
 
 const fail = (message: string): never => {
@@ -89,7 +108,7 @@ const FIELDS: Record<KernelEffect["kind"], Record<string, (v: unknown) => boolea
   absorb: { type: (v) => typeof v === "string" && TYPE.test(v) },
   flag_immunity: { flag: (v) => typeof v === "string" && ID.test(v) },
   infiltrator: {},
-  no_damage_effect: {},
+  no_damage_effect: { hides: (v) => Array.isArray(v) && v.length > 0 && v.every((h, i) => typeof h === "string" && (i === 0 || h > (v[i - 1] as string))) },
   type_boost: { type: (v) => typeof v === "string" && TYPE.test(v), modifier: isModifier },
   resist_berry: { type: (v) => typeof v === "string" && TYPE.test(v), super_effective: (v) => typeof v === "boolean" },
   final_modifier: { modifier: isModifier },
@@ -127,15 +146,106 @@ function readTable(value: unknown, kinds: Set<string>, what: string): Record<str
   return out;
 }
 
+const isType = (v: unknown): boolean => typeof v === "string" && TYPE.test(v);
+const isIds = (v: unknown): boolean => Array.isArray(v) && v.every((m, i) => typeof m === "string" && ID.test(m) && (i === 0 || m > (v[i - 1] as string)));
+const typed = (v: unknown): boolean => v !== null && typeof v === "object" && !Array.isArray(v) && Object.keys(v).sort().join() === "modifier,type" && isType((v as { type: unknown }).type) && isModifier((v as { modifier: unknown }).modifier);
+const CONDITION_FIELDS: Record<KernelCondition["kind"], Record<string, (v: unknown) => boolean>> = {
+  weather_damage: { types: (v) => Array.isArray(v) && v.length > 0 && v.every(typed), exceptions: isIds },
+  weather_stat: { stat: (v) => v === "def" || v === "spd", type: isType, modifier: isModifier },
+  terrain: {
+    boost: (v) => v === null || typed(v),
+    weakens: (v) => v === null || (v !== null && typeof v === "object" && Object.keys(v).sort().join() === "modifier,moves" && isIds((v as { moves: unknown }).moves) && isModifier((v as { modifier: unknown }).modifier)),
+    halves: (v) => v === null || typed(v),
+    blocks_priority: (v) => typeof v === "boolean",
+  },
+  screen: { category: (v) => v === null || v === "Physical" || v === "Special", yields_to: isIds, modifier: isModifier },
+  no_damage_effect: FIELDS.no_damage_effect,
+};
+
+function readConditions(value: unknown): Record<string, KernelCondition> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) fail("the conditions table is an object");
+  const ids = Object.keys(value as object);
+  if (ids.some((id, i) => !ID.test(id) || (i > 0 && id <= (ids[i - 1] as string)))) fail("the conditions ids are engine ids, sorted and unique");
+  const out: Record<string, KernelCondition> = {};
+  for (const id of ids) {
+    const c = (value as Record<string, unknown>)[id] as Record<string, unknown>;
+    const fields = c !== null && typeof c === "object" && typeof c.kind === "string" ? CONDITION_FIELDS[c.kind as KernelCondition["kind"]] : undefined;
+    if (fields === undefined) fail("a condition of the record names a kind it may hold");
+    const known = fields as Record<string, (v: unknown) => boolean>;
+    for (const key of Object.keys(c)) if (key !== "kind" && !(key in known)) fail("a condition has a field its kind does not take");
+    for (const [key, check] of Object.entries(known)) if (!check(c[key])) fail("a condition's field does not have its kind's shape");
+    out[id] = c as KernelCondition;
+  }
+  return out;
+}
+
+/** The damage-path hooks each kind explains (an entity's blocking hooks must all be among them; `no_damage_effect` names its own). */
+const EXPLAINS: Record<Exclude<KernelEffect["kind"], "no_damage_effect">, string[]> = {
+  pinch: ["onModifyAtk", "onModifySpA"],
+  base_power_flag: ["onBasePower"],
+  stab: ["onModifySTAB"],
+  no_crit: ["onCriticalHit"],
+  guts: ["onModifyAtk", "sim_literal"],
+  attack_multiplier: ["onModifyAtk", "onModifySpA"],
+  source_type_attack: ["onSourceModifyAtk", "onSourceModifySpA"],
+  technician: ["onBasePower"],
+  super_effective_taken: ["onSourceModifyDamage"],
+  full_hp_taken: ["onSourceModifyDamage"],
+  crit_damage: ["onModifyDamage"],
+  defense_multiplier: ["onModifyDef", "onModifySpD"],
+  ground_immunity: ["sim_literal"],
+  suppress_weather: ["key:suppressWeather", "onSwitchIn"],
+  mold_breaker: ["onModifyMove"],
+  absorb: ["onAllyTryHitSide", "onAnyRedirectTarget", "onTryHit"],
+  flag_immunity: ["onAllyTryHitSide", "onTryHit"],
+  infiltrator: ["onModifyMove"],
+  type_boost: ["onBasePower"],
+  resist_berry: ["onSourceModifyDamage"],
+  final_modifier: ["onAfterMoveSecondarySelf", "onModifyDamage"],
+  super_effective_dealt: ["onModifyDamage"],
+  category_power: ["onBasePower"],
+  crit_ratio: ["onModifyCritRatio"],
+  status_power: ["onBasePower", "sim_literal"],
+  priority_block: ["onFoeTryMove"],
+  ate: ["onBasePower", "onModifyType"],
+  sheer_force: ["onBasePower", "onModifyMove", "sim_literal"],
+  unnerve: ["onFoeTryEatItem", "onSwitchIn"],
+  needs_sleep: ["onTry"],
+  constant_power: ["basePowerCallback", "onTry"],
+  boost_power: ["basePowerCallback"],
+  fails: ["onTry", "onTryMove", "sim_literal"],
+};
+
+/**
+ * Hold every entry to the engine's data: the entity exists, and its kind explains every hook (and simulator by-name test) it has
+ * on the damage path; a `no_damage_effect` entry names exactly those it hides. A mis-kinded entry is a `KernelRecordError`.
+ */
+export function checkKernelEffects(effects: KernelEffects, data: KernelData): void {
+  const check = (what: string, id: string, effect: KernelEffect, blockers: readonly string[] | null): void => {
+    if (blockers === null) throw new KernelRecordError(`the effects record names ${what} ${id}, which the engine does not have`);
+    if (effect.kind === "no_damage_effect") {
+      if (effect.hides.join() !== blockers.join()) throw new KernelRecordError(`the effects record's ${what} ${id} hides other hooks than it has: ${blockers.join(",")}`);
+      return;
+    }
+    const explained = new Set(EXPLAINS[effect.kind]);
+    const unexplained = blockers.filter((b) => !explained.has(b));
+    if (unexplained.length > 0) throw new KernelRecordError(`the effects record's ${what} ${id} is kind ${effect.kind}, which does not explain ${unexplained.join(",")}`);
+  };
+  for (const [id, effect] of Object.entries(effects.abilities)) check("ability", id, effect, data.abilityBlockers(id, false));
+  for (const [id, effect] of Object.entries(effects.items)) check("item", id, effect, data.itemBlockers(id, false));
+  for (const [id, effect] of Object.entries(effects.moves)) check("move", id, effect, data.move(id)?.blockers ?? null);
+  for (const id of Object.keys(effects.conditions)) if (data.conditionType(id) === null) throw new KernelRecordError(`the effects record names condition ${id}, which the engine does not have`);
+}
+
 /** Read the record: closed keys, the effect kinds and their fields, sorted ids. */
 export function readKernelEffects(value: unknown): KernelEffects {
   if (value === null || typeof value !== "object" || Array.isArray(value)) fail("the effects record is an object");
   const v = value as Record<string, unknown>;
-  const keys = ["abilities", "data_class", "description", "format_id", "items", "moves", "schema_version", "showdown_commit"];
+  const keys = ["abilities", "conditions", "data_class", "description", "format_id", "items", "moves", "schema_version", "showdown_commit"];
   if (jcs(Object.keys(v).sort() as unknown as Json) !== jcs(keys as unknown as Json)) fail("the effects record has exactly its keys");
   if (v.schema_version !== 1 || v.data_class !== "synthetic") fail("the effects record is schema version 1, synthetic");
   if (typeof v.format_id !== "string" || typeof v.description !== "string" || typeof v.showdown_commit !== "string" || !/^[0-9a-f]{40}$/.test(v.showdown_commit)) fail("the effects record names its format and commit");
-  return { ...(v as unknown as KernelEffects), abilities: readTable(v.abilities, ABILITY_KINDS, "abilities"), items: readTable(v.items, ITEM_KINDS, "items"), moves: readTable(v.moves, MOVE_KINDS, "moves") };
+  return { ...(v as unknown as KernelEffects), abilities: readTable(v.abilities, ABILITY_KINDS, "abilities"), items: readTable(v.items, ITEM_KINDS, "items"), moves: readTable(v.moves, MOVE_KINDS, "moves"), conditions: readConditions(v.conditions) };
 }
 
 /** SHA-256 of the record's JCS bytes (part of the kernel's identity). */

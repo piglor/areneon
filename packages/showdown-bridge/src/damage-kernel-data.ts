@@ -22,12 +22,20 @@ export type Stat = (typeof STATS)[number];
 
 /**
  * Hook names that cannot change a `damage` answer of the probe (ADR-016 section 2's flow: start the scenario, write the declared
- * state absolutely, run the engine's move step with the accuracy step passing and the hit loop replaced by `getDamage`):
- * after-hit (but `onAfterMoveSecondarySelf`, which the move step itself runs, and which can draw: Magician), residual, switching, speed, accuracy, PP, healing, item-taking, trapping, boost-application and volatile-adding
- * hooks (the declared stages are written last and directly), and a switch-in's `onStart` (its stages, item and field are
- * overwritten by the declaration; the starts that do not stay overwritten are hooks of their own: `onSwitchIn`, `onUpdate`,
- * `onWeatherChange`, `onTerrainChange`, `onAnySwitchIn`, none of which is here). `onSetStatus` and its kin are inert only while no
- * status is declared on the holder (`STATUS_HOOKS`). A hook not listed is assumed to matter.
+ * state absolutely, run the engine's move step with the accuracy step passing and the hit loop replaced by `getDamage`). Two
+ * groups, and the second depends on that probe setup:
+ * - hooks no step of the probe's flow runs: residual and end-of-turn hooks, switching out and fainting, the hit loop's own
+ *   after-hit hooks (`onDamagingHit`, `onAfterHit`, `onAfterSubDamage`, ...: the loop is replaced), the action phase
+ *   (`onBeforeMove`, priority and speed hooks), accuracy (the step passes), PP, healing, trapping;
+ * - hooks whose effect the probe's declaration overwrites: a switch-in's `onStart` (its stages, item and field are written again
+ *   after the start; Intimidate, a Seed, Download), boost-application hooks (`onTryBoost`, `onChangeBoost`, ...: the declared
+ *   stages are written directly, last), item-taking (`onTakeItem`: the declared item is put back) and volatile-adding hooks at the
+ *   start. These are inert only because the probe declares the state absolutely; a probe that did not would make them matter.
+ * Not here, so blocking: `onUpdate` (it runs whenever the engine updates and acts on the state it finds: Limber's cure, a berry
+ * at low HP, Trace's copy, Booster Energy's boost, none of which the declaration undoes in every case), `onSwitchIn` (Neutralizing
+ * Gas, Imposter), the weather and terrain change hooks (Protosynthesis, Quark Drive, Seeds that the declared field starts),
+ * `onAfterMoveSecondarySelf` (the move step itself runs it, and it can draw: Magician), and every damage-path hook. `onSetStatus`
+ * and its kin are inert only while no status is declared on the holder (`STATUS_HOOKS`).
  */
 export const INERT_HOOKS: ReadonlySet<string> = new Set([
   "onAfterBoost",
@@ -84,7 +92,6 @@ export const INERT_HOOKS: ReadonlySet<string> = new Set([
   "onTryAddVolatile",
   "onTryBoost",
   "onTryHeal",
-  "onUpdate",
   "onUseMoveMessage",
   "onWeather",
 ]);

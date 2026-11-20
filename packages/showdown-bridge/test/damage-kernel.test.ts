@@ -9,8 +9,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { jcs, type Json } from "../src/canonical-json.ts";
 import { abstained, KernelBackendError, kernelBackend } from "../src/damage-kernel-backend.ts";
 import { blockingHooks, hooksOf, INERT_HOOKS, kernelData, KernelDataError, simLiterals, STATUS_HOOKS } from "../src/damage-kernel-data.ts";
-import { kernelEffectsHash, loadKernelEffects, readKernelEffects } from "../src/damage-kernel-effects.ts";
-import { championsStat, computeBatch, KERNEL_FORMAT, KernelAbstain, type KernelContext, prepareQuery, staged } from "../src/damage-kernel.ts";
+import { checkKernelEffects, KernelRecordError, kernelEffectsHash, loadKernelEffects, readKernelEffects } from "../src/damage-kernel-effects.ts";
+import { applyStatHandlers, championsStat, computeBatch, KERNEL_FORMAT, KernelAbstain, type KernelContext, prepareQuery, staged } from "../src/damage-kernel.ts";
 import type { KernelData } from "../src/damage-kernel-data.ts";
 import type { Engine, PokemonSet } from "../src/engine.ts";
 import { GOLDEN_FORMAT } from "../src/golden.ts";
@@ -161,7 +161,7 @@ describe("2. every entry of the effects record, against the probe", () => {
     { terrain: "mistyterrain", trick_room: true, sides: sides({ aurora_veil: true }, { tailwind: true }) },
   ];
   const foes: Side[] = [
-    { species: "snorlax", ability: "immunity", moves: ["bodyslam"] },
+    { species: "snorlax", ability: "thickfat", moves: ["bodyslam"] },
     { species: "skarmory", ability: "keeneye", moves: ["bravebird"] },
     { species: "tyranitar", ability: "unnerve", moves: ["rockslide"] },
   ];
@@ -216,13 +216,13 @@ describe("2. every entry of the effects record, against the probe", () => {
       [GARCHOMP, ARCANINE, "earthquake", { terrain: "grassyterrain" }],
       [GARCHOMP, ARCANINE, "rockslide", { weather: "sandstorm" }],
       [{ species: "lucario", ability: "steadfast", moves: ["extremespeed", "bulletpunch"] }, ARCANINE, "extremespeed", { terrain: "psychicterrain" }],
-      [{ species: "snorlax", ability: "immunity", moves: ["facade"], status: "brn" }, ARCANINE, "facade", {}],
-      [{ species: "snorlax", ability: "immunity", moves: ["snore"], status: "slp" }, ARCANINE, "snore", {}],
-      [{ species: "snorlax", ability: "immunity", moves: ["snore"] }, ARCANINE, "snore", {}],
+      [{ species: "snorlax", ability: "thickfat", moves: ["facade"], status: "brn" }, ARCANINE, "facade", {}],
+      [{ species: "snorlax", ability: "thickfat", moves: ["snore"], status: "slp" }, ARCANINE, "snore", {}],
+      [{ species: "snorlax", ability: "thickfat", moves: ["snore"] }, ARCANINE, "snore", {}],
       [{ species: "kangaskhan", ability: "scrappy", moves: ["suckerpunch"] }, ARCANINE, "suckerpunch", {}],
       [GARCHOMP, ARCANINE, "dig", {}],
       [{ species: "gengar", ability: "cursedbody", moves: ["payback", "shadowball"] }, ARCANINE, "payback", {}],
-      [{ species: "gengar", ability: "cursedbody", moves: ["shadowball"] }, { species: "snorlax", ability: "immunity", moves: ["bodyslam"] }, "shadowball", {}],
+      [{ species: "gengar", ability: "cursedbody", moves: ["shadowball"] }, { species: "snorlax", ability: "thickfat", moves: ["bodyslam"] }, "shadowball", {}],
     ];
     let covered = 0;
     for (const [a, d, m, s] of cases) if (dex.moves.get(m).exists && same(query(a, d, m, s))) covered++;
@@ -265,7 +265,8 @@ describe("2b. each effect kind, on a query built to exercise it, against the pro
     }
     return null;
   };
-  const SNORLAX: Side = { species: "snorlax", ability: "immunity", moves: ["bodyslam"] };
+  const SNORLAX: Side = { species: "snorlax", ability: "thickfat", moves: ["bodyslam"] };
+  const SKARMORY: Side = { species: "skarmory", ability: "keeneye", moves: ["bravebird"] };
   const cases: [string, () => ParsedMechanicsQuery | null][] = [
     ["absorb", () => { const a = side("roughskin", undefined, (m) => m.type === "Electric") ?? side("intimidate", undefined, (m) => m.type === "Electric"); const d = side("voltabsorb"); return a && d && query(a.side, d.side, a.move); }],
     ["flag immunity", () => { const a = side("intimidate", undefined, (m) => (m.flags ?? {}).bullet === 1); const d = side("bulletproof"); return a && d && query(a.side, d.side, a.move); }],
@@ -292,8 +293,9 @@ describe("2b. each effect kind, on a query built to exercise it, against the pro
     ["ate", () => { const a = side("pixilate", undefined, (m) => m.type === "Normal") ?? side("aerilate", undefined, (m) => m.type === "Normal"); return a && query(a.side, SNORLAX, a.move); }],
     ["sheer force", () => { const a = side("sheerforce"); return a && query(a.side, SNORLAX, a.move); }],
     ["guts", () => { const a = side("guts", undefined, (m) => m.category === "Physical", { status: "brn" }); return a && query(a.side, SNORLAX, a.move); }],
-    ["pinch", () => { const a = side("blaze", undefined, (m) => m.type === "Fire", { hp: 20 }); return a && query(a.side, SNORLAX, a.move); }],
-    ["solar power", () => { const a = side("solarpower", undefined, (m) => m.category === "Special"); return a && query(a.side, SNORLAX, a.move, { weather: "sunnyday" }); }],
+    ["pinch", () => { const a = side("blaze", undefined, (m) => m.type === "Fire", { hp: 20 }); return a && query(a.side, SKARMORY, a.move); }],
+    ["solar power", () => { const a = side("solarpower", undefined, (m) => m.category === "Special"); return a && query(a.side, SKARMORY, a.move, { weather: "sunnyday" }); }],
+    ["Thick Fat beside a pinch hook of equal priority: the engine orders them by speed, so the kernel abstains", () => { const a = side("blaze", undefined, (m) => m.type === "Fire", { hp: 20 }); return a && (abstainsOn(query(a.side, SNORLAX, a.move)) === "state:handler_tie" ? query(a.side, SKARMORY, a.move) : null); }],
     ["fur coat", () => { const d = side("furcoat"); return d && query(GARCHOMP, d.side, "dragonclaw"); }],
     ["grass pelt", () => { const d = side("grasspelt"); return d && query(GARCHOMP, d.side, "dragonclaw", { terrain: "grassyterrain" }); }],
     ["shell armor", () => { const d = side("shellarmor"); return d && query(GARCHOMP, d.side, "dragonclaw"); }],
@@ -313,6 +315,45 @@ describe("2b. each effect kind, on a query built to exercise it, against the pro
     const q = build();
     expect(q, "a legal query could be built").not.toBeNull();
     if (q !== null) expect(same(q) || String((run(q) as { error: Error }).error)).toBe(true);
+  });
+});
+
+describe("2c. a stat or an event chosen by the move's data follows the engine", () => {
+  /** A legal side of a species that may hold `ability` and knows `move`, or null when the roster has none. */
+  const holder = (ability: string, move: string, extra: Partial<Side> = {}): Side | null => {
+    const entry = vocabulary.roster.find((r) => r.abilities.includes(ability) && r.moves.includes(move) && r.required_item === undefined);
+    return entry === undefined ? null : { species: entry.id, ability, moves: [move], ...extra };
+  };
+  const SNORLAX: Side = { species: "snorlax", ability: "thickfat", moves: ["bodyslam"] };
+  // Body Press attacks with the user's Defense, but the engine's stat event is the category's (ModifyAtk), on the user.
+  it.each<[string, () => [Side | null, Side, string, State]]>([
+    ["Body Press by an Ice type in snow (snow's Defense boost is not the attacking stat's event)", () => [holder("snowwarning", "bodypress"), SNORLAX, "bodypress", { weather: "snowscape" }]],
+    ["Body Press under Huge Power (ModifyAtk doubles the Defense it attacks with)", () => [holder("hugepower", "bodypress") ?? holder("purepower", "bodypress"), SNORLAX, "bodypress", {}]],
+    ["Body Press under Fur Coat (a Defense hook is not the attacking stat's event)", () => [holder("furcoat", "bodypress"), SNORLAX, "bodypress", {}]],
+    ["Body Press with Guts and a status", () => [holder("guts", "bodypress", { status: "brn" }), SNORLAX, "bodypress", {}]],
+    ["Psyshock into an Ice type in snow (the defending stat is Defense: snow's boost applies)", () => [holder("synchronize", "psyshock"), { species: "abomasnow", ability: "soundproof", moves: ["blizzard"] }, "psyshock", { weather: "snowscape" }]],
+    ["Psyshock into a Rock type in sand (Sp. Def's boost does not apply)", () => [holder("synchronize", "psyshock"), { species: "tyranitar", ability: "unnerve", moves: ["rockslide"] }, "psyshock", { weather: "sandstorm" }]],
+    ["Psyshock into Fur Coat (Defense doubled)", () => [holder("synchronize", "psyshock"), { species: "furfrou", ability: "furcoat", moves: ["tackle"] }, "psyshock", {}]],
+    ["Foul Play: the target's Attack and stages, the user's ModifyAtk hooks", () => [holder("hugepower", "foulplay") ?? holder("prankster", "foulplay"), { ...GARCHOMP, boosts: { atk: 2 } }, "foulplay", {}]],
+    ["Foul Play into a lowered Attack", () => [holder("prankster", "foulplay") ?? holder("insomnia", "foulplay"), { ...GARCHOMP, boosts: { atk: -2 } }, "foulplay", {}]],
+  ])("%s", (_name, build) => {
+    const [attacker, defender, move, state] = build();
+    if (attacker === null) return; // the roster holds no such combatant at this pin: unreachable, nothing to compare
+    const q = query(attacker, defender, move, state);
+    expect(same(q) || String((run(q) as { error: Error }).error)).toBe(true);
+  });
+
+  it("a move that picks its category or stat in a hook (Shell Side Arm) abstains", () => {
+    const user = holder("regenerator", "shellsidearm") ?? holder("quickdraw", "shellsidearm");
+    if (user === null) return;
+    expect(abstainsOn(query(user, SNORLAX, "shellsidearm"))).toBe("move:shellsidearm");
+  });
+
+  it("a weather's stat hook modifies the stat at once, a chained hook at the end (snow then Fur Coat: 101 is 302, not 303)", () => {
+    expect(applyStatHandlers(101, [{ direct: 6144 }, { chain: 8192 }])).toBe(302);
+    expect(applyStatHandlers(101, [{ chain: 8192 }, { direct: 6144 }])).toBe(302);
+    expect(applyStatHandlers(101, [{ chain: 6144 }, { chain: 8192 }])).toBe(303);
+    expect(applyStatHandlers(101, [])).toBe(101);
   });
 });
 
@@ -398,7 +439,7 @@ describe("3b. every refusal rule, through a context whose data is doctored", () 
     ["an unknown damage handler", () => decode(ctxWith(withHook("ability", "intimidate", "onSourceModifyDamage")), base()), "ability:intimidate ModifyDamage"],
     ["a tie between the two Pokemon", () => decode(ctxWith(withHook("ability", "intimidate", "onSourceModifyAtk", { priority: 5 })), query({ species: "infernape", ability: "blaze", moves: ["flamethrower"] }, ARCANINE, "flamethrower")), "state:handler_tie ModifyAtk"],
     ["a hook with an order", () => decode(ctxWith(withHook("condition", "trickroom", "onBasePower", { order: 2 })), query(GARCHOMP, ARCANINE, "dragonclaw", { trick_room: true })), "condition:trickroom BasePower"],
-    ["the move's own base power beside a defender's on equal keys", () => decode(ctxWith(withHook("ability", "intimidate", "onSourceBasePower")), query({ species: "snorlax", ability: "immunity", moves: ["facade"] }, ARCANINE, "facade")), "state:handler_tie BasePower"],
+    ["the move's own base power beside a defender's on equal keys", () => decode(ctxWith(withHook("ability", "intimidate", "onSourceBasePower")), query({ species: "snorlax", ability: "thickfat", moves: ["facade"] }, ARCANINE, "facade")), "state:handler_tie BasePower"],
     ["a status beside a start that can refuse it (Electric Surge)", () => decode(ctxWith(), query({ species: "pincurchin", ability: "electricsurge", moves: ["bodyslam"] }, { ...GARCHOMP, status: "slp" }, "bodyslam")), "ability:electricsurge status_start"],
     ["a status beside a start that cannot (Intimidate)", () => decode(ctxWith(), query(GARCHOMP, { ...ARCANINE, status: "par" }, "dragonclaw")), "rolls"],
     ["a status beside any start hook without this pin's inventory", () => decode(ctxWith({ abilityStarts: () => null }), query(GARCHOMP, { ...ARCANINE, status: "par" }, "dragonclaw")), "ability:intimidate status_start"],
@@ -418,6 +459,65 @@ describe("3b. every refusal rule, through a context whose data is doctored", () 
   });
 });
 
+describe("3c. reviewed data, not code: conditions, kinds and their hooks", () => {
+  const ctxWith = (patch: (e: ReturnType<typeof loadKernelEffects>) => void): KernelContext => {
+    const effects = structuredClone(loadKernelEffects(GOLDEN_FORMAT, engine.commit));
+    patch(effects);
+    return { data: kernelData(engine, GOLDEN_FORMAT), effects, ko_blockers: config.ko_blockers, level: null };
+  };
+  const decoded = (ctx: KernelContext, q: ParsedMechanicsQuery) => {
+    const dq = q.query as Extract<ParsedMechanicsQuery["query"], { kind: "damage" }>;
+    const out = prepareQuery(ctx, dq, importPaste(engine, dq.attacker.set)[0] as PokemonSet, importPaste(engine, dq.defender.set)[0] as PokemonSet);
+    if (out.kind !== "rolls") throw new Error("no rolls");
+    return out.decoded;
+  };
+  it("the weathers, terrains and screens come from the record's conditions table", () => {
+    const effects = loadKernelEffects(GOLDEN_FORMAT, engine.commit);
+    expect(Object.keys(effects.conditions).sort()).toEqual(["auroraveil", "electricterrain", "grassyterrain", "lightscreen", "mistyterrain", "psychicterrain", "raindance", "reflect", "sandstorm", "snowscape", "sunnyday", "tailwind", "trickroom"]);
+    const fire = query({ species: "arcanine", ability: "intimidate", moves: ["flamethrower"] }, GARCHOMP, "flamethrower", { weather: "sunnyday" });
+    expect(decoded(ctxWith(() => undefined), fire).weather).toBe(6144);
+    const changed = ctxWith((e) => {
+      const sun = e.conditions.sunnyday as { kind: "weather_damage"; types: { type: string; modifier: number }[] };
+      sun.types = sun.types.map((t) => (t.type === "Fire" ? { ...t, modifier: 4096 } : t));
+    });
+    expect(decoded(changed, fire).weather).toBe(4096);
+    // A condition the record does not list is no longer implemented: the kernel abstains on it.
+    const without = ctxWith((e) => delete e.conditions.sunnyday);
+    expect(() => decoded(without, fire)).toThrow(/weather:sunnyday/);
+  });
+
+  it("an entry's kind must explain every damage-path hook it hides, or the record is refused", () => {
+    const data = kernelData(engine, GOLDEN_FORMAT);
+    const effects = loadKernelEffects(GOLDEN_FORMAT, engine.commit);
+    expect(() => checkKernelEffects(effects, data)).not.toThrow();
+    const miskinded = structuredClone(effects);
+    miskinded.abilities.sapsipper = { kind: "pinch", type: "Grass" };
+    expect(() => checkKernelEffects(miskinded, data)).toThrow(KernelRecordError);
+    const hiding = structuredClone(effects);
+    hiding.abilities.limber = { kind: "no_damage_effect", hides: ["onTryHit"] };
+    expect(() => checkKernelEffects(hiding, data)).toThrow(/limber/);
+    const unknown = structuredClone(effects);
+    unknown.items.nosuchitem = { kind: "type_boost", type: "Fire", modifier: 4915 };
+    expect(() => checkKernelEffects(unknown, data)).toThrow(/nosuchitem/);
+    const unknownMove = structuredClone(effects);
+    unknownMove.moves.nosuchmove = { kind: "fails" };
+    expect(() => checkKernelEffects(unknownMove, data)).toThrow(/nosuchmove/);
+    const unknownCondition = structuredClone(effects);
+    unknownCondition.conditions.nosuchcondition = { kind: "no_damage_effect", hides: ["onStart"] };
+    expect(() => checkKernelEffects(unknownCondition, data)).toThrow(/nosuchcondition/);
+    const miskindedItem = structuredClone(effects);
+    miskindedItem.items.lifeorb = { kind: "type_boost", type: "Fire", modifier: 4915 };
+    expect(() => checkKernelEffects(miskindedItem, data)).toThrow(/lifeorb/);
+  });
+
+  it("onUpdate is not inert: a holder of it abstains (Limber's cure, a berry at low HP)", () => {
+    expect(INERT_HOOKS.has("onUpdate")).toBe(false);
+    expect(abstainsOn(query({ species: "persian", ability: "limber", moves: ["slash"] }, SNORLAX_TARGET, "slash"))).toBe("ability:limber");
+  });
+});
+
+const SNORLAX_TARGET: Side = { species: "snorlax", ability: "thickfat", moves: ["bodyslam"] };
+
 describe("4. the pieces", () => {
   it("the Champions stat formula and the stage table", () => {
     const neutral = { plus: null, minus: null };
@@ -426,7 +526,7 @@ describe("4. the pieces", () => {
     expect(championsStat(100, 0, "spa", { plus: "atk", minus: "spa" })).toBe(108);
     expect(championsStat(100, 0, "spe", neutral)).toBe(120);
     expect([staged(100, 0), staged(100, 1), staged(100, 6), staged(100, -1), staged(100, -6), staged(101, 3)]).toEqual([100, 150, 400, 66, 25, 252]);
-    expect(KERNEL_FORMAT).toBe(2);
+    expect(KERNEL_FORMAT).toBe(3);
   });
 
   it("computes an empty batch", () => {
@@ -453,6 +553,15 @@ describe("4. the pieces", () => {
     expect(bad((v) => (v.abilities = { aa: { kind: "pinch", type: "fire" } }))).toThrow(/shape/);
     expect(bad((v) => (v.items = { aa: null }))).toThrow(/a kind it may hold/);
     expect(bad((v) => (v.format_id = "other"))).not.toThrow();
+    expect(bad((v) => (v.conditions = []))).toThrow(/conditions table is an object/);
+    expect(bad((v) => (v.conditions = { zz: { kind: "screen", category: null, yields_to: [], modifier: 1 }, aa: { kind: "screen", category: null, yields_to: [], modifier: 1 } }))).toThrow(/sorted and unique/);
+    expect(bad((v) => (v.conditions = { aa: { kind: "nosuchkind" } }))).toThrow(/kind it may hold/);
+    expect(bad((v) => (v.conditions = { aa: null }))).toThrow(/kind it may hold/);
+    expect(bad((v) => (v.conditions = { aa: { kind: "screen", category: null, yields_to: [], modifier: 1, extra: 1 } }))).toThrow(/does not take/);
+    expect(bad((v) => (v.conditions = { aa: { kind: "terrain", boost: { type: "fire", modifier: 1 }, weakens: null, halves: null, blocks_priority: false } }))).toThrow(/shape/);
+    expect(bad((v) => (v.conditions = { aa: { kind: "terrain", boost: null, weakens: { moves: ["b", "a"], modifier: 1 }, halves: null, blocks_priority: false } }))).toThrow(/shape/);
+    expect(bad((v) => (v.conditions = { aa: { kind: "weather_damage", types: [], exceptions: [] } }))).toThrow(/shape/);
+    expect(bad((v) => (v.abilities = { aa: { kind: "no_damage_effect", hides: ["b", "a"] } }))).toThrow(/shape/);
   });
 
   it("reflection: hooks with values, siblings and nested blocks; inert hooks and status-only hooks", () => {

@@ -12,7 +12,7 @@ import type { Outcome } from "./mechanics-result.ts";
 import type { Settled } from "./probe-batch.ts";
 import type { RulesSnapshot } from "./rules.ts";
 import { kernelData } from "./damage-kernel-data.ts";
-import { type KernelEffects, KernelEffectsError, loadKernelEffects } from "./damage-kernel-effects.ts";
+import { checkKernelEffects, type KernelEffects, KernelEffectsError, loadKernelEffects } from "./damage-kernel-effects.ts";
 import { KERNEL_FORMAT, KernelAbstain, type KernelContext, type Prepared, prepareQuery, rollOutcomes } from "./damage-kernel.ts";
 
 export interface KernelBackendOptions {
@@ -60,7 +60,10 @@ export function kernelBackend(engine: Engine, options: KernelBackendOptions): Ke
   const effects = (formatId: string): KernelEffects => {
     if (!effectsOf.has(formatId)) {
       try {
-        effectsOf.set(formatId, loadKernelEffects(formatId, engine.commit));
+        const loaded = loadKernelEffects(formatId, engine.commit);
+        // A mis-kinded entry is a defect of the record: it throws (`KernelRecordError`), never routes silently.
+        checkKernelEffects(loaded, kernelData(engine, formatId));
+        effectsOf.set(formatId, loaded);
       } catch (error) {
         if (!(error instanceof KernelEffectsError)) throw error;
         effectsOf.set(formatId, null);
