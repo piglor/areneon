@@ -221,6 +221,7 @@ describe("4. isolation: no evaluation path reaches the kernel", () => {
     expect(importsKernel('const b = require("@areneon/showdown-bridge");\nb.abstained(s);', names)).toBe(true);
     expect(importsKernel('const { loadEngine, computeBatch: run } = await import("@areneon/showdown-bridge");', names)).toBe(true);
     expect(importsKernel('export * from "@areneon/showdown-bridge";', names)).toBe(true);
+    expect(importsKernel('import * as $b from "@areneon/showdown-bridge";\n$b.computeBatch(c);', names)).toBe(true);
     expect(importsKernel('export * as bridge from "@areneon/showdown-bridge";', names)).toBe(true);
     // Negative controls: a namespace import that reaches no kernel name, and a kernel name on another object.
     expect(importsKernel('import * as bridge from "@areneon/showdown-bridge";\nbridge.loadEngine();', names)).toBe(false);

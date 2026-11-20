@@ -226,8 +226,8 @@ export function importsKernel(source: string, names: readonly string[]): boolean
   const bindings = [new RegExp(String.raw`import\s*\*\s*as\s+([A-Za-z_$][\w$]*)\s*from\s*${BRIDGE}`, "g"), new RegExp(String.raw`([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?(?:import|require)\s*\(\s*${BRIDGE}\s*\)`, "g")];
   for (const pattern of bindings) {
     for (const m of source.matchAll(pattern)) {
-      const ns = (m[1] as string).replace(/\$/g, "\\$");
-      for (const name of names) if (new RegExp(String.raw`\b${ns}\s*(?:\?\.|\.)\s*${name}\b|\b${ns}\s*(?:\?\.)?\[\s*["'\`]${name}["'\`]\s*\]`).test(source)) return true;
+      const ns = (m[1] as string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      for (const name of names) if (new RegExp(String.raw`(?<![\w$])${ns}\s*(?:\?\.|\.)\s*${name}\b|(?<![\w$])${ns}\s*(?:\?\.)?\[\s*["'\`]${name}["'\`]\s*\]`).test(source)) return true;
     }
   }
   return false;
