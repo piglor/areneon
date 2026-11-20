@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from areneon_contracts.contracts import ContractError, validate
@@ -275,7 +275,7 @@ def recording(tmp_path: Path, **fields: Any) -> Recording:
         memory_guard=False,
         **fields,
     )
-    player.calls = []  # type: ignore[attr-defined]
+    object.__setattr__(player, "calls", [])  # NodePlayer is a frozen dataclass
     return player
 
 
@@ -343,3 +343,21 @@ def test_the_run_command_refuses_the_gpu_flags_for_a_run_without_the_gpu(tmp_pat
 def test_the_corpus_sample_reads() -> None:
     raw = json.loads((CORPUS / "training-run-config/valid/inference-gpu.json").read_text())
     assert read_run_config(raw).generation.inference_device == "cuda"
+
+
+def test_the_dashboard_names_the_device_and_tabulates_the_counts() -> None:
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    from areneon_ml.report.render import _device_part  # noqa: PLC0415
+
+    generations = [
+        SimpleNamespace(number=1, metrics={"inference_device": device_counts()}),
+        SimpleNamespace(number=2, metrics=None),
+    ]
+    page = _device_part(
+        cast(Any, SimpleNamespace(inference_device="cuda", generations=generations))
+    )
+    assert "device: cuda" in page
+    assert ">900<" in page  # passes on the device of generation 1; generation 2 has no record
+    assert "--inference-cpu" in page
+    assert _device_part(cast(Any, SimpleNamespace(inference_device=None, generations=[]))) == ""

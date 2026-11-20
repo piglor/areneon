@@ -322,6 +322,9 @@ class ReportModel:
     #: ``generation.inference.max_batch`` of the run (ADR-028 section 2 F2): None for the default
     #: batch 1. A batched run is not byte-reproducible and the page says so.
     inference_max_batch: int | None = None
+    #: ``generation.inference.device`` of the run (ADR-030 step 4): ``"cuda"`` for a GPU worker,
+    #: None for the CPU; the page then names the device and shows the workers' device counts.
+    inference_device: str | None = None
     #: A population run's progress roots: generation -> the member (``m<k>``) whose frozen pair
     #: the generation's record evaluates (#1335); empty for a single-lineage run.
     progress_members: dict[int, str] = field(default_factory=dict)
@@ -885,5 +888,6 @@ def read_report_model(
         family=family_label(config),
         population=facts,
         inference_max_batch=config.generation.inference_max_batch,
+        inference_device=config.generation.inference_device,
         progress_members=tie.found if tie is not None else {},
     )

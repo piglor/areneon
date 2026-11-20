@@ -43,6 +43,10 @@ BATCHED = "batched"
 #: The smallest batched forward pass; batch 1 is stated by omission.
 MIN_BATCH = 2
 
+#: The device a GPU-inference worker states in its batching (ADR-030 step 4, #1458); the CPU is
+#: stated by omission.
+GPU_DEVICE = "cuda"
+
 EXIT_OK = 0
 EXIT_FRAME = 2
 EXIT_REFUSED = 3
@@ -166,14 +170,25 @@ class Worker:
         sheet: SheetSupport | None = None,
         value_scorer: ValueScorer | None = None,
         inference_max_batch: int | None = None,
+        inference_device: str | None = None,
     ) -> None:
         if inference_max_batch is not None and inference_max_batch < MIN_BATCH:
             raise ValueError("inference_max_batch is at least 2; batch 1 is stated by omission")
+        if inference_device is not None and (
+            inference_device != GPU_DEVICE or inference_max_batch is None
+        ):
+            raise ValueError("an inference device is cuda, and only for a batching worker")
         self._inference_max_batch = inference_max_batch
+        # The whole setting, device included, is what the hello must ask for: a batch-1
+        # (evaluation) or CPU-batching client is refused by a GPU worker (ADR-030 step 4).
         self._inference: dict[str, Any] | None = (
             None
             if inference_max_batch is None
-            else {"kind": BATCHED, "max_batch": inference_max_batch}
+            else {
+                "kind": BATCHED,
+                "max_batch": inference_max_batch,
+                **({} if inference_device is None else {"device": inference_device}),
+            }
         )
         self._value_scorer = value_scorer
         self._features = features
@@ -181,6 +196,11 @@ class Worker:
         self._scorer = scorer
         #: Where ``__main__`` leaves this session's profile, when it was asked to (diagnostics).
         self.profile_dir: Path | None = None
+        #: Where ``__main__`` leaves a GPU-inference worker's device counts (ADR-030 step 4).
+        self.inference_stats_dir: Path | None = None
+        #: The device counts of a GPU-inference worker's scorer (``NetworkScorer.placement_stats``),
+        #: or None for every other worker; ``__main__`` sets it.
+        self.placement_stats: Callable[[], dict[str, Any] | None] = lambda: None
         self._ready: dict[str, Any] = {
             "schema_version": 1,
             "message": {

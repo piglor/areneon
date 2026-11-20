@@ -46,7 +46,7 @@
     "inference": {
       "kind": "batched",
       "max_batch": 2,
-      "device": "cuda"
+      "threads": 2
     }
   },
   "ppo": {

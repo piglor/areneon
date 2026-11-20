@@ -900,6 +900,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/constant-schedule": runConfigWith((c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "constant" })),
     "training-run-config/play-temperature": runConfigWith((c) => (runSection(c, "generation").play = { temperature_ppm: 500000 })),
     "training-run-config/inference-batched": runConfigWith((c) => (runSection(c, "generation").inference = { kind: "batched", max_batch: 2 })),
+    "training-run-config/inference-gpu": runConfigWith((c) => (runSection(c, "generation").inference = { kind: "batched", max_batch: 2, device: "cuda" })),
     "training-run-config/damage-aware": runConfigWith((c) => {
       runSection(c, "generation").baseline_games = [
         { actor: "random-legal", policy_id: "random-legal@tiny", games: 2 },
@@ -1125,6 +1126,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "run-metrics/rss-only": runMetricsWith((r) => (r.peak_rss_bytes = { driver: 1_073_741_824 })),
     "run-metrics/profile": runMetricsWith((r) => (r.profile = profileSample())),
     "run-metrics/inference-divergence": runMetricsWith((r) => (r.inference_divergence = { max_batch: 2, decisions: 2000, sampled: 256, differing: 3, max_prior_diff_ppm: 41, target_met: true })),
+    "run-metrics/inference-device": runMetricsWith((r) => {
+      r.inference_divergence = { max_batch: 2, device: "cuda", decisions: 2000, sampled: 256, differing: 5, max_prior_diff_ppm: 63, target_met: true };
+      r.inference_device = { device: "cuda", workers: 4, device_batches: 900, cpu_batches: 30, allocation_fallbacks: 1, forced: false };
+    }),
     "run-metrics/seeded-pair": runMetricsWith((r) => {
       r.generation = 0;
       r.phase_ms = { play: 0, write: 95, load: 0, train: 0, seal: 60 };
@@ -1227,6 +1232,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-handshake/ready-value-query": readyWith((m) => (m.value_query = true)),
     "policy-handshake/hello-inference": helloWith((m) => (m.inference = { kind: "batched", max_batch: 2 })),
     "policy-handshake/ready-inference": readyWith((m) => (m.inference = { kind: "batched", max_batch: 2 })),
+    "policy-handshake/hello-inference-gpu": helloWith((m) => (m.inference = { kind: "batched", max_batch: 2, device: "cuda" })),
+    "policy-handshake/ready-inference-gpu": readyWith((m) => (m.inference = { kind: "batched", max_batch: 2, device: "cuda" })),
     "training-run-config/opponent-sheet": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { opponent_sheet: sheetSetRef };
     }),
@@ -1581,6 +1588,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "checkpoint-record/no-learner-state": recordWith((r) => delete r.learner_state_hash),
     "run-metrics/extra-field": runMetricsWith((r) => (r.notes = "x")),
     "run-metrics/inference-divergence-extra-field": runMetricsWith((r) => (r.inference_divergence = { max_batch: 2, decisions: 2, sampled: 1, differing: 0, max_prior_diff_ppm: 0, target_met: true, share: 1 })),
+    "run-metrics/inference-device-extra-field": runMetricsWith((r) => (r.inference_device = { device: "cuda", workers: 1, device_batches: 1, cpu_batches: 0, allocation_fallbacks: 0, forced: false, seconds: 1 })),
     "run-metrics/inference-divergence-fractional": runMetricsWith((r) => (r.inference_divergence = { max_batch: 2, decisions: 2, sampled: 1, differing: 0, max_prior_diff_ppm: 0.5, target_met: true })),
     "run-metrics/fractional-ms": runMetricsWith((r) => (r.phase_ms = { ...runMetrics.phase_ms, play: 1.5 })),
     "run-metrics/negative-reserved": runMetricsWith((r) => (r.peak_accelerator_reserved_bytes = -1)),
@@ -1984,9 +1992,11 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-handshake/ready-value-query-false": readyWith((m) => (m.value_query = false)),
     "policy-handshake/hello-inference-one": helloWith((m) => (m.inference = { kind: "batched", max_batch: 1 })),
     "policy-handshake/ready-inference-unknown-kind": readyWith((m) => (m.inference = { kind: "streamed", max_batch: 2 })),
+    "policy-handshake/ready-inference-unknown-device": readyWith((m) => (m.inference = { kind: "batched", max_batch: 2, device: "rocm" })),
     "training-run-config/inference-max-batch-one": runConfigWith((c) => (runSection(c, "generation").inference = { kind: "batched", max_batch: 1 })),
     "training-run-config/inference-unknown-kind": runConfigWith((c) => (runSection(c, "generation").inference = { kind: "async", max_batch: 2 })),
-    "training-run-config/inference-extra-field": runConfigWith((c) => (runSection(c, "generation").inference = { kind: "batched", max_batch: 2, device: "cuda" })),
+    "training-run-config/inference-extra-field": runConfigWith((c) => (runSection(c, "generation").inference = { kind: "batched", max_batch: 2, threads: 2 })),
+    "training-run-config/inference-device-cpu": runConfigWith((c) => (runSection(c, "generation").inference = { kind: "batched", max_batch: 2, device: "cpu" })),
     "policy-query/too-many-candidates": { ...battleQuery, candidates: candidatesOf(1025) },
     "policy-query/seed": { ...battleQuery, seed: record.seed },
     "policy-query/candidate-verdict": mutated(battleQuery, (q) => ((q.candidates as Record<string, unknown>[])[0] as Record<string, unknown>).legal = true),

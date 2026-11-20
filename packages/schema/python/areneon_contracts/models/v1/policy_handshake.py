@@ -50,7 +50,7 @@ class FeatureSetStatement(BaseModel):
 
 class Inference(BaseModel):
     """
-    The batching of the worker's forward pass (ADR-028 section 2, #1195): up to max_batch queued queries are scored in one padded forward pass on the CPU. Absent means batch 1, which is what every evaluation, sealed and head-to-head path asks for.
+    The batching of the worker's forward pass (ADR-028 section 2, #1195): up to max_batch queued queries are scored in one padded forward pass on the CPU, or on the GPU with device cuda (ADR-030 step 4). Absent means batch 1, which is what every evaluation, sealed and head-to-head path asks for.
     """
 
     model_config = ConfigDict(
@@ -58,6 +58,10 @@ class Inference(BaseModel):
     )
     kind: Literal["batched"]
     max_batch: Annotated[StrictInt, Field(ge=2, le=1024)]
+    device: Literal["cuda"] | MISSING = MISSING
+    """
+    Optional (ADR-030 step 4, #1458): cuda for a worker that answers the batched forward pass on the GPU (training self-play only). Absent is the CPU. A client compares the whole setting, so a batch-1 (evaluation) client and a CPU-batching client both refuse a worker that states cuda.
+    """
 
 
 class Hello(BaseModel):

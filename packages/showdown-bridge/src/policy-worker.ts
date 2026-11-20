@@ -31,6 +31,7 @@ import {
   type EvaluateQueryInput,
   type Evaluation,
   encodeFrame,
+  inferenceWire,
   type InferenceSettings,
   PolicyProtocolError,
   type PolicyQuery,
@@ -173,6 +174,7 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
     if (options.inference !== undefined && (options.inference.kind !== "batched" || !Number.isInteger(options.inference.max_batch) || options.inference.max_batch < 2 || options.inference.max_batch > options.n_parallel)) {
       throw new RangeError("inference is {kind: batched, max_batch} with 2 <= max_batch <= n_parallel");
     }
+    if (options.inference?.device !== undefined && options.inference.device !== "cuda") throw new RangeError("inference device is cuda, or absent for the CPU");
     this.#options = options;
   }
 
@@ -228,7 +230,7 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
     child.once("close", (code, signal) => this.#closed(code, signal));
     try {
       const { inference } = this.#options;
-      child.stdin.write(encodeFrame({ schema_version: 1, message: { kind: "hello", contracts: contractVersions(), ...(inference === undefined ? {} : { inference: { kind: inference.kind, max_batch: inference.max_batch } }) } }, max_line_bytes));
+      child.stdin.write(encodeFrame({ schema_version: 1, message: { kind: "hello", contracts: contractVersions(), ...(inference === undefined ? {} : { inference: inferenceWire(inference) }) } }, max_line_bytes));
       this.#check(await ready);
     } catch (error) {
       await this.close();
@@ -259,7 +261,8 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
     }
     // The batching: exactly what the hello asked for (none: batch 1), so a client that asks for batch 1 refuses a batching worker.
     const asked = this.#options.inference;
-    if (!same(message.inference ?? null, asked === undefined ? null : { kind: asked.kind, max_batch: asked.max_batch })) {
+    // The whole setting, device included: a batch-1 (evaluation) client refuses any batching worker, the GPU one too (ADR-030 step 4).
+    if (!same(message.inference ?? null, asked === undefined ? null : inferenceWire(asked))) {
       throw new PolicyHandshakeError(`the worker states the batching ${message.inference === undefined ? "none (batch 1)" : jcs(message.inference as unknown as Json)}, not the expected ${asked === undefined ? "none (batch 1)" : jcs(asked as unknown as Json)}`);
     }
     // A stated feature set must be exactly one this side supplies; no statement means the checkpoints need none.

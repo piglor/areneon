@@ -33,6 +33,7 @@ export interface RunMetrics {
   peak_rss_bytes?: PeakRss;
   profile?: Profile;
   inference_divergence?: InferenceDivergence;
+  inference_device?: InferenceDevice;
   /**
    * Optional, written only when the run was started with --learner-micro-batch (operational, not a config field): the largest number of decisions the learner ran through the network at once, so the activation memory of the generation is that of a chunk and the gradients are accumulated over a minibatch's chunks. Absent: one pass per minibatch.
    */
@@ -190,6 +191,10 @@ export interface LoadProfile {
 export interface InferenceDivergence {
   max_batch: number;
   /**
+   * Optional (ADR-030 step 4, #1458): cuda when the batched worker that played answered on the GPU; the batch-1 control is always the CPU worker, so differing is then the GPU worker's share of choice differences. Absent: the CPU batching.
+   */
+  device?: "cuda";
+  /**
    * The pair's own decisions played this generation by the processes that reported.
    */
   decisions: number;
@@ -197,4 +202,18 @@ export interface InferenceDivergence {
   differing: Count;
   max_prior_diff_ppm: Count;
   target_met: boolean;
+}
+/**
+ * Optional (ADR-030 step 4, #1458), written only by a run whose config says generation.inference.device: where its policy workers' batched forward passes ran this generation, summed over the workers that reported (a diagnostic outside every hash). device_batches ran on the GPU, cpu_batches on a worker's CPU path: after an allocation failure (each worker falls back at most once and stays on the CPU for the rest of its session; allocation_fallbacks counts the workers that did) or for the whole generation under the rollback flag (forced, and then no batch ran on the GPU).
+ *
+ * This interface was referenced by `RunMetrics`'s JSON-Schema
+ * via the `definition` "InferenceDevice".
+ */
+export interface InferenceDevice {
+  device: "cuda";
+  workers: Count;
+  device_batches: Count;
+  cpu_batches: Count;
+  allocation_fallbacks: Count;
+  forced: boolean;
 }

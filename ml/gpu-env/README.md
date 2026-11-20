@@ -39,6 +39,15 @@ CUDA device; it never falls back to the CPU (a CPU run is a different config and
 hash). Updating the torch version means changing it in `ml/pyproject.toml` (CPU, root lock) and in
 this project (CUDA, this lock) together; `tests/scripts/test_gpu_env.py` fails if they differ.
 
+## GPU inference for training self-play (ADR-030 step 4)
+
+A run whose config says `generation.inference: {kind: "batched", max_batch, device: "cuda"}` starts its
+play workers from this environment's Python (`--inference-worker-python .venv/bin/python` on `loop run`),
+with `--worker-python` still the shipped CPU Python for the batch-1 control worker. Training self-play
+only: every evaluation client refuses such a worker at the handshake. On a CUDA allocation failure a worker
+continues on its CPU path, and `--inference-cpu` rolls every worker back to it; see
+`docs/training-run.md` section 11.
+
 ## Reproducibility
 
 The learner enables deterministic algorithms and a fixed cuBLAS workspace, but a GPU run is **not

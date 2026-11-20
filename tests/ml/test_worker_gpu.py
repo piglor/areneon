@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 import torch
 from areneon_ml.checkpoint.files import load_checkpoint
+from areneon_ml.model.network import PolicyNetwork
 from areneon_ml.model.placement import InferencePlacement
 from areneon_ml.model.scorer import NetworkScorer
 from areneon_ml.worker import __main__ as worker_main
@@ -65,8 +66,9 @@ def gpu_worker(root: Path, placement: InferencePlacement | None = None) -> Worke
         for role, found in (("preview", preview), ("battle", battle))
     }
     chosen = placement if placement is not None else InferencePlacement(torch.device("cpu"))
-    return Worker(
-        scorer=NetworkScorer(game(), networks, placement=chosen),
+    scorer = NetworkScorer(game(), networks, placement=chosen)
+    worker = Worker(
+        scorer=scorer,
         engine_data_hash=ENGINE_DATA_HASH,
         checkpoints=[
             {"role": "preview", "checkpoint_id": preview},
@@ -76,10 +78,12 @@ def gpu_worker(root: Path, placement: InferencePlacement | None = None) -> Worke
         inference_max_batch=2,
         inference_device="cuda",
     )
+    worker.placement_stats = scorer.placement_stats
+    return worker
 
 
 def without_elapsed(reply: dict[str, Any]) -> dict[str, Any]:
-    found = json.loads(json.dumps(reply))
+    found: dict[str, Any] = json.loads(json.dumps(reply))
     recommendation = found["reply"].get("recommendation")
     if recommendation is not None:
         recommendation["elapsed_ms"] = 0
@@ -140,7 +144,7 @@ def test_the_device_path_answers_as_the_cpu_scorer_does_on_a_cpu_copy(tmp_path: 
     assert [without_elapsed(r) for r in gpu.answer_batch(queries)] == [
         without_elapsed(r) for r in cpu.answer_batch(queries)
     ]
-    stats = gpu._scorer.placement_stats()  # type: ignore[attr-defined]
+    stats = gpu.placement_stats()
     assert stats == {
         "device": "cuda",
         "device_batches": 2,  # one padded pass per role
@@ -161,7 +165,7 @@ def oom_once(network: torch.nn.Module) -> list[int]:
             raise torch.cuda.OutOfMemoryError("CUDA out of memory (simulated)")
         return original(*args, **kwargs)
 
-    network.forward = failing  # type: ignore[method-assign]
+    network.forward = failing
     return calls
 
 
@@ -202,7 +206,7 @@ def test_an_allocation_failure_on_the_cpu_path_is_a_defect(tmp_path: Path) -> No
 def test_an_allocation_failure_while_placing_the_networks_starts_on_the_cpu_path(
     tmp_path: Path,
 ) -> None:
-    def refuse(network: torch.nn.Module, device: torch.device) -> torch.nn.Module:
+    def refuse(network: PolicyNetwork, device: torch.device) -> PolicyNetwork:
         raise torch.cuda.OutOfMemoryError("CUDA out of memory (simulated)")
 
     placement = InferencePlacement(torch.device("cpu"), copy_to=refuse)
@@ -238,7 +242,7 @@ def test_value_and_single_queries_go_through_the_placement(tmp_path: Path) -> No
     placement = InferencePlacement(torch.device("cpu"))
     scorer = gpu_worker(tmp_path, placement)._scorer
     view = encoder_input(battle_query())
-    assert scorer.probabilities(view)  # type: ignore[attr-defined]
+    assert scorer.probabilities(view)
     assert placement.stats()["device_batches"] == 1
 
 
