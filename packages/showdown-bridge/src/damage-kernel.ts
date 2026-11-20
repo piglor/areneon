@@ -28,7 +28,7 @@
 //   priority move: every roll 0;
 // - rain, sun, sand and snow (unless an ability in play suppresses weather), the four terrains, Reflect, Light Screen and Aurora
 //   Veil on the defender's side, Trick Room and Tailwind (no damage effect), burn;
-// - a declared history whose volatiles are all inert and that declares no pending slot condition.
+// - a declared history with no volatile, no pending slot condition and facts the engine accepts.
 // Event chains: the handlers an event finds are ordered as the engine orders them (order, priority, then speed, then sub-order);
 // where two Pokemon's handlers tie on order and priority (their speeds decide, or a draw), or two side or field conditions tie,
 // the kernel abstains.
@@ -86,7 +86,7 @@ const M_TERRAIN = 5325;
 const M_SCREEN = 2732; // two active Pokemon a side
 const CRIT_MULT = [0, 24, 8, 2, 1];
 /** The sub-order the engine gives a handler with none of its own, by holder kind (`resolvePriority`). */
-const SUB_ORDER = { volatile: 2, side: 4, field: 5, ability: 7, item: 8, status: 0 } as const;
+const SUB_ORDER = { side: 4, field: 5, ability: 7, item: 8, status: 0 } as const;
 /** The events whose handler order the kernel checks: those of `getDamage` and of the move step before it. */
 const ORDERED_EVENTS = ["BasePower", "ModifyAtk", "ModifySpA", "ModifyDef", "ModifySpD", "ModifyDamage", "ModifySTAB", "CriticalHit", "ModifyCritRatio", "Effectiveness", "ModifyMove", "ModifyType", "TryMove", "PrepareHit", "NegateImmunity", "ModifyBoost", "AfterMoveSecondarySelf"];
 /** Events whose target is the defender (the others are the attacker's). */
@@ -109,7 +109,6 @@ interface Fighter {
   ability: string;
   item: string | null;
   status: string | null;
-  volatiles: readonly string[];
   /** HP, Atk, Def, SpA, SpD, Spe as the engine stores them (before stages). */
   stats: number[];
   boosts: Combatant["boosts"];
@@ -147,29 +146,11 @@ const valuesOf = <T>(fact: unknown): T[] => {
   return f.kind === "known" ? [f.value as T] : (f.ends ?? []);
 };
 
-/** Hooks that can refuse a volatile the history declares (the engine's TryAddVolatile family and its status immunity). */
-const VOLATILE_REFUSERS = ["onTryAddVolatile", "onAllyTryAddVolatile", "onImmunity"];
-
-function declaredVolatiles(ctx: KernelContext, combatant: Combatant): string[] {
-  const ids = new Set<string>();
-  for (const list of valuesOf<{ id: string }[]>((combatant.history as { volatiles?: unknown } | undefined)?.volatiles)) for (const v of list) ids.add(v.id);
-  for (const id of ids) {
-    // Only a reviewed volatile: its start cannot be refused and it changes no damage answer.
-    if (ctx.effects.volatiles[id] === undefined) throw new KernelAbstain(`volatile:${id}`, "not_implemented");
-    const blockers = ctx.data.volatileBlockers(id);
-    if (blockers === null) throw new KernelAbstain(`volatile:${id}`, "unknown");
-    if (blockers.some((b) => b !== "sim_literal" && b !== "onStart")) throw new KernelAbstain(`volatile:${id}`, blockers[0] as string);
-  }
-  return [...ids].sort();
-}
-
-/** A declared volatile can be refused by an ability, item or terrain that blocks volatiles: abstain when one is present. */
-function checkVolatileRefusers(ctx: KernelContext, fighters: readonly Fighter[], field: readonly string[]): void {
-  if (fighters.every((f) => f.volatiles.length === 0)) return;
-  const holders: ["ability" | "item" | "condition", string][] = [...fighters.flatMap((f) => [["ability", f.ability], ...(f.item === null ? [] : [["item", f.item]])] as ["ability" | "item", string][]), ...field.map((id) => ["condition", id] as ["condition", string])];
-  for (const [kind, id] of holders) {
-    const hooks = ctx.data.hooks(kind, id);
-    if (VOLATILE_REFUSERS.some((hook) => hooks.has(hook))) throw new KernelAbstain(`${kind}:${id}`, "volatile_refuser");
+/** A declared volatile: abstain (none is implemented; the engine checks each against its own start and duration rules). */
+function checkVolatiles(combatant: Combatant): void {
+  for (const list of valuesOf<{ id: string }[]>((combatant.history as { volatiles?: unknown } | undefined)?.volatiles)) {
+    const first = list[0];
+    if (first !== undefined) throw new KernelAbstain(`volatile:${first.id}`, "not_implemented");
   }
 }
 
@@ -204,21 +185,40 @@ function fighter(ctx: KernelContext, role: Fighter["role"], set: PokemonSet, com
   }
   const ability_effect = entityEffect(ctx, "ability", ability, status !== null);
   const item_effect = item === null ? null : entityEffect(ctx, "item", item, status !== null);
-  const volatiles = declaredVolatiles(ctx, combatant);
+  checkVolatiles(combatant);
   const nature = data.nature(set.nature);
   if (nature === null) throw new KernelAbstain("state:nature", "unknown");
   // A Mega Evolution keeps the HP it had: the engine sets `maxhp` once, from the forme the Pokemon started in.
   const stats = STATS.map((stat, i) => championsStat((stat === "hp" ? own : species).base[i] as number, set.evs[stat] ?? 0, stat, nature));
   const maxhp = stats[0] as number;
   if (combatant.hp !== null && combatant.hp > maxhp) throw new KernelAbstain("state:hp", "above_maximum");
-  return { role, species, types: species.types, ability, item, status, volatiles, stats, boosts: combatant.boosts, hp: combatant.hp ?? maxhp, ability_effect, item_effect };
+  return { role, species, types: species.types, ability, item, status, stats, boosts: combatant.boosts, hp: combatant.hp ?? maxhp, ability_effect, item_effect };
 }
 
-/** A pending slot condition in the history: abstain (no slot condition is implemented). */
-function checkSlots(query: DamageQuery): void {
+/**
+ * The declared history the kernel can answer with: no pending slot condition, no attacker list or stall counter (the engine
+ * checks both against its own state), and facts the engine would accept as declared (a used move of the Pokemon's own set, an
+ * engine move or item). The facts left change no answer the kernel computes; a declaration the engine would refuse abstains,
+ * since the probe throws there.
+ */
+function checkHistory(ctx: KernelContext, query: DamageQuery, sets: readonly PokemonSet[]): void {
+  const fail = (why: string): never => {
+    throw new KernelAbstain("state:history", why);
+  };
+  const isMove = (id: string | null): boolean => id === null || ctx.data.move(id) !== null;
   for (const side of query.history?.sides ?? []) {
     if (valuesOf<unknown[]>(side.pending_slots).some((list) => list.length > 0)) throw new KernelAbstain("state:history_slot", "not_implemented");
   }
+  if (!valuesOf<string | null>(query.history?.field_last_move).every(isMove)) fail("field_last_move");
+  [query.attacker, query.defender].forEach((combatant, i) => {
+    const facts = (combatant.history ?? {}) as Record<string, unknown>;
+    const own = new Set((sets[i] as PokemonSet).moves.map(toId));
+    if (valuesOf<string[]>(facts.moves_used).some((list) => list.some((id) => !own.has(id)))) fail("moves_used");
+    if (!valuesOf<string | null>(facts.last_move).every(isMove)) fail("last_move");
+    if (!valuesOf<string | null>(facts.last_item).every((id) => id === null || ctx.data.itemBlockers(id, false) !== null)) fail("last_item");
+    if (valuesOf<number>(facts.stall_counter).some((n) => n !== 0)) fail("stall_counter");
+    if (valuesOf<unknown[]>(facts.attacked_by).some((list) => list.length > 0)) fail("attacked_by");
+  });
 }
 
 /** One handler an event finds: who holds it and its ordering keys. */
@@ -254,7 +254,6 @@ function handlers(ctx: KernelContext, event: string, target: Fighter, source: Fi
     add(p.role, "ability", p.ability, names, SUB_ORDER.ability, true);
     if (p.item !== null) add(p.role, "item", p.item, names, SUB_ORDER.item, true);
     if (p.status !== null) add(p.role, "condition", p.status, names, SUB_ORDER.status, true);
-    for (const v of p.volatiles) add(p.role, "condition", v, names, SUB_ORDER.volatile, true);
   }
   const targetSide = target.role === "attacker" ? 0 : 1;
   sides.forEach((ids, side) => {
@@ -265,9 +264,11 @@ function handlers(ctx: KernelContext, event: string, target: Fighter, source: Fi
     for (let j = i + 1; j < found.length; j++) {
       const a = found[i] as Handler;
       const b = found[j] as Handler;
-      if (a.holder === b.holder) continue;
       const keysTie = a.order === b.order && a.priority === b.priority;
-      if (keysTie && ((a.pokemon && b.pokemon) || (!a.pokemon && !b.pokemon && a.sub_order === b.sub_order))) throw new KernelAbstain("state:handler_tie", event);
+      // Two Pokemon (their speeds decide, or the engine draws); two conditions on equal sub-orders, the same side's included (a draw).
+      const pokemonTie = a.pokemon && b.pokemon && a.holder !== b.holder;
+      const conditionTie = !a.pokemon && !b.pokemon && a.sub_order === b.sub_order;
+      if (keysTie && (pokemonTie || conditionTie)) throw new KernelAbstain("state:handler_tie", event);
     }
   }
   // order (ascending), priority (descending), speed (a Pokemon's before a condition's), sub-order (ascending).
@@ -324,17 +325,249 @@ const blocked = (ctx: KernelContext, defender: Fighter): Prepared => {
 /** The effect of a handler's entity, or null for a status or volatile (none is implemented). */
 const effectOf = (f: Fighter, h: Handler): KernelEffect | null => (h.kind === "ability" ? f.ability_effect : h.kind === "item" ? f.item_effect : null);
 
-/** STUB (tests-first): decodes every query to zero inputs, so every covered answer differs from the probe. */
-export function prepareQuery(ctx: KernelContext, _query: DamageQuery, attackerSet: PokemonSet, defenderSet: PokemonSet): Prepared {
-  const defender = fighter(ctx, "defender", defenderSet, _query.defender);
-  void fighter(ctx, "attacker", attackerSet, _query.attacker);
-  void handlers;
-  void checkSlots;
-  void checkVolatileRefusers;
-  void blocked;
-  void effectOf;
-  void [WEATHERS, TERRAINS, TERRAIN_TYPE, GRASSY_WEAKENED, SINGLE_TARGETS, SPREAD_TARGETS, SIDE_IDS, M_ONE_AND_HALF, M_TERRAIN, M_SCREEN, CRIT_MULT, ORDERED_EVENTS, DEFENDER_EVENTS, chain];
-  return { kind: "rolls", decoded: { base: [0, 0], spread: false, weather: M_ONE, stab: M_ONE, type_mod: 0, burn: false, final: [M_ONE, M_ONE], crit_applies: true, crit_chance: { kind: "never" }, defender } };
+/** Decode one query (the sets are the probe envelope's validated ones). Throws `KernelAbstain` for what the kernel does not cover. */
+export function prepareQuery(ctx: KernelContext, query: DamageQuery, attackerSet: PokemonSet, defenderSet: PokemonSet): Prepared {
+  const { data } = ctx;
+  checkHistory(ctx, query, [attackerSet, defenderSet]);
+  const { state } = query;
+  if (state.weather !== null && !WEATHERS.has(state.weather)) throw new KernelAbstain(`weather:${state.weather}`, "not_implemented");
+  if (state.terrain !== null && !TERRAINS.has(state.terrain)) throw new KernelAbstain(`terrain:${state.terrain}`, "not_implemented");
+  const attacker = fighter(ctx, "attacker", attackerSet, query.attacker);
+  const defender = fighter(ctx, "defender", defenderSet, query.defender);
+  const move = data.move(query.move);
+  if (move === null) throw new KernelAbstain(`move:${query.move}`, "unknown");
+  // Outside the probe's v1 scope: answered before any hook of the move runs.
+  if (move.outside_scope) return { kind: "outcome", outcome: { kind: "unsupported", reason: "query_kind", position: null } };
+  const moveEffect = ctx.effects.moves[move.id] ?? null;
+  if (move.blockers.length > 0 && moveEffect === null) throw new KernelAbstain(`move:${move.id}`, move.blockers[0] as string);
+  const unsupported: Prepared = { kind: "outcome", outcome: { kind: "unsupported", reason: "query_kind", position: null } };
+  if (moveEffect?.kind === "fails") return unsupported;
+  if (moveEffect?.kind === "needs_sleep" && query.attacker.status !== "slp") return unsupported;
+  const spread = SPREAD_TARGETS.has(move.target);
+  if (!spread && !SINGLE_TARGETS.has(move.target)) throw new KernelAbstain(`move:${move.id}`, "target");
+  if (move.base_power <= 0) throw new KernelAbstain(`move:${move.id}`, "base_power");
+  if (move.flags.has("powder")) throw new KernelAbstain(`move:${move.id}`, "powder");
+  if (state.weather === "sunnyday" && move.id === "hydrosteam") throw new KernelAbstain(`move:${move.id}`, "weather_rule");
+
+  const sides = state.sides.map((side) => SIDE_IDS.filter(([key]) => side[key]).map(([, id]) => id));
+  const suppressed = [attacker, defender].some((f) => f.ability_effect?.kind === "suppress_weather");
+  const weatherId = suppressed ? null : state.weather;
+  const field = [...(state.weather === null ? [] : [state.weather]), ...(state.terrain === null ? [] : [state.terrain]), ...(state.trick_room ? ["trickroom"] : [])];
+  const moldBreaker = attacker.ability_effect?.kind === "mold_breaker";
+  /** The effect of a Pokemon's ability as it acts (a breakable ability of the defender is ignored by a Mold Breaker attacker). */
+  const abilityOf = (f: Fighter): KernelEffect | null => (f.role === "defender" && moldBreaker && data.breakable(f.ability) ? null : f.ability_effect);
+  /** Whether a handler's ability is one a Mold Breaker attacker ignores (the engine still finds the handler, then skips it). */
+  const broken = (h: Handler): boolean => h.kind === "ability" && h.holder === "defender" && moldBreaker && data.breakable(h.id);
+  // Every event of the move step and of `getDamage` must order its handlers without a tie the kernel cannot settle.
+  const order: Record<string, Handler[]> = {};
+  for (const event of ORDERED_EVENTS) {
+    const target = DEFENDER_EVENTS.has(event) ? defender : attacker;
+    order[event] = handlers(ctx, event, target, target === attacker ? defender : attacker, sides, field);
+  }
+  const grounded = (f: Fighter): boolean => !f.types.includes("Flying") && abilityOf(f)?.kind !== "ground_immunity";
+
+  // A priority move into a side that blocks priority fails at the move step (before any hit step).
+  if (move.priority > 0 && abilityOf(defender)?.kind === "priority_block") return unsupported;
+  // The move's type after the attacker's type-changing ability (ModifyType).
+  const ate = attacker.ability_effect?.kind === "ate" && move.type === "Normal" && !attacker.ability_effect.exceptions.includes(move.id) ? attacker.ability_effect : null;
+  const moveType = ate?.kind === "ate" ? ate.type : move.type;
+
+  // The immunity steps (each deals nothing): an absorbing or flag immunity of the defender, Psychic Terrain against a priority
+  // move, the type chart (a Ground move by groundedness).
+  const defenderAbility = abilityOf(defender);
+  if (defenderAbility?.kind === "absorb" && defenderAbility.type === moveType) return blocked(ctx, defender);
+  if (defenderAbility?.kind === "flag_immunity" && move.flags.has(defenderAbility.flag)) return blocked(ctx, defender);
+  if (state.terrain === "psychicterrain" && move.priority > 0 && grounded(defender)) return blocked(ctx, defender);
+  const ignores = move.ignore_immunity === true || (move.ignore_immunity !== null && move.ignore_immunity.includes(moveType));
+  if (!ignores) {
+    const immune = moveType === "Ground" ? !grounded(defender) : defender.types.some((t) => data.chart.get(t)?.get(moveType) === 3);
+    if (immune) return blocked(ctx, defender);
+  }
+
+  // Handlers of the events below that the kernel does not compute abstain; those it does are applied in the engine's order.
+  for (const event of ["ModifyCritRatio", "CriticalHit", "Effectiveness", "ModifyType", "NegateImmunity", "ModifyBoost"]) {
+    for (const h of order[event] as Handler[]) {
+      if (broken(h)) continue;
+      const f = h.holder === "attacker" ? attacker : h.holder === "defender" ? defender : null;
+      const e = f === null ? null : effectOf(f, h);
+      const known =
+        (event === "ModifyCritRatio" && h.holder === "attacker" && e?.kind === "crit_ratio") ||
+        (event === "CriticalHit" && h.holder === "defender" && e?.kind === "no_crit") ||
+        (event === "ModifyType" && h.holder === "attacker" && e?.kind === "ate");
+      if (!known) throw new KernelAbstain(`${h.kind}:${h.id}`, event);
+    }
+  }
+
+  // The crit: the move's data, the attacker's crit-ratio item, the defender's crit immunity.
+  let ratio = move.crit_ratio;
+  if (attacker.item_effect?.kind === "crit_ratio") ratio += attacker.item_effect.add;
+  ratio = Math.max(0, Math.min(4, ratio));
+  const critImmune = defenderAbility?.kind === "no_crit";
+  const critChance: DamageAnswer["crit_chance"] = critImmune ? { kind: "never" } : move.will_crit ? { kind: "always" } : ratio === 0 ? { kind: "never" } : { kind: "chance", numerator: 1, denominator: CRIT_MULT[ratio] as number };
+
+  // BasePower (an event on the attacker).
+  // The move's base power before the BasePower event: its data, or what its callback returns.
+  const boosts = query.attacker.boosts;
+  const ownBasePower =
+    moveEffect?.kind === "boost_power"
+      ? move.base_power + moveEffect.per * [boosts.atk, boosts.def, boosts.spa, boosts.spd, boosts.spe].reduce((sum, b) => sum + Math.max(0, b), 0)
+      : moveEffect?.kind === "constant_power"
+        ? move.base_power * moveEffect.multiplier
+        : move.base_power;
+  let bpChain = M_ONE;
+  // The move's own BasePower hook runs with the attacker's handlers (the engine adds it first, then sorts: its sub-order is 0).
+  const moveBasePower = ctx.data.moveHookOrder(move.id, "onBasePower");
+  const basePowerHandlers = [...(order.BasePower as Handler[])];
+  if (moveBasePower !== null) {
+    const own: Handler = { holder: "attacker", kind: "condition", id: `move:${move.id}`, order: moveBasePower.order === false ? 4294967296 : moveBasePower.order, priority: moveBasePower.priority, pokemon: true, sub_order: moveBasePower.sub_order };
+    for (const h of basePowerHandlers) if (h.pokemon && h.holder === "defender" && h.order === own.order && h.priority === own.priority) throw new KernelAbstain("state:handler_tie", "BasePower");
+    const at = basePowerHandlers.findIndex((h) => h.order > own.order || (h.order === own.order && (h.priority < own.priority || (h.priority === own.priority && (!h.pokemon || h.sub_order > own.sub_order)))));
+    basePowerHandlers.splice(at < 0 ? basePowerHandlers.length : at, 0, own);
+  }
+  for (const h of basePowerHandlers) {
+    if (h.id === `move:${move.id}`) {
+      if (moveEffect?.kind !== "status_power") throw new KernelAbstain(`move:${move.id}`, "onBasePower");
+      if (attacker.status !== null && attacker.status !== "slp") bpChain = chain(bpChain, moveEffect.modifier);
+      continue;
+    }
+    if (broken(h)) continue;
+    if (h.holder === "field") {
+      if (TERRAIN_TYPE[h.id] === moveType && grounded(attacker)) bpChain = chain(bpChain, M_TERRAIN);
+      if (h.id === "grassyterrain" && GRASSY_WEAKENED.has(move.id) && grounded(defender)) bpChain = chain(bpChain, M_HALF);
+      if (h.id === "mistyterrain" && moveType === "Dragon" && grounded(defender)) bpChain = chain(bpChain, M_HALF);
+      if (!TERRAINS.has(h.id)) throw new KernelAbstain(`condition:${h.id}`, "BasePower");
+      continue;
+    }
+    const e = h.holder === "attacker" ? effectOf(attacker, h) : null;
+    if (e?.kind === "base_power_flag") {
+      if (move.flags.has(e.flag)) bpChain = chain(bpChain, e.modifier);
+    } else if (e?.kind === "technician") {
+      if (modify(ownBasePower, bpChain) <= e.threshold) bpChain = chain(bpChain, e.modifier);
+    } else if (e?.kind === "type_boost") {
+      if (moveType === e.type) bpChain = chain(bpChain, e.modifier);
+    } else if (e?.kind === "category_power") {
+      if (move.category === e.category) bpChain = chain(bpChain, e.modifier);
+    } else if (e?.kind === "ate") {
+      if (ate !== null) bpChain = chain(bpChain, e.modifier);
+    } else if (e?.kind === "sheer_force") {
+      if ((move.has_secondaries && !move.sheer_force_boost) || move.sheer_force_boost) bpChain = chain(bpChain, e.modifier);
+    } else throw new KernelAbstain(`${h.kind}:${h.id}`, "BasePower");
+  }
+  const basePower = Math.max(1, modify(ownBasePower, bpChain));
+
+  const physical = move.category === "Physical";
+  const offensive = move.offensive_target ? defender : attacker;
+  const atkStat = move.offensive_stat ?? (physical ? "atk" : "spa");
+  const defStat = move.defensive_stat ?? (physical ? "def" : "spd");
+  const atkEvent = physical ? "ModifyAtk" : "ModifySpA";
+  const defEvent = defStat === "def" ? "ModifyDef" : "ModifySpD";
+
+  // The attacking stat's chain (an event on the attacker, whose stat it is not under Foul Play), then the defending stat's.
+  let atkChain = M_ONE;
+  for (const h of order[atkEvent] as Handler[]) {
+    if (broken(h)) continue;
+    const f = h.holder === "attacker" ? attacker : h.holder === "defender" ? defender : null;
+    const e = f === null ? null : effectOf(f, h);
+    if (f === attacker && e?.kind === "pinch") {
+      if (moveType === e.type && attacker.hp * 3 <= (attacker.stats[0] as number)) atkChain = chain(atkChain, M_ONE_AND_HALF);
+    } else if (f === attacker && e?.kind === "guts" && physical) {
+      if (attacker.status !== null) atkChain = chain(atkChain, M_ONE_AND_HALF);
+    } else if (f === attacker && e?.kind === "attack_multiplier" && (e.stat === "atk") === physical) {
+      if (e.weather === undefined || e.weather === weatherId) atkChain = chain(atkChain, e.modifier);
+    } else if (f === defender && e?.kind === "source_type_attack") {
+      if (e.types.includes(moveType)) atkChain = chain(atkChain, e.modifier);
+    } else if (e?.kind === "no_damage_effect") continue;
+    else throw new KernelAbstain(`${h.kind}:${h.id}`, atkEvent);
+  }
+  let defChain = M_ONE;
+  for (const h of order[defEvent] as Handler[]) {
+    if (broken(h)) continue;
+    if (h.holder === "field") {
+      if (h.id !== "sandstorm" && h.id !== "snowscape") throw new KernelAbstain(`condition:${h.id}`, defEvent);
+      if (h.id === weatherId && ((h.id === "sandstorm" && defStat === "spd" && defender.types.includes("Rock")) || (h.id === "snowscape" && defStat === "def" && defender.types.includes("Ice")))) defChain = chain(defChain, M_ONE_AND_HALF);
+      continue;
+    }
+    const e = h.holder === "defender" ? effectOf(defender, h) : null;
+    if (e?.kind === "defense_multiplier" && e.stat === defStat) {
+      if (e.terrain === undefined || e.terrain === state.terrain) defChain = chain(defChain, e.modifier);
+    } else throw new KernelAbstain(`${h.kind}:${h.id}`, defEvent);
+  }
+
+  const level = attackerSet.level;
+  const baseDamage = (crit: boolean): number => {
+    let atkBoost = offensive.boosts[atkStat as keyof Combatant["boosts"]];
+    let defBoost = defender.boosts[defStat as keyof Combatant["boosts"]];
+    if (crit && atkBoost < 0) atkBoost = 0;
+    if ((crit && defBoost > 0) || move.ignore_defensive) defBoost = 0;
+    const attack = modify(staged(offensive.stats[STATS.indexOf(atkStat as Stat)] as number, atkBoost), atkChain);
+    const defense = modify(staged(defender.stats[STATS.indexOf(defStat as Stat)] as number, defBoost), defChain);
+    const factor = div(2 * level, 5) + 2;
+    return div(div(factor * basePower * attack, defense), 50);
+  };
+
+  let weather = M_ONE;
+  if (weatherId === "sunnyday") weather = moveType === "Fire" ? M_ONE_AND_HALF : moveType === "Water" ? M_HALF : M_ONE;
+  if (weatherId === "raindance") weather = moveType === "Water" ? M_ONE_AND_HALF : moveType === "Fire" ? M_HALF : M_ONE;
+
+  let stab = attacker.types.includes(moveType) ? M_ONE_AND_HALF : M_ONE;
+  for (const h of order.ModifySTAB as Handler[]) {
+    const e = h.holder === "attacker" ? effectOf(attacker, h) : null;
+    if (e?.kind !== "stab") throw new KernelAbstain(`${h.kind}:${h.id}`, "ModifySTAB");
+    if (stab !== M_ONE) stab = e.modifier;
+  }
+
+  let typeMod = 0;
+  for (const t of defender.types) {
+    const code = data.chart.get(t)?.get(moveType) ?? 0;
+    typeMod += code === 1 ? 1 : code === 2 ? -1 : 0;
+  }
+  typeMod = Math.max(-6, Math.min(6, typeMod));
+
+  const infiltrates = attacker.ability_effect?.kind === "infiltrator";
+  const finalChain = (crit: boolean): number => {
+    let m = M_ONE;
+    for (const h of order.ModifyDamage as Handler[]) {
+      if (broken(h)) continue;
+      if (h.holder === "side0" || h.holder === "side1") {
+        const applies = h.id === "reflect" ? physical : h.id === "lightscreen" ? !physical : h.id === "auroraveil" ? !sides[1]?.includes(physical ? "reflect" : "lightscreen") : null;
+        if (applies === null) throw new KernelAbstain(`condition:${h.id}`, "ModifyDamage");
+        if (applies && h.holder === "side1" && !crit && !infiltrates) m = chain(m, M_SCREEN);
+        continue;
+      }
+      const f = h.holder === "attacker" ? attacker : h.holder === "defender" ? defender : null;
+      const e = f === null ? null : effectOf(f, h);
+      if (f === attacker && e?.kind === "crit_damage") {
+        if (crit) m = chain(m, e.modifier);
+      } else if (f === attacker && e?.kind === "final_modifier") m = chain(m, e.modifier);
+      else if (f === attacker && e?.kind === "super_effective_dealt") {
+        if (typeMod > 0) m = chain(m, e.modifier);
+      } else if (f === defender && e?.kind === "super_effective_taken") {
+        if (typeMod > 0) m = chain(m, e.modifier);
+      } else if (f === defender && e?.kind === "full_hp_taken") {
+        if (defender.hp >= (defender.stats[0] as number)) m = chain(m, e.modifier);
+      } else if (f === defender && e?.kind === "resist_berry") {
+        // A berry is eaten only if the attacker does not stop its foes eating (Unnerve).
+        if (moveType === e.type && (!e.super_effective || typeMod > 0) && attacker.ability_effect?.kind !== "unnerve") m = chain(m, M_HALF);
+      } else throw new KernelAbstain(`${h.kind}:${h.id}`, "ModifyDamage");
+    }
+    return m;
+  };
+
+  return {
+    kind: "rolls",
+    decoded: {
+      base: [baseDamage(false), baseDamage(!critImmune)],
+      spread,
+      weather,
+      stab,
+      type_mod: typeMod,
+      burn: attacker.status === "brn" && physical && attacker.ability_effect?.kind !== "guts" && !(moveEffect?.kind === "status_power" && moveEffect.burn_exempt),
+      final: [finalChain(false), finalChain(!critImmune)],
+      crit_applies: !critImmune,
+      crit_chance: critChance,
+      defender,
+    },
+  };
 }
 
 /** The columns of a decoded batch: one row per query, the numbers `modifyDamage` reads. */
@@ -367,7 +600,6 @@ function columnsOf(rows: readonly Decoded[]): Columns {
 /** `modifyDamage` for every query, crit run and roll of a batch: `out[(2 * i + crit) * 16 + roll]`. */
 export function computeBatch(c: Columns): Int32Array {
   const out = new Int32Array(c.n * 32);
-  if (out.length >= 0) return out; // STUB (tests-first): every roll 0
   for (let i = 0; i < c.n; i++) {
     const flags = c.flags[i] as number;
     const typeMod = c.type_mod[i] as number;

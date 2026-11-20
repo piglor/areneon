@@ -58,8 +58,6 @@ export interface KernelEffects {
   items: Record<string, KernelEffect>;
   /** Moves whose own hooks the kernel implements or knows change no damage answer. */
   moves: Record<string, KernelEffect>;
-  /** Declared volatiles the kernel answers with (their start cannot fail and they change no damage answer). */
-  volatiles: Record<string, KernelEffect>;
 }
 
 export class KernelEffectsError extends Error {
@@ -110,7 +108,6 @@ const FIELDS: Record<KernelEffect["kind"], Record<string, (v: unknown) => boolea
 };
 /** Kinds that only an ability has, and kinds that only an item has. */
 const ITEM_KINDS = new Set(["type_boost", "resist_berry", "final_modifier", "super_effective_dealt", "category_power", "crit_ratio", "no_damage_effect"]);
-const VOLATILE_KINDS = new Set(["no_damage_effect"]);
 const MOVE_KINDS = new Set(["no_damage_effect", "status_power", "needs_sleep", "fails", "constant_power", "boost_power"]);
 const ABILITY_KINDS = new Set(Object.keys(FIELDS).filter((k) => (!ITEM_KINDS.has(k) && !MOVE_KINDS.has(k)) || k === "no_damage_effect"));
 
@@ -134,11 +131,11 @@ function readTable(value: unknown, kinds: Set<string>, what: string): Record<str
 export function readKernelEffects(value: unknown): KernelEffects {
   if (value === null || typeof value !== "object" || Array.isArray(value)) fail("the effects record is an object");
   const v = value as Record<string, unknown>;
-  const keys = ["abilities", "data_class", "description", "format_id", "items", "moves", "schema_version", "showdown_commit", "volatiles"];
+  const keys = ["abilities", "data_class", "description", "format_id", "items", "moves", "schema_version", "showdown_commit"];
   if (jcs(Object.keys(v).sort() as unknown as Json) !== jcs(keys as unknown as Json)) fail("the effects record has exactly its keys");
   if (v.schema_version !== 1 || v.data_class !== "synthetic") fail("the effects record is schema version 1, synthetic");
   if (typeof v.format_id !== "string" || typeof v.description !== "string" || typeof v.showdown_commit !== "string" || !/^[0-9a-f]{40}$/.test(v.showdown_commit)) fail("the effects record names its format and commit");
-  return { ...(v as unknown as KernelEffects), abilities: readTable(v.abilities, ABILITY_KINDS, "abilities"), items: readTable(v.items, ITEM_KINDS, "items"), moves: readTable(v.moves, MOVE_KINDS, "moves"), volatiles: readTable(v.volatiles, VOLATILE_KINDS, "volatiles") };
+  return { ...(v as unknown as KernelEffects), abilities: readTable(v.abilities, ABILITY_KINDS, "abilities"), items: readTable(v.items, ITEM_KINDS, "items"), moves: readTable(v.moves, MOVE_KINDS, "moves") };
 }
 
 /** SHA-256 of the record's JCS bytes (part of the kernel's identity). */

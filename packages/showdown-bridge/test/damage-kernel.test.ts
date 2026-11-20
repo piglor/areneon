@@ -220,10 +220,16 @@ describe("2. every entry of the effects record, against the probe", () => {
     expect(covered).toBeGreaterThan(cases.length / 2);
   }, 120_000);
 
-  it("a declared history with no volatile is answered as without it; a reviewed volatile too", () => {
-    const history = { move_actions: { kind: "known", value: 2 }, hurt_this_turn: { kind: "unknown", ends: [false, true] }, volatiles: { kind: "known", value: [{ id: "taunt", started_turn: 1, after_residual: false, moved_before: false }] } };
-    expect(same(query({ ...GARCHOMP, history }, ARCANINE, "dragonclaw", { history: { turn: 3 } }))).toBe(true);
+  it("a declared history the engine accepts is answered as without it; one it would refuse abstains", () => {
+    const history = { move_actions: { kind: "known", value: 2 }, hurt_this_turn: { kind: "unknown", ends: [false, true] }, moves_used: { kind: "known", value: ["dragonclaw"] }, last_move: { kind: "known", value: "dragonclaw" }, last_item: { kind: "known", value: null } };
+    expect(same(query({ ...GARCHOMP, history }, ARCANINE, "dragonclaw", { history: { turn: 3, field_last_move: { kind: "known", value: "dragonclaw" } } }))).toBe(true);
     expect(same(query(GARCHOMP, { ...ARCANINE, history: { times_attacked: { kind: "known", value: 1 } } }, "dragonclaw"))).toBe(true);
+    const refuses = (facts: Record<string, unknown>, field?: unknown) => abstainsOn(query({ ...GARCHOMP, history: facts }, ARCANINE, "dragonclaw", field === undefined ? {} : { history: { field_last_move: field } }));
+    expect(refuses({ moves_used: { kind: "unknown", ends: [[], ["protect"]] } })).toBe("state:history");
+    expect(refuses({ last_move: { kind: "known", value: "nosuchmove" } })).toBe("state:history");
+    expect(refuses({ last_item: { kind: "known", value: "nosuchitem" } })).toBe("state:history");
+    expect(refuses({ stall_counter: { kind: "known", value: 1 } })).toBe("state:history");
+    expect(refuses({}, { kind: "known", value: "nosuchmove" })).toBe("state:history");
   });
 
   it("batches of any size give the per-query bytes, in order", () => {
@@ -240,7 +246,10 @@ describe("3. abstentions: never a guess", () => {
     expect(abstainsOn(query({ ...GARCHOMP, ability: "roughskin" }, { species: "mimikyu", ability: "disguise", moves: ["playrough"] }, "dragonclaw"))).toBe("ability:disguise");
     expect(abstainsOn(query(GARCHOMP, ARCANINE, "earthquake", { history: { sides: [{ pending_slots: { kind: "known", value: [{ id: "wish", position: 0, started_turn: 1, after_residual: false }] } }, {}] , turn: 2 } }))).toBe("state:history_slot");
     expect(abstainsOn(query({ ...GARCHOMP, history: { volatiles: { kind: "known", value: [{ id: "encore", started_turn: 1, after_residual: false, moved_before: false }] } } }, ARCANINE, "dragonclaw", { history: { turn: 2 } }))).toBe("volatile:encore");
+    expect(abstainsOn(query({ ...GARCHOMP, history: { volatiles: { kind: "known", value: [{ id: "nosuchvolatile", started_turn: 1, after_residual: false, moved_before: false }] } } }, ARCANINE, "dragonclaw", { history: { turn: 2 } }))).toBe("volatile:nosuchvolatile");
     expect(abstainsOn(query(GARCHOMP, ARCANINE, "dragonclaw", { sides: sides({ reflect: true }, { reflect: true }) }))).toBe("state:handler_tie");
+    // Two screens on one side tie too (the engine draws their order; the probe answers `random_effect`).
+    expect(abstainsOn(query(GARCHOMP, ARCANINE, "dragonclaw", { sides: sides({ reflect: true, light_screen: true }) }))).toBe("state:handler_tie");
     expect(abstainsOn(query({ ...GARCHOMP, mega: true }, ARCANINE, "dragonclaw"))).toBe("species:garchomp");
     expect(abstainsOn(query(GARCHOMP, { ...ARCANINE, hp: 999 }, "dragonclaw"))).toBe("state:hp");
   });
@@ -338,7 +347,6 @@ describe("4. the pieces", () => {
     expect(data.move("nothing")).toBeNull();
     expect(data.nature("nothing")).toBeNull();
     expect(data.abilityBlockers("nothing", false)).toBeNull();
-    expect(data.volatileBlockers("nothing")).toBeNull();
     expect(data.conditionType("brn")).toBe("Status");
     expect(data.conditionType("nothing")).toBeNull();
     expect(data.moveHookOrder("facade", "onBasePower")).toEqual({ order: false, priority: 0, sub_order: 0 });

@@ -311,7 +311,7 @@
     }
   },
   "data_class": "synthetic",
-  "description": "The damage kernel's effects (ADR-030 step 3, #1457): which abilities, items, moves and declared volatiles whose hooks reach the probe's damage path the kernel implements, and with which parameters (the pinned engine's own values, read from its data handlers). Reviewed data: an id that is not here, and has a hook the kernel's inert list does not hold, makes the kernel abstain. Every entry is held to the engine by the differential harness.",
+  "description": "The damage kernel's effects (ADR-030 step 3, #1457): which abilities, items and moves whose hooks reach the probe's damage path the kernel implements, and with which parameters (the pinned engine's own values, read from its data handlers). Reviewed data: an id that is not here, and has a hook the kernel's inert list does not hold, makes the kernel abstain. Every entry is held to the engine by the differential harness.",
   "format_id": "gen9championsvgc2026regmc",
   "items": {
     "babiriberry": {
@@ -582,13 +582,5 @@
     }
   },
   "schema_version": 1,
-  "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
-  "volatiles": {
-    "confusion": {
-      "kind": "no_damage_effect"
-    },
-    "taunt": {
-      "kind": "no_damage_effect"
-    }
-  }
+  "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b"
 }

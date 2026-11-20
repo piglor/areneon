@@ -145,21 +145,25 @@ if (mode === "regression") {
   const h = kernelHarness(engine, "0".repeat(40));
   const n = Number(flag("n", "3000"));
   const lines = readFileSync(flag("queries"), "utf8").split("\n").filter(Boolean).slice(0, n);
-  const queries = lines.map((l) => (JSON.parse(l) as { query: ParsedMechanicsQuery }).query).filter((q) => !abstained(h.kernel.run([q])[0] as Settled));
+  const every = lines.map((l) => (JSON.parse(l) as { query: ParsedMechanicsQuery }).query);
+  const queries = every.filter((q) => !abstained(h.kernel.run([q])[0] as Settled));
   const probe = probeBackend(engine, { config: h.configs.oracle, snapshot: h.configs.snapshot });
-  const time = (run: (q: ParsedMechanicsQuery) => unknown): number[] =>
-    queries.map((q) => {
+  const time = (list: readonly ParsedMechanicsQuery[], run: (q: ParsedMechanicsQuery) => unknown): number[] =>
+    list.map((q) => {
       const t = performance.now();
       run(q);
       return performance.now() - t;
     });
   // One warm pass each (caches, JIT), then the measured pass; every answer is also checked equal.
-  for (const q of queries.slice(0, 200)) {
+  for (const q of every.slice(0, 200)) {
     probe.run([q]);
     h.kernel.run([q]);
   }
-  const k = time((q) => h.kernel.run([q]));
-  const p = time((q) => probe.run([q]));
+  const k = time(queries, (q) => h.kernel.run([q]));
+  const p = time(queries, (q) => probe.run([q]));
+  // The probe's time on every damage query, and the share of it spent on the queries the kernel covers (time-weighted coverage).
+  const all = time(every, (q) => probe.run([q]));
+  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
   let differing = 0;
   for (const q of queries) if (jcs((h.kernel.run([q])[0] as unknown as { result: Json }).result) !== jcs((probe.run([q])[0] as unknown as { result: Json }).result)) differing++;
   const stats = (xs: number[]) => {
@@ -167,7 +171,7 @@ if (mode === "regression") {
     const at = (f: number) => s[Math.min(s.length - 1, Math.floor(f * s.length))] as number;
     return { median_ms: Number(at(0.5).toFixed(4)), p99_ms: Number(at(0.99).toFixed(4)), mean_ms: Number((xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(4)) };
   };
-  console.log(JSON.stringify({ queries: queries.length, differing, kernel: stats(k), probe: stats(p) }));
+  console.log(JSON.stringify({ damage_queries: every.length, covered: queries.length, differing, kernel: stats(k), probe: stats(p), probe_time_covered_share_ppm: Math.round((sum(p) / sum(all)) * 1e6), speedup_mean: Number((sum(p) / sum(k)).toFixed(2)) }));
 } else {
   console.error("kernel-admission: regression | fresh | ledger | bench");
   process.exit(2);

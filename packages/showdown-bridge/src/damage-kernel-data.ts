@@ -89,9 +89,6 @@ export const INERT_HOOKS: ReadonlySet<string> = new Set([
   "onWeather",
 ]);
 
-/** Hooks of a declared volatile that act outside the probe's move step (the action phase, the hit loop it replaces, the turn's end). */
-export const VOLATILE_INERT_HOOKS: ReadonlySet<string> = new Set([...INERT_HOOKS, "onBeforeMove", "onTryPrimaryHit", "onOverrideAction", "onLockMove", "onRestart"]);
-
 /** Hooks that act only when a status is set: inert unless the query declares a status on the holder. */
 export const STATUS_HOOKS: ReadonlySet<string> = new Set(["onSetStatus", "onAllySetStatus", "onAfterSetStatus"]);
 
@@ -221,8 +218,6 @@ export interface KernelData {
   itemBlockers(id: string, hasStatus: boolean): readonly string[] | null;
   /** The engine's condition of an id: its effect type, or null. */
   conditionType(id: string): string | null;
-  /** The non-inert hooks of a declared volatile (empty: inert), or null for an id that is no condition. */
-  volatileBlockers(id: string): readonly string[] | null;
   /** Every hook of an entity (`ability`, `item`, `condition`), for the handler order of an event. */
   hooks(kind: "ability" | "item" | "condition", id: string): ReadonlySet<string>;
   /** A hook's `Priority`, `Order` and `SubOrder` siblings (0, false and 0 when absent), as the engine's `resolvePriority` reads them. */
@@ -445,13 +440,6 @@ export function kernelData(engine: Engine, formatId: string, dir: string = DEFAU
     conditionType(id) {
       const condition = dex.conditions.get(id);
       return condition.exists && condition.id === id ? condition.effectType : null;
-    },
-    volatileBlockers(id) {
-      const condition = dex.conditions.get(id) as unknown as DexEntity;
-      if (!condition.exists || condition.id !== id) return null;
-      const out = hooksOf(condition).filter((hook) => !VOLATILE_INERT_HOOKS.has(hook) || hook === "onStart");
-      if (literals.has(id)) out.push("sim_literal");
-      return out.sort();
     },
     hooks(kind, id) {
       return new Set(hooksOf(entityOf(kind, id)));
