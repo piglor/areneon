@@ -34,7 +34,10 @@ from areneon_ml.reducer.reducer import ChannelReducer
 ROOT = Path(__file__).resolve().parents[3]
 FORMAT = "gen9championsvgc2026regmc"
 FORMAT_DIR = ROOT / "fixtures" / "showdown" / FORMAT
-SPEC_PATH = ROOT / "config" / "engine-state" / FORMAT / "battle-state-spec.v1.json"
+SPEC_DIR = ROOT / "config" / "engine-state" / FORMAT
+SPEC_PATH = SPEC_DIR / "battle-state-spec.v1.json"
+# Record v2 (#1464, the projection's record) beside v1, which stays as it was.
+VERSIONS = ("v1", "v2")
 TABLE: dict[str, Any] = json.loads((FORMAT_DIR / "engine-data-2.json").read_text())
 STATE_GROUPS = ("mon_cat", "mon_num", "field_cat", "field_num", "cand_cat", "cand_tok")
 # The option sets the gate names: the base layout, the lineage run's options, exact_volatiles.
@@ -59,8 +62,10 @@ ID_MAPS = {
 EMPTY: tuple[Any, ...] = (None, {}, [], False, 0)
 
 
-def spec() -> dict[str, Any]:
-    loaded: dict[str, Any] = json.loads(SPEC_PATH.read_text())
+def spec(version: str = "v1") -> dict[str, Any]:
+    loaded: dict[str, Any] = json.loads(
+        (SPEC_DIR / f"battle-state-spec.{version}.json").read_text()
+    )
     return loaded
 
 
@@ -107,8 +112,9 @@ def unmapped(record: dict[str, Any]) -> list[str]:
     return out
 
 
-def test_every_state_column_of_the_gate_layouts_maps_to_exactly_one_entry() -> None:
-    record = read_battle_state_spec(spec(), TABLE)
+@pytest.mark.parametrize("version", VERSIONS)
+def test_every_state_column_of_the_gate_layouts_maps_to_exactly_one_entry(version: str) -> None:
+    record = read_battle_state_spec(spec(version), TABLE)
     assert unmapped(record) == []
     # Nothing outside the state groups is laid out here (probe rows, sheet: out of scope).
     for options in CONFIGS.values():
@@ -118,8 +124,9 @@ def test_every_state_column_of_the_gate_layouts_maps_to_exactly_one_entry() -> N
     assert {"candidate_features", "candidate_target", "opponent_sheet"} <= scoped
 
 
-def test_no_entry_is_stale() -> None:
-    record = spec()
+@pytest.mark.parametrize("version", VERSIONS)
+def test_no_entry_is_stale(version: str) -> None:
+    record = spec(version)
     seen = {(g, c) for options in CONFIGS.values() for g, c in columns(layout(options))}
     stale = [
         e["column"]
@@ -212,19 +219,21 @@ def observed() -> dict[str, dict[str, list[Any]]]:
     return halves
 
 
-def test_every_reducer_key_at_every_request_maps_to_spec_fields() -> None:
-    record = spec()
+@pytest.mark.parametrize("version", VERSIONS)
+def test_every_reducer_key_at_every_request_maps_to_spec_fields(version: str) -> None:
+    record = spec(version)
     mapped = {r["key"] for r in record["reducer"]}
     keys = set(observed()["own"]) | set(observed()["opponent"]) | set(observed()["shared"])
     assert len(keys) > 80
     assert sorted(keys - mapped) == []
 
 
-def test_no_opponent_value_of_an_unprojectable_key() -> None:
+@pytest.mark.parametrize("version", VERSIONS)
+def test_no_opponent_value_of_an_unprojectable_key(version: str) -> None:
     """The reducer's opponent-secret rule and the spec agree: where the spec maps the opponent half
     to nothing although the own half reads fields another seat does not see exactly, the reducer's
     opponent half holds nothing either."""
-    record = read_battle_state_spec(spec(), TABLE)
+    record = read_battle_state_spec(spec(version), TABLE)
     fields = {f["id"]: f for f in record["fields"]}
     secret = [
         r["key"]
@@ -263,3 +272,17 @@ def test_the_reader_refuses_an_opponent_mapping_of_exact_values() -> None:
     ]
     with pytest.raises(BattleStateSpecError, match=r"roster\.max_hp is not projectable"):
         read_battle_state_spec(copy.deepcopy(hp))
+
+
+def test_v2_keeps_every_v1_field_and_mapping_ref() -> None:
+    """v2 adds fields and refs; it removes none and changes no field but in its description."""
+    one, two = spec("v1"), spec("v2")
+    fields = {f["id"]: f for f in two["fields"]}
+    for field in one["fields"]:
+        assert {**fields[field["id"]], "description": ""} == {**field, "description": ""}
+    for name in ("encoder", "reducer"):
+        later = {(r.get("group"), r.get("column"), r.get("key")): r for r in two[name]}
+        for row in one[name]:
+            kept = later[(row.get("group"), row.get("column"), row.get("key"))]
+            for half in ("own", "opponent", "shared"):
+                assert set(row[half]) <= set(kept[half])

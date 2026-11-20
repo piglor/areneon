@@ -25,14 +25,20 @@ const CORPUS_TIMEOUT_MS = 400_000;
 const SPEC_PATH = new URL(`../../../config/engine-state/${GOLDEN_FORMAT}/battle-state-spec.v1.json`, import.meta.url);
 const committedSpec = (): any => JSON.parse(readFileSync(SPEC_PATH, "utf8"));
 const SPEC_HASH = "044a8a0863f86c9795740e0f02097cdcee548e121ec99cbc551db5a2fcd574ec";
+// Record v2 (#1464): v1 plus what the projection needs (the own Pokemon that were not brought, the own base species over a Mega
+// Evolution, raw numbered volatile ids, a fifth revealed move, the slot occupant's stages); v1 stays as it was.
+const SPEC_V2_PATH = new URL(`../../../config/engine-state/${GOLDEN_FORMAT}/battle-state-spec.v2.json`, import.meta.url);
+const SPEC_V2_HASH = "8a5d6ce45837ab8577d874303de503338442ec702f0e577f45a8980f3d562d8f";
 
 let engine: Engine;
 let spec: BattleStateSpec;
+let specV2: BattleStateSpec;
 let binding: BattleStateBinding;
 beforeAll(() => {
   engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
   binding = bindingFor(engine, GOLDEN_FORMAT);
   spec = loadBattleStateSpec(engine, GOLDEN_FORMAT);
+  specV2 = loadBattleStateSpec(engine, GOLDEN_FORMAT, SPEC_V2_PATH);
 });
 
 type Player = "p1" | "p2";
@@ -238,6 +244,8 @@ const COMPARE: Record<string, Compare> = {
     }
     return out;
   },
+  // v2: the stages of the Pokemon in play at an entry (a disguised one at its disguise's entry) are what that entry shows.
+  "active.boosts": each((p) => (p.state.isActive === true ? same("slot stages", p.state.boosts, p.entry.boosts) : null)),
   "active.active_turns": (c) => activeFacts(c, (fact, mon) => same("active turns", mon.activeTurns, fact.active_turns)),
   // Only a deliberately misclassified record reaches these (the committed record gives them class own-exact): they
   // compare like for like, so a record that calls them public fails on a value. Hit points as a share of the
@@ -311,6 +319,44 @@ describe("the committed battle-state spec", () => {
     expect(() => loadBattleStateSpec(engine, "gen9ou", SPEC_PATH)).toThrow(BattleStateSpecError);
     // The open-sheet variant has the same counts and table, so only the record's own format refuses it.
     expect(() => loadBattleStateSpec(engine, `${GOLDEN_FORMAT}bo3`, SPEC_PATH)).toThrow(`the record is for ${GOLDEN_FORMAT}, not ${GOLDEN_FORMAT}bo3`);
+  });
+});
+
+describe("the committed battle-state spec, record v2 (#1464)", () => {
+  it("reads against the pinned engine, its hash is pinned, and v1 is unchanged beside it", () => {
+    expect(battleStateSpecHash(specV2)).toBe(SPEC_V2_HASH);
+    expect(battleStateSpecHash(spec)).toBe(SPEC_HASH);
+    expect(specV2.format_id).toBe(GOLDEN_FORMAT);
+  });
+
+  it("holds every field of v1 as it was, plus the fields the projection reads", () => {
+    const v2 = new Map(specV2.fields.map((f) => [f.id, f]));
+    for (const f of spec.fields) {
+      const kept = v2.get(f.id) as Field;
+      expect(kept, f.id).toBeDefined();
+      // Only descriptions may say more; class, source, shape and value are v1's.
+      expect({ ...kept, description: "" }, f.id).toEqual({ ...f, description: "" });
+    }
+    const added = specV2.fields.filter((f) => !spec.fields.some((g) => g.id === f.id)).map((f) => f.id);
+    expect(added).toEqual([
+      "active.boosts",
+      "seat_active.own_moves_used",
+      "seat_active.protocol_derived",
+      "seat_active.protocol_volatiles",
+      "seat_active.volatile_numbered",
+      "seat_active.volatile_stat_raw",
+      "seat_active.volatile_started_count",
+      "seat_roster.ability_suppressed",
+      "seat_roster.hp_den_shown",
+      "seat_roster.own_can_mega_evo",
+      "seat_roster.own_moves",
+      "seat_roster.own_pp",
+      "seat_roster.own_stats",
+      "seat_roster.revealed_extra",
+      "seat_roster.revealed_extra_at",
+    ]);
+    // Every added field but the slot occupant's public stages is a seat field: the seat's own derivation.
+    for (const id of added) expect((v2.get(id) as Field).visibility, id).toBe(id === "active.boosts" ? "public" : "seat");
   });
 });
 
@@ -427,6 +473,7 @@ describe("the spec against every committed corpus (the drift gate and the indepe
   const dimIds = new Map<string, Set<string>>();
   const unknownIds: string[] = [];
   const failures: string[] = [];
+  const failuresV2: string[] = [];
   const doctored: Record<string, string> = {};
   let statusMisclassified = 0;
   let statusPublic: BattleStateSpec;
@@ -506,6 +553,7 @@ describe("the spec against every committed corpus (the drift gate and the indepe
         compared.unseen += state.opponent.roster.filter((m) => m.hp_num === null && m.phantom !== true).length;
         const ctx: Context = { json, foe, state, facts, packed, vocab: (s) => dimIds.get(s) as Set<string>, slotIds };
         for (const miss of oracle(spec, ctx)) failures.push(`${miss} @ ${battle} ${player} turn ${json.turn}`);
+        for (const miss of oracle(specV2, ctx)) failuresV2.push(`${miss} @ ${battle} ${player} turn ${json.turn}`);
         statusMisclassified += oracle(statusPublic, ctx).filter((m) => m.startsWith("roster.status:")).length;
         for (const [id, record] of variants) {
           const miss = oracle(record, ctx).find((m) => m.startsWith(`${id}:`));
@@ -579,6 +627,15 @@ describe("the spec against every committed corpus (the drift gate and the indepe
     expect(compared.entries).toBeGreaterThan(20000);
     expect(compared.disguised, "the Illusion battle's disguises are compared at their shown entry").toBeGreaterThan(0);
     expect(compared.unseen, "unseen entries (brought or not) exist and are gated").toBeGreaterThan(1000);
+  });
+
+  it("record v2: every field another seat may see equals that seat's own reader and world facts too", () => {
+    const byField: Record<string, string> = {};
+    for (const miss of failuresV2) {
+      const id = miss.split(":")[0] as string;
+      byField[id] ??= `${failuresV2.filter((m) => m.startsWith(`${id}:`)).length}x ${miss}`;
+    }
+    expect(byField).toEqual({});
   });
 
   it("a deliberately misclassified field fails the oracle, for the reason it must (negative control)", () => {
