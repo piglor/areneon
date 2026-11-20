@@ -53,7 +53,7 @@ describe("the differential core package", () => {
   });
 
   it("is imported only by the joining files of the composition root (no evaluation path, no bridge)", () => {
-    const imports = new RegExp(`(?:from|import\\(|require\\()\\s*["']${NAME}["']`);
+    const imports = new RegExp(`(?:from|import\\(|require\\()\\s*["']${NAME}(/battle)?["']`);
     const importers = tracked.filter((path) => /\.(ts|tsx|js|mjs|cjs)$/.test(path) && !path.startsWith("packages/differential/") && imports.test(readFileSync(join(ROOT, path), "utf8")));
     for (const path of importers) expect(path, path).toMatch(JOINING);
     expect(importers.length).toBeGreaterThan(0);

@@ -1,0 +1,461 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:battle-trace",
+  "title": "BattleTrace",
+  "description": "The forced-draw trace of one battle on the unmodified pinned engine (ADR-028 section 5 F0, ADR-030 groundwork G2): the seed, both teams as brought, and per step (the engine's work between two requests) the actions written to the engine, every call the battle made on its random source (method, arguments and result, in order), each player's channel lines and the omniscient lines emitted, every request with its request_hash and the legal mask of its candidates (pending ones with the engine's hidden verdict), and the SHA-256 of the engine's toJSON after the step. An evaluation artifact holding both sides' hidden information: never an Episode, never actor input, committed only as synthetic fixtures. Strings and integers only (a random draw's numbers are written as their shortest decimal strings).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "data_class",
+    "trace_format",
+    "showdown_commit",
+    "format_id",
+    "battle_id",
+    "seed",
+    "teams",
+    "team_hashes",
+    "steps",
+    "outcome"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "data_class": {
+      "description": "Always synthetic: a trace is made from synthetic teams only.",
+      "const": "synthetic"
+    },
+    "trace_format": {
+      "description": "The recorder's format (TRACE_FORMAT): bumped when the recorder records anything differently.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "showdown_commit": {
+      "description": "The pinned engine commit the battle ran on.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "format_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+$"
+    },
+    "battle_id": {
+      "description": "A name for reports (the corpus file's id).",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+    },
+    "seed": {
+      "description": "The engine's PRNG seed.",
+      "type": "string",
+      "pattern": "^sodium,[0-9a-f]{32}$"
+    },
+    "teams": {
+      "description": "Each seat's set array as brought (before the validator fills defaults).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "p1",
+        "p2"
+      ],
+      "properties": {
+        "p1": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PokemonSet"
+          },
+          "minItems": 1
+        },
+        "p2": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PokemonSet"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "team_hashes": {
+      "description": "teamHash of each seat's sets, as runBattle records them.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "p1",
+        "p2"
+      ],
+      "properties": {
+        "p1": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "p2": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "steps": {
+      "description": "Step 0 is the start (no action); every later step is the run of writes up to and including the next one that emitted a request or ended the battle.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Step"
+      },
+      "minItems": 1
+    },
+    "outcome": {
+      "$ref": "#/$defs/Outcome"
+    }
+  },
+  "$defs": {
+    "Step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actions",
+        "draws",
+        "channels",
+        "omniscient",
+        "requests",
+        "state_sha256"
+      ],
+      "properties": {
+        "actions": {
+          "description": "What was written to the engine, in order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Action"
+          }
+        },
+        "draws": {
+          "description": "Every call the battle made on its random source during the step, in order (the joint sequence).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Draw"
+          }
+        },
+        "channels": {
+          "description": "Each player's channel lines emitted in the step, |t:| dropped.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "p1",
+            "p2"
+          ],
+          "properties": {
+            "p1": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "p2": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "omniscient": {
+          "description": "The omniscient lines emitted in the step, |t:| dropped: both sides' hidden information.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requests": {
+          "description": "The requests each seat received in the step, in order.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "p1",
+            "p2"
+          ],
+          "properties": {
+            "p1": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Request"
+              }
+            },
+            "p2": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Request"
+              }
+            }
+          }
+        },
+        "state_sha256": {
+          "description": "SHA-256 of the JSON text of the engine's toJSON() after the step, the wall-clock |t:| lines of its log dropped.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "Action": {
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ChoiceAction"
+        },
+        {
+          "$ref": "#/$defs/CommandAction"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "ChoiceAction": {
+      "description": "A seat's choice, as the runner wrote it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "seat",
+        "choice"
+      ],
+      "properties": {
+        "kind": {
+          "const": "choice"
+        },
+        "seat": {
+          "enum": [
+            "p1",
+            "p2"
+          ]
+        },
+        "choice": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "CommandAction": {
+      "description": "A harness command (the runner's turn cap).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "command"
+      ],
+      "properties": {
+        "kind": {
+          "const": "command"
+        },
+        "command": {
+          "const": "forcetie"
+        }
+      }
+    },
+    "Draw": {
+      "description": "One call on the random source: the method, its arguments and its result, each number as its shortest decimal string (sample: [length] and the index drawn; shuffle: [length, start, end] as passed and the permutation of indices; randomChance: the boolean as true or false).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "args",
+        "result"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9]*$"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "result": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "Request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_seq",
+        "request_hash"
+      ],
+      "properties": {
+        "request_seq": {
+          "description": "1-based per seat, wait requests included.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "request_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "mask": {
+          "description": "Every candidate in canonical order with the engine's verdict; absent for a wait request and for a request still in the stream when the battle ended. Pending verdicts are hidden state (as hidden_verdicts): never actor input.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MaskEntry"
+          }
+        }
+      }
+    },
+    "MaskEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "choice",
+        "verdict"
+      ],
+      "properties": {
+        "choice": {
+          "type": "string",
+          "minLength": 1
+        },
+        "verdict": {
+          "enum": [
+            "legal",
+            "pending_legal",
+            "pending_illegal"
+          ]
+        }
+      }
+    },
+    "Outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "winner",
+        "turns"
+      ],
+      "properties": {
+        "winner": {
+          "description": "Null for a tie.",
+          "enum": [
+            "p1",
+            "p2",
+            null
+          ]
+        },
+        "turns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "PokemonSet": {
+      "description": "One set, as the pinned engine's PokemonSet (sim/teams.ts) holds it. Legality is the engine validator's, not this schema's.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "species",
+        "item",
+        "ability",
+        "moves",
+        "nature",
+        "gender",
+        "evs",
+        "ivs",
+        "level"
+      ],
+      "properties": {
+        "name": {
+          "description": "Nickname; empty when none.",
+          "type": "string"
+        },
+        "species": {
+          "type": "string",
+          "minLength": 1
+        },
+        "item": {
+          "type": "string"
+        },
+        "ability": {
+          "type": "string"
+        },
+        "moves": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "nature": {
+          "type": "string"
+        },
+        "gender": {
+          "enum": [
+            "",
+            "M",
+            "F",
+            "N"
+          ]
+        },
+        "evs": {
+          "description": "Stat Points in the champions mod (ADR-003).",
+          "$ref": "#/$defs/StatTable"
+        },
+        "ivs": {
+          "$ref": "#/$defs/StatTable"
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "StatTable": {
+      "description": "One integer per stat.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hp",
+        "atk",
+        "def",
+        "spa",
+        "spd",
+        "spe"
+      ],
+      "properties": {
+        "hp": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "atk": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "def": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "spa": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "spd": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "spe": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    }
+  }
+}

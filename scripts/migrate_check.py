@@ -227,6 +227,18 @@ CHECKS: tuple[Check, ...] = (
         (vitest("search-fidelity-corpus.test.ts", "fidelity.test.ts"),),
     ),
     Check(
+        "battle-differential",
+        "battle-level differential (ADR-030 G2): committed battles replayed with forced draws,"
+        " broken backends caught",
+        (
+            vitest(
+                "battle-trace.test.ts",
+                "packages/team-dataset/test/differential-battle.test.ts",
+                "packages/team-dataset/test/differential-battle-targeted.test.ts",
+            ),
+        ),
+    ),
+    Check(
         "contract-corpus",
         "contract corpus (Ajv and python-jsonschema agree), generated types, digests",
         (
