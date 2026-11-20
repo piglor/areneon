@@ -10,6 +10,7 @@ import { decodeRequest } from "../src/request.ts";
 import { loadRulesSnapshot } from "../src/rules-load.ts";
 import { type BattleRecord, ForfeitSignal } from "../src/runner.ts";
 import { randomLegalActor } from "../src/random-legal.ts";
+import { loadRandomCorpus, pendingFirstActor, playRandomBattle, RANDOM_DIR, UNAVAILABLE_DIR } from "../src/random-corpus.ts";
 
 const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
 const PRNG = engine.sim.PRNG as unknown as new (seed: string) => Record<string, (...a: unknown[]) => unknown>;
@@ -189,6 +190,45 @@ describe("gate 3: a trace is the runner's own record of the battle", () => {
   });
 });
 
+describe("the recorder leaves the battle as it is (independent of the trace)", () => {
+  // The committed channel files were written by a plain runBattle with no recorder: the recorded battle must give them byte for
+  // byte, and the same omniscient log as a plain runBattle from the same seed, teams and actor seeds.
+  it("every random/ and unavailable/ battle recorded equals its committed channels and a plain run's omniscient log", { timeout: 300_000 }, async () => {
+    const cases = [
+      ...loadRandomCorpus(RANDOM_DIR).map((file, i) => ({ file, battle: committedBattles(["random"])[i] as { spec: Parameters<typeof recordBattleTrace>[1] }, actor: randomLegalActor })),
+      ...loadRandomCorpus(UNAVAILABLE_DIR).map((file, i) => ({ file, battle: committedBattles(["unavailable"])[i] as { spec: Parameters<typeof recordBattleTrace>[1] }, actor: pendingFirstActor })),
+    ];
+    expect(cases.length).toBe(42);
+    for (const { file, battle, actor } of cases) {
+      const { record: recorded } = await recordBattleTrace(engine, battle.spec);
+      expect(recorded.channels, file.id).toEqual({ p1: file.channels.p1.lines, p2: file.channels.p2.lines });
+      const plain = await playRandomBattle(engine, file, actor);
+      expect(JSON.stringify(recorded.omniscient_log), file.id).toBe(JSON.stringify(plain.omniscient_log));
+    }
+  });
+
+  it("negative control: a recording source that makes one extra draw changes the battle, and the check sees it", async () => {
+    const file = loadRandomCorpus(RANDOM_DIR)[0] as ReturnType<typeof loadRandomCorpus>[number];
+    const { spec } = committedBattles(["random"])[0] as { spec: Parameters<typeof recordBattleTrace>[1] };
+    let extra = true;
+    const perturbing = (prng: { random(): number }, log: () => Draw[]) => {
+      const inner = recordingSource(prng, log);
+      return new Proxy(inner, {
+        get(t, name) {
+          if (name === "random" && extra) {
+            extra = false;
+            prng.random();
+          }
+          return Reflect.get(t, name) as unknown;
+        },
+      });
+    };
+    const { record: recorded } = await recordBattleTrace(engine, spec, { source: perturbing });
+    expect(extra).toBe(false);
+    expect(recorded.channels).not.toEqual({ p1: file.channels.p1.lines, p2: file.channels.p2.lines });
+  });
+});
+
 describe("the committed battles", () => {
   it("lists every corpus once, each battle with its own name, and refuses an unknown corpus", () => {
     const all = committedBattles();
@@ -243,6 +283,23 @@ describe("the Showdown battle backend", () => {
     if (started?.ok !== true) throw new Error("the start was refused");
     expect(failing.step([{ handle: started.result.handle, actions: [{ kind: "choice", seat: "p1", choice: "boom" }], draws: [] }])[0]).toMatchObject({ ok: false, error: expect.any(ReplayError) });
     expect(backend.id).toBe("other");
+  });
+
+  it("refuses a |win| line that names no seat", () => {
+    const { trace } = random[0] as (typeof random)[number];
+    expect(trace.outcome.winner).not.toBeNull();
+    // Players named otherwise than the seats: the engine's |win| line then names neither seat.
+    const Base = engine.sim.BattleStream as unknown as new () => { _writeLine(t: string, m: string): void };
+    class Renaming extends Base {
+      override _writeLine(type: string, message: string): void {
+        super._writeLine(type, type === "player" ? message.replace(/"name":"p([12])"/, '"name":"seat$1"') : message);
+      }
+    }
+    const renaming = showdownBattleBackend({ ...engine, sim: { ...engine.sim, BattleStream: Renaming as never } });
+    const started = renaming.start([{ battle_id: "z", format_id: trace.format_id, seed: trace.seed, teams: trace.teams as never, draws: trace.steps[0]?.draws ?? [] }])[0];
+    if (started?.ok !== true) throw new Error("the start was refused");
+    const outs = trace.steps.slice(1).map((s) => renaming.step([{ handle: started.result.handle, actions: s.actions, draws: s.draws }])[0]);
+    expect(outs.at(-1)).toMatchObject({ ok: false, error: expect.any(ReplayError) });
   });
 
   it("hashes the engine state without its wall-clock lines", () => {

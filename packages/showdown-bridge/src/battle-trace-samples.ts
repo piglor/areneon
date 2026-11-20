@@ -77,6 +77,7 @@ export function battleTraceSamples(): { valid: Cases; invalid: Cases; readerInva
       "battle-trace/team-hash-mismatch": mutated((t) => (t.team_hashes = { p1: HASH("d"), p2: teamHash(team) })),
       "battle-trace/ends-early": mutated((t) => (step(t, 0).omniscient = ["|teampreview", "|win|p1"])),
       "battle-trace/never-ends": mutated((t) => (step(t, 1).omniscient = ["|start"])),
+      "battle-trace/wrong-winner": mutated((t) => (t.outcome = { winner: "p2", turns: 0 })),
     },
   };
 }

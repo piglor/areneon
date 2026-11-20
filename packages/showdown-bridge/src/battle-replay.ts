@@ -96,7 +96,11 @@ export function showdownBattleBackend(engine: Engine, options: ReplayOptions = {
     const live = b.stream.battle as SimBattle;
     for (const line of b.out.omniscient) {
       if (line.startsWith("|turn|")) b.turns = Number(line.slice("|turn|".length));
-      else if (line.startsWith("|win|")) b.winner = line.slice("|win|".length) === "p1" ? "p1" : "p2";
+      else if (line.startsWith("|win|")) {
+        const name = line.slice("|win|".length);
+        if (name !== "p1" && name !== "p2") throw new ReplayError("|win| names no seat");
+        b.winner = name;
+      }
     }
     const requests = stepRequests(engine, live, b.out.bodies, b.seqs);
     const result: ReplayOutput = {

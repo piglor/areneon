@@ -18,6 +18,7 @@ const READER_INVALID: Record<string, string> = {
   "start-with-action": "only the start step has no action",
   "step-without-action": "only the start step has no action",
   "team-hash-mismatch": "does not hash to its team_hashes entry",
+  "wrong-winner": "is not the one the last step's",
 };
 
 describe("the BattleTrace samples", () => {

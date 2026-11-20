@@ -141,6 +141,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/battle-trace/reader-invalid/start-with-action.json",
       "v1/battle-trace/reader-invalid/step-without-action.json",
       "v1/battle-trace/reader-invalid/team-hash-mismatch.json",
+      "v1/battle-trace/reader-invalid/wrong-winner.json",
       "v1/belief-config/reader-invalid/damage-unknown-item.json",
       "v1/belief-config/reader-invalid/damage-unknown-lasting-move.json",
       "v1/belief-config/reader-invalid/damage-unknown-move.json",

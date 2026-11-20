@@ -23,7 +23,7 @@ export function endStep(trace: Pick<BattleTrace, "steps">): number {
 /**
  * Read a trace: the schema, then the reader rules. Step 0 (the start) has no action and every later step at least one; each
  * seat's requests are numbered 1, 2, ... across the steps; each team hashes to its `team_hashes` entry (SHA-256 of the JCS of
- * the set array, the runner's `teamHash`); exactly one step ends the battle, the last.
+ * the set array, the runner's `teamHash`); exactly one step ends the battle, the last, and its `|win|` or `|tie` line names the outcome's winner.
  */
 export function readBattleTrace(value: unknown): BattleTrace {
   if (!validate(value)) throw new TraceError(`invalid BattleTrace: ${JSON.stringify(validate.errors)}`);
@@ -37,5 +37,8 @@ export function readBattleTrace(value: unknown): BattleTrace {
     if (sha256Jcs(trace.teams[seat] as unknown as Json) !== trace.team_hashes[seat]) throw new TraceError("a team does not hash to its team_hashes entry");
   }
   if (endStep(trace) !== trace.steps.length - 1) throw new TraceError("the last step, and only it, ends the battle");
+  const end = (trace.steps.at(-1) as Step).omniscient.find((line) => line.startsWith("|win|") || line === "|tie");
+  const winner = end === "|tie" ? null : (end as string).slice("|win|".length);
+  if (winner !== trace.outcome.winner) throw new TraceError("the outcome's winner is not the one the last step's |win| or |tie| line names");
   return trace;
 }

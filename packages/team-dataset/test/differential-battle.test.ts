@@ -166,6 +166,7 @@ describe("gate 2: broken battle backends are caught with the right kind, step an
       caught = differenceOf(broken(battleBackend(replayEngine), { draws: (draws, s) => (s === k ? draws.map((d, i) => (i === at ? { ...d, result: [d.result[0] === "true" ? "false" : "true"] } : d)) : draws) }), trace);
       if (caught?.kind === "channel") {
         expect(caught.step).toBe(k);
+        expect(["p1", "p2"]).toContain(caught.seat);
         break;
       }
     }

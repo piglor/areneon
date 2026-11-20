@@ -79,6 +79,7 @@
   "v1/battle-trace/reader-invalid/start-with-action.json": "33336e5bc0fdec3289cd1e4fd9cedf4996d0beafbc7dd631e9fd9a9a58510748",
   "v1/battle-trace/reader-invalid/step-without-action.json": "bcca0d26aed651803b104c37922f71531e781c033aadd61cd4b22b91212a1bdf",
   "v1/battle-trace/reader-invalid/team-hash-mismatch.json": "f8fa3dd7602303ffd4bb2886b8893183467db83a3cebc0a8ae59bdbcea7d4c29",
+  "v1/battle-trace/reader-invalid/wrong-winner.json": "3a097b9b23db505b9959a228d5f11cf24df7b337c8eac700fefc4e9f5365804e",
   "v1/battle-trace/valid/forced-tie.json": "71ed2755fb6b281d7a3d692cfbbb5f87fef8afee7273743700847310789a66aa",
   "v1/battle-trace/valid/minimal.json": "400e3d1cf4ac87b7caf135e5bca5830b8661473d22aff6d023a2ce7452008197",
   "v1/belief-config/invalid/damage-bad-rounding.json": "49af077abb43a49e9e7652da8bc966db7c535a0b7d6b2366f289da200ef72dce",

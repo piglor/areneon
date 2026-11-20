@@ -41,7 +41,10 @@ export interface BattleStepOutput {
   ended: boolean;
   winner: Seat | null;
   turns: number;
-  /** SHA-256 of the backend's own serialised state, when it has the engine's (`toJSON`); compared only when given. */
+  /**
+   * SHA-256 of the backend's own serialised state, when it has the engine's (`toJSON`). Compared only when given: a backend that
+   * omits it gets no state check, so only the five ADR-028 items hold it to the engine.
+   */
   state_sha256?: string;
 }
 

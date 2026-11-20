@@ -284,13 +284,19 @@ const closes = (w: Pick<Write, "ended" | "bodies">, first: boolean): boolean => 
  * the live battle (`stepRequests`), as the replay does; where the runner judged a request too, its legal set and hidden
  * verdicts must agree. Refused when an actor forfeits (a harness command the trace has no action for).
  */
-export async function recordBattleTrace(engine: Engine, spec: TraceSpec): Promise<{ trace: BattleTrace; record: BattleRecord }> {
+/** Test seam: how the recorder wraps the engine's generator (default `recordingSource`); a test proves its check has teeth with it. */
+export interface RecordOptions {
+  source?: (prng: any, log: () => Draw[]) => any;
+}
+
+export async function recordBattleTrace(engine: Engine, spec: TraceSpec, options: RecordOptions = {}): Promise<{ trace: BattleTrace; record: BattleRecord }> {
+  const wrap = options.source ?? recordingSource;
   const writes: Write[] = [];
   const seqs: Record<Seat, number> = { p1: 0, p2: 0 };
   let current = newWrite();
   const Traced = tracedStreamClass(engine, {
     forward: true,
-    started: (battle) => installSource(battle, recordingSource(battle.prng, () => current.draws)),
+    started: (battle) => installSource(battle, wrap(battle.prng, () => current.draws)),
     write(begin, battle) {
       if (begin) {
         current = newWrite();
