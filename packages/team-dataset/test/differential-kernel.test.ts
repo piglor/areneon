@@ -84,8 +84,8 @@ describe("3. the ledger", () => {
     const dataset = readDataset(datasetDir, loadFixtureInputs(engine, "gen9championsvgc2026regmc", datasetDir));
     const pool = datasetPoolDetail(engine, { format_id: "gen9championsvgc2026regmc", team_dataset: { path: datasetDir, dataset_hash: datasetHash(dataset) }, generation: { excluded_abilities: ["Illusion"] } } as never).pool;
     const battle = await freshBattle(h, pool, 0);
-    expect(battle).not.toBeNull();
-    const fresh = await kernelFresh(h, pool, 400, { maxBattles: 3 });
+    expect(battle.channels.p1.lines.length).toBeGreaterThan(0);
+    const fresh = await kernelFresh(h, pool, 400, 3);
     expect(fresh.tally.spec.kind).toBe("fresh");
     expect(fresh.tally.spec.seed).toBe(freshSeed(h.kernel));
     expect(fresh.tally.spec.pool).toBe(poolHash(pool));

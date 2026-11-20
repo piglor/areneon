@@ -41,7 +41,7 @@ import {
   type RandomBattleFile,
   type Settled,
 } from "@areneon/showdown-bridge";
-import { collectQueries, COMMITTED_CORPORA, corpusBattles, corpusHash, type HarnessConfigs, harnessConfigs, mechanicsHarnessLevel, remembering } from "./differential-mechanics.ts";
+import { collectQueries, corpusBattles, corpusHash, type HarnessConfigs, harnessConfigs, mechanicsHarnessLevel, remembering } from "./differential-mechanics.ts";
 import { playSweepBattle } from "./reducer-sweep.ts";
 
 /** The backend kind the ledger names. */
@@ -109,48 +109,37 @@ function addBattle(h: KernelHarness, acc: Accumulator, battle: RandomBattleFile,
   }
 }
 
-export interface RunOptions {
-  batchSize?: number;
-  /** The oracle of one battle (default: the pinned probe, remembering its answers). */
-  oracle?: () => ProbeBackend;
-}
+const BATCH = 256;
 
 const defaultOracle = (h: KernelHarness) => () => remembering(probeBackend(h.engine, { config: h.configs.oracle, snapshot: h.configs.snapshot }));
 
 /** One committed corpus as a regression corpus of the kernel (the first `limit` battles when given). */
-export function kernelRegression(h: KernelHarness, corpus: { id: string; dir: string }, limit?: number, options: RunOptions = {}): KernelCorpusRun {
+export function kernelRegression(h: KernelHarness, corpus: { id: string; dir: string }, limit?: number): KernelCorpusRun {
   const source = corpusHash(corpus.dir, limit);
   const acc = accumulator({ id: corpus.id, kind: "regression", seed: source, pool: source });
-  for (const battle of corpusBattles(corpus.dir, limit)) addBattle(h, acc, battle, options.oracle ?? defaultOracle(h), Infinity, options.batchSize ?? 256);
+  for (const battle of corpusBattles(corpus.dir, limit)) addBattle(h, acc, battle, defaultOracle(h), Infinity, BATCH);
   return acc.run;
 }
-
-/** Every committed corpus as a regression corpus. */
-export const kernelRegressions = (h: KernelHarness, limit?: number, options: RunOptions = {}): KernelCorpusRun[] => COMMITTED_CORPORA.map((c) => kernelRegression(h, c, limit, options));
 
 /** The pool a fresh corpus is drawn from, by its identity (the team hashes in pool order). */
 export const poolHash = (pool: GenerationTeamPool): string => sha256Jcs({ hashes: [...pool.hashes], purpose: "damage-kernel-pool/1" });
 
 /** The battle a fresh corpus plays at `index`: a function of the kernel version's fresh seed and the pool alone. */
-export async function freshBattle(h: KernelHarness, pool: GenerationTeamPool, index: number, maxTurns: number = RANDOM_MAX_TURNS): Promise<RandomBattleFile | null> {
+export async function freshBattle(h: KernelHarness, pool: GenerationTeamPool, index: number, maxTurns: number = RANDOM_MAX_TURNS): Promise<RandomBattleFile> {
   const battle = await playSweepBattle(h.engine, h.configs.oracle.format_id, pool, { run_key: `fresh-${freshSeed(h.kernel)}`, mix: "random-legal", index, max_turns: maxTurns });
-  if (battle.failure !== undefined) return null;
+  // A battle that did not finish keeps no channels, so it issues no query (the draw is still the next index's).
   const channel = (player: "p1" | "p2") => ({ schema_version: 1 as const, data_class: "synthetic" as const, player, lines: battle.channels[player] });
   return { schema_version: 1, data_class: "synthetic", provenance: "fresh", id: `f${index}`, seed: battle.seed, actor_seeds: { p1: 0, p2: 0 }, teams: battle.teams, winner: battle.winner, turns: battle.turns, channels: { p1: channel("p1"), p2: channel("p2") } };
 }
 
 /**
  * The fresh corpus of the kernel version: battles `0, 1, ...` of the fresh draw on `pool`, every distinct covered damage query
- * compared, until `size` (default the level's minimum, 200,000) are held. `onBattle` reports progress.
+ * compared, until `size` (default the level's minimum, 200,000) are held, or `maxBattles` were played.
  */
-export async function kernelFresh(h: KernelHarness, pool: GenerationTeamPool, size: number = MIN_FRESH_ITEMS["mechanics-query"], options: RunOptions & { onBattle?: (run: KernelCorpusRun) => void; maxBattles?: number } = {}): Promise<KernelCorpusRun> {
+export async function kernelFresh(h: KernelHarness, pool: GenerationTeamPool, size: number = MIN_FRESH_ITEMS["mechanics-query"], maxBattles = Number.POSITIVE_INFINITY): Promise<KernelCorpusRun> {
   const spec: CorpusSpec = { id: freshCorpusId(h.kernel), kind: "fresh", seed: freshSeed(h.kernel), pool: poolHash(pool) };
   const acc = accumulator(spec);
-  for (let index = 0; acc.run.covered < size && index < (options.maxBattles ?? Infinity); index++) {
-    const battle = await freshBattle(h, pool, index);
-    if (battle !== null) addBattle(h, acc, battle, options.oracle ?? defaultOracle(h), size, options.batchSize ?? 256);
-    options.onBattle?.(acc.run);
-  }
+  for (let index = 0; acc.run.covered < size && index < maxBattles; index++) addBattle(h, acc, await freshBattle(h, pool, index), defaultOracle(h), size, BATCH);
   return acc.run;
 }
 

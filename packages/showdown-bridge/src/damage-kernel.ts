@@ -14,7 +14,8 @@
 // Integers only: every value is an integer and every division an exact integer division (`div`). A batch is decoded into
 // struct-of-arrays columns (`Int32Array`) and the 32 rolls of every query are computed in one loop over them (`computeBatch`).
 //
-// What KERNEL_FORMAT 1 covers, abstaining on everything else:
+// What KERNEL_FORMAT 2 covers, abstaining on everything else (format 1's fresh corpus found two classes it got wrong: an
+// after-move hook that draws, and a switch-in terrain refusing a declared status; both now abstain):
 // - attacker and defender: the set's species forme (a Mega or battle-only forme as a set's own species is abstained on), or the
 //   Mega forme its stone makes when the query declares a Mega Evolution (its first ability then); Champions Stat Point stats;
 //   absolute stages; declared HP (at most the maximum); a declared status the engine knows;
@@ -41,7 +42,7 @@ import { type KernelData, type KernelSpecies, STATS, type Stat } from "./damage-
 import type { KernelEffect, KernelEffects } from "./damage-kernel-effects.ts";
 
 /** Bumped whenever the kernel computes anything differently, or covers more (its admission starts again). */
-export const KERNEL_FORMAT = 1;
+export const KERNEL_FORMAT = 2;
 
 type DamageQuery = Extract<MechanicsQuery["query"], { kind: "damage" }>;
 type Combatant = DamageQuery["attacker"];
@@ -162,7 +163,20 @@ function entityEffect(ctx: KernelContext, kind: "ability" | "item", id: string, 
   return effect;
 }
 
-function fighter(ctx: KernelContext, role: Fighter["role"], set: PokemonSet, combatant: Combatant): Fighter {
+/** A combatant before the other is known: its forme, ability and status. */
+interface Base {
+  role: Fighter["role"];
+  own: KernelSpecies;
+  species: KernelSpecies;
+  ability: string;
+  item: string | null;
+  status: string | null;
+  set: PokemonSet;
+  combatant: Combatant;
+  ability_effect: KernelEffect | null;
+}
+
+function fighter(ctx: KernelContext, role: Fighter["role"], set: PokemonSet, combatant: Combatant): Base {
   const { data } = ctx;
   const own = data.species(set.species);
   if (own === null) throw new KernelAbstain(`species:${toId(set.species)}`, "unknown");
@@ -184,6 +198,22 @@ function fighter(ctx: KernelContext, role: Fighter["role"], set: PokemonSet, com
     status = combatant.status;
   }
   const ability_effect = entityEffect(ctx, "ability", ability, status !== null);
+  return { role, own, species, ability, item, status, set, combatant, ability_effect };
+}
+
+/** The rest of a combatant once both are known: a declared status is set before the field, so a switch-in effect of either can refuse it. */
+function finish(ctx: KernelContext, base: Base, other: Base): Fighter {
+  const { data } = ctx;
+  const { role, species, ability, item, status, set, combatant, own, ability_effect } = base;
+  // The engine starts the scenario (every switch-in's start effect, a Surge's terrain among them) before the declared status, so a
+  // status can be refused by a condition an ability started (Electric and Misty Terrain refuse statuses): abstain then.
+  if (status !== null) {
+    for (const id of [ability, other.ability]) {
+      const starts = data.abilityStarts(id);
+      const refuses = starts === null ? data.hooks("ability", id).has("onStart") : starts.some((c) => data.hooks("condition", c).has("onSetStatus"));
+      if (refuses) throw new KernelAbstain(`ability:${id}`, "status_start");
+    }
+  }
   const item_effect = item === null ? null : entityEffect(ctx, "item", item, status !== null);
   checkVolatiles(combatant);
   const nature = data.nature(set.nature);
@@ -332,8 +362,10 @@ export function prepareQuery(ctx: KernelContext, query: DamageQuery, attackerSet
   const { state } = query;
   if (state.weather !== null && !WEATHERS.has(state.weather)) throw new KernelAbstain(`weather:${state.weather}`, "not_implemented");
   if (state.terrain !== null && !TERRAINS.has(state.terrain)) throw new KernelAbstain(`terrain:${state.terrain}`, "not_implemented");
-  const attacker = fighter(ctx, "attacker", attackerSet, query.attacker);
-  const defender = fighter(ctx, "defender", defenderSet, query.defender);
+  const a = fighter(ctx, "attacker", attackerSet, query.attacker);
+  const d = fighter(ctx, "defender", defenderSet, query.defender);
+  const attacker = finish(ctx, a, d);
+  const defender = finish(ctx, d, a);
   const move = data.move(query.move);
   if (move === null) throw new KernelAbstain(`move:${query.move}`, "unknown");
   // Outside the probe's v1 scope: answered before any hook of the move runs.

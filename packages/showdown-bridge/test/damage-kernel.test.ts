@@ -10,7 +10,8 @@ import { jcs, type Json } from "../src/canonical-json.ts";
 import { abstained, KernelBackendError, kernelBackend } from "../src/damage-kernel-backend.ts";
 import { blockingHooks, hooksOf, INERT_HOOKS, kernelData, KernelDataError, simLiterals, STATUS_HOOKS } from "../src/damage-kernel-data.ts";
 import { kernelEffectsHash, loadKernelEffects, readKernelEffects } from "../src/damage-kernel-effects.ts";
-import { championsStat, computeBatch, KERNEL_FORMAT, KernelAbstain, staged } from "../src/damage-kernel.ts";
+import { championsStat, computeBatch, KERNEL_FORMAT, KernelAbstain, type KernelContext, prepareQuery, staged } from "../src/damage-kernel.ts";
+import type { KernelData } from "../src/damage-kernel-data.ts";
 import type { Engine, PokemonSet } from "../src/engine.ts";
 import { GOLDEN_FORMAT } from "../src/golden.ts";
 import { loadEngine } from "../src/index.ts";
@@ -19,7 +20,7 @@ import { probeMechanics } from "../src/mechanics-probe.ts";
 import { type ParsedMechanicsQuery, readMechanicsQuery } from "../src/mechanics-query.ts";
 import type { MechanicsResult } from "../src/mechanics-result.ts";
 import type { Settled } from "../src/probe-batch.ts";
-import { exportPaste } from "../src/teams.ts";
+import { exportPaste, importPaste } from "../src/teams.ts";
 
 const COMMIT = "c".repeat(40);
 let engine: Engine;
@@ -186,12 +187,20 @@ describe("2. every entry of the effects record, against the probe", () => {
 
   it("items: each covered and equal, held by the attacker and by the defender", () => {
     const effects = loadKernelEffects(GOLDEN_FORMAT, engine.commit);
-    const user: Side = { species: "garchomp", ability: "roughskin", moves: ["dragonclaw", "earthquake", "crunch", "ironhead", "rockslide", "poisonjab"] };
+    const entryOf = (id: string) => vocabulary.roster.find((r) => r.id === id) as Vocabulary["roster"][number];
+    // A physical and a special user, four damaging moves each of several types, from the roster's own move pools.
+    const users: Side[] = [
+      { species: "garchomp", ability: "roughskin", moves: movesOf(entryOf("garchomp"), 4) },
+      { species: "alakazam", ability: "synchronize", moves: movesOf(entryOf("alakazam"), 4) },
+    ];
     let covered = 0;
     for (const item of Object.keys(effects.items)) {
       for (const [i, state] of STATES.slice(0, 3).entries()) {
-        for (const move of user.moves) if (same(query({ ...user, item }, foes[i] as Side, move, state))) covered++;
-        for (const foe of foes) for (const move of foe.moves) if (same(query(foe, { ...user, item, hp: i === 1 ? 50 : null }, move, state))) covered++;
+        for (const user of users) {
+          for (const move of user.moves) if (same(query({ ...user, item }, foes[i] as Side, move, state))) covered++;
+          const foe = foes[(i + 1) % foes.length] as Side;
+          for (const move of foe.moves) if (same(query(foe, { ...user, item, hp: i === 1 ? 50 : null }, move, state))) covered++;
+        }
       }
     }
     expect(covered).toBeGreaterThan(Object.keys(effects.items).length * 4);
@@ -240,6 +249,73 @@ describe("2. every entry of the effects record, against the probe", () => {
   });
 });
 
+describe("2b. each effect kind, on a query built to exercise it, against the probe", () => {
+  type Move = { type: string; target: string; basePower: number; category: string; flags?: Record<string, number>; priority?: number; id?: string };
+  /** A legal side holding `ability` (and `item`) with up to four damaging moves, the first matching `want`. */
+  const side = (ability: string, item?: string, want?: (m: Move) => boolean, extra: Partial<Side> = {}): { side: Side; move: string } | null => {
+    for (const entry of vocabulary.roster) {
+      if (!entry.abilities.includes(ability) || entry.required_item !== undefined) continue;
+      const hit = entry.moves.find((id) => {
+        const m = dex.moves.get(id) as unknown as Move;
+        return m.category !== "Status" && m.basePower > 0 && (want === undefined || want({ ...m, id }));
+      });
+      if (hit === undefined) continue;
+      const moves = [hit, ...movesOf(entry, 3).filter((m) => m !== hit)].slice(0, 4);
+      return { side: { species: entry.id, ability, ...(item === undefined ? {} : { item }), moves, ...extra }, move: hit };
+    }
+    return null;
+  };
+  const SNORLAX: Side = { species: "snorlax", ability: "immunity", moves: ["bodyslam"] };
+  const cases: [string, () => ParsedMechanicsQuery | null][] = [
+    ["absorb", () => { const a = side("roughskin", undefined, (m) => m.type === "Electric") ?? side("intimidate", undefined, (m) => m.type === "Electric"); const d = side("voltabsorb"); return a && d && query(a.side, d.side, a.move); }],
+    ["flag immunity", () => { const a = side("intimidate", undefined, (m) => (m.flags ?? {}).bullet === 1); const d = side("bulletproof"); return a && d && query(a.side, d.side, a.move); }],
+    ["priority block", () => { const a = side("steadfast", undefined, (m) => (m.priority ?? 0) > 0 && m.id !== "feint"); const d = side("armortail") ?? side("queenlymajesty") ?? side("dazzling"); return a && d && query(a.side, d.side, a.move); }],
+    ["mold breaker through levitate", () => { const a = side("moldbreaker", undefined, (m) => m.type === "Ground"); const d = side("levitate"); return a && d && query(a.side, d.side, a.move); }],
+    ["levitate", () => { const d = side("levitate"); return d && query(GARCHOMP, d.side, "earthquake"); }],
+    ["thick fat", () => { const d = side("thickfat"); return d && query(GARCHOMP, d.side, "firefang"); }],
+    ["scope lens", () => query({ ...GARCHOMP, item: "scopelens" }, SNORLAX, "dragonclaw")],
+    ["life orb", () => query({ ...GARCHOMP, item: "lifeorb" }, SNORLAX, "dragonclaw")],
+    ["expert belt, super effective", () => query({ ...GARCHOMP, item: "expertbelt" }, ARCANINE, "earthquake")],
+    ["expert belt, neutral", () => query({ ...GARCHOMP, item: "expertbelt" }, SNORLAX, "earthquake")],
+    ["type boost, own type", () => query({ ...GARCHOMP, item: "dragonfang" }, SNORLAX, "dragonclaw")],
+    ["type boost, other type", () => query({ ...GARCHOMP, item: "dragonfang" }, SNORLAX, "earthquake")],
+    ["muscle band", () => query({ ...GARCHOMP, item: "muscleband" }, SNORLAX, "dragonclaw")],
+    ["resist berry eaten", () => query(GARCHOMP, { ...ARCANINE, item: "shucaberry" }, "earthquake")],
+    ["resist berry, other type", () => query(GARCHOMP, { ...ARCANINE, item: "shucaberry" }, "dragonclaw")],
+    ["resist berry, unnerve", () => { const a = side("unnerve", undefined, (m) => m.type === "Ground"); return a && query(a.side, { ...ARCANINE, item: "shucaberry" }, a.move); }],
+    ["chilan berry", () => { const a = side("intimidate", undefined, (m) => m.type === "Normal"); return a && query(a.side, { ...GARCHOMP, item: "chilanberry" }, a.move); }],
+    ["filter", () => { const d = side("filter") ?? side("solidrock"); return d && query(GARCHOMP, d.side, "earthquake"); }],
+    ["multiscale", () => { const d = side("multiscale"); return d && query(GARCHOMP, d.side, "dragonclaw"); }],
+    ["sniper", () => { const a = side("sniper"); return a && query(a.side, SNORLAX, a.move); }],
+    ["technician", () => { const a = side("technician", undefined, (m) => m.basePower <= 60); return a && query(a.side, SNORLAX, a.move); }],
+    ["technician, strong move", () => { const a = side("technician", undefined, (m) => m.basePower > 60); return a && query(a.side, SNORLAX, a.move); }],
+    ["ate", () => { const a = side("pixilate", undefined, (m) => m.type === "Normal") ?? side("aerilate", undefined, (m) => m.type === "Normal"); return a && query(a.side, SNORLAX, a.move); }],
+    ["sheer force", () => { const a = side("sheerforce"); return a && query(a.side, SNORLAX, a.move); }],
+    ["guts", () => { const a = side("guts", undefined, (m) => m.category === "Physical", { status: "brn" }); return a && query(a.side, SNORLAX, a.move); }],
+    ["pinch", () => { const a = side("blaze", undefined, (m) => m.type === "Fire", { hp: 20 }); return a && query(a.side, SNORLAX, a.move); }],
+    ["solar power", () => { const a = side("solarpower", undefined, (m) => m.category === "Special"); return a && query(a.side, SNORLAX, a.move, { weather: "sunnyday" }); }],
+    ["fur coat", () => { const d = side("furcoat"); return d && query(GARCHOMP, d.side, "dragonclaw"); }],
+    ["grass pelt", () => { const d = side("grasspelt"); return d && query(GARCHOMP, d.side, "dragonclaw", { terrain: "grassyterrain" }); }],
+    ["shell armor", () => { const d = side("shellarmor"); return d && query(GARCHOMP, d.side, "dragonclaw"); }],
+    ["adaptability", () => { const a = side("adaptability"); return a && query(a.side, SNORLAX, a.move); }],
+    ["cloud nine in rain", () => { const d = side("cloudnine"); return d && query({ species: "lapras", ability: "waterabsorb", moves: ["surf"] }, d.side, "surf", { weather: "raindance" }); }],
+    ["infiltrator through reflect", () => { const a = side("infiltrator", undefined, (m) => m.category === "Physical"); return a && query(a.side, SNORLAX, a.move, { sides: sides({ reflect: true }) }); }],
+    ["aurora veil", () => query(GARCHOMP, SNORLAX, "dragonclaw", { sides: sides({ aurora_veil: true }) })],
+    ["light screen against a physical move", () => query(GARCHOMP, SNORLAX, "dragonclaw", { sides: sides({ light_screen: true }) })],
+    ["stored power", () => { const a = side("synchronize", undefined, (m) => m.id === "storedpower", { boosts: { spa: 2, def: 1, atk: -1 } }); return a && query(a.side, SNORLAX, a.move); }],
+    ["facade", () => { const a = side("steadfast", undefined, (m) => m.id === "facade", { status: "par" }); return a && query(a.side, ARCANINE, a.move); }],
+    ["sand on a Rock defender", () => { const d = side("sturdy", undefined, undefined) ; return d && query({ species: "alakazam", ability: "synchronize", moves: ["psychic"] }, { species: "tyranitar", ability: "unnerve", moves: ["rockslide"] }, "psychic", { weather: "sandstorm" }); }],
+    ["snow on an Ice defender", () => query(GARCHOMP, { species: "abomasnow", ability: "soundproof", moves: ["blizzard"] }, "dragonclaw", { weather: "snowscape" })],
+    ["misty terrain against a Dragon move", () => query(GARCHOMP, SNORLAX, "dragonclaw", { terrain: "mistyterrain" })],
+    ["electric terrain", () => query({ species: "raichu", ability: "static", moves: ["thunderbolt"] }, SNORLAX, "thunderbolt", { terrain: "electricterrain" })],
+  ];
+  it.each(cases)("%s", (_name, build) => {
+    const q = build();
+    expect(q, "a legal query could be built").not.toBeNull();
+    if (q !== null) expect(same(q) || String((run(q) as { error: Error }).error)).toBe(true);
+  });
+});
+
 describe("3. abstentions: never a guess", () => {
   it("names what it does not cover", () => {
     expect(abstainsOn(query(GARCHOMP, ARCANINE, "dragonclaw", { weather: "hail" }))).toBe("weather:hail");
@@ -274,6 +350,74 @@ describe("3. abstentions: never a guess", () => {
   });
 });
 
+
+describe("3b. every refusal rule, through a context whose data is doctored", () => {
+  const ctxWith = (patch: Partial<KernelData> = {}, extra: Partial<KernelContext> = {}): KernelContext => {
+    const data = kernelData(engine, GOLDEN_FORMAT);
+    return { data: { ...data, ...patch } as KernelData, effects: loadKernelEffects(GOLDEN_FORMAT, engine.commit), ko_blockers: config.ko_blockers, level: null, ...extra };
+  };
+  const decode = (ctx: KernelContext, q: ParsedMechanicsQuery): string => {
+    const dq = q.query as Extract<ParsedMechanicsQuery["query"], { kind: "damage" }>;
+    const sets = [importPaste(engine, dq.attacker.set)[0], importPaste(engine, dq.defender.set)[0]] as PokemonSet[];
+    try {
+      const out = prepareQuery(ctx, dq, sets[0] as PokemonSet, sets[1] as PokemonSet);
+      return out.kind;
+    } catch (error) {
+      if (!(error instanceof KernelAbstain)) throw error;
+      return `${error.entity} ${error.why}`;
+    }
+  };
+  const base = () => query(GARCHOMP, ARCANINE, "dragonclaw");
+  const real = () => kernelData(engine, GOLDEN_FORMAT);
+  /** Add a hook to one entity (for the handler-order and unknown-handler rules). */
+  const withHook = (kind: string, id: string, hook: string, order: { order?: number | false; priority?: number; sub_order?: number } = {}): Partial<KernelData> => ({
+    hooks: (k, i) => (k === kind && i === id ? new Set([...real().hooks(k, i), hook]) : real().hooks(k, i)),
+    hookOrder: (k, i, h) => (k === kind && i === id && h === hook ? { order: order.order ?? false, priority: order.priority ?? 0, sub_order: order.sub_order ?? 0 } : real().hookOrder(k, i, h)),
+  });
+  it.each<[string, () => string, string]>([
+    ["unknown species", () => decode(ctxWith({ species: () => null }), base()), "species:garchomp unknown"],
+    ["a battle-only forme", () => decode(ctxWith({ species: (n) => ({ ...(real().species(n) as NonNullable<ReturnType<KernelData["species"]>>), battle_only: true }) }), base()), "species:garchomp battle_only"],
+    ["another level", () => decode(ctxWith({}, { level: 100 }), base()), "state:level not_implemented"],
+    ["a status that is no status", () => decode(ctxWith({ conditionType: () => "Volatile" }), query({ ...GARCHOMP, status: "brn" }, ARCANINE, "dragonclaw")), "status:brn not_implemented"],
+    ["an unknown nature", () => decode(ctxWith({ nature: () => null }), base()), "state:nature unknown"],
+    ["an unknown ability", () => decode(ctxWith({ abilityBlockers: () => null }), base()), "ability:roughskin unknown"],
+    ["an unknown terrain", () => decode(ctxWith(), query(GARCHOMP, ARCANINE, "dragonclaw", { terrain: "nosuchterrain" })), "terrain:nosuchterrain not_implemented"],
+    ["an unknown move", () => decode(ctxWith({ move: () => null }), base()), "move:dragonclaw unknown"],
+    ["a target it does not take", () => decode(ctxWith({ move: (id) => ({ ...(real().move(id) as NonNullable<ReturnType<KernelData["move"]>>), target: "self" }) }), base()), "move:dragonclaw target"],
+    ["no base power", () => decode(ctxWith({ move: (id) => ({ ...(real().move(id) as NonNullable<ReturnType<KernelData["move"]>>), base_power: 0 }) }), base()), "move:dragonclaw base_power"],
+    ["a powder move", () => decode(ctxWith({ move: (id) => ({ ...(real().move(id) as NonNullable<ReturnType<KernelData["move"]>>), flags: new Set(["powder"]) }) }), base()), "move:dragonclaw powder"],
+    ["Hydro Steam in sun", () => decode(ctxWith({ move: (id) => ({ ...(real().move(id) as NonNullable<ReturnType<KernelData["move"]>>), id: "hydrosteam" }) }), query(GARCHOMP, ARCANINE, "dragonclaw", { weather: "sunnyday" })), "move:hydrosteam weather_rule"],
+    ["an unknown handler of the crit ratio", () => decode(ctxWith(withHook("ability", "roughskin", "onModifyCritRatio")), base()), "ability:roughskin ModifyCritRatio"],
+    ["a field condition's base power", () => decode(ctxWith(withHook("condition", "trickroom", "onBasePower")), query(GARCHOMP, ARCANINE, "dragonclaw", { trick_room: true })), "condition:trickroom BasePower"],
+    ["a defender's base-power hook", () => decode(ctxWith(withHook("ability", "intimidate", "onSourceBasePower", { priority: 7 })), base()), "ability:intimidate BasePower"],
+    ["a field condition's attack hook", () => decode(ctxWith(withHook("condition", "trickroom", "onModifyAtk")), query(GARCHOMP, ARCANINE, "dragonclaw", { trick_room: true })), "condition:trickroom ModifyAtk"],
+    ["an unknown defense handler", () => decode(ctxWith(withHook("condition", "trickroom", "onModifyDef")), query(GARCHOMP, ARCANINE, "dragonclaw", { trick_room: true })), "condition:trickroom ModifyDef"],
+    ["an attacker's defense hook", () => decode(ctxWith(withHook("ability", "roughskin", "onSourceModifyDef")), base()), "ability:roughskin ModifyDef"],
+    ["an unknown same-type handler", () => decode(ctxWith(withHook("ability", "roughskin", "onModifySTAB")), base()), "ability:roughskin ModifySTAB"],
+    ["an unknown side condition's damage hook", () => decode(ctxWith(withHook("condition", "tailwind", "onAnyModifyDamage")), query(GARCHOMP, ARCANINE, "dragonclaw", { sides: sides({ tailwind: true }) })), "condition:tailwind ModifyDamage"],
+    ["an unknown damage handler", () => decode(ctxWith(withHook("ability", "intimidate", "onSourceModifyDamage")), base()), "ability:intimidate ModifyDamage"],
+    ["a tie between the two Pokemon", () => decode(ctxWith(withHook("ability", "intimidate", "onSourceModifyAtk", { priority: 5 })), query({ species: "infernape", ability: "blaze", moves: ["flamethrower"] }, ARCANINE, "flamethrower")), "state:handler_tie ModifyAtk"],
+    ["a hook with an order", () => decode(ctxWith(withHook("condition", "trickroom", "onBasePower", { order: 2 })), query(GARCHOMP, ARCANINE, "dragonclaw", { trick_room: true })), "condition:trickroom BasePower"],
+    ["the move's own base power beside a defender's on equal keys", () => decode(ctxWith(withHook("ability", "intimidate", "onSourceBasePower")), query({ species: "snorlax", ability: "immunity", moves: ["facade"] }, ARCANINE, "facade")), "state:handler_tie BasePower"],
+    ["a status beside a start that can refuse it (Electric Surge)", () => decode(ctxWith(), query({ species: "pincurchin", ability: "electricsurge", moves: ["bodyslam"] }, { ...GARCHOMP, status: "slp" }, "bodyslam")), "ability:electricsurge status_start"],
+    ["a status beside a start that cannot (Intimidate)", () => decode(ctxWith(), query(GARCHOMP, { ...ARCANINE, status: "par" }, "dragonclaw")), "rolls"],
+    ["a status beside any start hook without this pin's inventory", () => decode(ctxWith({ abilityStarts: () => null }), query(GARCHOMP, { ...ARCANINE, status: "par" }, "dragonclaw")), "ability:intimidate status_start"],
+    ["an after-move hook that draws (Magician)", () => decode(ctxWith(), query({ species: "delphox", ability: "magician", moves: ["hypervoice"] }, ARCANINE, "hypervoice")), "ability:magician onAfterMoveSecondarySelf"],
+    ["a move hook the record does not implement", () => decode(ctxWith({ moveHookOrder: () => ({ order: 3, priority: 0, sub_order: 0 }) }), base()), "move:dragonclaw onBasePower"],
+  ])("%s", (_name, run, expected) => expect(run()).toBe(expected));
+
+  it("a declared attacker list and volatile list abstain", () => {
+    const ctx = ctxWith();
+    expect(decode(ctx, query({ ...GARCHOMP, history: { attacked_by: { kind: "known", value: [{ side: 1, position: 0, damage: 10 }] } } }, ARCANINE, "dragonclaw"))).toBe("state:history attacked_by");
+    expect(decode(ctx, query({ ...GARCHOMP, history: { volatiles: { kind: "unknown", ends: [[], []] } } }, ARCANINE, "dragonclaw"))).toBe("rolls");
+  });
+
+  it("the roll loop gives the engine's minimum of 1", () => {
+    const one = computeBatch({ n: 1, base: Int32Array.from([0, 0]), final: Int32Array.from([1, 1]), flags: new Int32Array(1), weather: Int32Array.from([4096]), stab: Int32Array.from([4096]), type_mod: Int32Array.from([-4]) } as never);
+    expect([...one].every((d) => d === 1)).toBe(true);
+  });
+});
+
 describe("4. the pieces", () => {
   it("the Champions stat formula and the stage table", () => {
     const neutral = { plus: null, minus: null };
@@ -282,7 +426,7 @@ describe("4. the pieces", () => {
     expect(championsStat(100, 0, "spa", { plus: "atk", minus: "spa" })).toBe(108);
     expect(championsStat(100, 0, "spe", neutral)).toBe(120);
     expect([staged(100, 0), staged(100, 1), staged(100, 6), staged(100, -1), staged(100, -6), staged(101, 3)]).toEqual([100, 150, 400, 66, 25, 252]);
-    expect(KERNEL_FORMAT).toBe(1);
+    expect(KERNEL_FORMAT).toBe(2);
   });
 
   it("computes an empty batch", () => {
@@ -339,6 +483,38 @@ describe("4. the pieces", () => {
     ).toThrow(KernelDataError);
   });
 
+  it("reads unusual data shapes conservatively (a doctored copy of the engine's data)", () => {
+    const realDex = (engine.sim.Dex as unknown as { mod(m: string): Record<string, { get(id: string): Record<string, unknown> }> }).mod("champions");
+    const moves: Record<string, Record<string, unknown>> = {
+      callback: { exists: true, id: "callback", type: "Normal", category: "Physical", basePower: 40, target: "normal", priority: 0, flags: {}, damageCallback: () => 0 },
+      oddkey: { exists: true, id: "oddkey", type: "Normal", category: "Physical", basePower: 40, target: "normal", priority: 0, flags: undefined, unknownKey: 1, ignoreAbility: true, critRatio: "x" },
+      oddcategory: { exists: true, id: "oddcategory", type: "Normal", category: "Other", basePower: 40, target: "normal", priority: 0, flags: {}, ignoreImmunity: { Ghost: true, Dark: false } },
+    };
+    const types = (realDex as unknown as { types: { get(id: string): { damageTaken: Record<string, number> }; names(): string[] } }).types;
+    const dex = {
+      ...realDex,
+      moves: { get: (id: string) => moves[id] ?? realDex.moves?.get(id) },
+      species: { get: (id: string) => (id === "bare" ? { exists: true, id: "bare", name: "Bare", baseSpecies: "Venusaur", types: ["Grass"], baseStats: { hp: 1, atk: 1, def: 1, spa: 1, spd: 1, spe: 1 }, abilities: {} } : realDex.species?.get(id)) },
+      items: { get: (id: string) => (id === "stone" ? { exists: true, id: "stone", megaStone: { Venusaur: "Venusaur-Mega" } } : realDex.items?.get(id)) },
+      abilities: { get: (id: string) => (id === "ordered" ? { exists: true, id: "ordered", onBasePower: () => 0, onBasePowerOrder: 2, onBasePowerPriority: 3, onBasePowerSubOrder: 4 } : realDex.abilities?.get(id)) },
+      types: { get: (t: string) => ({ ...types.get(t), damageTaken: t === "Normal" ? {} : types.get(t).damageTaken }), names: () => types.names() },
+    };
+    const fake = { ...engine, commit: engine.commit, sim: { ...engine.sim, Dex: { formats: { get: () => ({ exists: true, mod: "champions" }) }, mod: () => dex } } } as unknown as Engine;
+    const data = kernelData(fake, "doctored");
+    expect(data.move("callback")?.blockers).toEqual([]);
+    expect(data.move("oddkey")?.blockers).toEqual(["key:ignoreAbility", "key:unknownKey"]);
+    expect(data.move("oddkey")?.crit_ratio).toBe(0);
+    expect(data.move("oddkey")?.flags.size).toBe(0);
+    expect(data.move("oddcategory")?.blockers).toEqual(["category"]);
+    expect(data.move("oddcategory")?.ignore_immunity).toEqual(["Ghost"]);
+    const bare = data.species("bare") as NonNullable<ReturnType<KernelData["species"]>>;
+    expect(bare.first_ability).toBe("");
+    expect(data.megaForme("stone", bare)).toBe("Venusaur-Mega");
+    expect(data.megaForme("leftovers", bare)).toBeNull();
+    expect(data.hookOrder("ability", "ordered", "onBasePower")).toEqual({ order: 2, priority: 3, sub_order: 4 });
+    expect(data.chart.get("Normal")?.get("Fighting")).toBe(0);
+  });
+
   it("the kernel's data reads the pinned engine once per format", () => {
     const data = kernelData(engine, GOLDEN_FORMAT);
     expect(kernelData(engine, GOLDEN_FORMAT)).toBe(data);
@@ -351,6 +527,7 @@ describe("4. the pieces", () => {
     expect(data.conditionType("nothing")).toBeNull();
     expect(data.moveHookOrder("facade", "onBasePower")).toEqual({ order: false, priority: 0, sub_order: 0 });
     expect(data.moveHookOrder("tackle", "onBasePower")).toBeNull();
+    expect(data.moveHookOrder("knockoff", "onAfterHit")).toEqual({ order: false, priority: 0, sub_order: 0 });
     expect(data.breakable("levitate")).toBe(true);
     expect(data.breakable("intimidate")).toBe(false);
     expect(data.hookOrder("ability", "technician", "onBasePower").priority).toBe(30);

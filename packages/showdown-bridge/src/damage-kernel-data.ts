@@ -13,6 +13,7 @@
 // non-inert too, whatever its hooks: the simulator reads it outside any hook. That scan reads the pinned sources named below.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { DEFAULT_SHOWDOWN_DIR, type Engine } from "./engine.ts";
 
 /** The six stats, in the order the tables keep them. */
@@ -22,7 +23,7 @@ export type Stat = (typeof STATS)[number];
 /**
  * Hook names that cannot change a `damage` answer of the probe (ADR-016 section 2's flow: start the scenario, write the declared
  * state absolutely, run the engine's move step with the accuracy step passing and the hit loop replaced by `getDamage`):
- * after-hit, residual, switching, speed, accuracy, PP, healing, item-taking, trapping, boost-application and volatile-adding
+ * after-hit (but `onAfterMoveSecondarySelf`, which the move step itself runs, and which can draw: Magician), residual, switching, speed, accuracy, PP, healing, item-taking, trapping, boost-application and volatile-adding
  * hooks (the declared stages are written last and directly), and a switch-in's `onStart` (its stages, item and field are
  * overwritten by the declaration; the starts that do not stay overwritten are hooks of their own: `onSwitchIn`, `onUpdate`,
  * `onWeatherChange`, `onTerrainChange`, `onAnySwitchIn`, none of which is here). `onSetStatus` and its kin are inert only while no
@@ -34,7 +35,6 @@ export const INERT_HOOKS: ReadonlySet<string> = new Set([
   "onAfterHit",
   "onAfterMove",
   "onAfterMoveSecondary",
-  "onAfterMoveSecondarySelf",
   "onAfterSubDamage",
   "onAfterUseItem",
   "onBeforeMove",
@@ -224,6 +224,11 @@ export interface KernelData {
   hookOrder(kind: "ability" | "item" | "condition", id: string, hook: string): { order: number | false; priority: number; sub_order: number };
   /** A move's own hook's ordering siblings, or null when the move has no such hook. */
   moveHookOrder(id: string, hook: string): { order: number | false; priority: number; sub_order: number } | null;
+  /**
+   * The conditions an ability's own hooks start (`setTerrain:electricterrain` names `electricterrain`), from the committed mechanics
+   * inventory of this pin (#1465); null when the inventory is not this pin's (then every start hook is taken to start anything).
+   */
+  abilityStarts(id: string): readonly string[] | null;
   /** Whether an ability is `breakable` (a Mold Breaker attacker ignores it). */
   breakable(id: string): boolean;
   /** String literals (as engine ids) the pinned simulator sources contain. */
@@ -360,6 +365,19 @@ function readMove(dex: KernelDex, id: string, literals: ReadonlySet<string>): Ke
   };
 }
 
+/** The `starts` of each ability in the committed mechanics inventory of a format, when it is this pin's (else null). */
+function inventoryStarts(commit: string, formatId: string): Map<string, string[]> | null {
+  let text: string;
+  try {
+    text = readFileSync(fileURLToPath(new URL(`../../../fixtures/showdown/${formatId}/mechanics-inventory.json`, import.meta.url)), "utf8");
+  } catch {
+    return null;
+  }
+  const inventory = JSON.parse(text) as { showdown_commit: string; abilities: { id: string; starts: string[] }[] };
+  if (inventory.showdown_commit !== commit) return null;
+  return new Map(inventory.abilities.map((a) => [a.id, a.starts]));
+}
+
 const memo = new WeakMap<Engine, Map<string, KernelData>>();
 
 /** The kernel's data of one format, read from the pinned engine (once per engine and format). */
@@ -380,6 +398,7 @@ export function kernelData(engine: Engine, formatId: string, dir: string = DEFAU
     for (const attacker of types) row.set(attacker, data.damageTaken[attacker] ?? 0);
     chart.set(defender, row);
   }
+  const inventory = inventoryStarts(engine.commit, formatId);
   const entityOf = (kind: "ability" | "item" | "condition", id: string): DexEntity =>
     (kind === "ability" ? dex.abilities.get(id) : kind === "item" ? dex.items.get(id) : dex.conditions.get(id)) as unknown as DexEntity;
   const species = new Map<string, KernelSpecies | null>();
@@ -458,6 +477,10 @@ export function kernelData(engine: Engine, formatId: string, dir: string = DEFAU
       const priority = m[`${hook}Priority`];
       const sub = m[`${hook}SubOrder`];
       return { order: typeof order === "number" && order !== 0 ? order : false, priority: typeof priority === "number" ? priority : 0, sub_order: typeof sub === "number" ? sub : 0 };
+    },
+    abilityStarts(id) {
+      if (inventory === null) return null;
+      return (inventory.get(id) ?? []).map((start) => start.slice(start.indexOf(":") + 1));
     },
     breakable(id) {
       const flags = dex.abilities.get(id).flags as Record<string, unknown> | undefined;
