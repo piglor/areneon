@@ -750,21 +750,24 @@ def _record_sets(training_set_hash: str | None, label_sets: tuple[str, ...]) -> 
     return sorted(held)
 
 
-def sources_registry(run_dir: Path) -> dict[str, list[str]]:
+def sources_registry(run_dir: Path, *, allow_pruned: bool = False) -> dict[str, list[str]]:
     """Training-set hash to the checkpoints that generated it (the C1/C6 checker's registry).
 
-    Generation ``g``'s set was played by the pair frozen at ``g - 1``.
+    Generation ``g``'s set was played by the pair frozen at ``g - 1``. ``allow_pruned`` (read-only
+    evaluation only) lets a generation older than the newest lack its bulk files.
     """
     registry: dict[str, list[str]] = {}
     newest = layout.latest_complete(run_dir)
     if newest is None:
         return registry
     if "members" in newest.manifest:
-        return _population_inputs(run_dir, newest)[1]
+        return _population_inputs(run_dir, newest, allow_pruned=allow_pruned)[1]
     previous: dict[str, str] | None = None
     for generation in range(newest.generation + 1):
         path = layout.generation_dir(run_dir, generation)
-        facts = layout.verify_generation(path, generation)
+        facts = layout.verify_generation(
+            path, generation, allow_pruned=allow_pruned and generation < newest.generation
+        )
         if generation == 0:
             # A warm start's generation 0 holds the clone records: their training sets are
             # outside behaviour-cloning sources (an empty list), the teacher in the ancestry.
@@ -791,25 +794,31 @@ def sources_registry(run_dir: Path) -> dict[str, list[str]]:
 
 
 def _population_inputs(
-    run_dir: Path, newest: layout.Committed
+    run_dir: Path, newest: layout.Committed, *, allow_pruned: bool = False
 ) -> tuple[list[tuple[CheckpointRecord, Path]], dict[str, list[str]]]:
     """A population run's records and sources registry; every manifest is verified once."""
     try:
-        manifests = verified_manifests(run_dir, newest)
+        manifests = verified_manifests(run_dir, newest, allow_pruned=allow_pruned)
         found = member_records(run_dir, manifests)
         return found, population_sources(manifests, found)
     except (PopulationProvenanceError, layout.RunDirError) as exc:
         raise LoopError(f"population: {exc}") from exc
 
 
-def provenance_inputs(run_dir: Path) -> tuple[list[CheckpointRecord], dict[str, list[str]]]:
+def provenance_inputs(
+    run_dir: Path, *, allow_pruned: bool = False
+) -> tuple[list[CheckpointRecord], dict[str, list[str]]]:
     """The records of every committed generation of a run (a population's members' included) and
-    its sources registry: what the C1/C6 checker reads, for a comparison across two runs."""
+    its sources registry: what the C1/C6 checker reads, for a comparison across two runs.
+
+    ``allow_pruned`` (an operator flag of the read-only evaluation commands, never training or
+    resume) lets a generation older than the newest lack its bulk files (``layout.prunable``).
+    """
     newest = layout.latest_complete(run_dir)
     if newest is None:
         raise LoopError("the run directory holds no committed generation")
     if "members" in newest.manifest:
-        found, registry = _population_inputs(run_dir, newest)
+        found, registry = _population_inputs(run_dir, newest, allow_pruned=allow_pruned)
         return [record for record, _ in found], registry
     records = [
         read_record(
@@ -818,7 +827,7 @@ def provenance_inputs(run_dir: Path) -> tuple[list[CheckpointRecord], dict[str, 
         for g in range(newest.generation + 1)
         for role in ROLES
     ]
-    return records, sources_registry(run_dir)
+    return records, sources_registry(run_dir, allow_pruned=allow_pruned)
 
 
 def provenance_graph(run_dir: Path) -> ProvenanceGraph:

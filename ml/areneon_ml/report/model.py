@@ -819,8 +819,13 @@ def read_metrics(
     return found
 
 
-def read_report_model(run_dir: Path, progress_dir: Path | None) -> ReportModel:
+def read_report_model(
+    run_dir: Path, progress_dir: Path | None, *, allow_pruned: bool = False
+) -> ReportModel:
     """Read ``run_dir`` (and ``progress_dir`` if given) read-only; refuse anything inconsistent.
+
+    ``allow_pruned`` (``report --allow-pruned``) lets a generation older than the newest lack its
+    bulk files (``layout.prunable``); the newest is always verified whole.
 
     A population run (ADR-021) is read by ``report.population``: the ladder view. A progress root
     (``progress`` on the ladder top or a named member) is accepted for it when each generation's
@@ -839,7 +844,9 @@ def read_report_model(run_dir: Path, progress_dir: Path | None) -> ReportModel:
     for number in numbers:
         path = layout.generation_dir(run_dir, number)
         try:
-            verified = layout.verify_generation(path, number)
+            verified = layout.verify_generation(
+                path, number, allow_pruned=allow_pruned and number < numbers[-1]
+            )
         except (layout.RunDirError, OSError, json.JSONDecodeError) as exc:
             raise ReportError(str(exc)) from exc
         if tie is not None:

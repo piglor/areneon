@@ -420,12 +420,29 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     report.add_argument("--inspect-dir", type=Path, help="an inspector output to link to")
     report.add_argument(
+        "--allow-pruned",
+        action="store_true",
+        help="read-only: a generation older than the newest may lack its bulk files (stream.jsonl, "
+        "learner-<g>.safetensors, episodes/, at the generation root or under members/<m>/), which "
+        "the storage rule deletes after a run; every file present must still match its manifest, "
+        "and the evaluated and the newest generation are always verified whole",
+    )
+    report.add_argument(
         "--situational",
         type=Path,
         help="a situational move-use summary (python -m areneon_ml.report.situational --out)",
     )
     progress = commands.add_parser("progress", help="progress evaluation of a committed generation")
     progress.add_argument("--run-dir", type=Path, required=True)
+    progress.add_argument(
+        "--allow-pruned",
+        action="store_true",
+        help="read-only: a generation older than the newest may lack its bulk files (stream.jsonl, "
+        "learner-<g>.safetensors, episodes/, at the generation root or under members/<m>/), which "
+        "the storage rule deletes after a run; every file present must still match its manifest, "
+        "and the evaluated and the newest generation are always verified whole"
+        + " (used for the head-to-head lineage check of both runs)",
+    )
     progress.add_argument(
         "--situational",
         action="store_true",
@@ -747,6 +764,7 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
             member=args.member,
             preview_solve=args.preview_solve,
             team_sheets_open=args.team_sheets == "open",
+            allow_pruned=args.allow_pruned,
         )
         for g in generations
     ]
@@ -983,7 +1001,12 @@ def main(argv: list[str] | None = None) -> int:
             out = inspect_run(args.run_dir, args.out, repo=REPO, node=args.node)
         elif args.command == "report":
             out = report_run(
-                args.run_dir, args.progress_dir, args.out, args.inspect_dir, args.situational
+                args.run_dir,
+                args.progress_dir,
+                args.out,
+                args.inspect_dir,
+                args.situational,
+                allow_pruned=args.allow_pruned,
             )
         elif args.command in _SIMPLE:
             out = _SIMPLE[args.command](args)

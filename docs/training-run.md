@@ -1294,3 +1294,20 @@ ticket.
 Latency. A query waits for the others queued with it, so its `elapsed_ms` and its share of the
 per-decision budget include the whole batch's forward pass (up to `max_batch` queries); the budgets of the
 run config apply to that, and a run that batches should size `max_batch` against `latency_budget_ms`.
+
+## 12. Evaluating a run whose bulk data was pruned (`--allow-pruned`)
+
+After a run is decided, its bulky files are deleted from the committed generations older than the
+newest: `stream.jsonl`, `learner-<g>.safetensors` and everything under `episodes/`, at the
+generation root or under `members/<m>/` of a population run. Each generation's manifest still
+lists them, so every read-only command that verifies all generations (a head to head's lineage
+check, `report`, the previous, anchor and ablation pairs of `progress`) then refuses the run with
+`g<N>: its files differ from its manifest`.
+
+`python -m areneon_ml.loop progress ... --allow-pruned` and `python -m areneon_ml.loop report ...
+--allow-pruned` accept such a generation: a manifest file may be absent only if it is one of those
+bulk files; every file that is present must still hash as committed, and an extra file, a changed
+file or any other missing file (records, `train-report.json`, `learner-<g>.json`, `plan.json`,
+`generation.json`, the team set, ...) still fails. The generation being evaluated, the other run's
+compared generation and each run's newest generation are always verified whole. The flag is
+operational (no record or hash changes) and training, resume and `provenance` never use it.

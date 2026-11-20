@@ -533,8 +533,13 @@ def _source(  # noqa: PLR0913
     allow_private: bool = False,
     needs_dataset: bool = True,
     member: str | None = None,
+    allow_pruned: bool = False,
 ) -> _Source:
     """Verify the committed generation and its records; refuse a non-synthetic run.
+
+    ``allow_pruned`` is for an OPPONENT's generation only (a previous, anchor or ablation pair,
+    under ``--allow-pruned``): it may then lack its bulk files (``layout.prunable``); the
+    evaluated generation and the newest are always verified whole.
 
     The private test (ADR-015 erratum E1) reads a pair with ``allow_private`` and, for a source
     other than the public dataset, ``needs_dataset=False``; it learns the pair's class from
@@ -551,7 +556,7 @@ def _source(  # noqa: PLR0913
     facts = (
         newest.manifest
         if newest.generation == generation
-        else layout.verify_generation(path, generation)
+        else layout.verify_generation(path, generation, allow_pruned=allow_pruned)
     )
     if facts.get("run_config_hash") != config.hash:
         raise ProgressError("the generation was committed under another run config")
@@ -814,11 +819,13 @@ def _damage_budget_ms(minutes: int | None, preview_ablation: bool, version: str)
     return minutes * 60_000
 
 
-def _previous_pair(run_dir: Path, config: RunConfig, generation: int) -> PreviousPair | None:
+def _previous_pair(
+    run_dir: Path, config: RunConfig, generation: int, *, allow_pruned: bool = False
+) -> PreviousPair | None:
     """The frozen pair of generation ``generation - 1`` (verified), or None at generation 0."""
     if generation == 0 or config.population:
         return None  # a population run has no single previous pair (refused when asked for)
-    before = _source(run_dir, config, generation - 1)
+    before = _source(run_dir, config, generation - 1, allow_pruned=allow_pruned)
     return PreviousPair(
         before.preview,
         before.battle,
@@ -827,9 +834,11 @@ def _previous_pair(run_dir: Path, config: RunConfig, generation: int) -> Previou
     )
 
 
-def _anchor_pair(run_dir: Path, config: RunConfig, generation: int) -> AnchorPair:
+def _anchor_pair(
+    run_dir: Path, config: RunConfig, generation: int, *, allow_pruned: bool = False
+) -> AnchorPair:
     """The frozen pair of a committed generation (verified), as an opponent."""
-    found = _source(run_dir, config, generation)
+    found = _source(run_dir, config, generation, allow_pruned=allow_pruned)
     return AnchorPair(
         generation,
         found.preview,
@@ -920,7 +929,9 @@ def _merged_records(
     return list(found.values())
 
 
-def versus_relation(run_dir: Path, source: _Source, pair: RunPair) -> dict[str, str]:
+def versus_relation(
+    run_dir: Path, source: _Source, pair: RunPair, *, allow_pruned: bool = False
+) -> dict[str, str]:
     """How the two compared pairs relate, from the C1/C6 checker given both runs' records.
 
     The comparison is refused when the two frozen pairs share a checkpoint, or when one of
@@ -928,14 +939,17 @@ def versus_relation(run_dir: Path, source: _Source, pair: RunPair) -> dict[str, 
     A shared older ancestor (the seeded generation-0 pair of runs started from equal seeds, or
     any earlier common generation) is a relation to label, not a refusal: ``independent
     lineage`` when the ancestries are disjoint (C6), else ``related lineage: shared start``.
-    Every committed generation of both runs is verified by ``sources_registry``.
+    Every committed generation of both runs is verified by ``sources_registry``; with
+    ``allow_pruned`` (``progress --allow-pruned``) one older than its run's newest may lack its
+    bulk files (``layout.prunable``).
     """
     candidate = [source.preview, source.battle]
     opponent = [pair.preview, pair.battle]
     if set(candidate) & set(opponent):
         raise ProgressError("the two compared pairs share a checkpoint: not two different pairs")
     registry: dict[str, list[str]] = {}
-    mine, theirs = provenance_inputs(run_dir), provenance_inputs(pair.run_dir)
+    mine = provenance_inputs(run_dir, allow_pruned=allow_pruned)
+    theirs = provenance_inputs(pair.run_dir, allow_pruned=allow_pruned)
     for part in (mine[1], theirs[1]):
         for key, generators in part.items():
             registry[key] = sorted({*registry.get(key, []), *generators})
@@ -1047,7 +1061,12 @@ def _check_extra_modes(
 
 
 def _check_anchors(
-    record: dict[str, Any], anchors: Sequence[AnchorPair] | None, run_dir: Path, config: RunConfig
+    record: dict[str, Any],
+    anchors: Sequence[AnchorPair] | None,
+    run_dir: Path,
+    config: RunConfig,
+    *,
+    allow_pruned: bool = False,
 ) -> None:
     """Every anchor match plays exactly its generation's frozen pair, read from its own records.
 
@@ -1063,7 +1082,7 @@ def _check_anchors(
     for generation, modes in found.items():
         if set(modes) != {"argmax", "sample"}:
             raise ProgressError(f"anchor g{generation}: both sample and argmax must be played")
-        pair = _anchor_pair(run_dir, config, generation)
+        pair = _anchor_pair(run_dir, config, generation, allow_pruned=allow_pruned)
         ids = {"sample": pair.policy_id_sample, "argmax": pair.policy_id_argmax}
         for mode, match in modes.items():
             opponent = match["opponent"]
@@ -1095,6 +1114,8 @@ def _verify_output(  # noqa: PLR0913, PLR0917
     extra_modes: Sequence[PlayMode] = (),
     preview_solve: str | None = None,
     team_sheets_open: bool = False,
+    *,
+    allow_pruned: bool = False,
 ) -> dict[str, Any]:
     """The simulator side's files are the record's: read both kinds, check every hash and name."""
     record = read_progress_record(layout.read_json(work / PROGRESS), config)
@@ -1113,10 +1134,10 @@ def _verify_output(  # noqa: PLR0913, PLR0917
     _check_team_sheets(record, team_sheets_open, legacy=False)
     closed = closed_view(record)  # the checks below were written for the closed matches
     _check_previous(closed, previous, legacy=False)
-    _check_anchors(closed, anchors, run_dir, config)
+    _check_anchors(closed, anchors, run_dir, config, allow_pruned=allow_pruned)
     if plan.get("anchor_games_per_match", 0) != anchor_games:
         raise ProgressError("progress.json is not the record asked for")
-    _check_ablation(closed, ablation, run_dir, config, fresh=True)
+    _check_ablation(closed, ablation, run_dir, config, fresh=True, allow_pruned=allow_pruned)
     _check_search(closed, search_mode, legacy=False)
     _check_solve(closed, preview_solve, legacy=False)
     _check_damage_aware(closed, damage_aware, legacy=False)
@@ -1214,13 +1235,14 @@ def _check_evaluation_key(
         )
 
 
-def _check_ablation(
+def _check_ablation(  # noqa: PLR0913
     record: dict[str, Any],
     ablation: AblationSpec | None,
     run_dir: Path,
     config: RunConfig,
     *,
     fresh: bool,
+    allow_pruned: bool = False,
 ) -> None:
     """The Preview ablation matches are exactly the six asked for (a fresh evaluation), and an
     earlier generation's Preview is that generation's own, read from its records."""
@@ -1234,7 +1256,9 @@ def _check_ablation(
     for match in found:
         preview = match["candidate_preview"]
         if preview["kind"] == "generation":
-            theirs = _source(run_dir, config, preview["generation"]).preview
+            theirs = _source(
+                run_dir, config, preview["generation"], allow_pruned=allow_pruned
+            ).preview
             if preview["checkpoint"] != theirs:
                 raise ProgressError(
                     f"{match['match_id']}: the Preview is not generation "
@@ -1405,8 +1429,13 @@ def verify_progress_dir(  # noqa: PLR0913, PLR0917
     *,
     strict_dataset: bool = False,
     evaluation_key: str | None = None,
+    allow_pruned: bool = False,
 ) -> dict[str, Any]:
-    """A committed progress directory, checked against its manifest and the run."""
+    """A committed progress directory, checked against its manifest and the run.
+
+    ``allow_pruned``: an opponent's generation (previous, anchor, ablation) may lack its bulk
+    files; the evaluated generation is verified whole.
+    """
     manifest = layout.verify_generation(target, generation)
     record = read_progress_record(layout.read_json(target / PROGRESS), config)
     source = _source(
@@ -1423,9 +1452,13 @@ def verify_progress_dir(  # noqa: PLR0913, PLR0917
     _check_team_sheets(record, False, legacy=True)
     closed = closed_view(record)  # the open twins are checked above; the rest read closed matches
     # Previous-generation matches are optional (a record may hold them or not).
-    _check_previous(closed, _previous_pair(run_dir, config, generation), legacy=True)
-    _check_anchors(closed, None, run_dir, config)
-    _check_ablation(closed, None, run_dir, config, fresh=False)
+    _check_previous(
+        closed,
+        _previous_pair(run_dir, config, generation, allow_pruned=allow_pruned),
+        legacy=True,
+    )
+    _check_anchors(closed, None, run_dir, config, allow_pruned=allow_pruned)
+    _check_ablation(closed, None, run_dir, config, fresh=False, allow_pruned=allow_pruned)
     _check_search(closed, None, legacy=True)
     _check_solve(closed, None, legacy=True)
     # The damage-aware matches are optional (a record may hold them or not), never half a set.
@@ -1579,8 +1612,13 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
     member: str | None = None,
     preview_solve: str | None = None,
     team_sheets_open: bool = False,
+    allow_pruned: bool = False,
 ) -> dict[str, Any]:
     """Evaluate one generation into ``root``; a committed directory is verified and kept.
+
+    ``allow_pruned`` (``--allow-pruned``) lets the head to head's lineage check read runs whose
+    generations older than the newest lack their bulk files; the evaluated generation, the other
+    run's generation and each run's newest are always verified whole.
 
     A population run (ADR-021, slice 12) evaluates ONE member's frozen pair: ``member`` (``m<k>``),
     by default the ladder top of the generation (``ladder_top``). The record is the ordinary
@@ -1704,13 +1742,26 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
                 member,
                 preview_solve,
                 team_sheets_open,
+                allow_pruned=allow_pruned,
             )
         source = _source(run_dir, config, generation, member=member)
-        previous = _previous_pair(run_dir, config, generation) if previous_matches else None
-        ablation = _ablation_spec(run_dir, config, source) if preview_ablation else None
-        anchor_pairs = tuple(_anchor_pair(run_dir, config, a) for a in wanted)
+        previous = (
+            _previous_pair(run_dir, config, generation, allow_pruned=allow_pruned)
+            if previous_matches
+            else None
+        )
+        ablation = (
+            _ablation_spec(run_dir, config, source, allow_pruned=allow_pruned)
+            if preview_ablation
+            else None
+        )
+        anchor_pairs = tuple(
+            _anchor_pair(run_dir, config, a, allow_pruned=allow_pruned) for a in wanted
+        )
         played_anchor_games = anchor_games if wanted else 0
-        other_pair, relation = _open_versus(run_dir, config, source, versus, eval_dataset)
+        other_pair, relation = _open_versus(
+            run_dir, config, source, versus, eval_dataset, allow_pruned=allow_pruned
+        )
         played_run_games = 0 if versus is None else versus.games
         extra_modes = _play_modes(modes, source, config, other_pair)
         needed = max(games, played_anchor_games, played_run_games) // 2
@@ -1786,6 +1837,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
                 extra_modes,
                 preview_solve,
                 team_sheets_open,
+                allow_pruned=allow_pruned,
             )
             layout.fsync_tree(work)
             layout.write_json(
@@ -1838,6 +1890,8 @@ def _skipped(  # noqa: PLR0913, PLR0917
     member: str | None = None,
     preview_solve: str | None = None,
     team_sheets_open: bool = False,
+    *,
+    allow_pruned: bool = False,
 ) -> dict[str, Any]:
     """A committed directory is verified and reported, never rewritten."""
     pair = None if versus is None else _versus_pair(run_dir, config, versus, eval_dataset)
@@ -1850,6 +1904,7 @@ def _skipped(  # noqa: PLR0913, PLR0917
         eval_dataset,
         strict_dataset=True,
         evaluation_key=evaluation_key,
+        allow_pruned=allow_pruned,
     )
     held = None
     kept = _recorded_member(run_dir, generation, record["checkpoints"])
@@ -1859,7 +1914,9 @@ def _skipped(  # noqa: PLR0913, PLR0917
             f"directory of its own to evaluate {member}"
         )
     if pair is not None and any(m["opponent"]["kind"] == "run" for m in record["matches"]):
-        held = versus_relation(run_dir, _source(run_dir, config, generation), pair)
+        held = versus_relation(
+            run_dir, _source(run_dir, config, generation), pair, allow_pruned=allow_pruned
+        )
     if (search_mode is not None) != _is_search(record) or (
         search_mode is not None and {m["mode"] for m in record["matches"]} != {search_mode}
     ):
@@ -1908,19 +1965,21 @@ def _skipped(  # noqa: PLR0913, PLR0917
     )
 
 
-def _open_versus(
+def _open_versus(  # noqa: PLR0913
     run_dir: Path,
     config: RunConfig,
     source: _Source,
     versus: VersusSpec | None,
     eval_dataset: EvalDataset | None = None,
+    *,
+    allow_pruned: bool = False,
 ) -> tuple[RunPair | None, dict[str, str] | None]:
     """The other run's pair and its lineage relation, with its team set checked; (None, None)
     without ``versus``."""
     if versus is None:
         return None, None
     pair = _versus_pair(run_dir, config, versus, eval_dataset)
-    relation = versus_relation(run_dir, source, pair)
+    relation = versus_relation(run_dir, source, pair, allow_pruned=allow_pruned)
     teams = layout.read_json(pair.team_set)
     manifest = layout.read_json(pair.team_set.parent / layout.MANIFEST)
     if sha256_hex(jcs(teams)) != manifest.get("team_set_manifest_hash"):
@@ -1928,9 +1987,11 @@ def _open_versus(
     return pair, relation
 
 
-def _ablation_spec(run_dir: Path, config: RunConfig, source: _Source) -> AblationSpec:
+def _ablation_spec(
+    run_dir: Path, config: RunConfig, source: _Source, *, allow_pruned: bool = False
+) -> AblationSpec:
     """Generation 0's Preview (verified) with this generation's Battle, and the random Preview."""
-    first = _source(run_dir, config, 0)
+    first = _source(run_dir, config, 0, allow_pruned=allow_pruned)
     return AblationSpec(
         0,
         first.preview,
