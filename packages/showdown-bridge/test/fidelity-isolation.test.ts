@@ -14,7 +14,10 @@ export const ORACLE_IDENTIFIERS = ["copyRandomState", "captureDecisions", "trans
 /** Files outside tests that may rebuild a battle from JSON: each forks a battle IT built (a scenario world or a probe clone), reviewed here. */
 export const FROM_JSON_ALLOWED = ["choice-judge.ts", "mechanics-damage.ts", "mechanics-scenario.ts", "reply-model.ts", "search-turn.ts"];
 /** Files outside tests that may assign a battle's `prng`: the mechanics probes install their own recording source (mechanics-outcome.ts also replaces `hitStepAccuracy`, `moveHit` and `getRandomTarget` on its own scenario battle). */
-export const PRNG_ASSIGN_ALLOWED = ["mechanics-damage.ts", "mechanics-history.ts", "mechanics-outcome.ts", "mechanics-speed.ts", "search-turn.ts"];
+export const PRNG_ASSIGN_ALLOWED = ["battle-trace.ts", "mechanics-damage.ts", "mechanics-history.ts", "mechanics-outcome.ts", "mechanics-speed.ts", "search-turn.ts"];
+// battle-trace.ts (ADR-028 section 5 F0, ADR-030 G2, #1462): `installSource` puts the trace recorder's recording source (on a battle `runBattle`
+// plays, the engine's own generator underneath) or the battle backend's forcing source (on its own replay battle) in place; it copies no
+// random state from any battle, and battle-trace-isolation.test.ts keeps both off every evaluation, progress, private-test, sealed and A2 path.
 // mechanics-scenario.ts (#1453): `keptScenario` and `restoreScenario` rebuild a probe's OWN kept scenario start (the serialisation of a scenario battle the probe started itself), never a live battle.
 // mechanics-history.ts (ADR-022 E-22.5): `withStartDraws` wraps the PRNG of the probe's OWN scenario battle (never a live battle) in a Proxy that answers a declared
 // volatile's start handler at one end of its draws, and puts the scenario's source back afterwards; it copies no random state from any battle.

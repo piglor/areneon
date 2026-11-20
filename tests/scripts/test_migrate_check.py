@@ -422,6 +422,11 @@ EXPECTED: dict[str, tuple[str, ...]] = {
         f"{B}/test/search-fidelity-corpus.test.ts",
         f"{B}/test/fidelity.test.ts",
     ),
+    "battle-differential": (
+        f"{B}/test/battle-trace.test.ts",
+        "packages/team-dataset/test/differential-battle.test.ts",
+        "packages/team-dataset/test/differential-battle-targeted.test.ts",
+    ),
     "contract-corpus": (
         f"{B}/test/samples.test.ts",
         "packages/schema/scripts/contracts.ts",
