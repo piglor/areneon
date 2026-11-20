@@ -1,0 +1,594 @@
+{
+  "abilities": {
+    "adaptability": {
+      "kind": "stab",
+      "modifier": 8192
+    },
+    "aerilate": {
+      "kind": "ate",
+      "type": "Flying",
+      "modifier": 4915,
+      "exceptions": [
+        "judgment",
+        "multiattack",
+        "naturalgift",
+        "revelationdance",
+        "technoblast",
+        "terrainpulse",
+        "weatherball"
+      ]
+    },
+    "airlock": {
+      "kind": "suppress_weather"
+    },
+    "armortail": {
+      "kind": "priority_block"
+    },
+    "battlearmor": {
+      "kind": "no_crit"
+    },
+    "blaze": {
+      "kind": "pinch",
+      "type": "Fire"
+    },
+    "bulletproof": {
+      "kind": "flag_immunity",
+      "flag": "bullet"
+    },
+    "cloudnine": {
+      "kind": "suppress_weather"
+    },
+    "corrosion": {
+      "kind": "no_damage_effect"
+    },
+    "damp": {
+      "kind": "no_damage_effect"
+    },
+    "dazzling": {
+      "kind": "priority_block"
+    },
+    "eartheater": {
+      "kind": "absorb",
+      "type": "Ground"
+    },
+    "filter": {
+      "kind": "super_effective_taken",
+      "modifier": 3072
+    },
+    "flashfire": {
+      "kind": "absorb",
+      "type": "Fire"
+    },
+    "furcoat": {
+      "kind": "defense_multiplier",
+      "stat": "def",
+      "modifier": 8192
+    },
+    "galvanize": {
+      "kind": "ate",
+      "type": "Electric",
+      "modifier": 4915,
+      "exceptions": [
+        "judgment",
+        "multiattack",
+        "naturalgift",
+        "revelationdance",
+        "technoblast",
+        "terrainpulse",
+        "weatherball"
+      ]
+    },
+    "goodasgold": {
+      "kind": "no_damage_effect"
+    },
+    "grasspelt": {
+      "kind": "defense_multiplier",
+      "stat": "def",
+      "modifier": 6144,
+      "terrain": "grassyterrain"
+    },
+    "guts": {
+      "kind": "guts"
+    },
+    "harvest": {
+      "kind": "no_damage_effect"
+    },
+    "hugepower": {
+      "kind": "attack_multiplier",
+      "stat": "atk",
+      "modifier": 8192
+    },
+    "infiltrator": {
+      "kind": "infiltrator"
+    },
+    "ironfist": {
+      "kind": "base_power_flag",
+      "flag": "punch",
+      "modifier": 4915
+    },
+    "keeneye": {
+      "kind": "no_damage_effect"
+    },
+    "levitate": {
+      "kind": "ground_immunity"
+    },
+    "lightningrod": {
+      "kind": "absorb",
+      "type": "Electric"
+    },
+    "magicbounce": {
+      "kind": "no_damage_effect"
+    },
+    "megalauncher": {
+      "kind": "base_power_flag",
+      "flag": "pulse",
+      "modifier": 6144
+    },
+    "minus": {
+      "kind": "no_damage_effect"
+    },
+    "moldbreaker": {
+      "kind": "mold_breaker"
+    },
+    "motordrive": {
+      "kind": "absorb",
+      "type": "Electric"
+    },
+    "multiscale": {
+      "kind": "full_hp_taken",
+      "modifier": 2048
+    },
+    "noguard": {
+      "kind": "no_damage_effect"
+    },
+    "oblivious": {
+      "kind": "no_damage_effect"
+    },
+    "overcoat": {
+      "kind": "no_damage_effect"
+    },
+    "overgrow": {
+      "kind": "pinch",
+      "type": "Grass"
+    },
+    "pickup": {
+      "kind": "no_damage_effect"
+    },
+    "pixilate": {
+      "kind": "ate",
+      "type": "Fairy",
+      "modifier": 4915,
+      "exceptions": [
+        "judgment",
+        "multiattack",
+        "naturalgift",
+        "revelationdance",
+        "technoblast",
+        "terrainpulse",
+        "weatherball"
+      ]
+    },
+    "plus": {
+      "kind": "no_damage_effect"
+    },
+    "prankster": {
+      "kind": "no_damage_effect"
+    },
+    "prismarmor": {
+      "kind": "super_effective_taken",
+      "modifier": 3072
+    },
+    "propellertail": {
+      "kind": "no_damage_effect"
+    },
+    "purepower": {
+      "kind": "attack_multiplier",
+      "stat": "atk",
+      "modifier": 8192
+    },
+    "queenlymajesty": {
+      "kind": "priority_block"
+    },
+    "refrigerate": {
+      "kind": "ate",
+      "type": "Ice",
+      "modifier": 4915,
+      "exceptions": [
+        "judgment",
+        "multiattack",
+        "naturalgift",
+        "revelationdance",
+        "technoblast",
+        "terrainpulse",
+        "weatherball"
+      ]
+    },
+    "sapsipper": {
+      "kind": "absorb",
+      "type": "Grass"
+    },
+    "shadowshield": {
+      "kind": "full_hp_taken",
+      "modifier": 2048
+    },
+    "sharpness": {
+      "kind": "base_power_flag",
+      "flag": "slicing",
+      "modifier": 6144
+    },
+    "sheerforce": {
+      "kind": "sheer_force",
+      "modifier": 5325
+    },
+    "shellarmor": {
+      "kind": "no_crit"
+    },
+    "skilllink": {
+      "kind": "no_damage_effect"
+    },
+    "sniper": {
+      "kind": "crit_damage",
+      "modifier": 6144
+    },
+    "solarpower": {
+      "kind": "attack_multiplier",
+      "stat": "spa",
+      "modifier": 6144,
+      "weather": "sunnyday"
+    },
+    "solidrock": {
+      "kind": "super_effective_taken",
+      "modifier": 3072
+    },
+    "soundproof": {
+      "kind": "flag_immunity",
+      "flag": "sound"
+    },
+    "stalwart": {
+      "kind": "no_damage_effect"
+    },
+    "stormdrain": {
+      "kind": "absorb",
+      "type": "Water"
+    },
+    "strongjaw": {
+      "kind": "base_power_flag",
+      "flag": "bite",
+      "modifier": 6144
+    },
+    "swarm": {
+      "kind": "pinch",
+      "type": "Bug"
+    },
+    "technician": {
+      "kind": "technician",
+      "threshold": 60,
+      "modifier": 6144
+    },
+    "telepathy": {
+      "kind": "no_damage_effect"
+    },
+    "teravolt": {
+      "kind": "mold_breaker"
+    },
+    "thickfat": {
+      "kind": "source_type_attack",
+      "types": [
+        "Fire",
+        "Ice"
+      ],
+      "modifier": 2048
+    },
+    "torrent": {
+      "kind": "pinch",
+      "type": "Water"
+    },
+    "toughclaws": {
+      "kind": "base_power_flag",
+      "flag": "contact",
+      "modifier": 5325
+    },
+    "turboblaze": {
+      "kind": "mold_breaker"
+    },
+    "unburden": {
+      "kind": "no_damage_effect"
+    },
+    "unnerve": {
+      "kind": "unnerve"
+    },
+    "voltabsorb": {
+      "kind": "absorb",
+      "type": "Electric"
+    },
+    "waterabsorb": {
+      "kind": "absorb",
+      "type": "Water"
+    },
+    "wellbakedbody": {
+      "kind": "absorb",
+      "type": "Fire"
+    }
+  },
+  "data_class": "synthetic",
+  "description": "The damage kernel's effects (ADR-030 step 3, #1457): which abilities, items, moves and declared volatiles whose hooks reach the probe's damage path the kernel implements, and with which parameters (the pinned engine's own values, read from its data handlers). Reviewed data: an id that is not here, and has a hook the kernel's inert list does not hold, makes the kernel abstain. Every entry is held to the engine by the differential harness.",
+  "format_id": "gen9championsvgc2026regmc",
+  "items": {
+    "babiriberry": {
+      "kind": "resist_berry",
+      "type": "Steel",
+      "super_effective": true
+    },
+    "blackbelt": {
+      "kind": "type_boost",
+      "type": "Fighting",
+      "modifier": 4915
+    },
+    "blackglasses": {
+      "kind": "type_boost",
+      "type": "Dark",
+      "modifier": 4915
+    },
+    "charcoal": {
+      "kind": "type_boost",
+      "type": "Fire",
+      "modifier": 4915
+    },
+    "chartiberry": {
+      "kind": "resist_berry",
+      "type": "Rock",
+      "super_effective": true
+    },
+    "chilanberry": {
+      "kind": "resist_berry",
+      "type": "Normal",
+      "super_effective": false
+    },
+    "choicescarf": {
+      "kind": "no_damage_effect"
+    },
+    "chopleberry": {
+      "kind": "resist_berry",
+      "type": "Fighting",
+      "super_effective": true
+    },
+    "cobaberry": {
+      "kind": "resist_berry",
+      "type": "Flying",
+      "super_effective": true
+    },
+    "colburberry": {
+      "kind": "resist_berry",
+      "type": "Dark",
+      "super_effective": true
+    },
+    "dragonfang": {
+      "kind": "type_boost",
+      "type": "Dragon",
+      "modifier": 4915
+    },
+    "electricseed": {
+      "kind": "no_damage_effect"
+    },
+    "expertbelt": {
+      "kind": "super_effective_dealt",
+      "modifier": 4915
+    },
+    "fairyfeather": {
+      "kind": "type_boost",
+      "type": "Fairy",
+      "modifier": 4915
+    },
+    "grassyseed": {
+      "kind": "no_damage_effect"
+    },
+    "habanberry": {
+      "kind": "resist_berry",
+      "type": "Dragon",
+      "super_effective": true
+    },
+    "hardstone": {
+      "kind": "type_boost",
+      "type": "Rock",
+      "modifier": 4915
+    },
+    "kasibberry": {
+      "kind": "resist_berry",
+      "type": "Ghost",
+      "super_effective": true
+    },
+    "kebiaberry": {
+      "kind": "resist_berry",
+      "type": "Poison",
+      "super_effective": true
+    },
+    "lifeorb": {
+      "kind": "final_modifier",
+      "modifier": 5324
+    },
+    "magnet": {
+      "kind": "type_boost",
+      "type": "Electric",
+      "modifier": 4915
+    },
+    "metalcoat": {
+      "kind": "type_boost",
+      "type": "Steel",
+      "modifier": 4915
+    },
+    "miracleseed": {
+      "kind": "type_boost",
+      "type": "Grass",
+      "modifier": 4915
+    },
+    "mistyseed": {
+      "kind": "no_damage_effect"
+    },
+    "muscleband": {
+      "kind": "category_power",
+      "category": "Physical",
+      "modifier": 4505
+    },
+    "mysticwater": {
+      "kind": "type_boost",
+      "type": "Water",
+      "modifier": 4915
+    },
+    "nevermeltice": {
+      "kind": "type_boost",
+      "type": "Ice",
+      "modifier": 4915
+    },
+    "occaberry": {
+      "kind": "resist_berry",
+      "type": "Fire",
+      "super_effective": true
+    },
+    "passhoberry": {
+      "kind": "resist_berry",
+      "type": "Water",
+      "super_effective": true
+    },
+    "payapaberry": {
+      "kind": "resist_berry",
+      "type": "Psychic",
+      "super_effective": true
+    },
+    "poisonbarb": {
+      "kind": "type_boost",
+      "type": "Poison",
+      "modifier": 4915
+    },
+    "psychicseed": {
+      "kind": "no_damage_effect"
+    },
+    "rindoberry": {
+      "kind": "resist_berry",
+      "type": "Grass",
+      "super_effective": true
+    },
+    "roseliberry": {
+      "kind": "resist_berry",
+      "type": "Fairy",
+      "super_effective": true
+    },
+    "scopelens": {
+      "kind": "crit_ratio",
+      "add": 1
+    },
+    "sharpbeak": {
+      "kind": "type_boost",
+      "type": "Flying",
+      "modifier": 4915
+    },
+    "shucaberry": {
+      "kind": "resist_berry",
+      "type": "Ground",
+      "super_effective": true
+    },
+    "silkscarf": {
+      "kind": "type_boost",
+      "type": "Normal",
+      "modifier": 4915
+    },
+    "silverpowder": {
+      "kind": "type_boost",
+      "type": "Bug",
+      "modifier": 4915
+    },
+    "softsand": {
+      "kind": "type_boost",
+      "type": "Ground",
+      "modifier": 4915
+    },
+    "spelltag": {
+      "kind": "type_boost",
+      "type": "Ghost",
+      "modifier": 4915
+    },
+    "tangaberry": {
+      "kind": "resist_berry",
+      "type": "Bug",
+      "super_effective": true
+    },
+    "twistedspoon": {
+      "kind": "type_boost",
+      "type": "Psychic",
+      "modifier": 4915
+    },
+    "wacanberry": {
+      "kind": "resist_berry",
+      "type": "Electric",
+      "super_effective": true
+    },
+    "whiteherb": {
+      "kind": "no_damage_effect"
+    },
+    "wiseglasses": {
+      "kind": "category_power",
+      "category": "Special",
+      "modifier": 4505
+    },
+    "yacheberry": {
+      "kind": "resist_berry",
+      "type": "Ice",
+      "super_effective": true
+    }
+  },
+  "moves": {
+    "blizzard": {
+      "kind": "no_damage_effect"
+    },
+    "bounce": {
+      "kind": "fails"
+    },
+    "dig": {
+      "kind": "fails"
+    },
+    "dive": {
+      "kind": "fails"
+    },
+    "facade": {
+      "kind": "status_power",
+      "modifier": 8192,
+      "burn_exempt": true
+    },
+    "fly": {
+      "kind": "fails"
+    },
+    "hurricane": {
+      "kind": "no_damage_effect"
+    },
+    "payback": {
+      "kind": "constant_power",
+      "multiplier": 2
+    },
+    "round": {
+      "kind": "constant_power",
+      "multiplier": 1
+    },
+    "snore": {
+      "kind": "needs_sleep"
+    },
+    "storedpower": {
+      "kind": "boost_power",
+      "per": 20
+    },
+    "suckerpunch": {
+      "kind": "fails"
+    },
+    "thunder": {
+      "kind": "no_damage_effect"
+    }
+  },
+  "schema_version": 1,
+  "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+  "volatiles": {
+    "confusion": {
+      "kind": "no_damage_effect"
+    },
+    "taunt": {
+      "kind": "no_damage_effect"
+    }
+  }
+}

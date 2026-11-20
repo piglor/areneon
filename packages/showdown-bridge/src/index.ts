@@ -424,7 +424,11 @@ export {
   mechanicsConfigHash,
   readMechanicsConfig,
 } from "./mechanics-config.ts";
-export { type MechanicsContext, MechanicsProbeError, type ProbeOutcome, probeMechanics } from "./mechanics-probe.ts";
+export { type MechanicsContext, MechanicsProbeError, type ProbeEnvelope, type ProbeOutcome, probeEnvelope, probeMechanics } from "./mechanics-probe.ts";
+export { championsStat, computeBatch, KERNEL_FORMAT, KernelAbstain, type KernelContext, prepareQuery, rollOutcomes, staged } from "./damage-kernel.ts";
+export { blockingHooks, hooksOf, INERT_HOOKS, type KernelData, KernelDataError, kernelData, type KernelMove, type KernelSpecies, SIM_SOURCES, simLiterals, STATUS_HOOKS } from "./damage-kernel-data.ts";
+export { type KernelEffect, type KernelEffects, KernelEffectsError, kernelEffectsHash, loadKernelEffects, readKernelEffects } from "./damage-kernel-effects.ts";
+export { abstained, type KernelBackend, KernelBackendError, type KernelBackendOptions, type KernelCounts, kernelBackend } from "./damage-kernel-backend.ts";
 export {
   declaredSets,
   type MechanicsQuery,
@@ -830,7 +834,7 @@ export { type ProbeBackend, type ProbeBackendOptions, probeBackend, type QueryFa
 export { batchOf, type BatchRunner, driveSync, type Gen, type ProbeCall, type Settled } from "./probe-batch.ts";
 export { buildFeaturesG } from "./feature-build.ts";
 export { FEATURE_SET_OUTCOME } from "./candidate-features.ts";
-export { loadRandomCorpus, RANDOM_DIR, type RandomBattleFile, UNAVAILABLE_DIR } from "./random-corpus.ts";
+export { loadRandomCorpus, RANDOM_DIR, RANDOM_MAX_TURNS, type RandomBattleFile, UNAVAILABLE_DIR } from "./random-corpus.ts";
 export { loadOutcomeConfig, outcomeConfigHash } from "./outcome-config.ts";
 export { withMoveOutcome } from "./mechanics-config.ts";
 export { GOLDEN_FORMAT, goldenTeamVocabulary } from "./golden.ts";
