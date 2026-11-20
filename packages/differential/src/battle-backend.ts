@@ -53,7 +53,11 @@ export interface BattleStarted {
   output: BattleStepOutput;
 }
 
-/** A battle-step backend. `project` (the player-view tensors) belongs to the port and is filled by groundwork G4. */
+/**
+ * A battle-step backend. `project` gives a seat's player-view projection of the backend's battle-state tensors (a `SeatView` of
+ * `battle-projection.ts`: the fields the visibility classes let that seat read) after the last call; the harness compares it with
+ * the reference projection when it is given a projection oracle (G4, #1464).
+ */
 export interface BattleBackend {
   readonly id: string;
   /** Bumped when the backend computes anything differently. */

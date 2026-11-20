@@ -28,7 +28,7 @@ const SPEC_HASH = "044a8a0863f86c9795740e0f02097cdcee548e121ec99cbc551db5a2fcd57
 // Record v2 (#1464): v1 plus what the projection needs (the own Pokemon that were not brought, the own base species over a Mega
 // Evolution, raw numbered volatile ids, a fifth revealed move, the slot occupant's stages); v1 stays as it was.
 const SPEC_V2_PATH = new URL(`../../../config/engine-state/${GOLDEN_FORMAT}/battle-state-spec.v2.json`, import.meta.url);
-const SPEC_V2_HASH = "8a5d6ce45837ab8577d874303de503338442ec702f0e577f45a8980f3d562d8f";
+const SPEC_V2_HASH = "e391f0d2a348b4456a0c66b67e865e8562f6f53cf1a0979773e3f44039a7dff7";
 
 let engine: Engine;
 let spec: BattleStateSpec;
@@ -344,6 +344,7 @@ describe("the committed battle-state spec, record v2 (#1464)", () => {
       "seat_active.protocol_derived",
       "seat_active.protocol_volatiles",
       "seat_active.volatile_numbered",
+      "seat_active.volatile_oldest_started",
       "seat_active.volatile_stat_raw",
       "seat_active.volatile_started_count",
       "seat_roster.ability_suppressed",

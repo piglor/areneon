@@ -16,6 +16,7 @@ request) and the invariance test run in ``battle-state-projection.python.test.ts
 from __future__ import annotations
 
 import copy
+import io
 import json
 from functools import cache
 from pathlib import Path
@@ -39,6 +40,7 @@ from areneon_ml.projection import (
     reduced_view,
     view_digest,
 )
+from areneon_ml.projection.__main__ import Server, main
 from areneon_ml.projection.packer import (
     pack_reveal,
     pack_volatiles,
@@ -300,3 +302,48 @@ def test_a_view_holds_no_hidden_field_no_other_seat_row_and_no_other_side_own_ex
     assert view["spec_hash"] == index().spec_hash
     with pytest.raises(ProjectionError, match="seat"):
         project(index(), pack(index(), game().vocabulary, point_of(battle, point)), "p3")
+
+
+# ---- the child the TS side drives ---------------------------------------------------------
+
+
+def test_the_server_answers_check_view_leak_and_refused_frames(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    battle, point, decision = next(d for d in decisions() if d[2]["kind"] == "battle")
+    seat = decision["seat"]
+    frame = {
+        "kind": "check",
+        "id": f"{battle['battle_id']}/{point['step']}/{seat}",
+        "point": point_of(battle, point),
+        "seat": seat,
+        "query": query_of(battle, point, decision),
+    }
+    server = Server(index(), game())
+    reply = server.answer(frame)
+    assert reply["status"] == "equal", reply["differences"]
+    assert reply["canary"] == {"engine": True, "tensors": True}
+    view = server.answer({**frame, "kind": "view"})
+    assert view["view_sha256"] == reply["view_sha256"]
+    leak = server.answer({**frame, "kind": "view", "leak": "roster.item"})
+    assert leak["view_sha256"] != reply["view_sha256"]
+    other = {**frame, "point": {**frame["point"], "format_id": "gen9ou"}}
+    refused = {"id": frame["id"], "status": "refused", "code": "format_mismatch"}
+    assert server.answer(other) == refused
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({**frame, "kind": "view"}) + "\n\n"))
+    engine_data = str(FORMAT_DIR / "engine-data-2.json")
+    spec_path = str(SPEC_DIR / "battle-state-spec.v2.json")
+    assert main(["serve", "--engine-data", engine_data, "--spec", spec_path]) == 0
+    printed = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [p["view_sha256"] for p in printed] == [reply["view_sha256"]]
+
+
+def test_the_projection_imports_no_runner_trace_or_omniscient_log_reader() -> None:
+    """Gate 4 of #1464 on the Python side: the packer and the projection read a point (state,
+    channels, teams) and nothing that records or replays a battle (the TS trace reader,
+    ``projection-points.ts``, is the one module of the path that touches the recorder)."""
+    package = ROOT / "ml" / "areneon_ml" / "projection"
+    for path in sorted(package.glob("*.py")):
+        text = path.read_text()
+        for name in ("inspector", "resimulate", "omniscient", "areneon_ml.loop", "subprocess"):
+            assert name not in text, (path.name, name)

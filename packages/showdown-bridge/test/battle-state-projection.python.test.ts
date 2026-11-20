@@ -11,14 +11,14 @@
 //
 // It needs the project's Python environment; without it the file is skipped unless ARENEON_REQUIRE_PYTHON_WORKER=1 (CI sets it).
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { actorRule } from "../src/actor-rule.ts";
 import { committedBattles } from "../src/battle-trace-corpus.ts";
-import { loadBattleStateSpec } from "../src/battle-state-spec.ts";
+import { type BattleStateSpec, loadBattleStateSpec } from "../src/battle-state-spec.ts";
 import { type Engine, loadEngine, type PokemonSet } from "../src/engine.ts";
 import { firstLegal, GOLDEN_DIR, GOLDEN_FORMAT } from "../src/golden.ts";
 import { type ProjectionBattle, type ProjectionDecision, projectionBattle, type ProjectionPoint, SPEC_V2_PATH } from "../src/projection-points.ts";
@@ -70,11 +70,12 @@ const pointFrame = (battle: ProjectionBattle, point: ProjectionPoint): unknown =
 
 describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER !== "1")("the battle-state projection against the encoder (record v2)", () => {
   let engine: Engine;
+  let record: BattleStateSpec;
   let child: Child;
   beforeAll(() => {
     engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
     // The record must read against the pinned engine before anything is packed with it.
-    loadBattleStateSpec(engine, GOLDEN_FORMAT, new URL(`file://${SPEC_V2_PATH}`));
+    record = loadBattleStateSpec(engine, GOLDEN_FORMAT, new URL(`file://${SPEC_V2_PATH}`));
     child = new Child();
   });
   afterAll(() => child?.close());
@@ -86,7 +87,7 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       const different: string[] = [];
       const leaks: string[] = [];
       for (const { spec } of committedBattles()) {
-        const battle = await projectionBattle(engine, spec);
+        const battle = await projectionBattle(engine, spec, record);
         counts.battles += 1;
         for (const point of battle.points) {
           for (const decision of point.decisions) {
@@ -123,7 +124,8 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
 
   /** p2's team with only fields nobody sees before they act changed: nature, Stat Points and the held items (rotated). */
   function mutated(team: readonly PokemonSet[]): PokemonSet[] {
-    const natures = engine.sim.Dex.natures.all().map((n: { name: string }) => n.name).sort();
+    const vocabulary = JSON.parse(readFileSync(join(GOLDEN_DIR, "team-vocabulary.json"), "utf8")) as { natures: { name: string }[] };
+    const natures = vocabulary.natures.map((n) => n.name);
     const items = team.map((set) => set.item);
     return team.map((set, i) => {
       const copy = structuredClone(set) as PokemonSet;
@@ -161,7 +163,7 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       let leaked = 0;
       for (const file of loadRandomCorpus().slice(0, 3)) {
         const play = (team: PokemonSet[], id: string) =>
-          projectionBattle(engine, { battle_id: id, format_id: GOLDEN_FORMAT, seed: file.seed, teams: { p1: file.teams.p1, p2: team }, actors: { p1: firstLegal, p2 }, max_turns: 8 });
+          projectionBattle(engine, { battle_id: id, format_id: GOLDEN_FORMAT, seed: file.seed, teams: { p1: file.teams.p1, p2: team }, actors: { p1: firstLegal, p2 }, max_turns: 8 }, record);
         const a = await play(file.teams.p2, `${file.id}/real`);
         const b = await play(mutated(file.teams.p2), `${file.id}/mutated`);
         for (const [x, y] of equalPrefixes(a, b)) {

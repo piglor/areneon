@@ -12,8 +12,8 @@ const ROOT = join(import.meta.dirname, "..", "..", "..");
 /** What only the allowed files may name: the modules and every export they hold that drives an engine. */
 export const RECORDER_NAMES = /\b(recordBattleTrace|showdownBattleBackend|committedBattles|recordingSource|forcingSource|installSource|interceptedSource|tracedStreamClass|stepRequests|agreesWithRecord)\b|["'][^"']*\/battle-(trace|replay|trace-corpus)(\.ts)?["']/;
 
-/** The bridge's own files that hold or re-export them, the engine-free core (its own trace reader shares the file name; it imports no engine) and the composition root's differential files. */
-export const ALLOWED = /^packages\/showdown-bridge\/src\/(battle-trace|battle-replay|battle-trace-corpus|battle-trace-samples|index)\.ts$|^packages\/differential\/src\/[a-z-]+\.ts$|^packages\/team-dataset\/(src|scripts)\/differential[a-z.-]*\.ts$/;
+/** The bridge's own files that hold or re-export them (and the battle-state projection's trace reader and its fixture capture, G4), the engine-free core (its own trace reader shares the file name; it imports no engine) and the composition root's differential files. */
+export const ALLOWED = /^packages\/showdown-bridge\/src\/(battle-trace|battle-replay|battle-trace-corpus|battle-trace-samples|index|projection-points)\.ts$|^packages\/showdown-bridge\/scripts\/capture-projection-points\.ts$|^packages\/differential\/src\/[a-z-]+\.ts$|^packages\/team-dataset\/(src|scripts)\/differential[a-z.-]*\.ts$/;
 
 /** Paths that must never reach them, whatever the allowlist says: evaluation, progress, private test, sealed runs and A2. */
 export const FORBIDDEN_PATH = /(evaluation|progress|private|sealed|bot-client|a2[-_]|session)/;
@@ -56,5 +56,7 @@ describe("the trace recorder and the battle backend stay off every evaluation pa
     expect(scanFile("packages/bot-client/src/session.ts", "forcingSource(p);")).toHaveLength(1);
     expect(scanFile("packages/team-dataset/src/differential-battle.ts", "recordBattleTrace(e, s);")).toEqual([]);
     expect(scanFile("packages/showdown-bridge/src/x.ts", "export const recordBattleTraceSize = 1;")).toEqual([]);
+    expect(scanFile("packages/showdown-bridge/src/projection-points.ts", "recordBattleTrace(e, s);")).toEqual([]);
+    expect(scanFile("packages/showdown-bridge/scripts/capture-other.ts", "committedBattles();")).toHaveLength(1);
   });
 });

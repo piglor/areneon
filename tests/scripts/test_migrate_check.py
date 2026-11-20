@@ -407,6 +407,7 @@ EXPECTED: dict[str, tuple[str, ...]] = {
     ),
     "battle-state-spec-oracle": (
         f"{B}/test/battle-state-spec.test.ts",
+        f"{B}/test/battle-state-projection.python.test.ts",
         "tests/ml/model/test_battle_state_spec.py",
     ),
     "encoder-golden": (

@@ -1943,6 +1943,24 @@
       "description": "The raw volatile ids the seat holds that are an id of the vocabulary plus a number (stockpile1, stockpile2): bit n is set when <id>n is held. The raw ids accumulate and go stale (a -end under the bare name leaves them), so the set as held is kept, not only the latest (seat_active.volatile_derived)."
     },
     {
+      "id": "seat_active.volatile_oldest_started",
+      "group": "seat_active",
+      "extra": [],
+      "dtype": "int16",
+      "value": {
+        "kind": "range",
+        "min": -1,
+        "max": 9999
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer_history",
+        "name": "active.volatile_started"
+      },
+      "visibility": "seat",
+      "description": "The earliest turn among the volatiles the seat's history facts date at the position, -1 none (whatever their ids: a raw numbered or protocol key counts too)."
+    },
+    {
       "id": "seat_active.volatile_shown",
       "group": "seat_active",
       "extra": [
@@ -4689,11 +4707,13 @@
       "column": "hist_volatile_oldest_age",
       "option": "history_facts",
       "own": [
+        "seat_active.volatile_oldest_started",
         "seat_active.volatile_started",
         "seat_active.volatile_started_count",
         "seat_roster.history_state"
       ],
       "opponent": [
+        "seat_active.volatile_oldest_started",
         "seat_active.volatile_started",
         "seat_active.volatile_started_count",
         "seat_roster.history_state"
@@ -5762,10 +5782,12 @@
     {
       "key": "history.SIDE.active.*.volatile_started.*.started_turn",
       "own": [
+        "seat_active.volatile_oldest_started",
         "seat_active.volatile_started",
         "seat_active.volatile_started_count"
       ],
       "opponent": [
+        "seat_active.volatile_oldest_started",
         "seat_active.volatile_started",
         "seat_active.volatile_started_count"
       ],

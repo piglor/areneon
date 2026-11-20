@@ -11,6 +11,8 @@ export type { BattleComparison, BattleDifference, BattleDifferenceKind, StepList
 export { stepFacts, teamEntities, toId } from "./battle-level.ts";
 export { classesHash, ClassesError, classifyStep, readInteractionClasses } from "./battle-classes.ts";
 export type { DrawSignal, InteractionClass, InteractionClasses, LineSignal, Signal } from "./battle-classes.ts";
+export { checkProjection, ProjectionError } from "./battle-projection.ts";
+export type { ProjectionOracle, SeatView } from "./battle-projection.ts";
 export { addBattles, newBattleCorpus } from "./battle-corpus.ts";
 export type { BattleCorpus, BattleCorpusDifference } from "./battle-corpus.ts";
 export { battleCorpusSummary, classCounts } from "./battle-report.ts";

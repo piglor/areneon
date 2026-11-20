@@ -193,11 +193,13 @@ CHECKS: tuple[Check, ...] = (
     ),
     Check(
         "battle-state-spec-oracle",
-        "battle-state spec oracle (ADR-030): engine fields, reducer map and encoder map agree",
+        "battle-state spec oracle (ADR-030): engine fields, reducer map and encoder map agree;"
+        " the G4 projection of record v2 is bit-equal to the encoder (canary, invariance)",
         (
-            vitest("battle-state-spec.test.ts"),
-            pytest("tests/ml/model/test_battle_state_spec.py"),
+            vitest("battle-state-spec.test.ts", "battle-state-projection.python.test.ts"),
+            pytest("tests/ml/model/test_battle_state_spec.py", "tests/ml/projection"),
         ),
+        (node("capture-projection-points.ts"),),
     ),
     Check(
         "encoder-golden",
