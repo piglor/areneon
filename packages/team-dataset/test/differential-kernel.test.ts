@@ -134,7 +134,7 @@ describe("4. isolation: no evaluation path reaches the kernel", () => {
       "packages/showdown-bridge/src/damage-kernel-backend.ts",
       "packages/showdown-bridge/src/index.ts",
       "packages/team-dataset/src/differential-kernel.ts",
-      "packages/team-dataset/scripts/kernel-admission.ts",
+      "packages/team-dataset/scripts/differential-kernel-admission.ts",
     ];
     const sources = [...["packages"].flatMap((p) => files(join(root, p))).filter((f) => /\/(src|scripts)\//.test(f)), ...files(join(root, "ml")), ...files(join(root, "scripts"))];
     const naming = sources.filter((f) => /["'][^"']*(damage-kernel|differential-kernel)[^"']*\.ts["']|\bkernelBackend\b|\bKernelAbstain\b/.test(readFileSync(f, "utf8"))).map((f) => f.slice(root.length));

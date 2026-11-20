@@ -1,16 +1,16 @@
 // The damage kernel's admission run and its speed measurement (ADR-030 step 3, #1457). Read-only on the repository but for
 // the files named by --out; never part of a training run.
 //
-//   node packages/team-dataset/scripts/kernel-admission.ts regression [--limit N] [--json FILE]
+//   node packages/team-dataset/scripts/differential-kernel-admission.ts regression [--limit N] [--json FILE]
 //       every committed corpus as a regression corpus: coverage, differences, abstentions by entity.
-//   node packages/team-dataset/scripts/kernel-admission.ts fresh --commit SHA --shard K/S --out SHARD.jsonl [--size N]
+//   node packages/team-dataset/scripts/differential-kernel-admission.ts fresh --commit SHA --shard K/S --out SHARD.jsonl [--size N]
 //       one shard of the fresh corpus: battles K, K+S, ... of the kernel version's fresh draw on the generator pool, each
 //       distinct covered damage query with the probe's answer (the shard stops past N/S covered queries).
-//   node packages/team-dataset/scripts/kernel-admission.ts ledger --commit SHA --shards A.jsonl,B.jsonl [--size N] --out LEDGER.json --report REPORT.json
+//   node packages/team-dataset/scripts/differential-kernel-admission.ts ledger --commit SHA --shards A.jsonl,B.jsonl [--size N] --out LEDGER.json --report REPORT.json
 //       the fresh corpus from the shards in battle order (its first N distinct covered queries, from battles every shard
 //       played), compared kernel against the recorded probe answers; plus the committed corpora as regression corpora; writes
 //       the BackendAdmission ledger and a counts report.
-//   node packages/team-dataset/scripts/kernel-admission.ts bench --queries FILE [--n N]
+//   node packages/team-dataset/scripts/differential-kernel-admission.ts bench --queries FILE [--n N]
 //       the kernel and the probe on the same damage queries, one at a time: per-query median and p99.
 import { execFileSync } from "node:child_process";
 import { closeSync, openSync, readFileSync, writeFileSync, writeSync } from "node:fs";
@@ -31,7 +31,7 @@ const flag = (name: string, fallback?: string): string => {
   const i = args.indexOf(`--${name}`);
   const value = i < 0 ? fallback : args[i + 1];
   if (value === undefined) {
-    console.error(`kernel-admission: --${name} is required`);
+    console.error(`differential-kernel-admission: --${name} is required`);
     process.exit(2);
   }
   return value;
@@ -173,6 +173,6 @@ if (mode === "regression") {
   };
   console.log(JSON.stringify({ damage_queries: every.length, covered: queries.length, differing, kernel: stats(k), probe: stats(p), probe_time_covered_share_ppm: Math.round((sum(p) / sum(all)) * 1e6), speedup_mean: Number((sum(p) / sum(k)).toFixed(2)) }));
 } else {
-  console.error("kernel-admission: regression | fresh | ledger | bench");
+  console.error("differential-kernel-admission: regression | fresh | ledger | bench");
   process.exit(2);
 }
