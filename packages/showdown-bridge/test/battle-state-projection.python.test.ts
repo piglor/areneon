@@ -10,65 +10,19 @@
 // give byte-identical views at every request with an equal player channel), each with a negative control.
 //
 // It needs the project's Python environment; without it the file is skipped unless ARENEON_REQUIRE_PYTHON_WORKER=1 (CI sets it).
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { actorRule } from "../src/actor-rule.ts";
-import { committedBattles } from "../src/battle-trace-corpus.ts";
 import { type BattleStateSpec, loadBattleStateSpec } from "../src/battle-state-spec.ts";
 import { type Engine, loadEngine, type PokemonSet } from "../src/engine.ts";
 import { firstLegal, GOLDEN_DIR, GOLDEN_FORMAT } from "../src/golden.ts";
 import { type ProjectionBattle, type ProjectionDecision, projectionBattle, type ProjectionPoint, SPEC_V2_PATH } from "../src/projection-points.ts";
 import { loadRandomCorpus } from "../src/random-corpus.ts";
 import type { Actor } from "../src/runner.ts";
+import { Child, CORPUS_TIMEOUT_MS, pointFrame, skipProjection } from "./support/projection-corpus.ts";
 
-const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
-const PYTHON = join(ROOT, ".venv/bin/python");
-// Replaying every committed corpus and encoding each decision three ways takes several minutes on one thread.
-const CORPUS_TIMEOUT_MS = 3_600_000;
-
-/** What the child answers (the fields this test reads). */
-interface Reply {
-  id: string;
-  status: "equal" | "different" | "refused" | "ok";
-  code?: string;
-  differences?: unknown;
-  canary?: { engine: boolean; tensors: boolean };
-  view_sha256?: string;
-}
-
-/** One line out, one line back: the projection child (`python -m areneon_ml.projection serve`). */
-class Child {
-  readonly process: ChildProcessWithoutNullStreams;
-  readonly #waiting: ((line: string) => void)[] = [];
-  constructor() {
-    const args = ["-m", "areneon_ml.projection", "serve", "--engine-data", join(GOLDEN_DIR, "engine-data-2.json"), "--spec", SPEC_V2_PATH];
-    this.process = spawn(PYTHON, args, { cwd: ROOT, stdio: ["pipe", "pipe", "pipe"] });
-    this.process.stderr.on("data", (chunk) => process.stderr.write(chunk));
-    createInterface({ input: this.process.stdout }).on("line", (line) => this.#waiting.shift()?.(line));
-  }
-  ask(frame: unknown): Promise<Reply> {
-    return new Promise((resolve) => {
-      this.#waiting.push((line) => resolve(JSON.parse(line) as Reply));
-      this.process.stdin.write(`${JSON.stringify(frame)}\n`);
-    });
-  }
-  close(): void {
-    this.process.stdin.end();
-  }
-}
-
-const pointFrame = (battle: ProjectionBattle, point: ProjectionPoint): unknown => ({
-  format_id: GOLDEN_FORMAT,
-  state: point.state,
-  channels: { p1: battle.channels.p1.slice(0, point.cut.p1), p2: battle.channels.p2.slice(0, point.cut.p2) },
-  teams: battle.teams,
-});
-
-describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER !== "1")("the battle-state projection against the encoder (record v2)", () => {
+describe.skipIf(skipProjection)("the battle-state projection against the encoder (record v2)", () => {
   let engine: Engine;
   let record: BattleStateSpec;
   let child: Child;
@@ -79,49 +33,6 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     child = new Child();
   });
   afterAll(() => child?.close());
-
-  it(
-    "is bit-equal to Encoder.encode at every request of both seats of every committed corpus, and the canary holds at each",
-    async () => {
-      const counts = { battles: 0, decisions: 0, equal: 0, preview: 0, battle: 0, refused: {} as Record<string, number>, canary: 0, canaryEngine: 0 };
-      const different: string[] = [];
-      const leaks: string[] = [];
-      for (const { spec } of committedBattles()) {
-        const battle = await projectionBattle(engine, spec, record);
-        counts.battles += 1;
-        for (const point of battle.points) {
-          for (const decision of point.decisions) {
-            counts.decisions += 1;
-            counts[decision.query.observation.kind === "preview" ? "preview" : "battle"] += 1;
-            const reply = await child.ask({ kind: "check", id: `${battle.battle_id}/${point.step}/${decision.seat}`, point: pointFrame(battle, point), seat: decision.seat, query: decision.query });
-            if (reply.status === "refused") {
-              const code = reply.code ?? "none";
-              counts.refused[code] = (counts.refused[code] ?? 0) + 1;
-              continue;
-            }
-            if (reply.status === "equal") counts.equal += 1;
-            else if (different.length < 20) different.push(`${reply.id}: ${JSON.stringify(reply.differences)}`);
-            counts.canary += 1;
-            if (reply.canary?.engine === true && reply.canary.tensors) counts.canaryEngine += 1;
-            else if (leaks.length < 20) leaks.push(`${reply.id}: ${JSON.stringify(reply.canary)}`);
-          }
-        }
-      }
-      console.log(JSON.stringify(counts));
-      expect(different).toEqual([]);
-      expect(leaks).toEqual([]);
-      expect(counts.battles).toBeGreaterThan(240);
-      expect(counts.decisions).toBeGreaterThan(7000);
-      expect(counts.preview).toBeGreaterThan(400);
-      // Only the reader's Illusion limits may be refused, each counted: a twin (a phantom roster entry the spec's roster dimension has
-      // no row for) and a disguise that never breaks, whose user's moves the reducer attributes to the Pokemon it is shown as (a
-      // list of six revealed moves, which the spec's four slots and one extra cannot hold: search-fidelity b63 and b86 at this pin).
-      expect(Object.keys(counts.refused).filter((code) => code !== "phantom" && code !== "reveal_overflow")).toEqual([]);
-      expect(counts.refused.reveal_overflow ?? 0).toBeLessThanOrEqual(17);
-      expect(counts.equal + Object.values(counts.refused).reduce((a, b) => a + b, 0)).toBe(counts.decisions);
-    },
-    CORPUS_TIMEOUT_MS,
-  );
 
   // ---- invariance ----
 
