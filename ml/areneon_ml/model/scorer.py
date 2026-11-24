@@ -99,7 +99,7 @@ class NetworkScorer:
         and applied to the float32 logits (exactly 1 at the default, which skips the product,
         so the default's bytes are those of the untempered scorer).
         """
-        return self._forward(view, temperature_ppm)[0]
+        return self._forward(view, temperature_ppm, with_value=False)[0]
 
     def evaluate(self, view: dict[str, Any]) -> tuple[list[float], float]:
         """The probabilities (temperature 1) and the value head's output, one forward pass.
@@ -107,7 +107,7 @@ class NetworkScorer:
         The probabilities are those ``probabilities(view)`` gives; the value is the float32
         output for the state (ADR-026 §5).
         """
-        return self._forward(view, FULL_TEMPERATURE_PPM)
+        return self._forward(view, FULL_TEMPERATURE_PPM, with_value=True)
 
     @property
     def value_query(self) -> bool:
@@ -196,8 +196,10 @@ class NetworkScorer:
             stopwatch.end("w_fwd", mark)
         return [found for found in results if found is not None]
 
-    def _forward(self, view: dict[str, Any], temperature_ppm: int) -> tuple[list[float], float]:
-        """The probabilities and the value head's float32 output of one query (batch of one)."""
+    def _forward(
+        self, view: dict[str, Any], temperature_ppm: int, with_value: bool
+    ) -> tuple[list[float], float]:
+        """The probabilities and, when asked, the value head's float32 output (batch of one)."""
         role = view["observation"]["kind"]
         mark = stopwatch.begin()
         encoded = self._encoders[role].encode(view)
@@ -212,7 +214,8 @@ class NetworkScorer:
                 if temperature_ppm != FULL_TEMPERATURE_PPM:
                     logits = logits * (1_000_000 / temperature_ppm)
                 probabilities = torch.softmax(logits, dim=-1)
-                return [float(p) for p in probabilities.tolist()], float(output.value[0].item())
+                value = float(output.value[0].item()) if with_value else 0.0
+                return [float(p) for p in probabilities.tolist()], value
 
         found = self._apply(role, call)
         stopwatch.end("w_fwd", mark)
