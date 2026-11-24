@@ -230,8 +230,9 @@ def check_divergence(found: dict[str, Any], config: RunConfig) -> None:
 def check_inference_device(found: dict[str, Any], config: RunConfig) -> None:
     """The device counts belong to a GPU-inference run and agree with themselves (ADR-030 step 4).
 
-    Each worker falls back to its CPU path at most once, and a rolled-back (``forced``) generation
-    ran no batch on the device.
+    Each worker falls back to its CPU path at most once; a rolled-back (``forced``) generation
+    ran no batch on the device, so no worker of it had an allocation to fail; and a generation
+    whose workers left no counts (``workers`` 0) has none to report.
     """
     if config.generation.inference_device is None or found["device"] != (
         config.generation.inference_device
@@ -239,8 +240,36 @@ def check_inference_device(found: dict[str, Any], config: RunConfig) -> None:
         raise MetricsError("inference device counts are recorded for the config's device only")
     if found["allocation_fallbacks"] > found["workers"]:
         raise MetricsError("a worker makes at most one allocation fallback to its CPU path")
-    if found["forced"] and found["device_batches"] != 0:
-        raise MetricsError("a forced (rolled back) generation runs no batch on the device")
+    if found["forced"] and (found["device_batches"] != 0 or found["allocation_fallbacks"] != 0):
+        raise MetricsError(
+            "a forced (rolled back) generation runs no batch on the device and has no "
+            "allocation fallback"
+        )
+    if found["workers"] == 0 and (
+        found["device_batches"] or found["cpu_batches"] or found["allocation_fallbacks"]
+    ):
+        raise MetricsError("no worker reported counts, so there are none to record")
+
+
+def answered_on(found: dict[str, Any]) -> str:
+    """Where a GPU-inference generation's passes ran, from its ``inference_device`` counts.
+
+    The policy id and the divergence record of such a generation say ``device: cuda`` however it
+    ran (the setting is the run's identity); this is what the dashboard shows beside them, so a
+    rolled-back or fallen-back generation is not read as the GPU worker's.
+    """
+    workers, fallbacks = found["workers"], found["allocation_fallbacks"]
+    if workers == 0:
+        return "no worker reported"
+    if found["forced"]:
+        return "CPU path (rolled back)"
+    if found["device_batches"] == 0:
+        if found["cpu_batches"] == 0:
+            return "no batched pass"
+        return "CPU path (every worker fell back)"
+    if fallbacks:
+        return f"GPU ({fallbacks} of {workers} workers fell back to the CPU path)"
+    return "GPU"
 
 
 def check_profile(profile: dict[str, Any]) -> None:

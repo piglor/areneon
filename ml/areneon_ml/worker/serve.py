@@ -20,6 +20,7 @@ from typing import Any, BinaryIO, cast
 from areneon_contracts.contracts import jcs
 from areneon_contracts.opponent_sheet import sheet_problem
 
+from areneon_ml.device import GPU_DEVICE
 from areneon_ml.model.encoder import EncodingError
 from areneon_ml.reducer import ReducerError
 from areneon_ml.worker.candidates import UnsupportedCandidate, parse_choice
@@ -42,10 +43,6 @@ BATCHED = "batched"
 
 #: The smallest batched forward pass; batch 1 is stated by omission.
 MIN_BATCH = 2
-
-#: The device a GPU-inference worker states in its batching (ADR-030 step 4, #1458); the CPU is
-#: stated by omission.
-GPU_DEVICE = "cuda"
 
 EXIT_OK = 0
 EXIT_FRAME = 2
@@ -201,6 +198,10 @@ class Worker:
         #: The device counts of a GPU-inference worker's scorer (``NetworkScorer.placement_stats``),
         #: or None for every other worker; ``__main__`` sets it.
         self.placement_stats: Callable[[], dict[str, Any] | None] = lambda: None
+        #: Called after each batch of a batched session is answered: ``__main__`` points it at the
+        #: throttled rewrite of this worker's counts file, so a worker that is killed leaves
+        #: counts that are at most an interval old (#1502).
+        self.heartbeat: Callable[[], None] = lambda: None
         self._ready: dict[str, Any] = {
             "schema_version": 1,
             "message": {
@@ -483,6 +484,7 @@ class Worker:
                 for reply in self.answer_batch(batch):
                     stdout.write(encode_frame(reply, self._max))
                 stdout.flush()
+                self.heartbeat()
         if isinstance(ended, StopIteration):
             return EXIT_OK
         if isinstance(ended, (FrameError, QueryError)):

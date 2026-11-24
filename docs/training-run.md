@@ -88,7 +88,9 @@ diversity only in training; it is part of the identity.
 ## 3. Start the run
 
 The learner runs from the separate GPU environment (`ml/gpu-env/README.md`); the
-policy worker stays on CPU torch from the root environment.
+policy worker stays on CPU torch from the root environment, unless the run's config says
+`generation.inference.device: cuda` (section 11), which starts the play workers from
+the GPU environment instead.
 
 ```bash
 ml/gpu-env/.venv/bin/python -m areneon_ml.loop run --config my-run.json \
@@ -162,10 +164,14 @@ What a process holds, measured on the 28-core, 24 GB, 16 GB GPU machine with the
   at the same wall time (219 s against 242 s without the change). At 448 it was 0.57 GB and 230 s;
   nothing below 448 was tried, and a heap cap too small for the pool would fail the process, so
   start near 640.
-- A policy worker is 0.42 GB (CPU torch and the two networks) and does not shrink.
+- A policy worker is 0.42 GB (CPU torch and the two networks) and does not shrink. A CUDA policy
+  worker (`generation.inference.device: cuda`, section 11) is about 3.3 times that: 1.44 GiB at
+  this network size (see "Host memory of CUDA workers" in section 11).
 - The whole play tree peaked at 7.76 GB before, 7.56 GB with Episodes on disk and 5.70 GB
   with `--node-heap-mb 640`. A rule of thumb for the play phase:
   `RAM = S x (0.6 + 0.43 x K) GB`, so `S` = 4, `K` = 2 is about 5.8 GB and `S` = 6, `K` = 3 about 11 GB.
+  With CUDA workers it is `RAM = S x (0.6 + 1.6 x K) GB`: `S` = 2, `K` = 1 is 4.4 GB, `S` = 6, `K` = 2
+  is 22.8 GB, which does not fit a 23 GB machine.
 - The driver holds the learner and the generation's encoded steps (on the CPU; only the
   current minibatches go to the GPU). Its resident set peaked at 0.78 GB in the load phase of a
   1.2 GB stream (18,959 steps), 0.93 GB with `--load-processes 6`; a CUDA learner adds its
@@ -1259,7 +1265,7 @@ What batches, and what does not. The game processes still send one query per dec
 (`--inference-max-batch`, which the play script gives it from the config) reads the queries that are queued,
 up to `max_batch`, reduces and encodes each alone, and runs the network once over the padded batch of each
 role (`NetworkScorer.score_batch`). Float32, CPU torch from the shipped closure, deterministic algorithms on;
-there is no GPU inference. Only `W_fwd` batches.
+there is no GPU inference unless `generation.inference.device: cuda` (the next subsection). Only `W_fwd` batches.
 
 Identity. The pair's `behaviour_policy_id` gains `inference: {kind, max_batch}` in its preimage (TS
 `policyId`, Python `policy_id`; the vectors are pinned on both sides), so a stream played this way is
@@ -1323,13 +1329,56 @@ and it refuses their hellos. It refuses to start without a usable CUDA device (e
 plays on the CPU.
 
 Fail closed. The worker keeps its networks as loaded (on the CPU) and works on a copy on the GPU. An
-allocation failure, while copying the networks or in any pass, drops the copy, empties the CUDA cache and
-answers that pass and the rest of the session on the CPU path, once per worker. The rollback flag
+allocation failure, while copying the networks (where the CUDA context is created) or in any pass (where
+cuBLAS allocates its handle), drops the copy, empties the CUDA cache and answers that pass and the rest of
+the session on the CPU path, once per worker. An allocation failure is torch's `OutOfMemoryError` and, by
+message, the plain `RuntimeError` that CUDA and cuBLAS raise in the same condition (`CUDA error: out of
+memory`, `CUBLAS_STATUS_ALLOC_FAILED`, `Error 2: out of memory` at context creation); every other error,
+including any other `RuntimeError`, is loud and ends the worker. What torch raises was checked on the RTX
+5070 Ti (torch 2.14.1+cu130, #1502): a tiny `torch.cuda.set_per_process_memory_fraction` makes the caching
+allocator raise `torch.cuda.OutOfMemoryError` ("CUDA out of memory. Tried to allocate ...") for a tensor, for
+a linear layer's workspace and for a matmul; the context itself cannot be starved of GPU memory without
+filling the card, so it was starved of host address space instead (`ulimit -v` 4 to 15 GB): the first CUDA
+operation then raises a plain `RuntimeError` ("Unexpected error from cudaGetDeviceCount() ... Error 2: out
+of memory"), and `torch.cuda.is_available()` is then false, which is why `empty_cache` is best effort. A
+real cuBLAS `ALLOC_FAILED` was not forced (it needs the card full); its text is the one torch documents
+and the tests give each form to a stub. The rollback flag
 `--inference-cpu` (operational: the stated setting and the policy id are unchanged) starts every play
 worker on that path from the start; it needs no `--inference-worker-python`. Each play worker leaves its
-counts in a scratch directory of the driver when its session ends, and the driver stores their sum as the
-optional `inference_device` of `metrics/g<N>.json` (`workers`, `device_batches`, `cpu_batches`,
-`allocation_fallbacks`, `forced`; outside every hash). The dashboard tabulates them under the divergence.
+counts in a scratch directory of the driver, as a file of its own (`inference-<pid>-<random>.json`: a
+reused pid cannot overwrite another worker's), written when its session starts, rewritten at most once a
+second while it serves and once more at the end, so a worker that is killed is still counted. A failing
+write is reported once on the worker's stderr and never changes its exit code or hides its error. The driver
+stores their sum as the optional `inference_device` of `metrics/g<N>.json` (`workers`, `device_batches`,
+`cpu_batches`, `allocation_fallbacks`, `forced`; outside every hash); a generation whose workers left no
+counts at all is recorded with `workers: 0`, never left without the field. The reader's rules: the config's
+device only, at most one fallback per worker, a forced generation has no device pass and no fallback, and
+no worker means no counts. The dashboard tabulates every played generation under the divergence with an
+"Answered on" column: `GPU`, `GPU (n of m workers fell back to the CPU path)`, `CPU path (every worker fell
+back)`, `CPU path (rolled back)`, `no worker reported` or `not recorded`. A rolled-back or fallen-back
+generation keeps `device: "cuda"` in its policy id and in the divergence record (the setting is the run's
+identity), so the "differing choices" of such a generation measure the CPU batched path against batch 1,
+not the GPU worker, and the page says so. A worker uses torch's default CUDA device (`cuda:0`) and no
+device is selectable: the play script gives a worker no environment, so `CUDA_VISIBLE_DEVICES` does not
+reach it; the setting is for a machine with one card.
+
+Host memory of CUDA workers. A CUDA worker holds the CUDA context and libraries in host RAM as well as GPU
+memory, so it is about 3.3 times a CPU worker: a peak resident set (`VmHWM`) of 1,452 to 1,474 MiB (1.44
+GiB) for the real network (`config/training/public-gpu16.json`'s model: 256 wide, 6 layers; two seeded
+checkpoints of 30 and 32 MB), over seven runs of 15 to 132 queries in batches of 1 to 8, through the worker
+CLI with `env -i` and the `ml/gpu-env` Python, against 449 MiB for the CPU worker on the same checkpoints
+(the review of #418 measured 1.52 GB against 0.31 GB with a tiny network). A rolled-back worker started
+from the same CUDA Python imports CUDA torch without creating a context: 0.79 GiB measured. The GPU side
+is about 0.4 GiB per worker (the context and the network copy; a difference of `nvidia-smi` `memory.used`
+on a card shared with a learner, so approximate). The memory guard (`loop run` refuses a play phase that
+does not fit the memory available, `--no-memory-guard` turns it off) therefore estimates a CUDA worker at
+1.6 GB (`DEFAULT_GPU_POLICY_WORKER_BYTES`, the measured peak plus 11 percent) until a generation has
+reported a measured peak, and learns only from generations whose workers ran passes on the device: the
+peak of a rolled-back or fallen-back generation is a CPU worker's. `--game-processes 6 --policy-workers 2`
+is twelve workers, about 23 GB of host RAM against about 5 GB of CPU workers (the guard refuses it on a
+23 GB machine). Start with few workers (`--game-processes 2 --policy-workers 1` is 4.4 GB), read
+`peak_rss_bytes.policy_worker` and `inference_device` in the first generation's metrics, and raise the
+counts from the measurement.
 
 GPU memory. Play and train are separate phases of a generation, so the learner and the workers never run a
 pass at the same time; the driver empties the CUDA cache after each train phase, and the learner's weights

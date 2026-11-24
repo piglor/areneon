@@ -9,6 +9,7 @@ from typing import Any, cast
 from areneon_contracts.contracts import ContractError, jcs, sha256_hex, validate
 
 from areneon_ml.checkpoint.record import CheckpointRecord, read_record
+from areneon_ml.device import GPU_DEVICE
 from areneon_ml.learner.config import RunConfig
 from areneon_ml.model.options import feature_set
 
@@ -21,9 +22,6 @@ PRECISION = "float32"
 FULL_TEMPERATURE_PPM = 1_000_000  # temperature 1 in millionths: the default, never written
 DIGEST_CHARS = 64  # a SHA-256 digest in lowercase hex
 MIN_BATCH = 2  # the smallest batched forward pass: batch 1 is stated by omission
-GPU_DEVICE = (
-    "cuda"  # the one device a setting names (ADR-030 step 4); the CPU is stated by omission
-)
 
 
 def policy_id(  # noqa: PLR0912, PLR0913, PLR0917
