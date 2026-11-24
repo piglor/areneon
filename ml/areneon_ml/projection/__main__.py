@@ -52,7 +52,7 @@ class Server:
         try:
             packed = self._session.pack(point)
         except PackError as error:
-            return {"id": frame_id, "status": "refused", "code": error.code}
+            return {"id": frame_id, "status": "refused", "code": error.code, "detail": error.detail}
         view = project(self.index, packed, seat)
         if frame["kind"] == "view":
             leak = frame.get("leak")

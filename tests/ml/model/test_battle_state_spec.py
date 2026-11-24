@@ -279,7 +279,13 @@ def test_v2_keeps_every_v1_field_and_mapping_ref() -> None:
     one, two = spec("v1"), spec("v2")
     fields = {f["id"]: f for f in two["fields"]}
     for field in one["fields"]:
-        assert {**fields[field["id"]], "description": ""} == {**field, "description": ""}
+        # The one widened range: v1's 0..127 cannot hold the stall counter's 729.
+        widened = (
+            {"dtype": "int16", "value": {"kind": "range", "min": 0, "max": 1023}}
+            if field["id"] == "active.volatile_counter"
+            else {}
+        )
+        assert {**fields[field["id"]], "description": ""} == {**field, **widened, "description": ""}
     for name in ("encoder", "reducer"):
         later = {(r.get("group"), r.get("column"), r.get("key")): r for r in two[name]}
         for row in one[name]:

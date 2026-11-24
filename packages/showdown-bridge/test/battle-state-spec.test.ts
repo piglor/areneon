@@ -28,7 +28,7 @@ const SPEC_HASH = "044a8a0863f86c9795740e0f02097cdcee548e121ec99cbc551db5a2fcd57
 // Record v2 (#1464): v1 plus what the projection needs (the own Pokemon that were not brought, the own base species over a Mega
 // Evolution, raw numbered volatile ids, a fifth revealed move, the slot occupant's stages); v1 stays as it was.
 const SPEC_V2_PATH = new URL(`../../../config/engine-state/${GOLDEN_FORMAT}/battle-state-spec.v2.json`, import.meta.url);
-const SPEC_V2_HASH = "e391f0d2a348b4456a0c66b67e865e8562f6f53cf1a0979773e3f44039a7dff7";
+const SPEC_V2_HASH = "69fb5894cce780c458646648ca1ad92bf6906b15423e458bb2e8e18d2e3303c1";
 
 let engine: Engine;
 let spec: BattleStateSpec;
@@ -335,7 +335,9 @@ describe("the committed battle-state spec, record v2 (#1464)", () => {
       const kept = v2.get(f.id) as Field;
       expect(kept, f.id).toBeDefined();
       // Only descriptions may say more; class, source, shape and value are v1's.
-      expect({ ...kept, description: "" }, f.id).toEqual({ ...f, description: "" });
+      // The one widened range: v1's 0..127 cannot hold the stall counter's 729 (see "engine-side counter ranges").
+      const widened = f.id === "active.volatile_counter" ? { dtype: "int16", value: { kind: "range", min: 0, max: 1023 } } : {};
+      expect({ ...kept, description: "" }, f.id).toEqual({ ...f, ...widened, description: "" });
     }
     const added = specV2.fields.filter((f) => !spec.fields.some((g) => g.id === f.id)).map((f) => f.id);
     expect(added).toEqual([
@@ -345,8 +347,8 @@ describe("the committed battle-state spec, record v2 (#1464)", () => {
       "seat_active.protocol_volatiles",
       "seat_active.volatile_numbered",
       "seat_active.volatile_oldest_started",
-      "seat_active.volatile_stat_raw",
       "seat_active.volatile_started_count",
+      "seat_active.volatile_stat_raw",
       "seat_roster.ability_suppressed",
       "seat_roster.hp_den_shown",
       "seat_roster.own_can_mega_evo",
@@ -358,6 +360,23 @@ describe("the committed battle-state spec, record v2 (#1464)", () => {
     ]);
     // Every added field but the slot occupant's public stages is a seat field: the seat's own derivation.
     for (const id of added) expect((v2.get(id) as Field).visibility, id).toBe(id === "active.boosts" ? "public" : "seat");
+  });
+});
+
+describe("engine-side counter ranges (#1464)", () => {
+  it("the engine-side volatile counter holds the largest counter the pinned engine's conditions reach (the stall condition's 729)", () => {
+    const sim = engine.sim as any;
+    const dex = sim.Dex.mod(sim.Dex.formats.get(GOLDEN_FORMAT).mod);
+    const maxima = Object.keys(dex.data.Conditions)
+      .map((id) => dex.conditions.get(id).counterMax)
+      .filter((n): n is number => typeof n === "number");
+    expect(maxima).toContain(729);
+    const largest = Math.max(...maxima);
+    for (const record of [spec, specV2]) {
+      const field = record.fields.find((f) => f.id === "active.volatile_counter") as any;
+      expect(field.value.kind).toBe("range");
+      if (record === specV2) expect(field.value.max, "record v2").toBeGreaterThanOrEqual(largest);
+    }
   });
 });
 

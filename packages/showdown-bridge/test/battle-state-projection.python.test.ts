@@ -113,8 +113,11 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       expect(counts.battles).toBeGreaterThan(240);
       expect(counts.decisions).toBeGreaterThan(7000);
       expect(counts.preview).toBeGreaterThan(400);
-      // Only the reader's Illusion twin (a phantom roster entry the spec's roster dimension has no row for) may be refused.
-      expect(Object.keys(counts.refused).filter((code) => code !== "phantom")).toEqual([]);
+      // Only the reader's Illusion limits may be refused, each counted: a twin (a phantom roster entry the spec's roster dimension has
+      // no row for) and a disguise that never breaks, whose user's moves the reducer attributes to the Pokemon it is shown as (a
+      // list of six revealed moves, which the spec's four slots and one extra cannot hold: search-fidelity b63 and b86 at this pin).
+      expect(Object.keys(counts.refused).filter((code) => code !== "phantom" && code !== "reveal_overflow")).toEqual([]);
+      expect(counts.refused.reveal_overflow ?? 0).toBeLessThanOrEqual(17);
       expect(counts.equal + Object.values(counts.refused).reduce((a, b) => a + b, 0)).toBe(counts.decisions);
     },
     CORPUS_TIMEOUT_MS,
@@ -161,7 +164,7 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     async () => {
       let compared = 0;
       let leaked = 0;
-      for (const file of loadRandomCorpus().slice(0, 3)) {
+      for (const file of loadRandomCorpus().slice(0, 6)) {
         const play = (team: PokemonSet[], id: string) =>
           projectionBattle(engine, { battle_id: id, format_id: GOLDEN_FORMAT, seed: file.seed, teams: { p1: file.teams.p1, p2: team }, actors: { p1: firstLegal, p2 }, max_turns: 8 }, record);
         const a = await play(file.teams.p2, `${file.id}/real`);

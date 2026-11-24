@@ -328,7 +328,7 @@ def test_the_server_answers_check_view_leak_and_refused_frames(
     leak = server.answer({**frame, "kind": "view", "leak": "roster.item"})
     assert leak["view_sha256"] != reply["view_sha256"]
     other = {**frame, "point": {**frame["point"], "format_id": "gen9ou"}}
-    refused = {"id": frame["id"], "status": "refused", "code": "format_mismatch"}
+    refused = {"id": frame["id"], "status": "refused", "code": "format_mismatch", "detail": ""}
     assert server.answer(other) == refused
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({**frame, "kind": "view"}) + "\n\n"))
     engine_data = str(FORMAT_DIR / "engine-data-2.json")

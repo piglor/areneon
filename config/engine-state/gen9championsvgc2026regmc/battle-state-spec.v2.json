@@ -499,11 +499,11 @@
       "extra": [
         "VOLATILE"
       ],
-      "dtype": "int8",
+      "dtype": "int16",
       "value": {
         "kind": "range",
         "min": 0,
-        "max": 127
+        "max": 1023
       },
       "source": {
         "kind": "engine",
@@ -511,7 +511,7 @@
         "read": "value"
       },
       "visibility": "hidden",
-      "description": "A volatile's counter (the stall counter). Never projected."
+      "description": "A volatile's counter (the stall counter reaches the engine's counterMax of 729, so the range is wider than v1's 0..127). Never projected."
     },
     {
       "id": "active.volatile_duration",

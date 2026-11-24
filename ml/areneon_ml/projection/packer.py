@@ -50,6 +50,7 @@ class PackError(ProjectionError):
     def __init__(self, code: str, detail: str = "") -> None:
         super().__init__(f"{code}: {detail}" if detail else code)
         self.code = code
+        self.detail = detail
 
 
 def to_id(value: Any) -> str | None:
@@ -906,7 +907,7 @@ def plant_engine(  # noqa: PLR0912
                 if isinstance(effect, dict):
                     for key, high in (
                         ("duration", 64),
-                        ("counter", 127),
+                        ("counter", 1023),
                         ("hp", 9999),
                         ("layers", 8),
                     ):
