@@ -65,7 +65,7 @@ def test_policy_id_vectors_are_pinned_and_inference_enters_only_when_set() -> No
         {"kind": "batched", "max_batch": 1},
         {"kind": "batched"},
         {"kind": "async", "max_batch": 2},
-        {"kind": "batched", "max_batch": 2, "device": "cuda"},
+        {"kind": "batched", "max_batch": 2, "device": "cpu"},
         {"kind": "batched", "max_batch": "2"},
     ],
 )

@@ -109,6 +109,18 @@ export const FULL_TEMPERATURE_PPM = 1_000_000;
 export interface InferenceSettings {
   kind: "batched";
   max_batch: number;
+  /** `cuda`: the batched forward pass runs on the GPU (ADR-030 step 4, #1458); absent is the CPU. */
+  device?: "cuda";
+}
+
+/**
+ * The wire and preimage form of an inference setting: `{kind, max_batch}`, plus `device` only for the GPU, so the CPU batching of
+ * #1195 keeps its bytes and ids. Throws `PolicyProtocolError` for a setting it cannot encode.
+ */
+export function inferenceWire(inference: InferenceSettings): { kind: "batched"; max_batch: number; device?: "cuda" } {
+  if (inference.kind !== "batched" || !Number.isInteger(inference.max_batch) || inference.max_batch < 2) throw new PolicyProtocolError("inference is {kind: batched, max_batch: an integer of at least 2}");
+  if (inference.device !== undefined && inference.device !== "cuda") throw new PolicyProtocolError("inference device is cuda, or absent for the CPU");
+  return { kind: inference.kind, max_batch: inference.max_batch, ...(inference.device === undefined ? {} : { device: inference.device }) };
 }
 
 /** How a sampled policy is played beyond temperature 1 (ADR-023 §1); both parts optional. */
@@ -129,15 +141,12 @@ export interface PlaySettings {
  * by the solver (ADR-029 section 4) adds `preview_solve: <solver identity hash>` (`previewSolveIdentityHash`), independently of
  * `search` (a pair with the solver, with search, or with both are three different policies); it is absent for every other
  * policy, whose id is unchanged. A pair whose self-play forward pass is batched (ADR-028 section 2 F2) adds
- * `inference: {kind, max_batch}`, absent for every other policy. The Python
+ * `inference: {kind, max_batch}` (and `device: "cuda"` when the GPU answers it, ADR-030 step 4), absent for every other policy. The Python
  * `areneon_ml.loop.records.policy_id` computes the same value.
  */
 export function policyId(pair: { preview: string; battle: string }, mode: "sample" | "argmax", play: PlaySettings = {}, features?: string, search?: string, previewSolve?: string, inference?: InferenceSettings): string {
   const body: Record<string, Json> = { preview: pair.preview, battle: pair.battle, mode, temperature: 1, precision: "float32" };
-  if (inference !== undefined) {
-    if (inference.kind !== "batched" || !Number.isInteger(inference.max_batch) || inference.max_batch < 2) throw new PolicyProtocolError("inference is {kind: batched, max_batch: an integer of at least 2}");
-    body.inference = { kind: inference.kind, max_batch: inference.max_batch };
-  }
+  if (inference !== undefined) body.inference = inferenceWire(inference);
   if (previewSolve !== undefined) {
     if (!/^[0-9a-f]{64}$/.test(previewSolve)) throw new PolicyProtocolError("preview_solve is a Team Preview solver identity hash: 64 lowercase hex digits");
     body.preview_solve = previewSolve;

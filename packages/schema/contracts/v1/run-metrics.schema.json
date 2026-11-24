@@ -64,6 +64,9 @@
     "inference_divergence": {
       "$ref": "#/$defs/InferenceDivergence"
     },
+    "inference_device": {
+      "$ref": "#/$defs/InferenceDevice"
+    },
     "learner_micro_batch": {
       "description": "Optional, written only when the run was started with --learner-micro-batch (operational, not a config field): the largest number of decisions the learner ran through the network at once, so the activation memory of the generation is that of a chunk and the gradients are accumulated over a minibatch's chunks. Absent: one pass per minibatch.",
       "type": "integer",
@@ -389,6 +392,12 @@
           "minimum": 2,
           "maximum": 1024
         },
+        "device": {
+          "description": "Optional (ADR-030 step 4, #1458): cuda when the batched worker that played answered on the GPU; the batch-1 control is always the CPU worker, so differing is then the GPU worker's share of choice differences. Absent: the CPU batching.",
+          "enum": [
+            "cuda"
+          ]
+        },
         "decisions": {
           "description": "The pair's own decisions played this generation by the processes that reported.",
           "$ref": "#/$defs/Count"
@@ -403,6 +412,41 @@
           "$ref": "#/$defs/Count"
         },
         "target_met": {
+          "type": "boolean"
+        }
+      }
+    },
+    "InferenceDevice": {
+      "description": "Optional (ADR-030 step 4, #1458), written only by a run whose config says generation.inference.device: where its policy workers' batched forward passes ran this generation, summed over the workers that reported (a diagnostic outside every hash). device_batches ran on the GPU, cpu_batches on a worker's CPU path: after an allocation failure (each worker falls back at most once and stays on the CPU for the rest of its session; allocation_fallbacks counts the workers that did) or for the whole generation under the rollback flag (forced, and then no batch ran on the GPU).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "device",
+        "workers",
+        "device_batches",
+        "cpu_batches",
+        "allocation_fallbacks",
+        "forced"
+      ],
+      "properties": {
+        "device": {
+          "enum": [
+            "cuda"
+          ]
+        },
+        "workers": {
+          "$ref": "#/$defs/Count"
+        },
+        "device_batches": {
+          "$ref": "#/$defs/Count"
+        },
+        "cpu_batches": {
+          "$ref": "#/$defs/Count"
+        },
+        "allocation_fallbacks": {
+          "$ref": "#/$defs/Count"
+        },
+        "forced": {
           "type": "boolean"
         }
       }

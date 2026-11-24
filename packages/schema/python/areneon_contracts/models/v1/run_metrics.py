@@ -71,6 +71,10 @@ class InferenceDivergence(BaseModel):
         extra="forbid",
     )
     max_batch: Annotated[StrictInt, Field(ge=2, le=1024)]
+    device: Literal["cuda"] | MISSING = MISSING
+    """
+    Optional (ADR-030 step 4, #1458): cuda when the batched worker that played answered on the GPU; the batch-1 control is always the CPU worker, so differing is then the GPU worker's share of choice differences. Absent: the CPU batching.
+    """
     decisions: Count
     """
     The pair's own decisions played this generation by the processes that reported.
@@ -79,6 +83,22 @@ class InferenceDivergence(BaseModel):
     differing: Count
     max_prior_diff_ppm: Count
     target_met: StrictBool
+
+
+class InferenceDevice(BaseModel):
+    """
+    Optional (ADR-030 step 4, #1458), written only by a run whose config says generation.inference.device: where its policy workers' batched forward passes ran this generation, summed over the workers that reported (a diagnostic outside every hash). device_batches ran on the GPU, cpu_batches on a worker's CPU path: after an allocation failure (each worker falls back at most once and stays on the CPU for the rest of its session; allocation_fallbacks counts the workers that did) or for the whole generation under the rollback flag (forced, and then no batch ran on the GPU).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    device: Literal["cuda"]
+    workers: Count
+    device_batches: Count
+    cpu_batches: Count
+    allocation_fallbacks: Count
+    forced: StrictBool
 
 
 class PhaseMs(BaseModel):
@@ -224,6 +244,7 @@ class RunMetrics(BaseModel):
     peak_rss_bytes: PeakRss | MISSING = MISSING
     profile: Profile | MISSING = MISSING
     inference_divergence: InferenceDivergence | MISSING = MISSING
+    inference_device: InferenceDevice | MISSING = MISSING
     learner_micro_batch: Annotated[StrictInt | MISSING, Field(ge=1, le=1048576)] = (
         MISSING
     )

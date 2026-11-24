@@ -18,7 +18,7 @@ import { type Json, jcs } from "./canonical-json.ts";
 import { resolveFormat } from "./formats.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
 import { type BeliefFeaturesFactory, SheetTotals } from "./belief-features.ts";
-import { DivergenceRun } from "./inference-divergence.ts";
+import { DivergenceRun, inferenceFlagsProblem } from "./inference-divergence.ts";
 import { labelCounts } from "./search-labeller.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import { PastPoolError, readPastPool } from "./past-pool.ts";
@@ -89,6 +89,13 @@ const FLAGS = {
   "profile-dir": { type: "string" },
   // Operational (ADR-030 step 1, #1455): advance the games of a wave in lockstep, answering their feature builds through one batched mechanics call and issuing their policy queries together. Every file the generation writes is the same with it and without it; a line `batch seam: {...}` of batch-size counts goes to stderr.
   "batch-seam": { type: "boolean" },
+  // Operational (ADR-030 step 4, #1458), only for a run whose generation.inference says device: cuda: the Python of the unshipped
+  // ml/gpu-env environment the play workers run on (CUDA torch); never the batch-1 control worker, which stays on --worker-python.
+  "inference-worker-python": { type: "string" },
+  // Operational rollback of a GPU-inference run: its play workers start on their CPU path (the stated setting and the policy id are unchanged; counted in run metrics).
+  "inference-cpu": { type: "boolean" },
+  // Operational: where each play worker of a GPU-inference run leaves its device counts when its session ends (the driver's scratch directory).
+  "inference-stats-dir": { type: "string" },
   // A population run (ADR-021): one `m<k>,PREVIEW,BATTLE,POLICY_ID` per member, in place of --preview, --battle and --policy-id.
   member: { type: "string", multiple: true },
   // A population run with a past-pool share (ADR-021 section 3, slice 10): the committed `past-pool.json` of the generation before.
@@ -97,7 +104,7 @@ const FLAGS = {
   calibrate: { type: "boolean" },
 } as const;
 
-const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "max-concurrent-starts", "start-slots-dir", "shard", "episodes-dir", "features-dir", "labels-dir", "pool-file", "profile", "profile-dir", "batch-seam", "member", "calibrate", "past-pool"];
+const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "max-concurrent-starts", "start-slots-dir", "shard", "episodes-dir", "features-dir", "labels-dir", "pool-file", "profile", "profile-dir", "batch-seam", "member", "calibrate", "past-pool", "inference-worker-python", "inference-cpu", "inference-stats-dir"];
 /** The flags a population run gives per member instead. */
 const PER_MEMBER: readonly (keyof typeof FLAGS)[] = ["preview", "battle", "policy-id"];
 
@@ -134,10 +141,16 @@ export function forwardedFlags(values: Record<string, string | string[] | boolea
   const internal = ["out", "game-processes", "shard", "episodes-dir", "features-dir", "labels-dir", "pool-file", "start-slots-dir", "profile", "profile-dir"];
   return Object.entries(values).flatMap(([name, value]) => {
     if (name === "batch-seam") return value === true ? ["--batch-seam"] : []; // operational: every game process of the generation plays it
+    if (name === "inference-cpu") return value === true ? ["--inference-cpu"] : []; // the rollback holds for every game process
     if (internal.includes(name) || value === undefined) return [];
     if (Array.isArray(value)) return value.flatMap((each) => [`--${name}`, each]); // --member, once per member
     return typeof value === "string" ? [`--${name}`, value] : [];
   });
+}
+
+/** `{[key]: value}` when the flag was given, else nothing (so an absent flag leaves no key). */
+function optionalValue<K extends string>(key: K, value: string | undefined): { [P in K]?: string } {
+  return (value === undefined ? {} : { [key]: value }) as { [P in K]?: string };
 }
 
 /** Run one generation; returns the process exit code and writes its one JSON line with `print`. */
@@ -154,20 +167,20 @@ export async function runGenerationCli(
   /** The search setup factory, for a run config that asks for search labels (the composition root supplies it). */
   searchSetups?: SearchSetupFactory,
 ): Promise<number> {
-  let values: Record<Exclude<keyof typeof FLAGS, "member" | "calibrate" | "profile" | "batch-seam">, string | undefined> & { member?: string[]; calibrate?: boolean; profile?: boolean; "batch-seam"?: boolean };
+  let values: Record<Exclude<keyof typeof FLAGS, "member" | "calibrate" | "profile" | "batch-seam" | "inference-cpu">, string | undefined> & { member?: string[]; calibrate?: boolean; profile?: boolean; "batch-seam"?: boolean; "inference-cpu"?: boolean };
   try {
     values = parseArgs({ args: [...argv], options: FLAGS, strict: true }).values as typeof values;
   } catch (error) {
     throw new UsageError((error as Error).message);
   }
-  const need = (name: Exclude<keyof typeof FLAGS, "member" | "calibrate" | "profile" | "batch-seam">): string => {
+  const need = (name: Exclude<keyof typeof FLAGS, "member" | "calibrate" | "profile" | "batch-seam" | "inference-cpu">): string => {
     const value = values[name];
     if (value === undefined) throw new UsageError(`--${name} is required`);
     return value;
   };
   for (const name of Object.keys(FLAGS) as (keyof typeof FLAGS)[]) {
     if (OPTIONAL.includes(name) || ((values.member !== undefined || values.calibrate === true) && PER_MEMBER.includes(name))) continue;
-    need(name as Exclude<keyof typeof FLAGS, "member" | "calibrate" | "profile" | "batch-seam">);
+    need(name as Exclude<keyof typeof FLAGS, "member" | "calibrate" | "profile" | "batch-seam" | "inference-cpu">);
   } // refuse a missing flag before anything starts
   const generation = Number(need("generation"));
   const calibrating = values.calibrate === true;
@@ -175,6 +188,10 @@ export async function runGenerationCli(
   if (calibrating && (values.member !== undefined || values.shard !== undefined || values["game-processes"] !== undefined || values["policy-workers"] !== undefined)) throw new UsageError("--calibrate takes no --member and plays in one process");
   const config = readTrainingRunConfig(JSON.parse(readFileSync(need("config"), "utf8")));
   if (config.seeds.run_key.startsWith("CHANGE-ME")) throw new UsageError("seeds.run_key is still the CHANGE-ME placeholder: give the run its own name");
+  // The GPU-inference flags fit the run's generation.inference, or the generation does not start (ADR-030 step 4).
+  const inferenceFlags = { ...optionalValue("inference_worker_python", values["inference-worker-python"]), ...(values["inference-cpu"] === true ? { force_cpu: true } : {}), ...optionalValue("stats_dir", values["inference-stats-dir"]) };
+  const flagsProblem = inferenceFlagsProblem(config.generation.inference, inferenceFlags);
+  if (flagsProblem !== null) throw new UsageError(flagsProblem);
   const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
   const dataFile = need("engine-data");
   const dataHash = engineDataHash(readEngineDataAny(JSON.parse(readFileSync(dataFile, "utf8"))));
@@ -242,7 +259,8 @@ export async function runGenerationCli(
   }
   const { max_line_bytes, n_parallel, handshake_timeout_ms } = config.generation;
   // Batched self-play inference (ADR-028 section 2 F2): the training clients below alone ask for it; absent is today's batch 1.
-  const divergence = new DivergenceRun(config.generation.inference);
+  // A GPU setting (ADR-030 step 4) also picks the play workers' Python and flags; the batch-1 control stays on --worker-python.
+  const divergence = new DivergenceRun(config.generation.inference, inferenceFlags);
   const preview = need("preview");
   const battle = need("battle");
   const count = (name: "policy-workers" | "game-processes"): number => parallelCount(values[name], name, (message) => new UsageError(message));
@@ -293,7 +311,7 @@ export async function runGenerationCli(
   const profileDir = profile?.dir;
   // `batch1` is the control worker of the divergence measure: the same checkpoints, never batching, and no profile.
   const makeClient = (batch1: boolean): PolicyWorkerClient => new PolicyWorkerClient({
-    command: need("worker-python"),
+    command: divergence.command(batch1, need("worker-python")),
     args: [
       "-I", "-m", "areneon_ml.worker", "--run-dir", need("run-dir"), "--preview", preview, "--battle", battle,
       "--engine-data", dataFile, "--max-line-bytes", String(max_line_bytes),
