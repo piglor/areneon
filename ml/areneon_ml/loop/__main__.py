@@ -53,7 +53,7 @@ from areneon_ml.inspector.replay_command import Selection, parse_games, replay_g
 from areneon_ml.inspector.resimulate import node_runner
 from areneon_ml.inspector.resimulate_command import parse_target, resimulate_game
 from areneon_ml.learner.__main__ import MAX_MICRO_BATCH
-from areneon_ml.learner.config import RunConfigError, read_run_config
+from areneon_ml.learner.config import RunConfig, RunConfigError, read_run_config
 from areneon_ml.learner.data import LearnerDataError
 from areneon_ml.learner.state import LearnerStateError
 from areneon_ml.learner.trainer import LearnerError
@@ -259,6 +259,19 @@ def _add_run(commands: Any) -> None:
         "one batched mechanics call and their policy queries are issued together (ADR-030 step 1; "
         "operational: the generation's files are the same with it and without it; each game "
         "process writes its batch-size counts to its stderr)",
+    )
+    run.add_argument(
+        "--inference-worker-python",
+        help="for a run whose config says generation.inference.device: the Python of the unshipped "
+        "ml/gpu-env environment (CUDA torch) its play workers start from (ADR-030 step 4; the "
+        "batch-1 control worker of the divergence measure stays on --worker-python)",
+    )
+    run.add_argument(
+        "--inference-cpu",
+        action="store_true",
+        help="rollback of a GPU-inference run: its play workers start on their CPU path "
+        "(operational: the stated setting and the policy id are unchanged; counted in each "
+        "generation's run metrics, under inference_device)",
     )
     run.add_argument(
         "--node-heap-mb",
@@ -796,12 +809,40 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
     return {"progress_dir": str(root), "generations": done, "looks": state.count}
 
 
+def gpu_flags_problem(
+    config: RunConfig, inference_worker_python: str | None, inference_cpu: bool
+) -> str | None:
+    """Why the GPU-inference flags do not fit the run's config, or None (ADR-030 step 4).
+
+    They belong to a run whose ``generation.inference`` says ``device``; such a run needs the
+    ``ml/gpu-env`` Python for its play workers unless it is rolled back to their CPU path.
+    """
+    given = inference_worker_python is not None or inference_cpu
+    if config.generation.inference_device is None:
+        if given:
+            return (
+                "--inference-worker-python and --inference-cpu are for a run whose "
+                "generation.inference says device: cuda"
+            )
+        return None
+    if inference_worker_python is None and not inference_cpu:
+        return (
+            "a run whose generation.inference says device: cuda needs "
+            "--inference-worker-python (the ml/gpu-env Python), or --inference-cpu to roll back "
+            "to the CPU path"
+        )
+    return None
+
+
 def _run(args: argparse.Namespace) -> dict[str, object]:
     config = read_run_config(json.loads(args.config.read_text(encoding="utf-8")))
     if config.run_key.startswith("CHANGE-ME"):
         raise RunConfigError(
             "seeds.run_key is still the CHANGE-ME placeholder: give the run its own name"
         )
+    problem = gpu_flags_problem(config, args.inference_worker_python, args.inference_cpu)
+    if problem is not None:
+        raise LoopError(problem)
     game = GameData.from_table(json.loads(args.engine_data.read_text(encoding="utf-8")))
     player = NodePlayer(
         repo=REPO,
@@ -818,6 +859,9 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
         memory_guard=not args.no_memory_guard,
         profile=args.profile,
         batch_seam=args.batch_seam,
+        gpu_inference=config.generation.inference_device is not None,
+        inference_worker_python=args.inference_worker_python,
+        inference_cpu=args.inference_cpu,
         generation_timeout_s=args.generation_timeout_minutes * 60.0,
         play_script=(
             "packages/team-dataset/scripts/play-generation.ts"

@@ -44,6 +44,10 @@ export interface ContractVersion {
 export interface Inference {
   kind: "batched";
   max_batch: number;
+  /**
+   * Optional (ADR-030 step 4, #1458): cuda for a worker that answers the batched forward pass on the GPU (training self-play only). Absent is the CPU. A client compares the whole setting, so a batch-1 (evaluation) client and a CPU-batching client both refuse a worker that states cuda.
+   */
+  device?: "cuda";
 }
 /**
  * Worker to client: its contracts and what it loaded.
@@ -113,6 +117,10 @@ export interface FeatureSetStatement1 {
 export interface Inference1 {
   kind: "batched";
   max_batch: number;
+  /**
+   * Optional (ADR-030 step 4, #1458): cuda for a worker that answers the batched forward pass on the GPU (training self-play only). Absent is the CPU. A client compares the whole setting, so a batch-1 (evaluation) client and a CPU-batching client both refuse a worker that states cuda.
+   */
+  device?: "cuda";
 }
 /**
  * A candidate feature set by name and identity hash (CandidateFeatures.feature_set and feature_set_hash).
@@ -125,7 +133,7 @@ export interface FeatureSetStatement2 {
   feature_set_hash: string;
 }
 /**
- * The batching of the worker's forward pass (ADR-028 section 2, #1195): up to max_batch queued queries are scored in one padded forward pass on the CPU. Absent means batch 1, which is what every evaluation, sealed and head-to-head path asks for.
+ * The batching of the worker's forward pass (ADR-028 section 2, #1195): up to max_batch queued queries are scored in one padded forward pass on the CPU, or on the GPU with device cuda (ADR-030 step 4). Absent means batch 1, which is what every evaluation, sealed and head-to-head path asks for.
  *
  * This interface was referenced by `PolicyHandshake`'s JSON-Schema
  * via the `definition` "Inference".
@@ -133,4 +141,8 @@ export interface FeatureSetStatement2 {
 export interface Inference2 {
   kind: "batched";
   max_batch: number;
+  /**
+   * Optional (ADR-030 step 4, #1458): cuda for a worker that answers the batched forward pass on the GPU (training self-play only). Absent is the CPU. A client compares the whole setting, so a batch-1 (evaluation) client and a CPU-batching client both refuse a worker that states cuda.
+   */
+  device?: "cuda";
 }

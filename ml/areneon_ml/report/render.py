@@ -16,6 +16,7 @@ from functools import partial
 from typing import Any
 
 from areneon_ml.inspector.page import esc
+from areneon_ml.loop.metrics import answered_on
 from areneon_ml.loop.share import loop_share
 from areneon_ml.progress.gap import GAP_LABEL, SAME_MODE_NOTE
 from areneon_ml.progress.records import (
@@ -870,6 +871,15 @@ def _profile_section(model: ReportModel) -> str:
     )
 
 
+def _answered_on(model: ReportModel, number: int) -> str:
+    """Where a GPU-inference generation's passes ran (``answered_on``), or ``not recorded``."""
+    for g in model.generations:
+        if g.number == number:
+            found = None if g.metrics is None else g.metrics.get("inference_device")
+            return "not recorded" if found is None else answered_on(found)
+    return "not recorded"
+
+
 def _inference_section(model: ReportModel) -> str:
     """Batched self-play inference (ADR-028 section 2 F2): the note, and the divergence of each
     generation that recorded one. Nothing for a run at batch 1."""
@@ -888,6 +898,7 @@ def _inference_section(model: ReportModel) -> str:
                 str(found["differing"]),
                 str(found["max_prior_diff_ppm"]),
                 "yes" if found["target_met"] else "no",
+                *([esc(_answered_on(model, g.number))] if model.inference_device else []),
             ]
         )
     heads = [
@@ -897,6 +908,7 @@ def _inference_section(model: ReportModel) -> str:
         ("Differing choices", True),
         ("Largest prior difference (ppm)", True),
         ("Sample target met", False),
+        *([("Answered on", False)] if model.inference_device else []),
     ]
     table = (
         _table(heads, rows, "Batched inference against batch 1 on a sample of each generation.")
@@ -912,7 +924,60 @@ def _inference_section(model: ReportModel) -> str:
         "Each sampled decision was scored again at batch 1 with its own sampling draw; the batched "
         "priors it is compared with depend on timing, so the largest prior difference is a noisy "
         "diagnostic, not a bound. From the optional <code>inference_divergence</code> of "
-        "<code>metrics/gNNNNNN.json</code>, outside every hash.</p>" + table
+        "<code>metrics/gNNNNNN.json</code>, outside every hash.</p>" + table + _device_part(model)
+    )
+
+
+def _device_part(model: ReportModel) -> str:
+    """A GPU-inference run (ADR-030 step 4): the note and the workers' device counts of every
+    played generation, the ones without counts flagged. Nothing for a run on the CPU."""
+    if model.inference_device is None:
+        return ""
+    rows = []
+    for g in model.generations:
+        if g.number == 0:
+            continue  # the seeded pair: no play
+        found = None if g.metrics is None else g.metrics.get("inference_device")
+        if found is None:
+            rows.append([str(g.number), "not recorded", "-", "-", "-", "-"])
+            continue
+        rows.append(
+            [
+                str(g.number),
+                esc(answered_on(found)),
+                str(found["workers"]),
+                str(found["device_batches"]),
+                str(found["cpu_batches"]),
+                str(found["allocation_fallbacks"]),
+            ]
+        )
+    heads = [
+        ("Generation", True),
+        ("Answered on", False),
+        ("Workers", True),
+        ("Passes on the device", True),
+        ("Passes on the CPU path", True),
+        ("Allocation fallbacks", True),
+    ]
+    table = (
+        _table(heads, rows, "Where the play workers' batched passes ran, per generation.")
+        if rows
+        else '<p class="note">No generation recorded its device counts yet.</p>'
+    )
+    return (
+        f'<p class="note">The batched passes are asked of the GPU (<code>device: '
+        f"{esc(model.inference_device)}</code>, ADR-030 step 4): GPU and CPU results are not "
+        "guaranteed equal. For a generation answered on the GPU the differing choices above are "
+        "the GPU worker's against the CPU at batch 1. A worker that meets an allocation failure "
+        "answers the rest of its session on its CPU path, and the rollback flag "
+        "(<code>--inference-cpu</code>) starts every worker there: a generation marked "
+        "<code>CPU path</code> measures the CPU batched path against batch 1 and says nothing about "
+        "the GPU, and one marked <code>GPU (n of m workers fell back &hellip;)</code> mixes the two. "
+        "Both keep the policy id and the divergence record's <code>device: cuda</code>, because the "
+        "setting is the run's identity; this table says where the passes ran. A generation whose "
+        "workers left no counts shows <code>not recorded</code> or <code>no worker reported</code>. "
+        "From the optional <code>inference_device</code> of the metrics files, outside every "
+        "hash.</p>" + table
     )
 
 

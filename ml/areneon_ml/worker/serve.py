@@ -20,6 +20,7 @@ from typing import Any, BinaryIO, cast
 from areneon_contracts.contracts import jcs
 from areneon_contracts.opponent_sheet import sheet_problem
 
+from areneon_ml.device import GPU_DEVICE
 from areneon_ml.model.encoder import EncodingError
 from areneon_ml.reducer import ReducerError
 from areneon_ml.worker.candidates import UnsupportedCandidate, parse_choice
@@ -166,14 +167,25 @@ class Worker:
         sheet: SheetSupport | None = None,
         value_scorer: ValueScorer | None = None,
         inference_max_batch: int | None = None,
+        inference_device: str | None = None,
     ) -> None:
         if inference_max_batch is not None and inference_max_batch < MIN_BATCH:
             raise ValueError("inference_max_batch is at least 2; batch 1 is stated by omission")
+        if inference_device is not None and (
+            inference_device != GPU_DEVICE or inference_max_batch is None
+        ):
+            raise ValueError("an inference device is cuda, and only for a batching worker")
         self._inference_max_batch = inference_max_batch
+        # The whole setting, device included, is what the hello must ask for: a batch-1
+        # (evaluation) or CPU-batching client is refused by a GPU worker (ADR-030 step 4).
         self._inference: dict[str, Any] | None = (
             None
             if inference_max_batch is None
-            else {"kind": BATCHED, "max_batch": inference_max_batch}
+            else {
+                "kind": BATCHED,
+                "max_batch": inference_max_batch,
+                **({} if inference_device is None else {"device": inference_device}),
+            }
         )
         self._value_scorer = value_scorer
         self._features = features
@@ -181,6 +193,15 @@ class Worker:
         self._scorer = scorer
         #: Where ``__main__`` leaves this session's profile, when it was asked to (diagnostics).
         self.profile_dir: Path | None = None
+        #: Where ``__main__`` leaves a GPU-inference worker's device counts (ADR-030 step 4).
+        self.inference_stats_dir: Path | None = None
+        #: The device counts of a GPU-inference worker's scorer (``NetworkScorer.placement_stats``),
+        #: or None for every other worker; ``__main__`` sets it.
+        self.placement_stats: Callable[[], dict[str, Any] | None] = lambda: None
+        #: Called after each batch of a batched session is answered: ``__main__`` points it at the
+        #: throttled rewrite of this worker's counts file, so a worker that is killed leaves
+        #: counts that are at most an interval old (#1502).
+        self.heartbeat: Callable[[], None] = lambda: None
         self._ready: dict[str, Any] = {
             "schema_version": 1,
             "message": {
@@ -463,6 +484,7 @@ class Worker:
                 for reply in self.answer_batch(batch):
                     stdout.write(encode_frame(reply, self._max))
                 stdout.flush()
+                self.heartbeat()
         if isinstance(ended, StopIteration):
             return EXIT_OK
         if isinstance(ended, (FrameError, QueryError)):

@@ -39,6 +39,27 @@ CUDA device; it never falls back to the CPU (a CPU run is a different config and
 hash). Updating the torch version means changing it in `ml/pyproject.toml` (CPU, root lock) and in
 this project (CUDA, this lock) together; `tests/scripts/test_gpu_env.py` fails if they differ.
 
+## GPU inference for training self-play (ADR-030 step 4)
+
+A run whose config says `generation.inference: {kind: "batched", max_batch, device: "cuda"}` starts its
+play workers from this environment's Python (`--inference-worker-python .venv/bin/python` on `loop run`),
+with `--worker-python` still the shipped CPU Python for the batch-1 control worker. Training self-play
+only: every evaluation client refuses such a worker at the handshake. On a CUDA allocation failure (torch's
+`OutOfMemoryError`, or the plain `RuntimeError` of a failed context or cuBLAS handle allocation) a worker
+continues on its CPU path, and `--inference-cpu` rolls every worker back to it; see
+`docs/training-run.md` section 11.
+
+Host memory: a CUDA worker's peak resident set is 1.44 GiB at the `public-gpu16` network size (a CPU worker
+0.44 GiB), so `--game-processes 6 --policy-workers 2` is about 23 GB of RAM. Start with
+`--game-processes 2 --policy-workers 1` and raise the counts from the first generation's measured
+`peak_rss_bytes.policy_worker`. A worker uses torch's default CUDA device (`cuda:0`).
+
+A GPU-device test for local runs, skipped in CI because the shipped environment has no CUDA: from the
+repository root, `PYTHONPATH=.:packages/schema/python:ml:<dir> ml/gpu-env/.venv/bin/python -m pytest -o
+addopts="" tests/ml/test_worker_gpu.py -k cuda`, where `<dir>` holds links to the root environment's `pytest`,
+`_pytest`, `pluggy`, `iniconfig`, `packaging`, `pygments` and `py.py` (this environment has no `pytest`, and
+it must not be changed). It runs tiny networks on the card and compares them with the CPU scorer.
+
 ## Reproducibility
 
 The learner enables deterministic algorithms and a fixed cuBLAS workspace, but a GPU run is **not
