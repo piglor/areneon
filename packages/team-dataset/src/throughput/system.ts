@@ -1,6 +1,7 @@
 // The real machine behind the runner's `Deps`: /proc, nvidia-smi, git and the pinned engine's commit.
 import { execFileSync } from "node:child_process";
 import { PINNED_SHOWDOWN_COMMIT } from "@areneon/showdown-bridge";
+import { UsageError } from "./errors.ts";
 import { BUSY_PATTERNS, findOtherRuns, type GpuReading, MachineSampler, type Sample } from "./guard.ts";
 import { NvidiaSmi } from "./monitor.ts";
 import { Proc } from "./procfs.ts";
@@ -35,7 +36,13 @@ class SystemMachine implements Machine {
   }
 }
 
-const git = (repoRoot: string, ...args: string[]): string => execFileSync("git", ["-C", repoRoot, ...args], { encoding: "utf8" }).trim();
+const git = (repoRoot: string, ...args: string[]): string => {
+  try {
+    return execFileSync("git", ["-C", repoRoot, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    throw new UsageError("cannot read the git commit of the repository root (is --repo-root a git checkout?)");
+  }
+};
 
 /** The real thing. `extraPatterns` are added to the commands that count as another run. */
 export function defaultDeps(repoRoot: string, extraPatterns: readonly string[] = []): Deps {

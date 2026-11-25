@@ -11,6 +11,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { readThroughputRecord, type ThroughputRecord, throughputRecordHash } from "@areneon/showdown-bridge";
 import { type ArmSpec, commandArm } from "./arms.ts";
+import { UsageError } from "./errors.ts";
 import { checkStart, GIB_KIB, type Mode, thresholdsFor } from "./guard.ts";
 import { ConditionsNotMet, type Deps, defaultRunOptions, type RunOptions, runArm } from "./runner.ts";
 import { poolOf, resolveIds, showdownArm } from "./showdown-arm.ts";
@@ -27,10 +28,6 @@ export interface CliIo {
   repoRoot: string;
   /** The machine; the real one by default. */
   deps?: (options: { repoRoot: string; busyPatterns: readonly string[] }) => Deps;
-}
-
-class UsageError extends Error {
-  override name = "UsageError";
 }
 
 const FLAGS = {

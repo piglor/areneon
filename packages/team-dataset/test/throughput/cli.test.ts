@@ -207,6 +207,16 @@ describe("the real machine", () => {
     expect(record.machine.logical_cpus).toBeGreaterThan(0);
   });
 
+  it("reports a repository root that is not a git checkout as a usage error", async () => {
+    const dir = tempDir();
+    const out = tempDir();
+    const errors: string[] = [];
+    const io = { out: () => undefined, err: (line: string) => void errors.push(line), repoRoot: dir }; // the real machine, whose git finds no checkout in dir
+    const code = await runThroughputCli(["run", "--arm", "command", "--out", join(out, "o"), "--arm-report", join(out, "r.json"), "--arm-id", "x", "--arm-label", "x", "--mode", "non-idle", "--min-mem-gib", "1", "--start-window-ms", "5", "--", "true"], io);
+    expect(code).toBe(2);
+    expect(errors.join("\n")).toContain("git checkout");
+  });
+
   it("lets an error that is not the caller's mistake propagate", async () => {
     const io = { out: () => undefined, err: () => undefined, repoRoot: REPO, deps: () => { throw new Error("boom"); } };
     await expect(runThroughputCli(["guard"], io)).rejects.toThrow("boom");

@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { PINNED_SHOWDOWN_COMMIT } from "@areneon/showdown-bridge";
+import { UsageError } from "../../src/throughput/errors.ts";
 import { defaultDeps } from "../../src/throughput/system.ts";
 
 const REPO = new URL("../../../..", import.meta.url).pathname;
@@ -15,6 +16,10 @@ describe("defaultDeps", () => {
     expect(code.commit).toBe(execFileSync("git", ["-C", REPO, "rev-parse", "HEAD"], { encoding: "utf8" }).trim());
     expect(code.engine_pin).toBe(PINNED_SHOWDOWN_COMMIT);
     expect(typeof code.tree_clean).toBe("boolean");
+  });
+
+  it("refuses a repository root that is not a git checkout as a usage error", () => {
+    expect(() => defaultDeps("/nonexistent/checkout").code()).toThrow(UsageError);
   });
 
   it("describes the machine from /proc", () => {
