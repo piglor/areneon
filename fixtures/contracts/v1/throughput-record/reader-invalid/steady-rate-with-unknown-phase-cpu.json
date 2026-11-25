@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "run_id": "example-run",
+  "report": {
+    "schema_version": 1,
+    "arm": {
+      "id": "gpu",
+      "label": "GPU arm: whole game on the device",
+      "parameters": [
+        {
+          "name": "games_in_flight",
+          "value": 4096
+        }
+      ]
+    },
+    "plan": {
+      "pool_id": "example-pool",
+      "pool_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "plan_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "config_hash": "3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "counts": {
+      "games": 2000,
+      "games_forfeited": 0,
+      "games_on_showdown": 0,
+      "decisions": 1000000,
+      "scripted_decisions": 0
+    },
+    "phases": [
+      {
+        "name": "graph_capture",
+        "kind": "warmup",
+        "wall_ms": 4000,
+        "cpu_ms": null
+      },
+      {
+        "name": "kernel_compile",
+        "kind": "warmup",
+        "wall_ms": 30000,
+        "cpu_ms": 29000
+      },
+      {
+        "name": "play",
+        "kind": "play",
+        "wall_ms": 20000,
+        "cpu_ms": null
+      },
+      {
+        "name": "record_write",
+        "kind": "teardown",
+        "wall_ms": 2000,
+        "cpu_ms": 1500
+      }
+    ],
+    "stages": [
+      {
+        "name": "engine_step",
+        "ms": 6000
+      },
+      {
+        "name": "policy_forward",
+        "ms": 9000
+      }
+    ],
+    "gpu_used": true
+  },
+  "machine": {
+    "logical_cpus": 8,
+    "mem_total_kib": 16777216,
+    "cpu_model": "Example CPU"
+  },
+  "code": {
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "engine_pin": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "tree_clean": true
+  },
+  "conditions": {
+    "mode": "idle",
+    "thresholds": {
+      "max_load1_centi": 100,
+      "max_cpu_busy_ppm": 70000,
+      "min_mem_available_start_kib": 8388608,
+      "min_mem_available_run_kib": 4194304,
+      "max_swap_growth_kib": 0,
+      "forbid_other_runs": true,
+      "require_idle_gpu": true,
+      "max_gpu_util_pct": 5,
+      "max_gpu_mem_used_mib": 2000
+    },
+    "start": {
+      "at_epoch_ms": 1700000000000,
+      "load1_centi": 40,
+      "load5_centi": 90,
+      "mem_available_kib": 20000000,
+      "swap_used_kib": 0,
+      "cpu_busy_ppm": 20000,
+      "gpu_util_pct": 0,
+      "gpu_mem_used_mib": 300
+    },
+    "end": {
+      "at_epoch_ms": 1700000056000,
+      "load1_centi": 40,
+      "load5_centi": 90,
+      "mem_available_kib": 20000000,
+      "swap_used_kib": 0,
+      "cpu_busy_ppm": 560000,
+      "gpu_util_pct": 0,
+      "gpu_mem_used_mib": 300
+    },
+    "interval_ms": 60000,
+    "samples": 7,
+    "min_mem_available_kib": 14000000,
+    "max_swap_used_kib": 0,
+    "breaches": []
+  },
+  "window": {
+    "started_epoch_ms": 1700000000000,
+    "wall_ms": 56000,
+    "exit_code": 0,
+    "aborted": false
+  },
+  "cpu": {
+    "total_ms": 90000,
+    "user_ms": 84000,
+    "system_ms": 6000,
+    "helper_ms": 250,
+    "harness_ms": 900,
+    "sampled_ms": 89500,
+    "unsampled_ms": 500,
+    "processes_seen": 2,
+    "peak_tree_rss_bytes": 6000000000,
+    "survivors": 0,
+    "by_role": [
+      {
+        "role": "host",
+        "processes": 2,
+        "cpu_ms": 89500,
+        "peak_rss_bytes": 3500000000
+      }
+    ]
+  },
+  "gpu": {
+    "used": true,
+    "available": true,
+    "allocated_ms": 56000,
+    "util_mean_ppm": 830000,
+    "mem_peak_mib": 9100,
+    "samples": 56
+  },
+  "rates": {
+    "decisions_per_core_hour": 40000000,
+    "games_per_core_hour": 80000,
+    "decisions_per_wall_hour": 64285714,
+    "decisions_per_gpu_hour": 64285714,
+    "decisions_per_core_hour_steady": 64285714
+  },
+  "valid": true,
+  "void_reasons": []
+}
