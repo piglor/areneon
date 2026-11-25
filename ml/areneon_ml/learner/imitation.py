@@ -19,8 +19,9 @@ from typing import Any, Protocol
 
 import torch
 from areneon_contracts.contracts import jcs, sha256_hex
-from areneon_contracts.training import TrainingStreamError, check_stream_file
+from areneon_contracts.training import TrainingStreamError, check_stream_digest, check_stream_file
 
+from areneon_ml.learner import teacher_marker
 from areneon_ml.learner.data import LearnerDataError, Step, _Collector
 from areneon_ml.model.encoder import EncodedQuery, Encoder, EncodingError
 from areneon_ml.worker.view import IncrementalView
@@ -88,6 +89,10 @@ class TeacherSet:
             for i in indices:
                 handle.seek(self._offsets[i])
                 example = json.loads(handle.readline())
+                if example["observation"]["kind"] != "battle":  # offsets are Battle starts only
+                    raise LearnerDataError(
+                        f"teacher example {i} (offset {self._offsets[i]}) is not a Battle example"
+                    )
                 chosen = [c["choice"] for c in example["candidates"]].index(example["choice"])
                 out.append(Step(_encode(self._encoder, example), chosen))
         return tuple(out)
@@ -107,22 +112,10 @@ def _encode(encoder: Encoder, example: dict[str, Any]) -> EncodedQuery:
     )
 
 
-def open_teacher(
-    stream: Path,
-    manifest: Mapping[str, Any],
-    expected_hash: str,
-    encoders: dict[str, Encoder],
-) -> TeacherSet:
-    """The teacher's Battle examples as a ``TeacherSet``, after every refusal of A11.3.
-
-    The manifest checks and ``check_stream_file`` (digest, line count, every line) run once here,
-    and every example, Previews included, is encoded once and dropped at once so a stream the
-    run's encoder refuses fails at the first update (a ``LearnerDataError``, the encoder's own
-    message wrapped). Only the Battle examples' byte offsets are kept.
-    """
-    check_teacher_manifest(manifest, expected_hash)
-    if "search_labels" in manifest:
-        raise LearnerDataError("the teacher TrainingSet must not carry search_labels")
+def _full_pass(
+    stream: Path, manifest: Mapping[str, Any], encoders: dict[str, Encoder]
+) -> list[int]:
+    """The check and the encode of every example, and the byte offsets of the Battle examples."""
     try:
         check_stream_file(stream, dict(manifest), False)
     except TrainingStreamError as exc:
@@ -141,6 +134,76 @@ def open_teacher(
                 position += len(raw)
     except EncodingError as exc:
         raise LearnerDataError(f"the teacher TrainingSet does not encode: {exc}") from exc
+    return offsets
+
+
+def _size(stream: Path) -> int | None:
+    """The stream's size, or ``None`` where it cannot be read (it is gone: no marker is written
+    for a file that is not there, and the pass already returned what it found)."""
+    try:
+        return stream.stat().st_size
+    except OSError:
+        return None
+
+
+def _marker_key(
+    stream: Path, manifest: Mapping[str, Any], found: str, encoders: dict[str, Encoder]
+) -> dict[str, Any] | None:
+    """The key of the stream's marker, or ``None`` where there can be none (a manifest or a stream
+    the full pass refuses with its own message)."""
+    digest = manifest.get("stream_sha256")
+    if not isinstance(digest, str):
+        return None
+    size = _size(stream)
+    if size is None:
+        return None
+    return teacher_marker.marker_key(
+        training_set_hash=found, stream_sha256=digest, stream_bytes=size, encoders=encoders
+    )
+
+
+def _digest_holds(stream: Path, manifest: Mapping[str, Any]) -> bool:
+    """The file-level checks of the full pass (the manifest, the digest, the last newline and the
+    line count): the one read of the whole stream a marker keeps. Whatever is wrong with the
+    stream is the full pass's to refuse, in its own words."""
+    try:
+        check_stream_digest(stream, dict(manifest), private_pool=False)
+    except (ValueError, OSError):  # TrainingStreamError and ContractError are ValueErrors
+        return False
+    return True
+
+
+def open_teacher(
+    stream: Path,
+    manifest: Mapping[str, Any],
+    expected_hash: str,
+    encoders: dict[str, Encoder],
+) -> TeacherSet:
+    """The teacher's Battle examples as a ``TeacherSet``, after every refusal of A11.3.
+
+    The manifest checks and ``check_stream_file`` (digest, line count, every line) run once here,
+    and every example, Previews included, is encoded once and dropped at once so a stream the
+    run's encoder refuses fails at the first update (a ``LearnerDataError``, the encoder's own
+    message wrapped). Only the Battle examples' byte offsets are kept.
+
+    That full pass is minutes for a large stream and a queue starts a driver process per
+    generation, so a pass that succeeded leaves a marker beside the stream
+    (``teacher_marker``, #1501). A later call with a marker for the same key keeps only the
+    digest check: the stream is read once and hashed, and the offsets come from the marker. A
+    marker that does not match, or a stream that fails the digest, takes the full pass, with its
+    refusals and messages, and a pass that succeeds writes the marker again.
+    """
+    found = check_teacher_manifest(manifest, expected_hash)
+    if "search_labels" in manifest:
+        raise LearnerDataError("the teacher TrainingSet must not carry search_labels")
+    key = _marker_key(stream, manifest, found, encoders)
+    if key is not None:
+        offsets = teacher_marker.read_marker(stream.parent, key)
+        if offsets is not None and _digest_holds(stream, manifest):
+            return TeacherSet(stream, offsets, encoders["battle"])
+    offsets = _full_pass(stream, manifest, encoders)
+    if key is not None and _size(stream) == key["stream_bytes"]:
+        teacher_marker.write_marker(stream.parent, key, offsets)
     return TeacherSet(stream, offsets, encoders["battle"])
 
 
