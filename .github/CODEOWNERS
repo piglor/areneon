@@ -3,6 +3,8 @@
 # commands or thresholds. The main ruleset requires code-owner review;
 # admins merge through the bypass.
 /.github/                       @arceushui
+/.gitmodules                    @arceushui
+/vendor/                        @arceushui
 /.pokepaste-guard-allow         @arceushui
 /config/evaluation/             @arceushui
 /evaluation/register-heads/     @arceushui

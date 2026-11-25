@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
-.PHONY: setup showdown migrate-check check python ts contracts contracts-update guards team-guard licences licences-selftest db-up db-down db-test db-bootstrap-test importer-image importer-e2e
+.PHONY: setup showdown ninjask migrate-check check python ts contracts contracts-update guards team-guard licences licences-selftest db-up db-down db-test db-bootstrap-test importer-image importer-e2e
 
 # One-time setup for a clean clone.
 setup: showdown
@@ -13,6 +13,22 @@ setup: showdown
 showdown:
 	git submodule update --init vendor/pokemon-showdown
 	cd vendor/pokemon-showdown && npm ci --ignore-scripts --no-audit --no-fund && node build
+
+# Build the vendored CPU-native training-play engine, the Areneon fork of Ninjask (#1531). Pokemon Showdown stays the
+# referee and the only authority on legality (ADR-003); this engine plays training games only, and no evaluation path
+# may import it (packages/showdown-bridge/test/ninjask-pin.test.ts scans for that). Host-side and --locked: Cargo.lock
+# pins and checksums every crate, there is no build script, and nothing comes from PyPI. The cdylib is the Python
+# extension (the crate's `python-module` feature, abi3), so the package is assembled by a copy: the fork's python/ninjask
+# plus the library as _core.abi3.so, under .tmp/ninjask/python (put it on PYTHONPATH). The toolchain is the fork's
+# rust-toolchain.toml (rustup installs it on first use). Not part of `make setup` or `make check`: an opt-in tool.
+NINJASK_OUT ?= $(CURDIR)/.tmp/ninjask
+ninjask:
+	git submodule update --init vendor/ninjask
+	test "$$(tr -d '[:space:]' < vendor/ninjask/refsim/SHOWDOWN_COMMIT)" = "$$(git ls-tree HEAD vendor/pokemon-showdown | cut -f1 | cut -d' ' -f3)"
+	cd vendor/ninjask && CARGO_TARGET_DIR=$(NINJASK_OUT)/target cargo build --release --locked --features python-module
+	mkdir -p $(NINJASK_OUT)/python/ninjask
+	cp -r vendor/ninjask/python/ninjask/. $(NINJASK_OUT)/python/ninjask/
+	cp $(NINJASK_OUT)/target/release/libninjask.so $(NINJASK_OUT)/python/ninjask/_core.abi3.so
 
 # Migration parity suite (#1466, docs/runbooks/migration.md): every golden,
 # parity and differential check in dependency order, a summary of what drifted.

@@ -106,6 +106,27 @@ jobs:
       - name: probe-outcome feature record against the pinned engine (ADR-022 E-22.5)
         run: node packages/showdown-bridge/scripts/check-outcome-config.ts
 
+  # The vendored CPU-native training-play engine (#1531): the Areneon fork of Ninjask builds from its lock with the
+  # fork's pinned toolchain, and the module it makes names the Showdown commit this repository pins. The fork's own CI
+  # (piglor/ninjask: fmt, clippy, tests, cargo deny, the comparison with Showdown) gates the commit that the gitlink names.
+  ninjask:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # the fork's rust-toolchain.toml
+        with:
+          toolchain: 1.97.1
+      - run: make ninjask
+      - name: the built module names the pinned Showdown
+        run: |
+          set -euo pipefail
+          built=$(PYTHONPATH=.tmp/ninjask/python python3 -c 'import ninjask; print(ninjask.SHOWDOWN_COMMIT)')
+          pinned=$(git ls-tree HEAD vendor/pokemon-showdown | cut -f1 | cut -d' ' -f3)
+          echo "built $built, pinned $pinned"
+          test "$built" = "$pinned"
+
   team-guard:
     runs-on: ubuntu-24.04
     steps:
@@ -251,7 +272,7 @@ jobs:
 
   ci:
     if: always()
-    needs: [python, typescript, database, importer-image, team-guard, licences, gitleaks, osv, dco]
+    needs: [python, typescript, ninjask, database, importer-image, team-guard, licences, gitleaks, osv, dco]
     runs-on: ubuntu-24.04
     steps:
       - name: all required jobs passed
