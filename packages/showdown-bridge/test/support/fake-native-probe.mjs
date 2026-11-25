@@ -3,6 +3,9 @@
 // (`[u32 little-endian length][JSON]`), canned behaviour chosen by the environment (FAKE_MODE), so the transport and the backend are
 // tested without the vendored engine. It holds no game content: `stats` answers a fixed table, every other query abstains.
 import { closeSync, openSync, readSync, writeSync } from "node:fs";
+import { Buffer } from "node:buffer";
+import process from "node:process";
+import { setTimeout } from "node:timers";
 
 const arg = (name) => process.argv[process.argv.indexOf(name) + 1];
 const mode = process.env.FAKE_MODE ?? "plain";
