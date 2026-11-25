@@ -92,6 +92,21 @@ describe("run --arm command", () => {
     expect(never.err.match(/not idle/g)?.length).toBeGreaterThanOrEqual(1);
   });
 
+  it("holds swap growth to nothing in idle mode, and records a tolerance when it is given one", async () => {
+    const out = tempDir();
+    const report = join(out, "r.json");
+    const argv = (id: string, extra: string[]): string[] => ["run", "--arm", "command", "--out", out, "--run-id", id, "--arm-report", report, "--arm-id", "fake", "--arm-label", "Fake", ...quick, ...extra, "--", process.execPath, FAKE_ARM, "--burn-ms", "10", "--hold-ms", "500", "--decisions", "2", "--report", report];
+    const grown = { samples: (n: number) => (n >= 1 ? { swap_used_kib: 500 } : {}) };
+    const strict = await cli(argv("strict", []), grown);
+    expect(strict.code).toBe(1);
+    expect(strict.out).toContain("strict-r1: VOID (swap_growth)");
+    const allowed = await cli(argv("allowed", ["--max-swap-growth-mib", "1"]), grown);
+    expect(allowed.code).toBe(0);
+    const record = readThroughputRecord(JSON.parse(readFileSync(join(out, "allowed-r1", "record.json"), "utf8")) as unknown);
+    expect(record.conditions.thresholds.max_swap_growth_kib).toBe(1024);
+    expect((await cli(argv("bad", ["--max-swap-growth-mib", "-1"]))).code).toBe(2);
+  });
+
   it("refuses arguments it cannot use, exit 2, with the reason", async () => {
     const out = tempDir();
     const bad = async (argv: string[]): Promise<string> => {

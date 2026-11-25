@@ -32,7 +32,7 @@ export interface CliIo {
 
 const FLAGS = {
   arm: { type: "string" }, out: { type: "string" }, "run-id": { type: "string" }, repeats: { type: "string" }, mode: { type: "string" },
-  "min-mem-gib": { type: "string" }, "busy-pattern": { type: "string", multiple: true }, "no-abort": { type: "boolean" },
+  "min-mem-gib": { type: "string" }, "max-swap-growth-mib": { type: "string" }, "busy-pattern": { type: "string", multiple: true }, "no-abort": { type: "boolean" },
   "proc-interval-ms": { type: "string" }, "condition-interval-ms": { type: "string" }, "start-window-ms": { type: "string" },
   "wait-idle-minutes": { type: "string" }, "pool-id": { type: "string" }, "pool-hash": { type: "string" }, "keep-arm-output": { type: "boolean" },
   "repo-root": { type: "string" },
@@ -67,10 +67,11 @@ const modeOf = (values: Values): Mode => {
   return mode;
 };
 
-/** The thresholds of the mode; `--min-mem-gib` changes the memory MemAvailable must have at the start. */
+/** The thresholds of the mode; `--min-mem-gib` changes the memory MemAvailable must have at the start and `--max-swap-growth-mib` the swap growth a run may show (both end up in the record). */
 function thresholdsOf(values: Values, mode: Mode): RunOptions["thresholds"] {
   const gib = integer("min-mem-gib", values["min-mem-gib"], 8, 1);
-  return thresholdsFor(mode, { min_mem_available_start_kib: gib * GIB_KIB });
+  const swap = values["max-swap-growth-mib"] === undefined ? {} : { max_swap_growth_kib: integer("max-swap-growth-mib", values["max-swap-growth-mib"], 0, 0, 1_000_000) * 1024 };
+  return thresholdsFor(mode, { min_mem_available_start_kib: gib * GIB_KIB, ...swap });
 }
 
 interface Setup {

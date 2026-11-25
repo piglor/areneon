@@ -12,6 +12,7 @@ import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from "node:
 import { join } from "node:path";
 import { type ArmReport, jcs, ratesOf, readThroughputRecord, type ThroughputRecord, throughputRecordHash, voidReasonsOf } from "@areneon/showdown-bridge";
 import { type ArmSpec, emptyReport } from "./arms.ts";
+import { UsageError } from "./errors.ts";
 import { checkRun, checkStart, type GpuReading, type Mode, type Sample, type StartFailure, thresholdsFor, type Thresholds } from "./guard.ts";
 import { type GpuMonitor, survivorsOf, TreeWatcher } from "./monitor.ts";
 import { type Proc, ticksToMs } from "./procfs.ts";
@@ -108,7 +109,7 @@ function ancestors(proc: Proc): Set<number> {
 const shellQuote = (word: string): string => (/^[\w./:=@%+-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`);
 
 export async function runArm(spec: ArmSpec, options: RunOptions, deps: Deps): Promise<RunResult> {
-  if (existsSync(options.outDir)) throw new Error(`the run directory already exists: ${options.outDir}`);
+  if (existsSync(options.outDir)) throw new UsageError(`the run directory already exists: ${options.outDir}`);
   const exclude = ancestors(deps.proc);
   // Helpers that spawn and reap a process (git, nvidia-smi) run before the arm starts or after its CPU is read.
   const code = deps.code();

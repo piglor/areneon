@@ -137,6 +137,10 @@ class Code(BaseModel):
 
 
 class Thresholds(BaseModel):
+    """
+    The conditions in force. A threshold of 9007199254740991 (the largest integer), or 1000000 ppm of CPU busy, or 100 % of GPU utilisation, is a condition the mode does not enforce.
+    """
+
     model_config = ConfigDict(
         extra="forbid",
     )

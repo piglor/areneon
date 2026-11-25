@@ -239,6 +239,8 @@ export interface Conditions {
   breaches: Breach[];
 }
 /**
+ * The conditions in force. A threshold of 9007199254740991 (the largest integer), or 1000000 ppm of CPU busy, or 100 % of GPU utilisation, is a condition the mode does not enforce.
+ *
  * This interface was referenced by `ThroughputRecord`'s JSON-Schema
  * via the `definition` "Thresholds".
  */
