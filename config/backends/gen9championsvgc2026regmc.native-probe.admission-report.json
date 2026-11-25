@@ -1,0 +1,154 @@
+{
+  "admission_hash": "34cd35849a0f701da50f285fdab3af08c46a9fb27f4fadb1d080bc30f7b46ac3",
+  "fresh": {
+    "battles": 325,
+    "queries": 214057,
+    "answered": 200000,
+    "differences": 0,
+    "count_mismatches": 0
+  },
+  "regression": {
+    "random": {
+      "battles": 40,
+      "queries": {
+        "stats": 1051,
+        "damage": 17282,
+        "speed_order": 10673
+      },
+      "answered": {
+        "stats": 1051,
+        "damage": 17282,
+        "speed_order": 10523
+      },
+      "differences": 0,
+      "abstained_top": {
+        "move:counter": 48,
+        "move:focuspunch": 42,
+        "move:chillyreception": 32,
+        "move:mirrorcoat": 16,
+        "state:fractional_priority": 12
+      }
+    },
+    "search-fidelity": {
+      "battles": 200,
+      "queries": {
+        "stats": 4285,
+        "damage": 76300,
+        "speed_order": 45491
+      },
+      "answered": {
+        "stats": 4285,
+        "damage": 76288,
+        "speed_order": 44136
+      },
+      "differences": 0,
+      "abstained_top": {
+        "move:counter": 516,
+        "move:focuspunch": 413,
+        "move:mirrorcoat": 334,
+        "state:status:slp": 40,
+        "move:chillyreception": 36,
+        "state:fractional_priority": 16,
+        "move:shellsidearm": 12
+      }
+    },
+    "unavailable": {
+      "battles": 2,
+      "queries": {
+        "stats": 54,
+        "damage": 979,
+        "speed_order": 646
+      },
+      "answered": {
+        "stats": 54,
+        "damage": 979,
+        "speed_order": 646
+      },
+      "differences": 0,
+      "abstained_top": {}
+    },
+    "targeted": {
+      "battles": 0,
+      "queries": {
+        "damage": 13
+      },
+      "answered": {
+        "damage": 11
+      },
+      "differences": 0,
+      "abstained_top": {
+        "move:shellsidearm": 1,
+        "state:status:slp": 1
+      }
+    },
+    "interaction-sweep": {
+      "battles": 0,
+      "queries": {
+        "damage": 16038
+      },
+      "answered": {
+        "damage": 16038
+      },
+      "differences": 0,
+      "abstained_top": {}
+    },
+    "move-sweep": {
+      "battles": 0,
+      "queries": {
+        "damage": 12240
+      },
+      "answered": {
+        "damage": 12142
+      },
+      "differences": 0,
+      "abstained_top": {
+        "move:aurawheel": 40,
+        "state:status:slp": 38,
+        "move:shellsidearm": 20
+      }
+    },
+    "speed-sweep-20261125": {
+      "battles": 0,
+      "queries": {
+        "speed_order": 20000
+      },
+      "answered": {
+        "speed_order": 19332
+      },
+      "differences": 0,
+      "abstained_top": {
+        "move:counter": 156,
+        "move:focuspunch": 138,
+        "state:status:slp": 130,
+        "state:fractional_priority": 92,
+        "state:status:brn": 31,
+        "state:status:frz": 27,
+        "state:status:tox": 26,
+        "move:mirrorcoat": 24,
+        "state:status:par": 23,
+        "state:status:psn": 21
+      }
+    }
+  },
+  "entities": {
+    "listed": 1275,
+    "admitted": 1024,
+    "by_kind": {
+      "ability": 176,
+      "field": 1,
+      "item": 147,
+      "kind": 3,
+      "move": 365,
+      "side": 4,
+      "species": 314,
+      "status": 6,
+      "terrain": 4,
+      "weather": 4
+    }
+  },
+  "pairs": {
+    "listed": 136597,
+    "admitted": 101330
+  },
+  "revoked": 0
+}

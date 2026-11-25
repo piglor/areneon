@@ -15,3 +15,44 @@ Part of the architecture documentation split out of `CLAUDE.md` (index: [README]
 **Differential and admission** (`packages/team-dataset/src/differential-native.ts`, `scripts/differential-native-admission.ts`). Only ANSWERED queries are compared and tallied (an abstained query routes to the probe and is no evidence either way); coverage is counted beside the tally. Corpora: the committed random, search-fidelity and unavailable corpora as the `probe-damage/2` builder issues them (regression); the **move sweep** (every damaging move of the roster, one or two users, three defenders, ten states: plain, both terrains that read a move, sun, rain, one and two screens, Aurora Veil, a sleeping user, Trick Room), the **speed sweep** (seeded random `speed_order` queries over validator-checked sets: every ability and item, statuses, stages, HP, fields, Trick Room, Tailwind, priority moves, switches, declared and chosen Mega Evolution), the damage kernel's interaction sweep and its targeted corpus; and the fresh corpus (battles of the generator pool drawn from the backend version's fresh seed, ADR-030 rule 7). `differential-native-admission.ts fresh|ledger` follow the kernel's flow (shards in battle order, the ledger in its lines form); `bench` times the probe, a single native call and a batch of 256 on the same queries. `native-probe-cases.ts` writes the fork's test fixture (`tests/fixtures/declared/cases.jsonl`: each case a query in the layer's form with the probe's answer, refusing to write a case the layer answers differently).
 
 **Classes found by the differential (each a regression case in the fork's fixture):** Protean and Libero (the engine's prepare-hit type change, which the read-only calculator does not run); a weather's forme or type change (Forecast, Mimicry, Flower Gift: the engine's setters, clear-then-set on the damage path only; the speed path sets without clearing, and a weather already up is not set again: no event, no draw); a priority move under Psychic Terrain (the dex priority, not the queue's modified one); Armor Tail, Queenly Majesty, Dazzling and Damp (the engine's `TryMove` event with the dex priority; `unsupported query_kind`); the crit vector of a crit-immune defender (the no-crit vector) and the crit rule as the engine's own pair (stage 4 is `1/1`); Expanding Force in Psychic Terrain (the target is drawn again: `random_effect`); tie draws in the event sorts the calculator skips; Beat Up (multi-hit by its `ModifyMove`); charge moves (a stop unless instant in their weather, Electro Shot raising Special Attack first); a move's own `onTryHit` runs inside the hit loop the probe replaces (Brick Break does not break screens in the probe; two screens make the damage events tie: `random_effect`); Magician's after-move sort of two equal-speed targets; one Mega Evolution a side.
+
+## Results (fork commit b66f499, pinned Showdown 7244fe8e)
+
+**Differential.** Native against the TypeScript probe, byte-equal `MechanicsResult` JCS bytes where the native layer answers.
+
+| Corpus | Queries | Answered | Differences |
+|---|---|---|---|
+| fresh draw (325 battles, generator pool) | 214,057 issued | 200,000 distinct | 0 (0 count mismatches) |
+| random corpus (40 battles) | 29,006 | 28,856 | 0 |
+| search-fidelity (200 battles) | 126,076 | 124,709 | 0 |
+| unavailable | 1,679 | 1,679 | 0 |
+| interaction sweep | 16,038 | 16,038 | 0 |
+| move x state sweep | 12,240 | 12,142 | 0 |
+| speed sweep (seed 20261125) | 20,000 | 19,332 | 0 |
+
+Ledger: 1,275 entities listed, 1,024 admitted; 136,597 pairs listed, 101,330 admitted; 0 revoked. Admission hash 34cd3584... Tier: provisional (one fresh corpus of about 214k queries; ADR-031 E5 part h fields tier, battles and audits are not in the ledger contract yet (#1544); 325 fresh battles are recorded here).
+
+**Classes found by the differential, all layer bugs, each with a regression case in the fork's `tests/declared.rs`:** Mega Sol (67 in search-fidelity: the layer did not set the move's current user), Fickle Beam against an immune defender (13: the power draw is never reached), and two Damp holders of equal speed (4: the TryMove sort ties and draws).
+
+**Abstentions** (explained interface differences, routed to the TS probe through an unadmitted ledger entity): `move:counter`, `move:focuspunch`, `move:mirrorcoat`, `move:chillyreception`, `move:shellsidearm`, `move:aurawheel`, `state:fractional_priority`, `state:status:slp` (and brn, frz, tox, par, psn under a declared sleep or tie draw). In search-fidelity: counter 516, focuspunch 413, mirrorcoat 334, slp 40, chillyreception 36, fractional_priority 16, shellsidearm 12.
+
+**Speed** (non-idle machine: i7-14700KF 28 logical CPUs, load average 5 to 6.5 from the training queue; release build with debuginfo; one process): over 3,000 builder queries, 2,952 answered, 0 differing.
+
+| Path | median | p99 | mean |
+|---|---|---|---|
+| native through the boundary, single call | 92 us | 297 us | 107 us |
+| native through the boundary, batch of 256 | | | 67 us per query |
+| TypeScript probe | 1,903 us | 5,305 us | 1,794 us |
+
+Counters of the bench run (10,986 answered): envelope 784 ms (71 us per query, the probe's own schema validation, set check and hashing), transport plus native layer 687 ms (63 us per query). The native layer alone is below that figure (it includes frame encoding and the pipe).
+
+**Feature builder, `probe-damage/2`, per decision** (10 random-corpus battles, 386 decisions, 18.5 queries per decision, native abstentions fall back to the TS probe; `zz`-style measurement, one process):
+
+| | per decision | answering queries | builder's own code |
+|---|---|---|---|
+| TS probe | 36.4 ms | 32.6 ms | 3.8 ms |
+| native backend | 5.7 ms | 2.6 ms | 3.1 ms |
+
+CPU profile over 40 battles (1,608 decisions, native backend; inclusive times, nested and so not additive; one-time schema compilation is in the first decisions): the query envelope (`probeEnvelope`, schema validation and hashing of each query: `canonicalJson` 0.86 ms per decision, `readMechanicsQuery` 0.31 ms) about 1.0 ms; the pipe round trip (`NativeProbeProcess.request`) 0.9 ms; reader and request opening (`openRequest`, `feed`) 0.58 ms; assumed-set construction (`buildAssumedSet`, which contains the validator's `validateSet`) 0.36 ms; `featureSetIdentity` hashing 0.36 ms; declared-set memo 0.29 ms. With native answering, what remains of the 5.7 ms is mostly Areneon-authored (envelope hashing and validation, reader, assumed sets, row construction), so the next cost is the envelope and the builder, not the engine. A lean envelope in the native backend would remove about 1 ms per decision.
+
+**Not verified:** the byte-equality claim covers only answered queries, by construction; a query the layer answers but the probe never would is not seen by the differential. The tier fields of ADR-031 E5 part h are not recorded in the ledger contract (#1544).

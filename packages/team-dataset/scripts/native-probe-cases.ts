@@ -47,8 +47,11 @@ const corpus = COMMITTED_CORPORA[0] as (typeof COMMITTED_CORPORA)[number];
 queries.push(...stride(builderQueries(h, corpusBattles(corpus.dir, 3), remembering(oracle)), 6).map((q, i) => ({ id: `builder:${i}`, query: q })));
 
 // Queries earlier runs found a difference on (one per line, `{q}`), kept as regression cases.
-if (args.includes("--extra")) {
-  for (const [i, line] of readFileSync(flag("extra"), "utf8").split("\n").filter(Boolean).entries()) if (i % 6 === 0) queries.push({ id: `found:${i}`, query: readMechanicsQuery((JSON.parse(line) as { q: unknown }).q) });
+for (const file of args.includes("--extra") ? flag("extra").split(",") : []) {
+  // A file of queries earlier runs found a difference on: every query of a small file, one in six of a large one.
+  const lines = readFileSync(file, "utf8").split("\n").filter(Boolean);
+  const stride = lines.length > 40 ? 6 : 1;
+  for (const [i, line] of lines.entries()) if (i % stride === 0) queries.push({ id: `found:${file.replace(/.*\//, "")}:${i}`, query: readMechanicsQuery((JSON.parse(line) as { q: unknown }).q) });
 }
 const lines: string[] = [];
 const seen = new Set<string>();
