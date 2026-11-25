@@ -18,7 +18,11 @@ loop-share measurement (``loop/share.py``). It is outside every hash like the re
 record. The optional
 ``inference_divergence`` (ADR-028 section 2 F2, #1195) is written only by a run whose config
 says ``generation.inference``: the share of a deterministic sample of the generation's
-decisions whose choice differs when scored again at batch 1, and the largest prior difference.
+decisions whose choice differs when scored again at batch 1, and the largest prior difference
+(with ``device`` for a GPU-inference run, ADR-030 step 4). The optional ``inference_device``
+(#1458) is written only by a run whose config says ``generation.inference.device``: where its
+policy workers' batched passes ran (on the device, or on a worker's CPU path after an allocation
+failure or under the rollback flag).
 A failed write
 raises out of ``Loop.run`` after the commit: the generation is whole and a resume continues.
 """
@@ -87,6 +91,9 @@ class Peaks:
     #: ``--learner-micro-batch`` of the run (operational): recorded so a run says how it was
     #: trained; written only when set, so every other record keeps its bytes.
     learner_micro_batch: int | None = None
+    #: The ``inference_device`` value of a run whose config says ``generation.inference.device``
+    #: (ADR-030 step 4, #1458): where its policy workers' batched passes ran.
+    inference_device: dict[str, Any] | None = None
 
 
 def build_metrics(
@@ -128,6 +135,8 @@ def build_metrics(
         record["inference_divergence"] = peaks.inference
     if peaks.learner_micro_batch is not None:
         record["learner_micro_batch"] = peaks.learner_micro_batch
+    if peaks.inference_device is not None:
+        record["inference_device"] = peaks.inference_device
     validate("run-metrics", record)
     return record
 
@@ -203,6 +212,8 @@ def read_run_metrics(raw: object, config: RunConfig, generation: int) -> dict[st
         check_profile(raw["profile"])
     if "inference_divergence" in raw:
         check_divergence(raw["inference_divergence"], config)
+    if "inference_device" in raw:
+        check_inference_device(raw["inference_device"], config)
     return raw
 
 
@@ -210,8 +221,26 @@ def check_divergence(found: dict[str, Any], config: RunConfig) -> None:
     """The divergence record is of the config's batching and its counts nest (nothing else)."""
     if found["max_batch"] != config.generation.inference_max_batch:
         raise MetricsError("the divergence record is not of the config's batching")
+    if found.get("device") != config.generation.inference_device:
+        raise MetricsError("the divergence record is not of the config's inference device")
     if not found["differing"] <= found["sampled"] <= found["decisions"]:
         raise MetricsError("the divergence counts must satisfy differing <= sampled <= decisions")
+
+
+def check_inference_device(found: dict[str, Any], config: RunConfig) -> None:
+    """The device counts belong to a GPU-inference run and agree with themselves (ADR-030 step 4).
+
+    Each worker falls back to its CPU path at most once, and a rolled-back (``forced``) generation
+    ran no batch on the device.
+    """
+    if config.generation.inference_device is None or found["device"] != (
+        config.generation.inference_device
+    ):
+        raise MetricsError("inference device counts are recorded for the config's device only")
+    if found["allocation_fallbacks"] > found["workers"]:
+        raise MetricsError("a worker makes at most one allocation fallback to its CPU path")
+    if found["forced"] and found["device_batches"] != 0:
+        raise MetricsError("a forced (rolled back) generation runs no batch on the device")
 
 
 def check_profile(profile: dict[str, Any]) -> None:

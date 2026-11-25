@@ -62,6 +62,9 @@ class GenerationSettings:
     #: ``generation.inference.max_batch`` (ADR-028 section 2 F2): the policy worker answers up to
     #: this many queued queries in one forward pass; ``None`` is batch 1 (the field absent).
     inference_max_batch: int | None = None
+    #: ``generation.inference.device`` (ADR-030 step 4, #1458): ``"cuda"`` when the batched forward
+    #: pass runs on a GPU worker of ``ml/gpu-env``; ``None`` is the CPU (the field absent).
+    inference_device: str | None = None
 
 
 @dataclass(frozen=True)
@@ -704,6 +707,7 @@ def read_run_config(raw: object) -> RunConfig:
             search_config_hash=None if labels is None else labels["search_config_hash"],
             search_start_generation=None if labels is None else labels["start_generation"],
             inference_max_batch=(None if "inference" not in gen else gen["inference"]["max_batch"]),
+            inference_device=(None if "inference" not in gen else gen["inference"].get("device")),
         ),
         ppo=PPOSettings(
             epochs=ppo["epochs"],

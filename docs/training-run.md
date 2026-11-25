@@ -1295,6 +1295,54 @@ Latency. A query waits for the others queued with it, so its `elapsed_ms` and it
 per-decision budget include the whole batch's forward pass (up to `max_batch` queries); the budgets of the
 run config apply to that, and a run that batches should size `max_batch` against `latency_budget_ms`.
 
+### GPU inference for training self-play (`device: "cuda"`, ADR-030 step 4)
+
+A batched run may also run its batched forward passes on the GPU, beside the learner:
+
+```json
+"generation": { ..., "inference": { "kind": "batched", "max_batch": 4, "device": "cuda" } }
+```
+
+The field enters `run_config_hash` (a new run from generation 0) and the pair's `behaviour_policy_id`
+(`inference: {kind, max_batch, device}`; the CPU batching above is stated by omission, so its ids are
+unchanged; the vectors are pinned in TS and Python). The play workers are started from the unshipped
+`ml/gpu-env` Python (CUDA torch; ADR-010 section 5.2: CUDA is never in the shipped closure, and the GPU
+worker is never shipped):
+
+```bash
+ml/gpu-env/.venv/bin/python -m areneon_ml.loop run --config C --run-dir R --engine-data E --generations N \
+    --worker-python .venv/bin/python --inference-worker-python ml/gpu-env/.venv/bin/python
+```
+
+`--worker-python` stays the CPU Python: the batch-1 control worker of the divergence measure always runs
+there, so for a GPU run `differing` is the GPU worker's share of choice differences against the CPU at
+batch 1 (GPU and CPU results are not guaranteed equal), and the record says `device: "cuda"`. The worker
+(`--inference-device cuda`) states the device in its handshake, so every batch-1 client (progress evaluation,
+head to head, private test, scripted head to head, sealed paths) and every CPU-batching client refuses it,
+and it refuses their hellos. It refuses to start without a usable CUDA device (exit 5); it never silently
+plays on the CPU.
+
+Fail closed. The worker keeps its networks as loaded (on the CPU) and works on a copy on the GPU. An
+allocation failure, while copying the networks or in any pass, drops the copy, empties the CUDA cache and
+answers that pass and the rest of the session on the CPU path, once per worker. The rollback flag
+`--inference-cpu` (operational: the stated setting and the policy id are unchanged) starts every play
+worker on that path from the start; it needs no `--inference-worker-python`. Each play worker leaves its
+counts in a scratch directory of the driver when its session ends, and the driver stores their sum as the
+optional `inference_device` of `metrics/g<N>.json` (`workers`, `device_batches`, `cpu_batches`,
+`allocation_fallbacks`, `forced`; outside every hash). The dashboard tabulates them under the divergence.
+
+GPU memory. Play and train are separate phases of a generation, so the learner and the workers never run a
+pass at the same time; the driver empties the CUDA cache after each train phase, and the learner's weights
+stay on the GPU during play. Every GPU worker holds its own CUDA context and network copy, so
+`--game-processes` times `--policy-workers` workers share the card: size them by measurement, and an
+allocation failure falls back to the CPU rather than failing the generation.
+
+Claims. Those of the CPU batching hold (plan, seeds, teams and policy ids on a rerun; every committed
+generation verifies; retraining from a committed stream on the CPU learner reproduces the learner-state
+hash), and the same ones do not (byte-identical reruns). The speed gate of ADR-030 step 4 (play time falls
+by at least half of the worker wait measured in step 2) is measured on an idle machine and journaled on the
+ticket; without the gain the setting is closed as "no gain".
+
 ## 12. Evaluating a run whose bulk data was pruned (`--allow-pruned`)
 
 After a run is decided, its bulky files are deleted from the committed generations older than the

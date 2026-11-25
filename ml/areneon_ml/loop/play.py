@@ -5,7 +5,11 @@ manifest of the format, and one generation played into a directory (Episodes,
 the loader's TrainingSet and stream, the plan and the per-game summary). The
 real one runs ``packages/showdown-bridge/scripts/play-generation.ts``, which
 starts the policy worker on CPU torch from the shipped closure and uses the
-pinned engine; tests give the driver a fake one.
+pinned engine; tests give the driver a fake one. A run whose config says
+``generation.inference.device`` (ADR-030 step 4) starts its play workers from the
+unshipped ``ml/gpu-env`` Python instead (``inference_worker_python``), or on their
+CPU path under the rollback flag (``inference_cpu``), and the workers' device counts
+come back through a scratch directory.
 """
 
 from __future__ import annotations
@@ -15,6 +19,7 @@ import json
 import os
 import signal
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -140,6 +145,18 @@ class NodePlayer:
     #: The ``inference_divergence`` line of the last ``play`` call (a run whose config says
     #: ``generation.inference``): validated later as part of the run-metrics record.
     last_divergence: dict[str, Any] = field(default_factory=dict, compare=False)
+    #: The run's config says ``generation.inference.device`` (ADR-030 step 4, #1458): the play
+    #: workers answer on the GPU, and their device counts are read back after each ``play`` call.
+    gpu_inference: bool = False
+    #: The Python of the unshipped ``ml/gpu-env`` environment (CUDA torch) the play workers of a
+    #: GPU-inference run start from; the batch-1 control worker stays on ``worker_python``.
+    inference_worker_python: str | None = None
+    #: The rollback flag: a GPU-inference run's play workers start on their CPU path (the stated
+    #: setting and the policy id are unchanged; counted in run metrics). Operational.
+    inference_cpu: bool = False
+    #: The summed device counts of the last ``play`` call's workers (``read_inference_stats``),
+    #: validated later as part of the run-metrics record; empty when there are none.
+    last_inference_device: dict[str, Any] = field(default_factory=dict, compare=False)
 
     def _run(
         self,
@@ -213,6 +230,27 @@ class NodePlayer:
         self.resource_usage.clear()
         self.last_profile.clear()
         self.last_divergence.clear()
+        self.last_inference_device.clear()
+        if not self.gpu_inference:
+            self._play(request, ())
+            return
+        # The workers' counts go to a scratch directory, never into the generation's (hashed) one.
+        with tempfile.TemporaryDirectory(prefix="areneon-inference-") as stats:
+            self._play(
+                request,
+                (
+                    *(
+                        ()
+                        if self.inference_worker_python is None
+                        else ("--inference-worker-python", self.inference_worker_python)
+                    ),
+                    *(("--inference-cpu",) if self.inference_cpu else ()),
+                    *("--inference-stats-dir", stats),
+                ),
+            )
+            self.last_inference_device.update(read_inference_stats(Path(stats)))
+
+    def _play(self, request: PlayRequest, gpu: tuple[str, ...]) -> None:
         out = self._run(
             self.play_script,
             *("--config", str(self.config_path)),
@@ -231,6 +269,7 @@ class NodePlayer:
             *(("--profile",) if self.profile else ()),
             *(("--batch-seam",) if self.batch_seam else ()),
             *self._starts(),
+            *gpu,
             heap_mb=self.node_heap_mb,
             timeout_s=self.generation_timeout_s,
         )
@@ -369,3 +408,50 @@ def _divergence_line(stdout: str) -> dict[str, Any]:
         if isinstance(found, dict):
             return found
     return {}
+
+
+_STATS_COUNTS = ("device_batches", "cpu_batches", "allocation_fallbacks")
+
+
+def read_inference_stats(directory: Path) -> dict[str, Any]:
+    """The summed device counts the play workers of a GPU-inference run left in ``directory``.
+
+    Each worker writes ``inference-<pid>.json`` when its session ends (ADR-030 step 4, #1458). A
+    diagnostic: a file that cannot be read or is not of that shape is ignored, and no file at all
+    gives an empty dict (no record). ``forced`` is true when any worker was rolled back.
+    """
+    found: dict[str, Any] = {}
+    try:
+        paths = sorted(directory.glob("inference-*.json"))
+    except OSError:
+        return found
+    for path in paths:
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not _stats_shape(value):
+            continue
+        if not found:
+            found = {"device": value["device"], "workers": 0, "forced": False}
+            found.update(dict.fromkeys(_STATS_COUNTS, 0))
+        if value["device"] != found["device"]:
+            continue
+        found["workers"] += 1
+        found["forced"] = found["forced"] or value["forced"]
+        for key in _STATS_COUNTS:
+            found[key] += value[key]
+    if not found:
+        return found
+    return {key: found[key] for key in ("device", "workers", *_STATS_COUNTS, "forced")}
+
+
+def _stats_shape(value: object) -> bool:
+    if not isinstance(value, dict) or set(value) != {"device", "forced", *_STATS_COUNTS}:
+        return False
+    if not isinstance(value["device"], str) or not isinstance(value["forced"], bool):
+        return False
+    return all(
+        isinstance(value[key], int) and not isinstance(value[key], bool) and value[key] >= 0
+        for key in _STATS_COUNTS
+    )

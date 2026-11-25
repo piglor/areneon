@@ -912,7 +912,51 @@ def _inference_section(model: ReportModel) -> str:
         "Each sampled decision was scored again at batch 1 with its own sampling draw; the batched "
         "priors it is compared with depend on timing, so the largest prior difference is a noisy "
         "diagnostic, not a bound. From the optional <code>inference_divergence</code> of "
-        "<code>metrics/gNNNNNN.json</code>, outside every hash.</p>" + table
+        "<code>metrics/gNNNNNN.json</code>, outside every hash.</p>" + table + _device_part(model)
+    )
+
+
+def _device_part(model: ReportModel) -> str:
+    """A GPU-inference run (ADR-030 step 4): the note and the workers' device counts per
+    generation. Nothing for a run on the CPU."""
+    if model.inference_device is None:
+        return ""
+    rows = []
+    for g in model.generations:
+        found = None if g.metrics is None else g.metrics.get("inference_device")
+        if found is None:
+            continue
+        rows.append(
+            [
+                str(g.number),
+                str(found["workers"]),
+                str(found["device_batches"]),
+                str(found["cpu_batches"]),
+                str(found["allocation_fallbacks"]),
+                "yes" if found["forced"] else "no",
+            ]
+        )
+    heads = [
+        ("Generation", True),
+        ("Workers", True),
+        ("Passes on the device", True),
+        ("Passes on the CPU path", True),
+        ("Allocation fallbacks", True),
+        ("Rolled back", False),
+    ]
+    table = (
+        _table(heads, rows, "Where the play workers' batched passes ran, per generation.")
+        if rows
+        else '<p class="note">No generation recorded its device counts yet.</p>'
+    )
+    return (
+        f'<p class="note">The batched passes run on the GPU (<code>device: '
+        f"{esc(model.inference_device)}</code>, ADR-030 step 4): GPU and CPU results are not "
+        "guaranteed equal, so the differing choices above are the GPU worker's against the CPU at "
+        "batch 1. A worker that meets an allocation failure answers the rest of its session on "
+        "its CPU path, and the rollback flag (<code>--inference-cpu</code>) starts every worker "
+        "there; both keep the policy id. From the optional <code>inference_device</code> of the "
+        "metrics files, outside every hash.</p>" + table
     )
 
 

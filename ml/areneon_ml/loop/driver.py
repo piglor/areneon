@@ -107,6 +107,9 @@ class Frozen:
     #: The run's ``generation.inference.max_batch`` (ADR-028 section 2 F2): the pair's policy id
     #: says its self-play forward pass is batched; None is batch 1 and today's id.
     inference_max_batch: int | None = None
+    #: The run's ``generation.inference.device`` (ADR-030 step 4): ``"cuda"`` names the GPU worker
+    #: in the pair's policy id; None is the CPU and #1195's id.
+    inference_device: str | None = None
 
     @property
     def policy_id(self) -> str:
@@ -118,7 +121,11 @@ class Frozen:
             inference=(
                 None
                 if self.inference_max_batch is None
-                else {"kind": "batched", "max_batch": self.inference_max_batch}
+                else {
+                    "kind": "batched",
+                    "max_batch": self.inference_max_batch,
+                    **({} if self.inference_device is None else {"device": self.inference_device}),
+                }
             ),
         )
 
@@ -179,6 +186,9 @@ class Timing:
         #: The batched-inference divergence of the generation (ADR-028 section 2 F2) when the
         #: play script reported one.
         self.divergence: dict[str, Any] | None = None
+        #: Where a GPU-inference run's workers answered (ADR-030 step 4) when the player read their
+        #: counts.
+        self.inference_device: dict[str, Any] | None = None
 
     @contextmanager
     def phase(self, name: str) -> Iterator[None]:
@@ -412,6 +422,7 @@ class Loop:
             features_hash(self.config),
             self.config.generation.temperature_ppm,
             self.config.generation.inference_max_batch,
+            self.config.generation.inference_device,
         )
 
     def _read_record(self, path: Path, role: str) -> CheckpointRecord:
@@ -442,6 +453,9 @@ class Loop:
             )
         timing.play_rss = dict(getattr(self.player, "resource_usage", None) or {})
         timing.divergence = dict(getattr(self.player, "last_divergence", None) or {}) or None
+        timing.inference_device = (
+            dict(getattr(self.player, "last_inference_device", None) or {}) or None
+        )
         self._on_stage(generation, "played")
         if self.profile:
             stopwatch.enable()
@@ -727,6 +741,7 @@ class Loop:
                     timing.profile,
                     timing.divergence,
                     self.learner_micro_batch,
+                    timing.inference_device,
                 ),
             ),
         )
@@ -739,6 +754,7 @@ class Loop:
             features_hash(self.config),
             self.config.generation.temperature_ppm,
             self.config.generation.inference_max_batch,
+            self.config.generation.inference_device,
         )
 
 

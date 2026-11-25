@@ -5,6 +5,10 @@
 // own sampling draw and request, so the same decisions are kept whatever the order the games finished in), and when the games are
 // done the kept queries are scored again at batch 1 with each decision's own `u`: the share whose choice differs from the played
 // one, and the largest difference between the batched and the batch-1 prior (the policy's probabilities at temperature 1, in ppm).
+//
+// A run whose `generation.inference` says `device: "cuda"` (ADR-030 step 4, #1458) plays on a GPU worker started from the unshipped
+// `ml/gpu-env` Python; the batch-1 control is always the CPU worker, so the record (which names the device) is then the GPU worker's
+// share of choice differences. GPU and CPU results are not guaranteed equal.
 
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -28,6 +32,8 @@ export const DIVERGENCE_KEEP_FLOOR = 512;
 /** The record of run metrics (`RunMetrics.inference_divergence`): integers, counts of decisions. */
 export interface InferenceDivergence {
   max_batch: number;
+  /** `cuda` when the worker that played answered on the GPU (ADR-030 step 4); absent for the CPU batching. */
+  device?: "cuda";
   decisions: number;
   sampled: number;
   differing: number;
@@ -62,6 +68,7 @@ export function sampleTarget(decisions: number): number {
 /** Collects the pair's decisions of one game process and scores a deterministic sample of them again at batch 1. */
 export class DivergenceSampler {
   readonly max_batch: number;
+  readonly device: "cuda" | undefined;
   #decisions = 0;
   readonly #kept: Kept[] = [];
 
@@ -69,8 +76,9 @@ export class DivergenceSampler {
   readonly #keep_floor: number;
 
   /** `keep_ppm` and `keep_floor` bound how many queries are kept while the games run (a test passes others). */
-  constructor(max_batch: number, keep_ppm: number = DIVERGENCE_KEEP_PPM, keep_floor: number = DIVERGENCE_KEEP_FLOOR) {
+  constructor(max_batch: number, keep_ppm: number = DIVERGENCE_KEEP_PPM, keep_floor: number = DIVERGENCE_KEEP_FLOOR, device?: "cuda") {
     this.max_batch = max_batch;
+    this.device = device;
     this.#keep_ppm = keep_ppm;
     this.#keep_floor = keep_floor;
   }
@@ -106,7 +114,7 @@ export class DivergenceSampler {
     const target = sampleTarget(this.#decisions);
     this.#prune();
     const chosen = this.#kept.slice(0, target);
-    const result = (differing: number, largest: number): InferenceDivergence => ({ max_batch: this.max_batch, decisions: this.#decisions, sampled: chosen.length, differing, max_prior_diff_ppm: largest, target_met: chosen.length === target });
+    const result = (differing: number, largest: number): InferenceDivergence => ({ max_batch: this.max_batch, ...(this.device === undefined ? {} : { device: this.device }), decisions: this.#decisions, sampled: chosen.length, differing, max_prior_diff_ppm: largest, target_met: chosen.length === target });
     if (chosen.length === 0) return result(0, 0);
     const asEvaluate = (query: PolicyQueryInput): EvaluateQueryInput => ({ ...query, sampling: { kind: "evaluate" } }) as EvaluateQueryInput;
     const priors = await Promise.all(chosen.map((kept, i) => batched.evaluate(`divergence-${i}`, asEvaluate(kept.query))));
@@ -139,13 +147,14 @@ export function readDivergenceFile(path: string): InferenceDivergence | null {
   }
 }
 
-/** The sum of several processes' records (one `max_batch`): counts add, the largest difference is the largest, the target is met by all. */
+/** The sum of several processes' records (one `max_batch` and one device): counts add, the largest difference is the largest, the target is met by all. */
 export function sumDivergence(parts: readonly InferenceDivergence[]): InferenceDivergence | null {
   const first = parts[0];
   if (first === undefined) return null;
-  if (parts.some((part) => part.max_batch !== first.max_batch)) throw new RangeError("the divergence records are of different batchings");
+  if (parts.some((part) => part.max_batch !== first.max_batch || part.device !== first.device)) throw new RangeError("the divergence records are of different batchings or devices");
   return {
     max_batch: first.max_batch,
+    ...(first.device === undefined ? {} : { device: first.device }),
     decisions: parts.reduce((n, p) => n + p.decisions, 0),
     sampled: parts.reduce((n, p) => n + p.sampled, 0),
     differing: parts.reduce((n, p) => n + p.differing, 0),
@@ -158,21 +167,60 @@ export function sumDivergence(parts: readonly InferenceDivergence[]): InferenceD
 export const DIVERGENCE_FILE = "divergence.json";
 
 /**
+ * The operational flags of a GPU-inference run (ADR-030 step 4, #1458), none of them in the run config: `inference_worker_python` is the
+ * Python of the unshipped `ml/gpu-env` environment (CUDA torch) the play workers run on; `force_cpu` is the rollback flag, which starts
+ * them on their CPU path (the stated setting and the policy id are unchanged; counted in run metrics); `stats_dir` is where each play
+ * worker leaves its device counts when its session ends (the driver's scratch directory, never a file a manifest hashes).
+ */
+export interface InferenceFlags {
+  inference_worker_python?: string;
+  force_cpu?: boolean;
+  stats_dir?: string;
+}
+
+/** Why these flags do not fit the run's `generation.inference`, or null: they belong to a GPU run, which needs its worker's Python unless rolled back. */
+export function inferenceFlagsProblem(inference: InferenceSettings | undefined, flags: InferenceFlags): string | null {
+  const given = flags.inference_worker_python !== undefined || flags.force_cpu === true || flags.stats_dir !== undefined;
+  if (inference?.device !== "cuda") return given ? "--inference-worker-python, --inference-cpu and --inference-stats-dir are for a run whose generation.inference says device: cuda" : null;
+  if (flags.inference_worker_python === undefined && flags.force_cpu !== true) return "a run whose generation.inference says device: cuda needs --inference-worker-python (the ml/gpu-env Python), or --inference-cpu to roll back to the CPU path";
+  return null;
+}
+
+/**
  * What a game process does about batched inference (#1195), in one object so the script has no branch for it: `inference` is the
- * run's `generation.inference` (absent: batch 1, and every method here does nothing).
+ * run's `generation.inference` (absent: batch 1, and every method here does nothing). A GPU setting (ADR-030 step 4) also picks the play
+ * workers' Python and flags (`flags`); the batch-1 control worker of the divergence measure is always the CPU worker.
  */
 export class DivergenceRun {
   readonly #inference: InferenceSettings | undefined;
+  readonly #flags: InferenceFlags;
   readonly #sampler: DivergenceSampler | undefined;
 
-  constructor(inference: InferenceSettings | undefined) {
+  constructor(inference: InferenceSettings | undefined, flags: InferenceFlags = {}) {
     this.#inference = inference;
-    this.#sampler = inference === undefined ? undefined : new DivergenceSampler(inference.max_batch);
+    this.#flags = flags;
+    this.#sampler = inference === undefined ? undefined : new DivergenceSampler(inference.max_batch, DIVERGENCE_KEEP_PPM, DIVERGENCE_KEEP_FLOOR, inference.device);
   }
 
-  /** The worker flag of a play client; none for the batch-1 control worker (`batch1`). */
+  /** The Python a worker runs on: the GPU environment's for a GPU run's play workers (when given), `python` (the CPU one) otherwise. */
+  command(batch1: boolean, python: string): string {
+    if (batch1 || this.#inference?.device === undefined) return python;
+    return this.#flags.inference_worker_python ?? python;
+  }
+
+  /** The worker flags of a play client; none for the batch-1 control worker (`batch1`). */
   workerArgs(batch1: boolean): string[] {
-    return this.#inference === undefined || batch1 ? [] : ["--inference-max-batch", String(this.#inference.max_batch)];
+    const inference = this.#inference;
+    if (inference === undefined || batch1) return [];
+    const batching = ["--inference-max-batch", String(inference.max_batch)];
+    if (inference.device === undefined) return batching;
+    return [
+      ...batching,
+      "--inference-device",
+      inference.device,
+      ...(this.#flags.force_cpu === true ? ["--inference-force-cpu"] : []),
+      ...(this.#flags.stats_dir === undefined ? [] : ["--inference-stats-dir", this.#flags.stats_dir]),
+    ];
   }
 
   /** The `PolicyWorkerOptions` part of a play client. */
