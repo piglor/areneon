@@ -569,6 +569,7 @@ def _entry(  # noqa: PLR0913, PLR0915, PLR0917
     own: bool,
 ) -> None:
     put.roster(d, r, "seat_roster.seen", 1 if mon.hp_num is not None else 0)
+    put.roster(d, r, "seat_roster.fainted_shown", 1 if mon.fainted else 0)
     put.roster(
         d,
         r,
@@ -849,14 +850,26 @@ def _other(value: Any, low: int, high: int) -> int:
     return number + 1 if number + 1 <= high else max(low, number - 1)
 
 
+def _plant_real_index(mon: dict[str, Any], benched: bool) -> None:
+    """Plant the roster values held at the real index: in play, fainted, transformed and, for a
+    Pokemon in no slot, its stages (an occupant's stages are public through its slot)."""
+    mon["isActive"] = not mon.get("isActive")
+    mon["fainted"] = not mon.get("fainted")
+    mon["transformed"] = not mon.get("transformed")
+    if benched and isinstance(mon.get("boosts"), dict):
+        mon["boosts"] = {k: _other(v, -6, 6) for k, v in mon["boosts"].items()}
+
+
 def plant_engine(  # noqa: PLR0912
     state: Mapping[str, Any], seat: str, moves: Callable[[], str] | None = None
 ) -> dict[str, Any]:
     """A copy of the engine state with planted values in what ``seat`` may not read: the other
     side's exact hit points, stats, PP, move slots, item, ability, status and its counters,
     volatile durations, counters and hit points, the Mega flag, counters of moves and hits, and
-    the PRNG, the Quick Claw roll and every duration of the field and both sides. Public values
-    (stages, faints, species, details, the turn, conditions present) are left as they are."""
+    the PRNG, the Quick Claw roll and every duration of the field and both sides, and the roster
+    values held at the real index (in play, fainted, transformed, a benched Pokemon's stages),
+    which an Illusion user would show through. Public values (an occupant's stages, species,
+    details, the turn, conditions present) are left as they are."""
     planted: dict[str, Any] = copy.deepcopy(dict(state))
     if isinstance(planted.get("prng"), str):
         head, _, words = planted["prng"].rpartition(",")
@@ -879,10 +892,17 @@ def plant_engine(  # noqa: PLR0912
                     effect["duration"] = _other(effect["duration"], 0, 64)
         if side.get("id") == seat:
             continue
-        for mon in side.get("pokemon", []):
+        slotted = {
+            ord(found.group(1)) - 97
+            for ref in side.get("active") or []
+            if (found := re.search(r"\[Pokemon:p\d([a-z])\]", str(ref))) is not None
+        }
+        for position, mon in enumerate(side.get("pokemon", [])):
             if not mon.get("fainted"):
                 mon["hp"] = _other(mon.get("hp"), 1, int(mon.get("maxhp") or 1))
             mon["maxhp"] = _other(mon.get("maxhp"), 1, 9999)
+            # Held at the real roster index: another seat reads the seat's own derivations instead.
+            _plant_real_index(mon, position not in slotted)
             if isinstance(mon.get("storedStats"), dict):
                 mon["storedStats"] = {k: _other(v, 1, 9999) for k, v in mon["storedStats"].items()}
             for slot in mon.get("moveSlots") or []:

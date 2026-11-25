@@ -963,8 +963,9 @@
         "path": "pokemon.boosts",
         "read": "value"
       },
-      "visibility": "public",
-      "description": "The stat stages (the shown boost lines)."
+      "visibility": "own-exact",
+      "description": "The stat stages (the shown boost lines). Held at the engine's real roster index, so another seat never reads it (an Illusion user would show through the entry it is shown as); it reads the seat fields instead.",
+      "projection": "none"
     },
     {
       "id": "roster.can_mega_evo",
@@ -1000,8 +1001,9 @@
         "path": "pokemon.fainted",
         "read": "bool"
       },
-      "visibility": "public",
-      "description": "Whether it has fainted."
+      "visibility": "own-exact",
+      "description": "Whether it has fainted. Held at the engine's real roster index, so another seat never reads it (an Illusion user would show through the entry it is shown as); it reads the seat fields instead.",
+      "projection": "none"
     },
     {
       "id": "roster.gender",
@@ -1093,8 +1095,9 @@
         "path": "pokemon.isActive",
         "read": "bool"
       },
-      "visibility": "public",
-      "description": "Whether it is in play."
+      "visibility": "own-exact",
+      "description": "Whether it is in play. Held at the engine's real roster index, so another seat never reads it (an Illusion user would show through the entry it is shown as); it reads the seat fields instead.",
+      "projection": "none"
     },
     {
       "id": "roster.item",
@@ -1599,8 +1602,9 @@
         "path": "pokemon.transformed",
         "read": "bool"
       },
-      "visibility": "public",
-      "description": "Whether it is transformed (the -transform line)."
+      "visibility": "own-exact",
+      "description": "Whether it is transformed (the -transform line). Held at the engine's real roster index, so another seat never reads it (an Illusion user would show through the entry it is shown as); it reads the seat fields instead.",
+      "projection": "none"
     },
     {
       "id": "roster.truant_turn",
@@ -2221,6 +2225,24 @@
       },
       "visibility": "seat",
       "description": "What the seat knows of whether it was brought: 0 unknown, 1 not brought, 2 brought."
+    },
+    {
+      "id": "seat_roster.fainted_shown",
+      "group": "seat_roster",
+      "extra": [],
+      "dtype": "int8",
+      "value": {
+        "kind": "range",
+        "min": 0,
+        "max": 1
+      },
+      "source": {
+        "kind": "derived",
+        "from": "reducer",
+        "name": "fainted"
+      },
+      "visibility": "seat",
+      "description": "Whether the seat has seen it faint (an Illusion user that faints shows the entry it was shown as fainted)."
     },
     {
       "id": "seat_roster.history_roster_state",
@@ -4407,7 +4429,6 @@
       ],
       "opponent": [
         "active.boosts",
-        "roster.boosts",
         "seat_active.shown_roster_index"
       ],
       "shared": [],
@@ -4469,10 +4490,11 @@
       "column": "fainted",
       "option": "base",
       "own": [
-        "roster.fainted"
+        "roster.fainted",
+        "seat_roster.fainted_shown"
       ],
       "opponent": [
-        "roster.fainted"
+        "seat_roster.fainted_shown"
       ],
       "shared": [],
       "query": false
@@ -5168,7 +5190,6 @@
       ],
       "opponent": [
         "active.boosts",
-        "roster.boosts",
         "seat_active.shown_roster_index"
       ],
       "shared": []
@@ -5195,10 +5216,11 @@
     {
       "key": "SIDE.roster[].fainted",
       "own": [
-        "roster.fainted"
+        "roster.fainted",
+        "seat_roster.fainted_shown"
       ],
       "opponent": [
-        "roster.fainted"
+        "seat_roster.fainted_shown"
       ],
       "shared": []
     },

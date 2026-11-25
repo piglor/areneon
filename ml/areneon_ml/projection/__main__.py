@@ -5,7 +5,8 @@ Frames: ``{"kind": "check", "id", "point", "seat", "query"}`` packs the point (o
 per battle id prefix, so a battle's reducers are fed incrementally), projects it for the seat,
 rebuilds the reducer-state view and compares its encoding with ``Encoder.encode`` of the query
 under every option set of the gate, and runs the canary; it answers ``{"id", "status": "equal" |
-"different" | "refused", "code"?, "differences", "view_sha256", "canary": {"engine", "tensors"}}``.
+"different" | "refused" | "error", "code"?, "differences", "view_sha256", "canary": {"engine",
+"tensors"}}``.
 ``{"kind": "view", "id", "point", "seat", "leak"?}`` answers the seat's view and its digest; with
 ``leak`` naming a field, the other side's raw values of it are added outside the class accessor
 (the invariance test's negative control). A packer refusal is a ``refused`` answer with its code.
@@ -46,6 +47,22 @@ class Server:
             self._encoding = {}
 
     def answer(self, frame: Mapping[str, Any]) -> dict[str, Any]:
+        """The reply to one frame; a frame that breaks the packer, the projection or the encoder
+        for any reason other than a refusal is an ``error`` reply (the class of the exception and
+        its first line), never a dead child, so the caller fails at once with the frame's id."""
+        try:
+            return self._answer(frame)
+        except Exception as error:  # every failure becomes a frame
+            lines = str(error).splitlines()
+            detail = lines[0][:200] if lines else ""
+            return {
+                "id": str(frame.get("id")),
+                "status": "error",
+                "code": type(error).__name__,
+                "detail": detail,
+            }
+
+    def _answer(self, frame: Mapping[str, Any]) -> dict[str, Any]:
         frame_id = str(frame["id"])
         point, seat = frame["point"], str(frame["seat"])
         self._for(frame_id)

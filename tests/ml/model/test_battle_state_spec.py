@@ -274,21 +274,29 @@ def test_the_reader_refuses_an_opponent_mapping_of_exact_values() -> None:
         read_battle_state_spec(copy.deepcopy(hp))
 
 
+REAL_INDEX_ROSTER = ("roster.boosts", "roster.fainted", "roster.is_active", "roster.transformed")
+
+
 def test_v2_keeps_every_v1_field_and_mapping_ref() -> None:
-    """v2 adds fields and refs; it removes none and changes no field but in its description."""
+    """v2 adds fields and refs; it removes none (but the opponent's reads of the real-index roster
+    fields) and changes no field but in its description (and the two widenings below)."""
     one, two = spec("v1"), spec("v2")
     fields = {f["id"]: f for f in two["fields"]}
     for field in one["fields"]:
         # The one widened range: v1's 0..127 cannot hold the stall counter's 729.
-        widened = (
-            {"dtype": "int16", "value": {"kind": "range", "min": 0, "max": 1023}}
-            if field["id"] == "active.volatile_counter"
-            else {}
-        )
+        widened: dict[str, Any] = {}
+        if field["id"] == "active.volatile_counter":
+            widened = {"dtype": "int16", "value": {"kind": "range", "min": 0, "max": 1023}}
+        if (
+            field["id"] in REAL_INDEX_ROSTER
+        ):  # held at the real index: another seat reads seat fields
+            widened = {"visibility": "own-exact", "projection": "none"}
         assert {**fields[field["id"]], "description": ""} == {**field, **widened, "description": ""}
     for name in ("encoder", "reducer"):
         later = {(r.get("group"), r.get("column"), r.get("key")): r for r in two[name]}
         for row in one[name]:
             kept = later[(row.get("group"), row.get("column"), row.get("key"))]
             for half in ("own", "opponent", "shared"):
-                assert set(row[half]) <= set(kept[half])
+                # The other side's refs to the real-index roster fields move to seat fields.
+                gone = set(REAL_INDEX_ROSTER) if half == "opponent" else set()
+                assert set(row[half]) - gone <= set(kept[half])

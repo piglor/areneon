@@ -10,7 +10,8 @@ options, the lineage run's options and ``exact_volatiles``. The privacy canary p
 every field the seat may not read (in the engine state and in the packed tensors) and requires the
 seat's view unchanged, with negative controls: a projection that reads a field through a raw path,
 and a record doctored to class a hidden field public. The whole committed corpus (both seats, every
-request) and the invariance test run in ``battle-state-projection.python.test.ts``.
+request) runs in the four shards ``battle-state-projection-corpus-{0..3}.python.test.ts`` and the
+invariance test in ``battle-state-projection.python.test.ts``.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import copy
 import io
 import json
 from functools import cache
+from itertools import cycle
 from pathlib import Path
 from typing import Any
 
@@ -268,12 +270,15 @@ def test_a_projection_that_reads_a_field_through_a_raw_path_is_flagged() -> None
     assert leaky(tensors) != leaky(pack(index(), game().vocabulary, planted))
 
 
-def test_a_record_doctored_to_class_a_hidden_field_public_is_flagged() -> None:
-    """Negative control: with ``roster.move_pp`` and ``battle.prng`` reclassified public, the
-    planted values reach the other seat's view."""
+@pytest.mark.parametrize(
+    "field_id", ["roster.move_pp", "roster.item", "roster.ability", "roster.hp", "battle.prng"]
+)
+def test_a_record_doctored_to_class_a_field_public_is_flagged(field_id: str) -> None:
+    """Negative control, one field at a time: with it reclassified public, the value planted in
+    the engine state reaches the other seat's view."""
     doctored = copy.deepcopy(record())
     for field in doctored["fields"]:
-        if field["id"] in ("roster.move_pp", "battle.prng"):
+        if field["id"] == field_id:
             field["visibility"] = "public"
             field.pop("projection", None)
     leaky = SpecIndex(doctored, table())
@@ -281,9 +286,121 @@ def test_a_record_doctored_to_class_a_hidden_field_public_is_flagged() -> None:
     seat = decision["seat"]
     real = point_of(battle, point)
     planted = {**real, "state": plant_engine(real["state"], seat)}
-    before = view_digest(project(leaky, pack(leaky, game().vocabulary, real), seat))
-    after = view_digest(project(leaky, pack(leaky, game().vocabulary, planted), seat))
-    assert before != after
+    before = project(leaky, pack(leaky, game().vocabulary, real), seat)
+    after = project(leaky, pack(leaky, game().vocabulary, planted), seat)
+    assert view_digest(before) != view_digest(after)
+    differing = {k for k in before["fields"] if before["fields"][k] != after["fields"][k]}
+    assert differing, field_id
+    # ... and with the real record the same planting changes nothing.
+    clean_before = project(index(), pack(index(), game().vocabulary, real), seat)
+    clean_after = project(index(), pack(index(), game().vocabulary, planted), seat)
+    assert clean_before == clean_after
+
+
+def test_planted_move_ids_in_the_other_sides_slots_never_change_a_view() -> None:
+    """``plant_engine(moves=...)``: the other side's four move slots hold other moves."""
+    ids = iter(cycle(sorted(table()["moves"], key=lambda m: m["id"])))
+    battle, point, decision = next(d for d in decisions() if d[2]["kind"] == "battle")
+    seat = decision["seat"]
+    real = point_of(battle, point)
+    planted = {**real, "state": plant_engine(real["state"], seat, lambda: str(next(ids)["id"]))}
+    moved = sum(
+        a["id"] != b["id"]
+        for side_a, side_b in zip(real["state"]["sides"], planted["state"]["sides"], strict=True)
+        for mon_a, mon_b in zip(side_a["pokemon"], side_b["pokemon"], strict=True)
+        for a, b in zip(mon_a["moveSlots"], mon_b["moveSlots"], strict=True)
+    )
+    assert moved > 0
+    before = view_digest(project(index(), pack(index(), game().vocabulary, real), seat))
+    after = view_digest(project(index(), pack(index(), game().vocabulary, planted), seat))
+    assert before == after
+
+
+IDENTITY_KEYS = ("set", "details", "species", "baseSpecies", "gender")
+ROSTER_LEAKS = ("roster.is_active", "roster.fainted", "roster.boosts", "roster.transformed")
+
+
+def illusion_point() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], int, int]:
+    """The committed Illusion battle at a request where a Zoroark is disguised in play: the
+    battle, its point, p1's side of the engine state, the disguised Pokemon's engine index and the
+    engine index of the entry it is shown as."""
+    for battle in fixture()["battles"]:
+        for point in battle["points"]:
+            side = next(s for s in point["state"]["sides"] if s["id"] == "p1")
+            for i, mon in enumerate(side["pokemon"]):
+                if mon.get("illusion") and mon.get("isActive"):
+                    target = ord(str(mon["illusion"]).rstrip("]")[-1]) - 97
+                    if battle["battle_id"].startswith("illusion") and point["decisions"]:
+                        return battle, point, side, i, target
+    raise AssertionError("no disguised Pokemon in play in the committed Illusion battle")
+
+
+def undisguised(point: dict[str, Any], disguised: int, target: int) -> dict[str, Any]:
+    """The same engine state with the real Pokemon of the shown entry in the slot instead of the
+    Illusion user: identities swapped between the two engine entries, every battle value (stages,
+    volatiles, in play, ...) left where it is, the disguise gone. What a seat is shown is equal."""
+    state = copy.deepcopy(point["state"])
+    side = next(s for s in state["sides"] if s["id"] == "p1")
+    user, shown = side["pokemon"][disguised], side["pokemon"][target]
+    for key in IDENTITY_KEYS:
+        user[key], shown[key] = shown.get(key), user.get(key)
+    user.pop("illusion", None)
+    return {**point, "state": state}
+
+
+def test_an_illusion_user_does_not_show_through_the_entry_it_is_shown_as() -> None:
+    """R-9: equal player channels, the opponent shows entry S either as the real Pokemon in play
+    or as an Illusion user disguised as S (the entry S itself stays benched in the engine): the
+    observing seat's view is byte-identical. The roster values held at the real index (in play,
+    fainted, stages, transformed) are never read by the other seat."""
+    battle, point, side, disguised, target = illusion_point()
+    assert side["pokemon"][target]["isActive"] is False  # the engine entry S is benched
+    real = point_of(battle, point)
+    shown = point_of(battle, undisguised(point, disguised, target))
+    a = project(index(), pack(index(), game().vocabulary, real), "p2")
+    b = project(index(), pack(index(), game().vocabulary, shown), "p2")
+    assert a == b
+    assert view_digest(a) == view_digest(b)
+    for field_id in ROSTER_LEAKS:
+        assert f"{field_id}@opponent" not in a["fields"], field_id
+    # The seat sees the shown entry in play through the slot, and the entry is not marked fainted.
+    assert target in a["fields"]["seat_active.shown_roster_index@opponent"]
+
+
+def test_a_projection_reading_the_roster_by_real_index_is_flagged_under_an_illusion() -> None:
+    """Negative controls: the record before this fix (the roster values classed public) and a raw
+    read of the real-index tensor each tell the two states apart."""
+    battle, point, _, disguised, target = illusion_point()
+    real = point_of(battle, point)
+    shown = point_of(battle, undisguised(point, disguised, target))
+    doctored = copy.deepcopy(record())
+    for field in doctored["fields"]:
+        if field["id"] in ROSTER_LEAKS:
+            field["visibility"] = "public"
+            field.pop("projection", None)
+    leaky = SpecIndex(doctored, table())
+    one = project(leaky, pack(leaky, game().vocabulary, real), "p2")
+    two = project(leaky, pack(leaky, game().vocabulary, shown), "p2")
+    assert view_digest(one) != view_digest(two)
+    for field_id in ROSTER_LEAKS:
+        assert f"{field_id}@opponent" in one["fields"], field_id
+    # A raw read of the real-index tensor (outside the class accessor) differs: the shown entry is
+    # benched in one engine state and in play in the other.
+    raw_real = pack(index(), game().vocabulary, real)["fields"]["roster.is_active"][0]
+    raw_shown = pack(index(), game().vocabulary, shown)["fields"]["roster.is_active"][0]
+    assert raw_real[target] == 0
+    assert raw_shown[target] == 1
+
+
+def test_values_planted_at_the_real_roster_index_never_change_the_other_seats_view() -> None:
+    """The canary on the Illusion battle: every roster value held at the real index of the other
+    side (in play, fainted, transformed, a benched Pokemon's stages) is planted."""
+    battle, point, _, _, _ = illusion_point()
+    real = point_of(battle, point)
+    planted = {**real, "state": plant_engine(real["state"], "p2")}
+    before = view_digest(project(index(), pack(index(), game().vocabulary, real), "p2"))
+    after = view_digest(project(index(), pack(index(), game().vocabulary, planted), "p2"))
+    assert before == after
 
 
 def test_a_view_holds_no_hidden_field_no_other_seat_row_and_no_other_side_own_exact_field() -> None:
@@ -347,3 +464,10 @@ def test_the_projection_imports_no_runner_trace_or_omniscient_log_reader() -> No
         text = path.read_text()
         for name in ("inspector", "resimulate", "omniscient", "areneon_ml.loop", "subprocess"):
             assert name not in text, (path.name, name)
+
+
+def test_a_frame_the_server_cannot_answer_is_an_error_reply_not_a_dead_child() -> None:
+    reply = Server(index(), game()).answer({"kind": "view", "id": "g/1/p1", "seat": "p1"})
+    assert reply["id"] == "g/1/p1"
+    assert reply["status"] == "error"
+    assert reply["code"] == "KeyError"

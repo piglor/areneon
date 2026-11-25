@@ -3,10 +3,10 @@
 // last line its seat got in the step is refused with a `ProjectionPointError` (the real recordings are in the corpus gate).
 import { describe, expect, it, vi } from "vitest";
 
-const recorded: { value: any } = { value: undefined };
+const recorded: { value: any; skipStates?: boolean } = { value: undefined };
 vi.mock("../src/battle-trace.ts", () => ({
   recordBattleTrace: async (_engine: unknown, _spec: unknown, options: { onStep?: (step: number, battle: unknown) => void }) => {
-    recorded.value.steps.forEach((_: unknown, k: number) => options.onStep?.(k, { toJSON: () => ({ sides: [], field: {} }) }));
+    if (recorded.skipStates !== true) recorded.value.steps.forEach((_: unknown, k: number) => options.onStep?.(k, { toJSON: () => ({ sides: [], field: {} }) }));
     return { trace: recorded.value, record: { manifest: {} } };
   },
 }));
@@ -32,5 +32,15 @@ describe("projectionBattle on a stand-in recorder", () => {
     await expect(projectionBattle({} as any, spec, noSpec)).rejects.toThrow(ProjectionPointError);
     recorded.value = { steps: [{ channels: { p1: ["|request|{}", "|turn|2"], p2: [] }, requests: { p1: [request], p2: [] } }] };
     await expect(projectionBattle({} as any, spec, noSpec)).rejects.toThrow(/not the last line/);
+  });
+
+  it("refuses a recording whose steps and engine states do not pair up", async () => {
+    recorded.value = { steps: [{ channels: { p1: [], p2: [] }, requests: { p1: [], p2: [] } }] };
+    recorded.skipStates = true;
+    try {
+      await expect(projectionBattle({} as any, spec, noSpec)).rejects.toThrow(/gave 0 states for 1 steps/);
+    } finally {
+      recorded.skipStates = false;
+    }
   });
 });

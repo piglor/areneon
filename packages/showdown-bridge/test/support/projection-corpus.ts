@@ -20,7 +20,7 @@ export const CORPUS_TIMEOUT_MS = 3_600_000;
 /** What the child answers (the fields this test reads). */
 export interface Reply {
   id: string;
-  status: "equal" | "different" | "refused" | "ok";
+  status: "equal" | "different" | "refused" | "ok" | "error";
   code?: string;
   differences?: unknown;
   canary?: { engine: boolean; tensors: boolean };
@@ -30,17 +30,35 @@ export interface Reply {
 /** One line out, one line back: the projection child (`python -m areneon_ml.projection serve`). */
 export class Child {
   readonly process: ChildProcessWithoutNullStreams;
-  readonly #waiting: ((line: string) => void)[] = [];
-  constructor() {
-    const args = ["-m", "areneon_ml.projection", "serve", "--engine-data", join(GOLDEN_DIR, "engine-data-2.json"), "--spec", SPEC_V2_PATH];
+  readonly #waiting: { resolve: (line: string) => void; reject: (error: Error) => void }[] = [];
+  /** `args` replaces the server's command line (a test seam: a child that dies). */
+  constructor(args: string[] = ["-m", "areneon_ml.projection", "serve", "--engine-data", join(GOLDEN_DIR, "engine-data-2.json"), "--spec", SPEC_V2_PATH]) {
     this.process = spawn(PYTHON, args, { cwd: ROOT, stdio: ["pipe", "pipe", "pipe"] });
     this.process.stderr.on("data", (chunk) => process.stderr.write(chunk));
-    createInterface({ input: this.process.stdout }).on("line", (line) => this.#waiting.shift()?.(line));
+    createInterface({ input: this.process.stdout }).on("line", (line) => this.#waiting.shift()?.resolve(line));
+    // A dead child answers nothing more: fail every pending and later ask at once (not at the test's timeout).
+    const failAll = (why: string) => {
+      this.#dead = why;
+      for (const waiting of this.#waiting.splice(0)) waiting.reject(new Error(why));
+    };
+    this.process.on("exit", (code, signal) => failAll(`the projection child exited (code ${code}, signal ${signal})`));
+    this.process.on("error", (error) => failAll(`the projection child failed: ${error.message}`));
   }
+  #dead: string | null = null;
   ask(frame: unknown): Promise<Reply> {
-    return new Promise((resolve) => {
-      this.#waiting.push((line) => resolve(JSON.parse(line) as Reply));
-      this.process.stdin.write(`${JSON.stringify(frame)}\n`);
+    return new Promise((resolve, reject) => {
+      if (this.#dead !== null) return reject(new Error(this.#dead));
+      this.#waiting.push({
+        resolve: (line) => {
+          const reply = JSON.parse(line) as Reply & { code?: string; detail?: string };
+          if (reply.status === "error") reject(new Error(`the projection child could not answer ${reply.id}: ${reply.code}: ${reply.detail}`));
+          else resolve(reply);
+        },
+        reject,
+      });
+      this.process.stdin.write(`${JSON.stringify(frame)}\n`, (error) => {
+        if (error) reject(error);
+      });
     });
   }
   close(): void {
@@ -57,8 +75,37 @@ export const pointFrame = (battle: ProjectionBattle, point: ProjectionPoint): un
 
 export const skipProjection = !existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER !== "1";
 
-/** The corpus gate over the battles of one shard: battle k belongs to shard k mod `shards`. */
+/**
+ * What the committed corpora hold at this pin, per shard of four (battle k belongs to shard k mod 4): battles, requests that ask for a
+ * decision, Team Preview requests. Exact, so a request that disappears (a recorder returning no mask, a battle that stops early) fails.
+ */
+const EXPECTED_SHARDS: readonly { battles: number; decisions: number; preview: number }[] = [
+  { battles: 63, decisions: 2253, preview: 126 },
+  { battles: 62, decisions: 1992, preview: 124 },
+  { battles: 62, decisions: 2098, preview: 124 },
+  { battles: 62, decisions: 2230, preview: 124 },
+];
+
+/**
+ * The requests the projection refuses, by battle id and code, and why: every one is in a battle that holds an Illusion user (checked
+ * from the battle's teams). `phantom`: an Illusion twin, a Pokemon shown in two positions (a phantom roster entry the spec's roster
+ * dimension has no row for). `reveal_overflow`: a disguise that never breaks, whose user's moves the reducer attributes to the Pokemon
+ * it is shown as, giving six revealed moves where the spec holds four slots and one extra (search-fidelity b63 and b86). Follow-up:
+ * #1504 (route Illusion teams to Showdown, ADR-030 non-admitted entity rule). Any other refusal fails.
+ */
+const EXPECTED_REFUSALS: Record<string, Record<string, number>> = {
+  "search-fidelity/b160": { phantom: 6 },
+  "search-fidelity/b43": { phantom: 6 },
+  "search-fidelity/b50": { phantom: 4 },
+  "search-fidelity/b63": { reveal_overflow: 14 },
+  "search-fidelity/b86": { phantom: 8, reveal_overflow: 3 },
+};
+
+const holdsIllusionUser = (teams: Record<string, { ability?: string }[]>): boolean => Object.values(teams).some((team) => team.some((set) => (set.ability ?? "").toLowerCase() === "illusion"));
+
+/** The corpus gate over the battles of one shard: battle k belongs to shard k mod `shards` (4: the pinned counts above). */
 export function projectionCorpusShard(shard: number, shards: number): void {
+  if (shards !== EXPECTED_SHARDS.length) throw new Error(`the corpus gate pins its counts for ${EXPECTED_SHARDS.length} shards`);
   describe.skipIf(skipProjection)(`the battle-state projection against the encoder (record v2), corpus shard ${shard + 1} of ${shards}`, () => {
     let engine: Engine;
     let record: BattleStateSpec;
@@ -69,51 +116,58 @@ export function projectionCorpusShard(shard: number, shards: number): void {
       child = new Child();
     });
     afterAll(() => child?.close());
-  it(
-    "is bit-equal to Encoder.encode at every request of both seats of every committed corpus, and the canary holds at each",
-    async () => {
-      const counts = { battles: 0, decisions: 0, equal: 0, preview: 0, battle: 0, refused: {} as Record<string, number>, canary: 0, canaryEngine: 0 };
-      const different: string[] = [];
-      const leaks: string[] = [];
-      let k = -1;
-      for (const { spec } of committedBattles()) {
-        k += 1;
-        if (k % shards !== shard) continue;
-        const battle = await projectionBattle(engine, spec, record);
-        counts.battles += 1;
-        for (const point of battle.points) {
-          for (const decision of point.decisions) {
-            counts.decisions += 1;
-            counts[decision.query.observation.kind === "preview" ? "preview" : "battle"] += 1;
-            const reply = await child.ask({ kind: "check", id: `${battle.battle_id}/${point.step}/${decision.seat}`, point: pointFrame(battle, point), seat: decision.seat, query: decision.query });
-            if (reply.status === "refused") {
-              const code = reply.code ?? "none";
-              counts.refused[code] = (counts.refused[code] ?? 0) + 1;
-              continue;
+
+    it(
+      "is bit-equal to Encoder.encode at every request of both seats of every committed corpus, and the canary holds at each",
+      async () => {
+        const counts = { battles: 0, decisions: 0, equal: 0, preview: 0, canary: 0, canaryEngine: 0 };
+        const refused: Record<string, Record<string, number>> = {};
+        const withoutIllusionUser: string[] = [];
+        const ids = new Set<string>();
+        const different: string[] = [];
+        const leaks: string[] = [];
+        let k = -1;
+        for (const { spec } of committedBattles()) {
+          k += 1;
+          if (k % shards !== shard) continue;
+          const battle = await projectionBattle(engine, spec, record);
+          counts.battles += 1;
+          ids.add(battle.battle_id);
+          for (const point of battle.points) {
+            for (const decision of point.decisions) {
+              counts.decisions += 1;
+              if (decision.query.observation.kind === "preview") counts.preview += 1;
+              const reply = await child.ask({ kind: "check", id: `${battle.battle_id}/${point.step}/${decision.seat}`, point: pointFrame(battle, point), seat: decision.seat, query: decision.query });
+              if (reply.status === "refused") {
+                const code = reply.code ?? "none";
+                const own = (refused[battle.battle_id] ??= {});
+                own[code] = (own[code] ?? 0) + 1;
+                if (!holdsIllusionUser(battle.teams as never) && !withoutIllusionUser.includes(battle.battle_id)) withoutIllusionUser.push(battle.battle_id);
+                continue;
+              }
+              if (reply.status === "equal") counts.equal += 1;
+              else if (different.length < 20) different.push(`${reply.id}: ${JSON.stringify(reply.differences)}`);
+              counts.canary += 1;
+              if (reply.canary?.engine === true && reply.canary.tensors) counts.canaryEngine += 1;
+              else if (leaks.length < 20) leaks.push(`${reply.id}: ${JSON.stringify(reply.canary)}`);
             }
-            if (reply.status === "equal") counts.equal += 1;
-            else if (different.length < 20) different.push(`${reply.id}: ${JSON.stringify(reply.differences)}`);
-            counts.canary += 1;
-            if (reply.canary?.engine === true && reply.canary.tensors) counts.canaryEngine += 1;
-            else if (leaks.length < 20) leaks.push(`${reply.id}: ${JSON.stringify(reply.canary)}`);
           }
         }
-      }
-      console.log(JSON.stringify(counts));
-      expect(different).toEqual([]);
-      expect(leaks).toEqual([]);
-      expect(counts.battles).toBeGreaterThan(Math.floor(240 / shards) - 1);
-      expect(counts.decisions).toBeGreaterThan(Math.floor(7000 / shards) - 400);
-      expect(counts.preview).toBeGreaterThan(Math.floor(400 / shards) - 40);
-      // Only the reader's Illusion limits may be refused, each counted: a twin (a phantom roster entry the spec's roster dimension has
-      // no row for) and a disguise that never breaks, whose user's moves the reducer attributes to the Pokemon it is shown as (a
-      // list of six revealed moves, which the spec's four slots and one extra cannot hold: search-fidelity b63 and b86 at this pin).
-      expect(Object.keys(counts.refused).filter((code) => code !== "phantom" && code !== "reveal_overflow")).toEqual([]);
-      expect(counts.refused.reveal_overflow ?? 0).toBeLessThanOrEqual(17);
-      expect(counts.equal + Object.values(counts.refused).reduce((a, b) => a + b, 0)).toBe(counts.decisions);
-    },
-    CORPUS_TIMEOUT_MS,
-  );
-
+        console.log(JSON.stringify({ shard, ...counts, refused }));
+        expect(different).toEqual([]);
+        expect(leaks).toEqual([]);
+        const want = EXPECTED_SHARDS[shard] as { battles: number; decisions: number; preview: number };
+        expect({ battles: counts.battles, decisions: counts.decisions, preview: counts.preview }).toEqual(want);
+        // The refusals are exactly the pinned ones of this shard's battles, each in a battle that holds an Illusion user.
+        const shardBattles = Object.fromEntries(Object.entries(EXPECTED_REFUSALS).filter(([id]) => ids.has(id)));
+        expect(refused).toEqual(shardBattles);
+        expect(withoutIllusionUser).toEqual([]);
+        const refusedCount = Object.values(refused).reduce((n, codes) => n + Object.values(codes).reduce((a, b) => a + b, 0), 0);
+        expect(counts.equal + refusedCount).toBe(counts.decisions);
+        expect(counts.canary).toBe(counts.equal);
+        expect(counts.canaryEngine).toBe(counts.equal);
+      },
+      CORPUS_TIMEOUT_MS,
+    );
   });
 }

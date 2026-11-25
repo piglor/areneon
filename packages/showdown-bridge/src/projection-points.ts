@@ -102,6 +102,7 @@ export async function projectionBattle(engine: Engine, spec: TraceSpec, record_s
       states.push(trimState(record_spec, json));
     },
   });
+  if (states.length !== trace.steps.length) throw new ProjectionPointError(`${spec.battle_id}: the recorder gave ${states.length} states for ${trace.steps.length} steps`);
   const channels: Record<Seat, string[]> = { p1: [], p2: [] };
   const points: ProjectionPoint[] = [];
   for (const [k, step] of trace.steps.entries()) {

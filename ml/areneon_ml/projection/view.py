@@ -138,7 +138,7 @@ def _roster(  # noqa: PLR0915
         mon.hp_num = None if hp < 0 else hp
         mon.hp_den = at("seat_roster.hp_den_shown") or None
         mon.status = v.id("seat_roster.status_shown", at("seat_roster.status_shown"))
-        mon.fainted = bool(at("roster.fainted"))
+        mon.fainted = bool(at("seat_roster.fainted_shown"))
         mon.brought = (None, False, True)[at("seat_roster.brought")]
         mon.item = v.id("seat_roster.shown_item", at("seat_roster.shown_item"))
         mon.item_known = bool(at("seat_roster.item_known"))

@@ -28,7 +28,7 @@ const SPEC_HASH = "044a8a0863f86c9795740e0f02097cdcee548e121ec99cbc551db5a2fcd57
 // Record v2 (#1464): v1 plus what the projection needs (the own Pokemon that were not brought, the own base species over a Mega
 // Evolution, raw numbered volatile ids, a fifth revealed move, the slot occupant's stages); v1 stays as it was.
 const SPEC_V2_PATH = new URL(`../../../config/engine-state/${GOLDEN_FORMAT}/battle-state-spec.v2.json`, import.meta.url);
-const SPEC_V2_HASH = "69fb5894cce780c458646648ca1ad92bf6906b15423e458bb2e8e18d2e3303c1";
+const SPEC_V2_HASH = "210ee696434e4eb2c02797b24061620d53e202f0c9dea8950fcf5d780d8255c9";
 
 let engine: Engine;
 let spec: BattleStateSpec;
@@ -336,7 +336,9 @@ describe("the committed battle-state spec, record v2 (#1464)", () => {
       expect(kept, f.id).toBeDefined();
       // Only descriptions may say more; class, source, shape and value are v1's.
       // The one widened range: v1's 0..127 cannot hold the stall counter's 729 (see "engine-side counter ranges").
-      const widened = f.id === "active.volatile_counter" ? { dtype: "int16", value: { kind: "range", min: 0, max: 1023 } } : {};
+      // The roster values held at the real index are own-exact: an Illusion user would show through the entry it is shown as, so another seat reads seat fields.
+      const realIndex = ["roster.boosts", "roster.fainted", "roster.is_active", "roster.transformed"];
+      const widened = f.id === "active.volatile_counter" ? { dtype: "int16", value: { kind: "range", min: 0, max: 1023 } } : realIndex.includes(f.id) ? { visibility: "own-exact", projection: "none" } : {};
       expect({ ...kept, description: "" }, f.id).toEqual({ ...f, ...widened, description: "" });
     }
     const added = specV2.fields.filter((f) => !spec.fields.some((g) => g.id === f.id)).map((f) => f.id);
@@ -350,6 +352,7 @@ describe("the committed battle-state spec, record v2 (#1464)", () => {
       "seat_active.volatile_started_count",
       "seat_active.volatile_stat_raw",
       "seat_roster.ability_suppressed",
+      "seat_roster.fainted_shown",
       "seat_roster.hp_den_shown",
       "seat_roster.own_can_mega_evo",
       "seat_roster.own_moves",
