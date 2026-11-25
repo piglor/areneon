@@ -13,24 +13,29 @@ gives equal the full pass's, and two processes writing at once leave a marker th
 from __future__ import annotations
 
 import dataclasses
+import importlib.util
 import json
 import os
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from importlib import metadata
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
+import areneon_contracts
+import areneon_ml
 import pytest
+from areneon_contracts import contracts
 from areneon_contracts.contracts import ContractError, jcs, sha256_hex
 from areneon_contracts.training import check_stream_digest, check_stream_file
 from areneon_ml.learner import imitation, teacher_marker
 from areneon_ml.learner.data import LearnerDataError, _Collector
-from areneon_ml.learner.imitation import open_teacher
+from areneon_ml.learner.imitation import TeacherSet, open_teacher
 from areneon_ml.model.encoder import Encoder
 from areneon_ml.model.network import ROLES
 
@@ -210,10 +215,34 @@ def wrong_role(version: str = "enc-v", data: str = "e" * 64) -> dict[str, Any]:
     return out
 
 
-def other_libraries(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    real = teacher_marker.library_versions
-    monkeypatch.setattr(teacher_marker, "library_versions", lambda: {**real(), "jsonschema": "0"})
-    return build()
+#: Every library the verdict runs on, by distribution name: the contract check (jsonschema and
+#: what it resolves references with), the models (pydantic), the hash (rfc8785), the tensors.
+LIBRARIES = (
+    "attrs",
+    "jsonschema",
+    "jsonschema-specifications",
+    "pydantic",
+    "pydantic-core",
+    "referencing",
+    "rfc8785",
+    "rpds-py",
+    "torch",
+)
+
+
+def other_library(name: str) -> Callable[[pytest.MonkeyPatch], dict[str, Any]]:
+    """The key after the installed version of one library changed (and no other)."""
+
+    def change(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+        real = metadata.version
+
+        def version(distribution: str) -> str:
+            return "9.9.9" if distribution == name else real(distribution)
+
+        monkeypatch.setattr(metadata, "version", version)
+        return build()
+
+    return change
 
 
 PARTS: dict[str, Callable[[pytest.MonkeyPatch], dict[str, Any]]] = {
@@ -225,7 +254,7 @@ PARTS: dict[str, Callable[[pytest.MonkeyPatch], dict[str, Any]]] = {
     "the validating code": lambda mp: (
         mp.setattr(teacher_marker, "code_identity", lambda roots=None: "0" * 64) or build()
     ),
-    "a library the validator uses": other_libraries,
+    **{f"the version of {name}": other_library(name) for name in LIBRARIES},
 }
 
 
@@ -252,7 +281,8 @@ def test_the_key_holds_the_encoder_of_every_role_and_the_libraries(tmp_path: Pat
     key = build()
     assert set(key["encoders"]) == set(ROLES)
     assert key["encoders"]["battle"] == {"engine_data_hash": "e" * 64, "version": "enc-v"}
-    assert {"jsonschema", "pydantic", "torch"} <= set(key["libraries"])
+    assert set(key["libraries"]) == set(LIBRARIES)
+    assert tuple(sorted(teacher_marker.LIBRARIES)) == LIBRARIES
     assert key["code_sha256"] == teacher_marker.code_identity()
 
 
@@ -731,7 +761,7 @@ def test_a_library_that_is_not_installed_is_named_with_no_version(
         raise metadata.PackageNotFoundError(name)
 
     monkeypatch.setattr(metadata, "version", missing)
-    assert teacher_marker.library_versions() == {"jsonschema": "", "pydantic": "", "torch": ""}
+    assert teacher_marker.library_versions() == dict.fromkeys(LIBRARIES, "")
 
 
 def test_a_marker_larger_than_any_marker_is_not_read(
@@ -763,3 +793,148 @@ def test_a_failed_rename_that_cannot_clean_up_still_returns_false(
     monkeypatch.setattr(os, "unlink", refuse)
     assert teacher_marker.write_marker(tmp_path, build(), OFFSETS) is False
     assert not markers(tmp_path)
+
+
+# -- review of #420: the identity at import, the size limit, the vanished stream, stale files -----
+
+
+def source_tree(base: Path) -> None:
+    """A tiny stand-in for the three trees the code identity reads."""
+    for name, text in {
+        "ml/areneon_ml/__init__.py": "",
+        "ml/areneon_ml/reducer/reducer.py": "x = 1\n",
+        "ml/areneon_ml/reducer/data/table.json": "[1]\n",
+        "packages/schema/python/areneon_contracts/__init__.py": "",
+        "packages/schema/python/areneon_contracts/training.py": "y = 2\n",
+        "packages/schema/contracts/v1/training-example.schema.json": "{}\n",
+    }.items():
+        path = base / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+
+def import_afresh(monkeypatch: pytest.MonkeyPatch, base: Path) -> ModuleType:
+    """``teacher_marker`` imported again (as a process start does) while the default roots are the
+    stand-in tree."""
+    monkeypatch.setattr(areneon_ml, "__file__", str(base / "ml/areneon_ml/__init__.py"))
+    monkeypatch.setattr(
+        areneon_contracts,
+        "__file__",
+        str(base / "packages/schema/python/areneon_contracts/__init__.py"),
+    )
+    monkeypatch.setattr(contracts, "CONTRACTS", base / "packages/schema/contracts")
+    spec = importlib.util.spec_from_file_location("teacher_marker_afresh", teacher_marker.__file__)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        ("ml/areneon_ml/reducer/reducer.py", "x = 2\n"),
+        ("ml/areneon_ml/reducer/data/table.json", "[2]\n"),
+        ("packages/schema/python/areneon_contracts/training.py", "y = 3\n"),
+        ("packages/schema/contracts/v1/training-example.schema.json", '{"a": 1}\n'),
+        ("ml/areneon_ml/reducer/added.py", "z = 1\n"),
+    ],
+)
+def test_the_key_carries_the_identity_of_the_code_as_it_was_imported(
+    edit: tuple[str, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source_tree(tmp_path)
+    module = import_afresh(monkeypatch, tmp_path)
+    imported = module._identity(module.default_roots())
+    # the sources are edited or switched after the process started (an experiment worktree) ...
+    (tmp_path / edit[0]).write_text(edit[1])
+    assert module._identity(module.default_roots()) != imported  # (the edit is seen by a re-read)
+    # ... and the key written after the pass still names the code the pass ran on
+    key = module.marker_key(
+        training_set_hash="a" * 64,
+        stream_sha256="b" * 64,
+        stream_bytes=10,
+        encoders=fake_encoders(),
+    )
+    assert key["code_sha256"] == imported
+    assert module.code_identity() == imported
+
+
+def test_a_marker_padded_beyond_the_size_limit_is_not_read(tmp_path: Path) -> None:
+    key = build()
+    with_marker(tmp_path, key)
+    path = teacher_marker.marker_path(tmp_path, key)
+    limit = 64 * 1024 * 1024
+    assert limit == teacher_marker.MAX_MARKER_BYTES
+    with path.open("ab") as handle:  # trailing white space keeps the JSON and its hash valid
+        handle.write(b" " * (limit + 1 - path.stat().st_size))
+    assert path.stat().st_size == limit + 1
+    assert teacher_marker.read_marker(tmp_path, key) is None
+    path.write_bytes(path.read_bytes()[:limit])  # at the limit it is read again
+    assert teacher_marker.read_marker(tmp_path, key) == OFFSETS
+
+
+def test_a_stream_that_vanishes_after_the_pass_is_no_error_and_leaves_no_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory, manifest, digest = teacher_dir(tmp_path)
+    stream = directory / "stream.jsonl"
+    real = imitation._full_pass
+
+    def vanishing(*args: Any, **kwargs: Any) -> Any:
+        found = real(*args, **kwargs)
+        stream.unlink()
+        return found
+
+    monkeypatch.setattr(imitation, "_full_pass", vanishing)
+    assert len(open_teacher(stream, manifest, digest, encoders())) == 55
+    assert not markers(directory)
+
+
+def test_stale_temporary_files_are_removed_when_a_marker_is_written(tmp_path: Path) -> None:
+    old = time.time() - 2 * 24 * 3600
+    stale = tmp_path / f".{teacher_marker.PREFIX}stale.partial"
+    fresh = tmp_path / f".{teacher_marker.PREFIX}fresh.partial"
+    foreign = tmp_path / ".other.partial"
+    for path in (stale, fresh, foreign):
+        path.write_bytes(b"x")
+    for path in (stale, foreign):
+        os.utime(path, (old, old))
+    assert teacher_marker.write_marker(tmp_path, build(), OFFSETS)
+    # a writer that is still at work keeps its file; only an old one of ours goes
+    assert (stale.exists(), fresh.exists(), foreign.exists()) == (False, True, True)
+
+
+def test_a_stale_file_that_cannot_be_removed_does_not_fail_the_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stale = tmp_path / f".{teacher_marker.PREFIX}stale.partial"
+    stale.write_bytes(b"x")
+    old = time.time() - 2 * 24 * 3600
+    os.utime(stale, (old, old))
+    real = os.unlink
+
+    def refuse(path: Any, *args: Any, **kwargs: Any) -> None:
+        if Path(path) == stale:
+            raise PermissionError("kept")
+        real(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "unlink", refuse)
+    assert teacher_marker.write_marker(tmp_path, build(), OFFSETS)
+    assert stale.exists()
+
+
+def test_fetch_refuses_an_offset_that_is_not_a_battle_example(tmp_path: Path) -> None:
+    directory, manifest, digest = teacher_dir(tmp_path)
+    stream = directory / "stream.jsonl"
+    opened = open_teacher(stream, manifest, digest, encoders())
+    starts, position = [], 0
+    for raw in stream.read_bytes().splitlines(keepends=True):
+        starts.append((position, json.loads(raw)["observation"]["kind"]))
+        position += len(raw)
+    preview = next(start for start, kind in starts if kind == "preview")
+    wrong = TeacherSet(stream, [preview], encoders()["battle"])
+    with pytest.raises(LearnerDataError, match="not a Battle example"):
+        wrong.fetch([0])
+    assert len(opened.fetch([0])) == 1  # a Battle offset still fetches

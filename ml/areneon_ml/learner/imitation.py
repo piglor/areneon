@@ -89,6 +89,10 @@ class TeacherSet:
             for i in indices:
                 handle.seek(self._offsets[i])
                 example = json.loads(handle.readline())
+                if example["observation"]["kind"] != "battle":  # offsets are Battle starts only
+                    raise LearnerDataError(
+                        f"teacher example {i} (offset {self._offsets[i]}) is not a Battle example"
+                    )
                 chosen = [c["choice"] for c in example["candidates"]].index(example["choice"])
                 out.append(Step(_encode(self._encoder, example), chosen))
         return tuple(out)
@@ -133,6 +137,15 @@ def _full_pass(
     return offsets
 
 
+def _size(stream: Path) -> int | None:
+    """The stream's size, or ``None`` where it cannot be read (it is gone: no marker is written
+    for a file that is not there, and the pass already returned what it found)."""
+    try:
+        return stream.stat().st_size
+    except OSError:
+        return None
+
+
 def _marker_key(
     stream: Path, manifest: Mapping[str, Any], found: str, encoders: dict[str, Encoder]
 ) -> dict[str, Any] | None:
@@ -141,9 +154,8 @@ def _marker_key(
     digest = manifest.get("stream_sha256")
     if not isinstance(digest, str):
         return None
-    try:
-        size = stream.stat().st_size
-    except OSError:
+    size = _size(stream)
+    if size is None:
         return None
     return teacher_marker.marker_key(
         training_set_hash=found, stream_sha256=digest, stream_bytes=size, encoders=encoders
@@ -190,7 +202,7 @@ def open_teacher(
         if offsets is not None and _digest_holds(stream, manifest):
             return TeacherSet(stream, offsets, encoders["battle"])
     offsets = _full_pass(stream, manifest, encoders)
-    if key is not None and stream.stat().st_size == key["stream_bytes"]:
+    if key is not None and _size(stream) == key["stream_bytes"]:
         teacher_marker.write_marker(stream.parent, key, offsets)
     return TeacherSet(stream, offsets, encoders["battle"])
 

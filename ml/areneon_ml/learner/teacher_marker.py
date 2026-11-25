@@ -27,11 +27,11 @@ processes writing at once leave one whole file (their bytes are equal).
 from __future__ import annotations
 
 import contextlib
-import functools
 import hashlib
 import json
 import os
 import tempfile
+import time
 from collections.abc import Mapping, Sequence
 from importlib import metadata
 from pathlib import Path
@@ -49,11 +49,28 @@ FORMAT = "teacher-marker/1"
 PREFIX = "verified-"
 SUFFIX = ".json"
 
-#: The largest marker read: an offset takes at most 16 bytes, so this is far beyond any stream.
-MAX_MARKER_BYTES = 256 * 1024 * 1024
+#: The largest marker read: the real marker of a 66,590-example stream is 705 KB (an offset takes
+#: at most 16 bytes), so this is two orders of magnitude beyond any stream this loop reads.
+MAX_MARKER_BYTES = 64 * 1024 * 1024
 
-#: The libraries whose behaviour the validation runs on (contract checks, models, tensors).
-LIBRARIES = ("jsonschema", "pydantic", "torch")
+#: A temporary file of ours older than this is the remains of a killed writer (a writer holds one
+#: for milliseconds), and the next writer removes it.
+STALE_PARTIAL_SECONDS = 24 * 3600
+
+#: The libraries (distribution names) whose behaviour the validation runs on: the contract check
+#: (jsonschema and what it resolves references with), the models (pydantic), the hash (rfc8785)
+#: and the tensors. A library that is not installed is named with no version.
+LIBRARIES = (
+    "attrs",
+    "jsonschema",
+    "jsonschema-specifications",
+    "pydantic",
+    "pydantic-core",
+    "referencing",
+    "rfc8785",
+    "rpds-py",
+    "torch",
+)
 
 #: A root of the code identity: a directory and the file patterns under it that count.
 Root = tuple[Path, tuple[str, ...]]
@@ -93,9 +110,18 @@ def _identity(roots: Sequence[Root]) -> str:
     return digest.hexdigest()
 
 
-@functools.cache
-def _default_identity() -> str:
-    return _identity(default_roots())
+#: The identity of the code as it was when this module was imported, which is when the process
+#: started (``imitation`` imports it). The pass that a marker records runs minutes later, so
+#: reading the files at the first use would name whatever the tree holds by then: a worktree whose
+#: sources were edited or switched while the process loaded the stream would be recorded with the
+#: new code's identity for a verdict the old code gave, and a later process on the new code would
+#: skip a validation it never did. Fixed at import, the key names the code the process began with.
+#: Residual, stated: the hash is of the files, not of what is in memory. A first-party module that
+#: is imported lazily after this point (the generated pydantic models are loaded by name on first
+#: use) is read from the tree as it is then, so an edit of such a file during the pass is not
+#: caught; the test that every module ``imitation`` imports is in the identity keeps that set to
+#: the lazy ones, and the window is the one of a source tree edited under a running process.
+_IMPORTED_IDENTITY = _identity(default_roots())
 
 
 def code_identity(roots: Sequence[Root] | None = None) -> str:
@@ -104,9 +130,9 @@ def code_identity(roots: Sequence[Root] | None = None) -> str:
     Under the default roots it is the identity of the code that validates and encodes the stream,
     so a change to any of it, a moved or a new file included, is another key. The paths are
     relative to the roots, so the same tree gives the same identity wherever it is checked out.
-    It is computed once per process for the default roots.
+    The default is the identity at import (``_IMPORTED_IDENTITY``), not at the call.
     """
-    return _identity(roots) if roots is not None else _default_identity()
+    return _identity(roots) if roots is not None else _IMPORTED_IDENTITY
 
 
 def library_versions() -> dict[str, str]:
@@ -195,9 +221,21 @@ def read_marker(directory: Path, key: Mapping[str, Any]) -> list[int] | None:
     return offsets
 
 
+def _prune_partials(directory: Path) -> None:
+    """Remove the temporary files that killed writers left (older than ``STALE_PARTIAL_SECONDS``);
+    a writer at work keeps its own, and nothing outside our prefix is touched."""
+    limit = time.time() - STALE_PARTIAL_SECONDS
+    with contextlib.suppress(OSError):
+        for path in directory.glob(f".{PREFIX}*.partial"):
+            with contextlib.suppress(OSError):
+                if path.stat().st_mtime < limit:
+                    os.unlink(path)
+
+
 def write_marker(directory: Path, key: Mapping[str, Any], offsets: Sequence[int]) -> bool:
     """Write the marker for ``key`` atomically; ``False`` (nothing written) where the directory
     cannot take it, which never fails a run: the marker only saves time."""
+    _prune_partials(directory)
     data = jcs(_sealed({"format": FORMAT, "key": dict(key), "offsets": list(offsets)})) + b"\n"
     target = marker_path(directory, key)
     partial: str | None = None
