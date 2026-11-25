@@ -1,0 +1,187 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "run_id": "example-run",
+  "report": {
+    "schema_version": 1,
+    "arm": {
+      "id": "showdown",
+      "label": "Showdown path: play-generation.ts, 4 game processes",
+      "parameters": [
+        {
+          "name": "game_processes",
+          "value": 4
+        },
+        {
+          "name": "policy_workers",
+          "value": 1
+        }
+      ]
+    },
+    "plan": {
+      "pool_id": "example-pool",
+      "pool_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "plan_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "config_hash": "3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "counts": {
+      "games": 768,
+      "games_forfeited": 0,
+      "games_on_showdown": 768,
+      "decisions": 10800,
+      "scripted_decisions": 4000
+    },
+    "phases": [
+      {
+        "name": "pool_load",
+        "kind": "warmup",
+        "wall_ms": 34000,
+        "cpu_ms": null
+      },
+      {
+        "name": "play",
+        "kind": "play",
+        "wall_ms": 280000,
+        "cpu_ms": null
+      },
+      {
+        "name": "merge",
+        "kind": "teardown",
+        "wall_ms": 12000,
+        "cpu_ms": null
+      }
+    ],
+    "stages": [
+      {
+        "name": "engine_step",
+        "ms": 210000
+      },
+      {
+        "name": "features",
+        "ms": 520000
+      },
+      {
+        "name": "legal_mask",
+        "ms": 90000
+      },
+      {
+        "name": "observation",
+        "ms": 60000
+      },
+      {
+        "name": "policy_encode",
+        "ms": 70000
+      },
+      {
+        "name": "policy_forward",
+        "ms": 110000
+      }
+    ],
+    "gpu_used": false
+  },
+  "machine": {
+    "logical_cpus": 8,
+    "mem_total_kib": 16777216,
+    "cpu_model": "Example CPU"
+  },
+  "code": {
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "engine_pin": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "tree_clean": true
+  },
+  "conditions": {
+    "mode": "idle",
+    "thresholds": {
+      "max_load1_centi": 100,
+      "max_cpu_busy_ppm": 70000,
+      "min_mem_available_start_kib": 8388608,
+      "min_mem_available_run_kib": 4194304,
+      "max_swap_growth_kib": 0,
+      "forbid_other_runs": true,
+      "require_idle_gpu": true,
+      "max_gpu_util_pct": 5,
+      "max_gpu_mem_used_mib": 2000
+    },
+    "start": {
+      "at_epoch_ms": 1700000000000,
+      "load1_centi": 40,
+      "load5_centi": 90,
+      "mem_available_kib": 20000000,
+      "swap_used_kib": 0,
+      "cpu_busy_ppm": 20000,
+      "gpu_util_pct": 0,
+      "gpu_mem_used_mib": 300
+    },
+    "end": {
+      "at_epoch_ms": 1700000326000,
+      "load1_centi": 40,
+      "load5_centi": 90,
+      "mem_available_kib": 20000000,
+      "swap_used_kib": 0,
+      "cpu_busy_ppm": 560000,
+      "gpu_util_pct": 0,
+      "gpu_mem_used_mib": 300
+    },
+    "interval_ms": 60000,
+    "samples": 7,
+    "min_mem_available_kib": 14000000,
+    "max_swap_used_kib": 0,
+    "breaches": [
+      {
+        "code": "memory_run",
+        "at_ms": 326001
+      }
+    ]
+  },
+  "window": {
+    "started_epoch_ms": 1700000000000,
+    "wall_ms": 326000,
+    "exit_code": 0,
+    "aborted": false
+  },
+  "cpu": {
+    "total_ms": 1520000,
+    "user_ms": 1490000,
+    "system_ms": 30000,
+    "helper_ms": 0,
+    "harness_ms": 3200,
+    "sampled_ms": 1500000,
+    "unsampled_ms": 20000,
+    "processes_seen": 8,
+    "peak_tree_rss_bytes": 3800000000,
+    "survivors": 0,
+    "by_role": [
+      {
+        "role": "game_process",
+        "processes": 4,
+        "cpu_ms": 1200000,
+        "peak_rss_bytes": 800000000
+      },
+      {
+        "role": "policy_worker",
+        "processes": 4,
+        "cpu_ms": 300000,
+        "peak_rss_bytes": 450000000
+      }
+    ]
+  },
+  "gpu": {
+    "used": false,
+    "available": true,
+    "allocated_ms": 0,
+    "util_mean_ppm": 12000,
+    "mem_peak_mib": 320,
+    "samples": 326
+  },
+  "rates": {
+    "decisions_per_core_hour": 25578,
+    "games_per_core_hour": 1818,
+    "decisions_per_wall_hour": 119263,
+    "decisions_per_gpu_hour": null,
+    "decisions_per_core_hour_steady": null
+  },
+  "valid": false,
+  "void_reasons": [
+    "memory_run"
+  ]
+}

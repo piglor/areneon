@@ -44,6 +44,15 @@ node packages/team-dataset/scripts/reducer-sweep.ts --config RUN_CONFIG.json --m
 uv run python scripts/reducer_sweep.py OUT.jsonl...   # reducer and encoder at every request; each refusal kind with a count and its shortest example; exit 1 on any refusal (nothing is excluded; the Illusion `|replace|` is reduced, #851) and on an input that checked nothing; the play script exits 2 on an unknown flag, a missing value, an unknown mix or a `--battles` below 1; `--only-ability Illusion` plays only teams that hold the ability and ignores the config's `excluded_abilities` (the way to sweep Illusion battles); `--only-move a,b` plays only teams that hold one of the moves (names or ids; the Transform sweep of #938)
 ```
 
+Throughput harness (decisions per host-core-hour of an arm; exact host CPU of the arm's whole process tree, the ADR-028 idle-machine guard, one `ThroughputRecord` per run; definitions and protocol in `docs/architecture/throughput.md`; a real baseline needs an idle machine, so run it only as the measurement tickets say):
+
+```bash
+node packages/team-dataset/scripts/throughput-bench.ts run --arm showdown --out OUT --config RUN_CONFIG.json --run-dir RUN --preview ID --battle ID --engine-data E --worker-python W --ids-python PY --game-processes 4,6 --repeats 3 [--mode non-idle --min-mem-gib 10 --nice 19]   # the play-generation.ts path exactly as the loop runs it, interleaved rounds
+node packages/team-dataset/scripts/throughput-bench.ts run --arm command --out OUT --arm-id ID --arm-label TEXT --arm-report FILE -- COMMAND ARGS...   # any other arm: it writes an ArmReport
+node packages/team-dataset/scripts/throughput-bench.ts guard | verify RECORD... | summarise RECORD_OR_DIR...   # idle check now; contract reader; median and range per arm
+python -m areneon_ml.loop.play_ids --config C --engine-data E --preview P --battle B   # the policy id and encoder version a direct play-generation.ts run needs
+```
+
 Re-capture golden fixtures and team verdicts (only after a deliberate Showdown pin bump or engine-facing change; review the diff):
 
 ```bash
