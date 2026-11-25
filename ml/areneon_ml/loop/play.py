@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from areneon_ml.device import GPU_DEVICE
 from areneon_ml.loop import memory_guard as guard
 
 
@@ -208,9 +209,21 @@ class NodePlayer:
                 members=members,
                 metrics_dir=self.run_dir / "metrics",
                 meminfo=self.meminfo,
+                gpu_workers=self._cuda_workers(),
             )
         except guard.MemoryGuardError as exc:
             raise PlayError(str(exc)) from None
+
+    def _cuda_workers(self) -> bool:
+        """Whether the play workers are started from the CUDA Python (the larger worker).
+
+        A rolled-back run (``--inference-cpu``) starts the shipped CPU Python unless it is also
+        given the ``ml/gpu-env`` one, whose workers never touch the card but still import CUDA
+        torch (0.79 GiB measured, #1502): the guard then keeps the CUDA estimate, which is above it.
+        """
+        return self.gpu_inference and (
+            not self.inference_cpu or self.inference_worker_python is not None
+        )
 
     def _starts(self) -> tuple[str, ...]:
         if self.max_concurrent_starts is None:
@@ -248,7 +261,12 @@ class NodePlayer:
                     *("--inference-stats-dir", stats),
                 ),
             )
-            self.last_inference_device.update(read_inference_stats(Path(stats)))
+            reported = read_inference_stats(Path(stats))
+            # A GPU run whose workers left no counts at all is recorded as such (zero workers),
+            # never as a run that has nothing to say: the dashboard then flags the generation.
+            self.last_inference_device.update(
+                reported or no_inference_stats(forced=self.inference_cpu)
+            )
 
     def _play(self, request: PlayRequest, gpu: tuple[str, ...]) -> None:
         out = self._run(
@@ -416,7 +434,8 @@ _STATS_COUNTS = ("device_batches", "cpu_batches", "allocation_fallbacks")
 def read_inference_stats(directory: Path) -> dict[str, Any]:
     """The summed device counts the play workers of a GPU-inference run left in ``directory``.
 
-    Each worker writes ``inference-<pid>.json`` when its session ends (ADR-030 step 4, #1458). A
+    Each worker writes its own ``inference-<pid>-<token>.json`` (ADR-030 step 4, #1458; at its
+    start, while it serves and when its session ends). A
     diagnostic: a file that cannot be read or is not of that shape is ignored, and no file at all
     gives an empty dict (no record). ``forced`` is true when any worker was rolled back.
     """
@@ -444,6 +463,16 @@ def read_inference_stats(directory: Path) -> dict[str, Any]:
     if not found:
         return found
     return {key: found[key] for key in ("device", "workers", *_STATS_COUNTS, "forced")}
+
+
+def no_inference_stats(forced: bool) -> dict[str, Any]:
+    """The record of a GPU-inference generation whose workers left no counts: zero workers."""
+    return {
+        "device": GPU_DEVICE,
+        "workers": 0,
+        **dict.fromkeys(_STATS_COUNTS, 0),
+        "forced": forced,
+    }
 
 
 def _stats_shape(value: object) -> bool:

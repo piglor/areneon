@@ -12,7 +12,11 @@ A worker of a GPU-inference training run (ADR-030 step 4, #1458) is started with
 device in its handshake (so every batch-1 evaluation client refuses it), runs its
 batched passes on the GPU and fails closed to its CPU path on an allocation failure;
 ``--inference-force-cpu`` (the rollback) starts it on that path, and
-``--inference-stats-dir`` is where it leaves its device counts when the session ends.
+``--inference-stats-dir`` is where it leaves its device counts: a file of its own (the pid and a
+random token in the name, so a reused pid cannot overwrite another worker's) written when the
+session starts, rewritten at most once a second while it serves and once more when it ends, so a
+worker that is killed is still counted. A failing write is reported on stderr and never changes
+the exit code or hides the session's own error.
 """
 
 from __future__ import annotations
@@ -21,7 +25,10 @@ import argparse
 import json
 import os
 import resource
+import secrets
 import sys
+import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +36,7 @@ import torch
 
 from areneon_ml import stopwatch
 from areneon_ml.checkpoint.files import CheckpointFileError, load_checkpoint
+from areneon_ml.device import GPU_DEVICE
 from areneon_ml.model.gamedata import GameData
 from areneon_ml.model.network import ConfigError, ModelConfig
 from areneon_ml.model.options import feature_set, sheet_set
@@ -37,7 +45,7 @@ from areneon_ml.model.runtime import DeviceError, configure_cpu_inference, confi
 from areneon_ml.model.scorer import NetworkScorer, ScorerError
 from areneon_ml.worker.checkpoints import CheckpointError, CheckpointStore
 from areneon_ml.worker.features import damaging_moves
-from areneon_ml.worker.serve import GPU_DEVICE, MIN_BATCH, FeatureSupport, SheetSupport, Worker
+from areneon_ml.worker.serve import MIN_BATCH, FeatureSupport, SheetSupport, Worker
 
 EXIT_CHECKPOINT = 4
 #: The worker was asked for a device this torch cannot use (ADR-030 step 4).
@@ -97,8 +105,8 @@ def build(argv: list[str]) -> Worker:
     parser.add_argument(
         "--inference-stats-dir",
         type=Path,
-        help="leave this GPU-inference worker's device counts here as inference-<pid>.json when "
-        "the session ends",
+        help="leave this GPU-inference worker's device counts here (inference-<pid>-<token>.json: "
+        "written at the start, rewritten while it serves and at the end)",
     )
     parser.add_argument(
         "--profile-dir",
@@ -192,13 +200,63 @@ def write_profile(directory: Path, started: resource.struct_rusage) -> Path:
     return path
 
 
-def write_inference_stats(directory: Path, stats: dict[str, Any]) -> Path:
-    """Leave a GPU-inference worker's device counts in ``directory/inference-<pid>.json``."""
-    path = directory / f"inference-{os.getpid()}.json"
-    partial = directory / f".inference-{os.getpid()}.partial"
+def write_inference_stats(directory: Path, stats: dict[str, Any], token: str | None = None) -> Path:
+    """Leave a GPU-inference worker's device counts in ``directory/inference-<pid>-<token>.json``.
+
+    The token is random unless the caller keeps one to rewrite its own file: the pid alone could
+    be reused by a later worker of the same generation, whose file would then replace this one's.
+    """
+    name = f"inference-{os.getpid()}-{secrets.token_hex(6) if token is None else token}"
+    path = directory / f"{name}.json"
+    partial = directory / f".{name}.partial"
     partial.write_text(json.dumps(stats, sort_keys=True) + "\n", encoding="utf-8")
     partial.replace(path)
     return path
+
+
+class DeviceStatsFile:
+    """One worker's counts file: written at the start, throttled while it serves, once at the end.
+
+    ``stats`` returns the worker's current counts (None for a worker that keeps none, which then
+    leaves no file). Every write is best effort: a failure is reported on stderr (once) and never
+    raised, because the counts are a diagnostic and must not change a session's exit code or hide
+    its error.
+    """
+
+    def __init__(
+        self,
+        directory: Path,
+        stats: Callable[[], dict[str, Any] | None],
+        clock: Callable[[], float] = time.monotonic,
+        interval_s: float = 1.0,
+    ) -> None:
+        self._directory = directory
+        self._stats = stats
+        self._clock = clock
+        self._interval = interval_s
+        self._token = secrets.token_hex(6)
+        self._last: float | None = None
+        self._reported = False
+
+    def write(self) -> None:
+        found = self._stats()
+        if found is None:
+            return
+        try:
+            write_inference_stats(self._directory, found, self._token)
+        except OSError as exc:
+            if not self._reported:  # once: the heartbeat would repeat it every interval
+                self._reported = True
+                print(
+                    f"areneon_ml.worker: could not leave the device counts: {exc}", file=sys.stderr
+                )
+
+    def beat(self) -> None:
+        """Rewrite the file if an interval has passed since the last write (the first call does)."""
+        now = self._clock()
+        if self._last is None or now - self._last >= self._interval:
+            self._last = now
+            self.write()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -210,12 +268,19 @@ def main(argv: list[str] | None = None) -> int:
     except (CheckpointError, CheckpointFileError, ScorerError) as exc:
         print(f"areneon_ml.worker: {exc}", file=sys.stderr)
         return EXIT_CHECKPOINT
+    counts = (
+        None
+        if worker.inference_stats_dir is None
+        else DeviceStatsFile(worker.inference_stats_dir, worker.placement_stats)
+    )
+    if counts is not None:
+        worker.heartbeat = counts.beat
+        counts.write()  # a worker that is killed later is still counted
     try:
         return _serve(worker)
     finally:
-        stats = worker.placement_stats()
-        if worker.inference_stats_dir is not None and stats is not None:
-            write_inference_stats(worker.inference_stats_dir, stats)
+        if counts is not None:
+            counts.write()
 
 
 def _serve(worker: Worker) -> int:

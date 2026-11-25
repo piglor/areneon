@@ -21,7 +21,7 @@ from areneon_ml.learner.data import trajectories
 from areneon_ml.learner.state import pack_state, restore_state
 from areneon_ml.loop import layout
 from areneon_ml.loop.driver import Frozen, Loop
-from areneon_ml.loop.metrics import MetricsError, metrics_path, read_run_metrics
+from areneon_ml.loop.metrics import MetricsError, answered_on, metrics_path, read_run_metrics
 from areneon_ml.loop.play import NodePlayer, PlayRequest, read_inference_stats
 from areneon_ml.loop.records import policy_id
 
@@ -345,19 +345,195 @@ def test_the_corpus_sample_reads() -> None:
     assert read_run_config(raw).generation.inference_device == "cuda"
 
 
+def generations(*records: dict[str, Any] | None) -> list[Any]:
+    """Generation 0 (no play), then one generation per record (None: no metrics file)."""
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    made = [SimpleNamespace(number=0, metrics=None)]
+    for number, record in enumerate(records, start=1):
+        made.append(
+            SimpleNamespace(
+                number=number,
+                metrics=None if record is None else {"inference_device": record, **extra(number)},
+            )
+        )
+    return made
+
+
+def extra(number: int) -> dict[str, Any]:
+    return {
+        "inference_divergence": divergence(decisions=1000 + number),
+    }
+
+
 def test_the_dashboard_names_the_device_and_tabulates_the_counts() -> None:
     from types import SimpleNamespace  # noqa: PLC0415
 
     from areneon_ml.report.render import _device_part  # noqa: PLC0415
 
-    generations = [
-        SimpleNamespace(number=1, metrics={"inference_device": device_counts()}),
-        SimpleNamespace(number=2, metrics=None),
-    ]
     page = _device_part(
-        cast(Any, SimpleNamespace(inference_device="cuda", generations=generations))
+        cast(
+            Any,
+            SimpleNamespace(inference_device="cuda", generations=generations(device_counts())),
+        )
     )
     assert "device: cuda" in page
-    assert ">900<" in page  # passes on the device of generation 1; generation 2 has no record
+    assert ">900<" in page  # passes on the device of generation 1
     assert "--inference-cpu" in page
     assert _device_part(cast(Any, SimpleNamespace(inference_device=None, generations=[]))) == ""
+
+
+def test_a_forced_or_fallen_back_generation_is_not_reported_as_the_gpu_workers() -> None:
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    from areneon_ml.report.render import _device_part, _inference_section  # noqa: PLC0415
+
+    made = generations(
+        device_counts(allocation_fallbacks=0),
+        device_counts(device_batches=0, cpu_batches=800, allocation_fallbacks=0, forced=True),
+        device_counts(device_batches=0, cpu_batches=800, allocation_fallbacks=4),
+        device_counts(allocation_fallbacks=1),
+    )
+    model = cast(
+        Any,
+        SimpleNamespace(inference_device="cuda", inference_max_batch=2, generations=made),
+    )
+    part = _device_part(model)
+    assert "Answered on" in part
+    for label in (
+        "GPU",
+        "CPU path (rolled back)",
+        "CPU path (every worker fell back)",
+        "GPU (1 of 4 workers fell back to the CPU path)",
+    ):
+        assert label in part
+    # the note says what the differing choices are, per label: it no longer claims all are the GPU's
+    assert "guaranteed equal, so the differing choices above" not in part
+    assert "For a generation answered on the GPU the differing choices above" in part
+    assert "CPU batched path" in part
+    # the divergence table names where each generation answered too
+    section = _inference_section(model)
+    assert section.count("CPU path (rolled back)") >= 2  # in the divergence and in the device table
+    assert "Answered on" in section
+
+
+def test_a_gpu_run_lists_every_played_generation_and_flags_the_ones_without_counts() -> None:
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    from areneon_ml.report.render import _device_part  # noqa: PLC0415
+
+    model = cast(
+        Any,
+        SimpleNamespace(
+            inference_device="cuda",
+            generations=generations(
+                device_counts(),
+                None,
+                device_counts(workers=0, device_batches=0, cpu_batches=0, allocation_fallbacks=0),
+            ),
+        ),
+    )
+    page = _device_part(model)
+    # generation 2 has no counts: listed, not dropped; generation 3 recorded zero workers
+    assert page.count('<td class="txt">not recorded</td>') == 1
+    assert page.count('<td class="txt">no worker reported</td>') == 1
+    assert page.count("<tr>") >= 4  # the header and the three played generations
+    empty = cast(Any, SimpleNamespace(inference_device="cuda", generations=generations()))
+    assert "No generation recorded its device counts yet." in _device_part(empty)
+
+
+def test_a_forced_generation_has_neither_a_device_pass_nor_an_allocation_fallback() -> None:
+    config = gpu_config()
+    rolled_back = device_counts(
+        device_batches=0, cpu_batches=30, allocation_fallbacks=0, forced=True
+    )
+    read_run_metrics(metrics_with(config, inference_device=rolled_back), config, 1)
+    with pytest.raises(MetricsError, match="forced"):
+        read_run_metrics(
+            metrics_with(config, inference_device={**rolled_back, "allocation_fallbacks": 1}),
+            config,
+            1,
+        )
+
+
+def test_a_generation_with_no_worker_has_no_counts() -> None:
+    config = gpu_config()
+    none = device_counts(workers=0, device_batches=0, cpu_batches=0, allocation_fallbacks=0)
+    read_run_metrics(metrics_with(config, inference_device=none), config, 1)
+    with pytest.raises(MetricsError, match="no worker"):
+        read_run_metrics(
+            metrics_with(config, inference_device={**none, "device_batches": 3}), config, 1
+        )
+
+
+@pytest.mark.parametrize(
+    ("changes", "label"),
+    [
+        ({"allocation_fallbacks": 0}, "GPU"),
+        (
+            {"allocation_fallbacks": 1, "workers": 4},
+            "GPU (1 of 4 workers fell back to the CPU path)",
+        ),
+        (
+            {"device_batches": 0, "cpu_batches": 9, "allocation_fallbacks": 4, "workers": 4},
+            "CPU path (every worker fell back)",
+        ),
+        ({"device_batches": 0, "cpu_batches": 9, "forced": True}, "CPU path (rolled back)"),
+        (
+            {"workers": 0, "device_batches": 0, "cpu_batches": 0, "allocation_fallbacks": 0},
+            "no worker reported",
+        ),
+        ({"device_batches": 0, "cpu_batches": 0}, "no batched pass"),
+    ],
+)
+def test_answered_on_says_where_a_generation_ran(changes: dict[str, Any], label: str) -> None:
+    assert answered_on(device_counts(**changes)) == label
+
+
+def test_a_gpu_run_whose_workers_left_no_counts_records_zero_workers(tmp_path: Path) -> None:
+    """Not flagged before: a run with no stats at all looked like a run that recorded nothing."""
+
+    class Silent(Recording):
+        def _run(self, script: str, *args: str, **_: Any) -> str:
+            self.calls.append(list(args))  # type: ignore[attr-defined]
+            return json.dumps({"generation": 1})  # no worker leaves a counts file
+
+    player = Silent(
+        repo=tmp_path,
+        node="node",
+        worker_python="/cpu/python",
+        run_dir=tmp_path,
+        config_path=tmp_path / "run-config.json",
+        engine_data=tmp_path / "engine-data.json",
+        encoder_version="enc",
+        memory_guard=False,
+        gpu_inference=True,
+        inference_worker_python="/gpu/python",
+    )
+    object.__setattr__(player, "calls", [])
+    player.play(request(tmp_path))
+    assert player.last_inference_device == {
+        "device": "cuda",
+        "workers": 0,
+        "device_batches": 0,
+        "cpu_batches": 0,
+        "allocation_fallbacks": 0,
+        "forced": False,
+    }
+    config = gpu_config()
+    read_run_metrics(metrics_with(config, inference_device=player.last_inference_device), config, 1)
+    rolled = Silent(
+        repo=tmp_path,
+        node="node",
+        worker_python="/cpu/python",
+        run_dir=tmp_path,
+        config_path=tmp_path / "run-config.json",
+        engine_data=tmp_path / "engine-data.json",
+        encoder_version="enc",
+        memory_guard=False,
+        gpu_inference=True,
+        inference_cpu=True,
+    )
+    object.__setattr__(rolled, "calls", [])
+    rolled.play(request(tmp_path))
+    assert rolled.last_inference_device["forced"] is True

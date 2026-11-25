@@ -229,3 +229,152 @@ def test_learned_peaks_count_only_the_members_a_process_plays(tmp_path: Path) ->
     assert split.per_process_bytes == 3 * GIB
     # without a measurement every member counts whatever S is
     assert guard.estimate(tmp_path / "none", 1, 4, 9) == guard.estimate(tmp_path / "none", 1, 4, 1)
+
+
+# --- #1502: a CUDA policy worker holds a CUDA context in host RAM too --------------------------
+
+#: Peak resident set (VmHWM) of one CUDA policy worker at the real network size (the model of
+#: ``config/training/public-gpu16.json``: d_model 256, 6 layers, 8 heads, d_ff 1024; two seeded
+#: checkpoints of 30 and 32 MB), through the worker CLI with ``env -i`` and the ``ml/gpu-env``
+#: Python, on the RTX 5070 Ti with torch 2.14.1+cu130 (#1502): 1,452 to 1,474 MiB over seven runs
+#: of 15 to 132 queries (batches of 1 to 8), against 449 MiB for the CPU worker on the same
+#: checkpoints. The reviewer of #418 measured 1.52 GB (tiny network) against 0.31 GB.
+MEASURED_CUDA_WORKER_BYTES = 1474 * (1 << 20)
+
+
+def counts(**changes: object) -> dict[str, object]:
+    return {
+        "device": "cuda",
+        "workers": 2,
+        "device_batches": 40,
+        "cpu_batches": 0,
+        "allocation_fallbacks": 0,
+        "forced": False,
+        **changes,
+    }
+
+
+def test_the_cuda_default_is_a_reviewed_constant_above_the_measured_peak() -> None:
+    assert guard.DEFAULT_GPU_POLICY_WORKER_BYTES >= MEASURED_CUDA_WORKER_BYTES
+    # 12 percent of headroom at most: the constant is a measurement, not a guess
+    assert guard.DEFAULT_GPU_POLICY_WORKER_BYTES <= MEASURED_CUDA_WORKER_BYTES * 112 // 100
+    assert guard.DEFAULT_GPU_POLICY_WORKER_BYTES > 3 * guard.DEFAULT_POLICY_WORKER_BYTES
+
+
+def test_the_default_estimate_of_a_run_with_cuda_workers(tmp_path: Path) -> None:
+    found = guard.estimate(tmp_path / "metrics", 2, 1, gpu_workers=True)
+    assert not found.learned
+    assert found.per_process_bytes == (
+        guard.DEFAULT_GAME_PROCESS_BYTES + 2 * guard.DEFAULT_GPU_POLICY_WORKER_BYTES
+    )
+    cpu = guard.estimate(tmp_path / "metrics", 2, 1)
+    assert cpu.per_process_bytes == (
+        guard.DEFAULT_GAME_PROCESS_BYTES + 2 * guard.DEFAULT_POLICY_WORKER_BYTES
+    )
+
+
+def test_twelve_cuda_workers_are_refused_where_twelve_cpu_workers_pass(tmp_path: Path) -> None:
+    """The review's example: ``--game-processes 6 --policy-workers 2`` is twelve workers."""
+    info = meminfo(tmp_path, 19, 6)
+
+    def check(gpu_workers: bool) -> None:
+        guard.check(
+            game_processes=6,
+            policy_workers=2,
+            members=1,
+            metrics_dir=tmp_path / "metrics",
+            meminfo=info,
+            gpu_workers=gpu_workers,
+        )
+
+    check(False)
+    with pytest.raises(guard.MemoryGuardError) as err:
+        check(True)
+    text = str(err.value)
+    assert "2 CUDA policy workers" in text
+    assert "default" in text
+    assert "fits is 3" in text  # (19 - 4) GiB / (0.6 + 2 x 1.6) GiB
+
+
+def test_a_few_cuda_workers_fit(tmp_path: Path) -> None:
+    guard.check(
+        game_processes=2,
+        policy_workers=1,
+        members=1,
+        metrics_dir=tmp_path / "metrics",
+        meminfo=meminfo(tmp_path, 19, 6),
+        gpu_workers=True,
+    )
+
+
+def test_cuda_workers_learn_only_from_generations_that_ran_on_the_device(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    metrics(run, "g000001.json", peaks(GIB, GIB // 2))  # a CPU run's generation: no device counts
+    cpu_path = {**peaks(GIB, GIB // 2), "inference_device": counts(device_batches=0, forced=True)}
+    metrics(run, "g000002.json", cpu_path)  # rolled back: the peak is a CPU worker's
+    every_fell_back = {**peaks(GIB, GIB // 2), "inference_device": counts(device_batches=0)}
+    metrics(run, "g000003.json", every_fell_back)  # every worker fell back before a pass
+    unreported = {**peaks(GIB, GIB // 2), "inference_device": counts(workers=0, device_batches=0)}
+    metrics(run, "g000004.json", unreported)
+    unseen = guard.estimate(run / "metrics", 1, 1, gpu_workers=True)
+    assert not unseen.learned
+    assert unseen.per_process_bytes == (
+        guard.DEFAULT_GAME_PROCESS_BYTES + guard.DEFAULT_GPU_POLICY_WORKER_BYTES
+    )
+    # a CPU estimate still reads the newest file that has both peaks, whatever ran
+    assert guard.estimate(run / "metrics", 1, 1).per_process_bytes == GIB + GIB // 2
+    on_device = {**peaks(GIB, 3 * GIB // 2), "inference_device": counts(device_batches=40)}
+    metrics(run, "g000005.json", on_device)
+    learned = guard.estimate(run / "metrics", 1, 1, gpu_workers=True)
+    assert learned.learned
+    assert learned.per_process_bytes == GIB + 3 * GIB // 2
+
+
+def test_a_cuda_run_is_guarded_with_the_cuda_estimate_and_its_rollback_with_the_cpu_one(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path / "argv.json"
+    request = PlayRequest(1, "policy:x", "p" * 64, "b" * 64, tmp_path / "w")
+    info = meminfo(tmp_path, 19, 6)
+    with pytest.raises(PlayError, match=r"2 CUDA policy workers.*fits is 3"):
+        player(
+            tmp_path,
+            argv_script(out),
+            gpu_inference=True,
+            inference_worker_python="/gpu/python",
+            game_processes=6,
+            policy_workers=2,
+            meminfo=info,
+        ).play(request)
+    assert not out.exists()  # refused before anything started
+    # rolled back to the CPU path (``--inference-cpu``): no CUDA worker starts, so the CPU estimate
+    player(
+        tmp_path,
+        argv_script(out),
+        gpu_inference=True,
+        inference_cpu=True,
+        game_processes=6,
+        policy_workers=2,
+        meminfo=info,
+    ).play(request)
+    assert out.exists()
+    out.unlink()
+    # rolled back but still started from the CUDA Python: the workers import CUDA torch (0.79 GiB
+    # measured), so the guard keeps the CUDA estimate, which is above that
+    with pytest.raises(PlayError, match="CUDA policy workers"):
+        player(
+            tmp_path,
+            argv_script(out),
+            gpu_inference=True,
+            inference_cpu=True,
+            inference_worker_python="/gpu/python",
+            game_processes=6,
+            policy_workers=2,
+            meminfo=info,
+        ).play(request)
+    assert not out.exists()
+    # and a run without the GPU is guarded exactly as before
+    player(tmp_path, argv_script(out), game_processes=6, policy_workers=2, meminfo=info).play(
+        request
+    )
+    assert out.exists()
