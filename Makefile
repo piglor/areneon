@@ -38,6 +38,8 @@ ninjask:
 	ARENEON_REQUIRE_NINJASK=1 pnpm exec vitest run packages/showdown-bridge/test/ninjask-tree.test.ts
 	test "$$(tr -d '[:space:]' < vendor/ninjask/refsim/SHOWDOWN_COMMIT)" = "$$(git ls-tree HEAD vendor/pokemon-showdown | cut -f1 | cut -d' ' -f3)"
 	cd vendor/ninjask && CARGO_TARGET_DIR=$(NINJASK_OUT)/target cargo build --release --locked --features python-module
+	# The native probe process (the declared-state layer, #1534): the backend's tests drive it, so CI builds it with the module.
+	cd vendor/ninjask && CARGO_TARGET_DIR=$(NINJASK_OUT)/target cargo build --release --locked --bin ninjask-probe
 	test -n "$(NINJASK_OUT)"
 	rm -rf "$(NINJASK_OUT)/python/ninjask"
 	mkdir -p $(NINJASK_OUT)/python/ninjask

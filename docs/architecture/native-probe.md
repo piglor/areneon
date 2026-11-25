@@ -16,43 +16,50 @@ Part of the architecture documentation split out of `CLAUDE.md` (index: [README]
 
 **Classes found by the differential (each a regression case in the fork's fixture):** Protean and Libero (the engine's prepare-hit type change, which the read-only calculator does not run); a weather's forme or type change (Forecast, Mimicry, Flower Gift: the engine's setters, clear-then-set on the damage path only; the speed path sets without clearing, and a weather already up is not set again: no event, no draw); a priority move under Psychic Terrain (the dex priority, not the queue's modified one); Armor Tail, Queenly Majesty, Dazzling and Damp (the engine's `TryMove` event with the dex priority; `unsupported query_kind`); the crit vector of a crit-immune defender (the no-crit vector) and the crit rule as the engine's own pair (stage 4 is `1/1`); Expanding Force in Psychic Terrain (the target is drawn again: `random_effect`); tie draws in the event sorts the calculator skips; Beat Up (multi-hit by its `ModifyMove`); charge moves (a stop unless instant in their weather, Electro Shot raising Special Attack first); a move's own `onTryHit` runs inside the hit loop the probe replaces (Brick Break does not break screens in the probe; two screens make the damage events tie: `random_effect`); Magician's after-move sort of two equal-speed targets; one Mega Evolution a side.
 
-## Results (fork commit b66f499, pinned Showdown 7244fe8e)
+## Results (vendored fork commit 18da58a5, pinned Showdown 7244fe8e)
+
+The vendored gitlink, `PINNED_NINJASK_COMMIT` and the ledger's `backend_commit` are one commit; `packages/team-dataset/test/native-ledger-commit.test.ts` runs always (no build) and fails when the committed ledger names another commit than `git ls-tree HEAD vendor/ninjask`. A bump of the gitlink therefore needs a new fresh corpus and ledger (`differential-native-admission.ts fresh`, then `ledger`; the fresh draw's seed derives from the commit).
 
 **Differential.** Native against the TypeScript probe, byte-equal `MechanicsResult` JCS bytes where the native layer answers.
 
-| Corpus | Queries | Answered | Differences |
+| Corpus | Issued | Answered | Differences |
 |---|---|---|---|
-| fresh draw (325 battles, generator pool) | 214,057 issued | 200,000 distinct | 0 (0 count mismatches) |
+| fresh draw (323 battles, generator pool) | 213,471 | 200,000 distinct | 0 (0 count mismatches) |
 | random corpus (40 battles) | 29,006 | 28,856 | 0 |
 | search-fidelity (200 battles) | 126,076 | 124,709 | 0 |
 | unavailable | 1,679 | 1,679 | 0 |
+| targeted | 13 | 11 | 0 |
 | interaction sweep | 16,038 | 16,038 | 0 |
 | move x state sweep | 12,240 | 12,142 | 0 |
 | speed sweep (seed 20261125) | 20,000 | 19,332 | 0 |
 
-Ledger: 1,275 entities listed, 1,024 admitted; 136,597 pairs listed, 101,330 admitted; 0 revoked. Admission hash 34cd3584... Tier: provisional (one fresh corpus of about 214k queries; ADR-031 E5 part h fields tier, battles and audits are not in the ledger contract yet (#1544); 325 fresh battles are recorded here).
+"200,000 distinct" is the size cap of the fresh corpus (`--size`): the ledger takes the first 200,000 distinct answered queries in battle order. "Issued" counts the queries the builder asked, deduplicated within each shard by query hash (the run used one shard), so it is not a count of every call.
 
-**Classes found by the differential, all layer bugs, each with a regression case in the fork's `tests/declared.rs`:** Mega Sol (67 in search-fidelity: the layer did not set the move's current user), Fickle Beam against an immune defender (13: the power draw is never reached), and two Damp holders of equal speed (4: the TryMove sort ties and draws).
+Ledger: 1,275 entities listed, 1,018 admitted; 134,668 pairs listed, 99,711 admitted; 0 revoked. Admission hash 43bf059b... Tier: provisional (one fresh corpus of about 213k queries from 323 battles). The ledger contract has no tier, battles or audits fields yet (ADR-031 E5 part h, #1544), so the battle count is recorded here.
 
-**Abstentions** (explained interface differences, routed to the TS probe through an unadmitted ledger entity): `move:counter`, `move:focuspunch`, `move:mirrorcoat`, `move:chillyreception`, `move:shellsidearm`, `move:aurawheel`, `state:fractional_priority`, `state:status:slp` (and brn, frz, tox, par, psn under a declared sleep or tie draw). In search-fidelity: counter 516, focuspunch 413, mirrorcoat 334, slp 40, chillyreception 36, fractional_priority 16, shellsidearm 12.
+**Classes found by the differential, all layer bugs, each with a regression case in the fork's `tests/declared.rs`:** Mega Sol (67 in search-fidelity: the layer did not set the move's current user), Fickle Beam against an immune defender (13 in an earlier fresh draw: the power draw is never reached), and two Damp holders of equal speed (4: the TryMove sort ties and draws). The fresh draw against the first layer commit found the latter two; the corpus above is a new draw against the fixed commit.
 
-**Speed** (non-idle machine: i7-14700KF 28 logical CPUs, load average 5 to 6.5 from the training queue; release build with debuginfo; one process): over 3,000 builder queries, 2,952 answered, 0 differing.
+**Abstentions** (explained interface differences, routed to the TS probe through an unadmitted ledger entity): `move:counter`, `move:focuspunch`, `move:mirrorcoat`, `move:chillyreception`, `move:shellsidearm`, `move:aurawheel`, `state:fractional_priority`, and declared sleep or tie-draw states (`state:status:slp`, and brn, frz, tox, par, psn in the speed sweep). The report lists the top 25 per corpus.
+
+**CI.** The `ninjask` job builds `ninjask-probe` with the module (`make ninjask`), exports `ARENEON_NINJASK_PROBE` and `ARENEON_NINJASK_DATA`, and runs `native-probe-backend.test.ts` and `differential-native.test.ts` with `ARENEON_REQUIRE_NINJASK=1`, so an absent build fails there. The bound: the tests run the committed corpora, the sweeps, the negative controls and the fixtures (about 13 seconds), not the fresh corpus (about 25 minutes), which is regenerated offline and tied to the vendored commit by the always-run ledger test.
+
+**Speed.** Non-idle machine: i7-14700KF, 28 logical CPUs, load average 4.4 to 5.5 from the training queue; release build with debuginfo; one process at a time. `differential-native-admission.ts bench` over 3,000 builder queries (2,952 answered, 0 differing); it times the TS probe on the same queries, with no warm-up pass and the first call of each path included, so the figures carry that bias.
 
 | Path | median | p99 | mean |
 |---|---|---|---|
-| native through the boundary, single call | 92 us | 297 us | 107 us |
-| native through the boundary, batch of 256 | | | 67 us per query |
-| TypeScript probe | 1,903 us | 5,305 us | 1,794 us |
+| native through the boundary, single call | 80 us | 246 us | 91 us |
+| native through the boundary, batch of 256 | | | 61 us per query |
+| TypeScript probe | 1,833 us | 4,138 us | 1,608 us |
 
-Counters of the bench run (10,986 answered): envelope 784 ms (71 us per query, the probe's own schema validation, set check and hashing), transport plus native layer 687 ms (63 us per query). The native layer alone is below that figure (it includes frame encoding and the pipe).
+Counters of the bench run (10,986 answered): envelope 699 ms (64 us per query: the probe's own schema validation, set check and hashing), transport plus native layer 604 ms (55 us per query, including frame encoding and the pipe; the native calculator alone is not timed separately).
 
-**Feature builder, `probe-damage/2`, per decision** (10 random-corpus battles, 386 decisions, 18.5 queries per decision, native abstentions fall back to the TS probe; `zz`-style measurement, one process):
+**Feature builder, `probe-damage/2`, per decision** (`packages/team-dataset/scripts/builder-cost.ts ts|native [BATTLES]`: 10 random-corpus battles, 386 decisions, 18.5 queries per decision, one memo per game and seat, one query at a time; a query the native layer abstains on is answered by the TS probe; load 4.4 to 4.8; each mode run twice in both orders, within 2%, no warm-up pass):
 
 | | per decision | answering queries | builder's own code |
 |---|---|---|---|
-| TS probe | 36.4 ms | 32.6 ms | 3.8 ms |
-| native backend | 5.7 ms | 2.6 ms | 3.1 ms |
+| TS probe | 32.5 ms | 29.1 ms | 3.3 ms |
+| native backend | 5.2 ms | 2.4 ms | 2.8 ms |
 
-CPU profile over 40 battles (1,608 decisions, native backend; inclusive times, nested and so not additive; one-time schema compilation is in the first decisions): the query envelope (`probeEnvelope`, schema validation and hashing of each query: `canonicalJson` 0.86 ms per decision, `readMechanicsQuery` 0.31 ms) about 1.0 ms; the pipe round trip (`NativeProbeProcess.request`) 0.9 ms; reader and request opening (`openRequest`, `feed`) 0.58 ms; assumed-set construction (`buildAssumedSet`, which contains the validator's `validateSet`) 0.36 ms; `featureSetIdentity` hashing 0.36 ms; declared-set memo 0.29 ms. With native answering, what remains of the 5.7 ms is mostly Areneon-authored (envelope hashing and validation, reader, assumed sets, row construction), so the next cost is the envelope and the builder, not the engine. A lean envelope in the native backend would remove about 1 ms per decision.
+The split of the builder's own 2.8 ms comes from `node --cpu-prof` over 40 battles (1,608 decisions): inclusive times, nested, so they do not add up, and the sampling attribution is approximate. Query envelope (`probeEnvelope`: `canonicalJson` 0.86 ms, `readMechanicsQuery` 0.31 ms) about 1.0 ms; pipe round trip 0.9 ms; reader and request opening 0.58 ms; assumed-set construction (`buildAssumedSet`, containing the validator's `validateSet`) 0.36 ms; `featureSetIdentity` hashing 0.36 ms; declared-set memo 0.29 ms. With native answering, what remains is mostly Areneon-authored code, so the next cost is the envelope and the builder, not the engine. A lean envelope in the native backend would remove about 1 ms per decision. Row construction was not isolated as a separate figure.
 
-**Not verified:** the byte-equality claim covers only answered queries, by construction; a query the layer answers but the probe never would is not seen by the differential. The tier fields of ADR-031 E5 part h are not recorded in the ledger contract (#1544).
+**Not verified:** the byte-equality claim covers only queries the layer answers, so a query it answers and the probe never would is not seen by the differential.

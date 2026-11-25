@@ -1,8 +1,8 @@
 {
-  "admission_hash": "34cd35849a0f701da50f285fdab3af08c46a9fb27f4fadb1d080bc30f7b46ac3",
+  "admission_hash": "43bf059b61cee33af163bb4b0de761d85b5dded8f5ead99c716ca7dc24f261d8",
   "fresh": {
-    "battles": 325,
-    "queries": 214057,
+    "battles": 323,
+    "queries": 213471,
     "answered": 200000,
     "differences": 0,
     "count_mismatches": 0
@@ -132,23 +132,23 @@
   },
   "entities": {
     "listed": 1275,
-    "admitted": 1024,
+    "admitted": 1018,
     "by_kind": {
-      "ability": 176,
+      "ability": 177,
       "field": 1,
       "item": 147,
       "kind": 3,
-      "move": 365,
+      "move": 357,
       "side": 4,
-      "species": 314,
+      "species": 315,
       "status": 6,
       "terrain": 4,
       "weather": 4
     }
   },
   "pairs": {
-    "listed": 136597,
-    "admitted": 101330
+    "listed": 134668,
+    "admitted": 99711
   },
   "revoked": 0
 }

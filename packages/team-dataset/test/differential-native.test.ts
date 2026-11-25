@@ -212,8 +212,13 @@ describe("5. the ledger and the isolation of the native backend", () => {
     expect(reaches('const kind = "native-probe";')).toBe(false);
   });
 
-  it("is named by no image, compose file or workflow but the fork's own job (a source scan)", () => {
+  it("is named by no image, compose file or workflow but the `ninjask` job of the CI workflow (a source scan)", () => {
     const files = readdirSync(join(root, ".github/workflows")).map((f) => join(root, ".github/workflows", f));
-    for (const f of files) expect(readFileSync(f, "utf8"), f).not.toMatch(/differential-native|native-probe-/);
+    // The one job that builds the fork's probe process runs the native backend's tests; every other job and workflow must not name it.
+    const withoutNinjaskJob = (text: string): string => text.replace(/\n {2}ninjask:\n[\s\S]*?(?=\n {2}[a-z][a-z-]*:\n)/, "");
+    for (const f of files) expect(withoutNinjaskJob(readFileSync(f, "utf8")), f).not.toMatch(/differential-native|native-probe-/);
+    const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
+    expect(ci.length - withoutNinjaskJob(ci).length, "the ninjask job must be found").toBeGreaterThan(500);
+    expect(ci).toMatch(/ARENEON_REQUIRE_NINJASK: "1"[\s\S]*native-probe-backend\.test\.ts/);
   });
 });
