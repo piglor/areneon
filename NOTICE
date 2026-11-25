@@ -11,6 +11,15 @@ Copyright (c) 2011-2026 Guangcong Luo and other contributors,
 licensed under the MIT License (see vendor/pokemon-showdown/LICENSE).
 Areneon runs the simulator unmodified; the Showdown client is not used.
 
+This product includes, as a git submodule under vendor/ninjask, the Areneon
+fork (https://github.com/piglor/ninjask) of Ninjask
+(https://github.com/dcabatin/Ninjask), a Rust port of Pokémon Showdown's
+battle code, Copyright (c) 2026 David Cabatingan and contributors, licensed
+under the MIT License (see vendor/ninjask/LICENSE and vendor/ninjask/NOTICE,
+which carries Pokémon Showdown's notice for the data and handlers it ports).
+The native engine plays training games only; Pokémon Showdown stays the
+referee for evaluation.
+
 This product includes agent skills under .agents/skills adapted from
 mattpocock/skills (https://github.com/mattpocock/skills),
 Copyright (c) 2026 Matt Pocock,

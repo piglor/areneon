@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
-.PHONY: setup showdown migrate-check check python ts contracts contracts-update guards team-guard licences licences-selftest db-up db-down db-test db-bootstrap-test importer-image importer-e2e
+.PHONY: setup showdown ninjask migrate-check check python ts contracts contracts-update guards team-guard licences licences-selftest db-up db-down db-test db-bootstrap-test importer-image importer-e2e
 
 # One-time setup for a clean clone.
 setup: showdown
@@ -13,6 +13,43 @@ setup: showdown
 showdown:
 	git submodule update --init vendor/pokemon-showdown
 	cd vendor/pokemon-showdown && npm ci --ignore-scripts --no-audit --no-fund && node build
+
+# Build the vendored CPU-native training-play engine, the Areneon fork of Ninjask (#1531). Pokemon Showdown stays the
+# referee and the only authority on legality (ADR-003); this engine plays training games only, and no evaluation path
+# may import it (packages/showdown-bridge/test/ninjask-pin.test.ts scans for that). Host-side and --locked: Cargo.lock
+# pins and checksums every crate and comes from crates.io only (the test checks it), the engine crate has no build
+# script (its dependencies do: docs/architecture/ninjask.md), and nothing comes from PyPI. The cdylib is the Python
+# extension (the crate's `python-module` feature, abi3), so the package is assembled by a copy: the fork's python/ninjask
+# plus the library as _core.abi3.so, under .tmp/ninjask/python (put it on PYTHONPATH). The toolchain is the fork's
+# rust-toolchain.toml (rustup installs it on first use). Before anything of the fork is built, its supply-chain
+# invariants are checked (packages/showdown-bridge/test/ninjask-tree.test.ts: no build.rs, no .cargo, no [patch], crates.io
+# with checksums only), the assembled package is made from nothing (a file of an older commit cannot linger), and the
+# fork's pools/ (real public player teams, which nothing here reads) is kept out of the working tree (sparse checkout).
+# The package has no Showdown beside it (it is not a source checkout), so its game data is exported here, from THIS
+# repository's pinned Showdown (`make showdown` first, or NINJASK_REFEREE=<a built checkout at the pin>), into
+# .tmp/ninjask/data/format/, and held to the fork's refsim/PROVENANCE.json (sizes and hashes of the bundled formats).
+# Load it with NINJASK_DATA=.tmp/ninjask/data (or ninjask.dex(id, data_dir=...)); the engine refuses an export of another
+# commit. Not part of `make setup` or `make check`: an opt-in tool.
+NINJASK_OUT ?= $(CURDIR)/.tmp/ninjask
+NINJASK_REFEREE ?= $(CURDIR)/vendor/pokemon-showdown
+ninjask:
+	git submodule update --init vendor/ninjask
+	git -C vendor/ninjask sparse-checkout set --no-cone '/*' '!/pools/'
+	ARENEON_REQUIRE_NINJASK=1 pnpm exec vitest run packages/showdown-bridge/test/ninjask-tree.test.ts
+	test "$$(tr -d '[:space:]' < vendor/ninjask/refsim/SHOWDOWN_COMMIT)" = "$$(git ls-tree HEAD vendor/pokemon-showdown | cut -f1 | cut -d' ' -f3)"
+	cd vendor/ninjask && CARGO_TARGET_DIR=$(NINJASK_OUT)/target cargo build --release --locked --features python-module
+	test -n "$(NINJASK_OUT)"
+	rm -rf "$(NINJASK_OUT)/python/ninjask"
+	mkdir -p $(NINJASK_OUT)/python/ninjask
+	cp -r vendor/ninjask/python/ninjask/. $(NINJASK_OUT)/python/ninjask/
+	cp $(NINJASK_OUT)/target/release/libninjask.so $(NINJASK_OUT)/python/ninjask/_core.abi3.so
+	test -f $(NINJASK_REFEREE)/dist/sim/index.js || { echo "no built Showdown at $(NINJASK_REFEREE): run make showdown (or set NINJASK_REFEREE)" >&2; exit 1; }
+	mkdir -p $(NINJASK_OUT)/data/format
+	for f in $$(node -p "Object.keys(require('./vendor/ninjask/refsim/PROVENANCE.json').export.formats).join(' ')"); do \
+		NINJASK_SHOWDOWN=$(NINJASK_REFEREE) node vendor/ninjask/refsim/export_format.js $$f > $(NINJASK_OUT)/data/format/$$f.json.part; \
+		mv $(NINJASK_OUT)/data/format/$$f.json.part $(NINJASK_OUT)/data/format/$$f.json; \
+	done
+	python3 vendor/ninjask/scripts/repin.py provenance check-data $(NINJASK_OUT)/data
 
 # Migration parity suite (#1466, docs/runbooks/migration.md): every golden,
 # parity and differential check in dependency order, a summary of what drifted.

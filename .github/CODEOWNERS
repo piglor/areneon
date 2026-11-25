@@ -3,6 +3,8 @@
 # commands or thresholds. The main ruleset requires code-owner review;
 # admins merge through the bypass.
 /.github/                       @arceushui
+/.gitmodules                    @arceushui
+/vendor/                        @arceushui
 /.pokepaste-guard-allow         @arceushui
 /config/evaluation/             @arceushui
 /evaluation/register-heads/     @arceushui
@@ -35,3 +37,8 @@
 /packages/schema/contracts/v1/retired-sealed-manifest.schema.json  @arceushui
 /packages/team-dataset/src/rejection-log.ts  @arceushui
 /packages/team-dataset/test/sealed*.ts  @arceushui
+# The vendored engine (#1531): its pin, and the tests and guards that hold the pin, the isolation rule and the supply chain.
+/packages/showdown-bridge/src/ninjask-pin.ts  @arceushui
+/packages/showdown-bridge/test/ninjask-pin.test.ts  @arceushui
+/packages/showdown-bridge/test/ninjask-tree.test.ts  @arceushui
+/packages/showdown-bridge/test/support/ninjask-guards.ts  @arceushui

@@ -106,6 +106,64 @@ jobs:
       - name: probe-outcome feature record against the pinned engine (ADR-022 E-22.5)
         run: node packages/showdown-bridge/scripts/check-outcome-config.ts
 
+  # The vendored CPU-native training-play engine (#1531): the Areneon fork of Ninjask builds from its lock with the
+  # fork's pinned toolchain, and the module it makes names the Showdown commit this repository pins. The fork's own CI
+  # (piglor/ninjask: fmt, clippy, tests, cargo deny, the comparison with Showdown) gates the commit that the gitlink names;
+  # this job first checks the vendored tree's supply-chain invariants and runs `cargo deny` on its lock (a pinned binary,
+  # checksummed), and only then builds Showdown and the engine, exports the formats from this repository's Showdown, and
+  # runs the pin and isolation tests, all with ARENEON_REQUIRE_NINJASK=1, so an absent submodule or an absent build fails
+  # there instead of skipping.
+  ninjask:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CARGO_DENY_VERSION: 0.22.1
+      CARGO_DENY_SHA256: 13f7e825e9cb811c2f8de63f29b0f45851dfb53004029f0f2501af524728364d
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      # pnpm comes only from corepack, which checks the packageManager hash.
+      - run: corepack enable && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --version
+      - run: pnpm install --frozen-lockfile
+      - name: supply-chain invariants of the vendored tree, before anything of it is built (no build.rs, no .cargo, no [patch], crates.io with checksums)
+        env:
+          ARENEON_REQUIRE_NINJASK: "1"
+        run: pnpm exec vitest run packages/showdown-bridge/test/ninjask-tree.test.ts
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # the fork's rust-toolchain.toml
+        with:
+          toolchain: 1.97.1
+      - name: supply chain of the vendored lock (cargo deny, pinned binary)
+        # Pinned on purpose: this exact cargo-deny version and the sha256 of its tarball, which equals the digest GitHub
+        # publishes for the release. Bump both together, deliberately, when the fork's deny.toml needs a newer cargo-deny
+        # or its advisory handling changes (never by following "latest").
+        run: |
+          set -euo pipefail
+          dir="cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl"
+          tarball="${dir}.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$tarball" "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/${tarball}"
+          echo "${CARGO_DENY_SHA256}  $RUNNER_TEMP/${tarball}" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP"
+          (cd vendor/ninjask && "$RUNNER_TEMP/$dir/cargo-deny" --locked --all-features check)
+      - name: build Showdown at the pin (the formats are exported from it)
+        run: make showdown
+      - run: make ninjask
+      - name: the built module names the pinned Showdown
+        run: |
+          set -euo pipefail
+          built=$(PYTHONPATH=.tmp/ninjask/python python3 -c 'import ninjask; print(ninjask.SHOWDOWN_COMMIT)')
+          pinned=$(git ls-tree HEAD vendor/pokemon-showdown | cut -f1 | cut -d' ' -f3)
+          echo "built $built, pinned $pinned"
+          test "$built" = "$pinned"
+      - name: pin, supply-chain and isolation tests (the submodule and the build are required)
+        env:
+          ARENEON_REQUIRE_NINJASK: "1"
+        run: pnpm exec vitest run packages/showdown-bridge/test/ninjask-pin.test.ts
+
   team-guard:
     runs-on: ubuntu-24.04
     steps:
@@ -251,7 +309,7 @@ jobs:
 
   ci:
     if: always()
-    needs: [python, typescript, database, importer-image, team-guard, licences, gitleaks, osv, dco]
+    needs: [python, typescript, ninjask, database, importer-image, team-guard, licences, gitleaks, osv, dco]
     runs-on: ubuntu-24.04
     steps:
       - name: all required jobs passed

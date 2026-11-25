@@ -32,4 +32,5 @@ Subsystem documentation split out of `CLAUDE.md`. `CLAUDE.md` keeps the commands
 | [inspector-replay.md](inspector-replay.md) | Inspector and replay viewer: The training-data inspector, replay viewer, shared player-view state reader and progress-game replays. |
 | [rules-store.md](rules-store.md) | Rules store and importer: The PostgreSQL rules store, publishing workflow and the importer. |
 | [repo-guards-ci.md](repo-guards-ci.md) | Repo guards and CI: The repository guards (data class, binaries, licences, CUDA separation) and the CI jobs. |
+| [ninjask.md](ninjask.md) | Vendored native engine: The Areneon fork of Ninjask (`vendor/ninjask`): the pin, `make ninjask`, the pin and isolation tests, the repin procedure. |
 | [a2.md](a2.md) | A2 bot client and server-path filter: The A2 bot client, the server-line filter and reconnect handling. |
