@@ -853,6 +853,27 @@ of the teacher manifest's JCS bytes (the same hash a clone config names); `coef_
   `LearnerDataError` (exit 3) at the first update. Only the byte offsets of the Battle examples
   are kept; each update encodes just the K examples it draws and drops them, so memory is bounded
   by K, not by the set's size. The teacher's Team Preview examples are not used.
+- **Marker (#1501):** the check and encode above is minutes for a large stream (931 s, about 15
+  minutes, for the 2.58 GB IM1 set at a machine load of 18 to 23), and a queue that starts one
+  driver process per generation paid it at every generation. A pass that returned now writes
+  `R/teacher/<hash>/verified-<64 hex>.json` beside the stream: the Battle offsets, a self-hash and
+  the key (the manifest hash, the stream size, each role's encoder version and engine-data hash, a
+  hash of every source file under `areneon_ml`, `areneon_contracts` and the contract schemas as it
+  was when the process started, and the versions of the libraries the check runs on). A process that
+  starts with a matching marker skips the line checks and the encode pass and keeps ONE check: the
+  SHA-256 of the whole stream against the manifest's. That read happens at every start: about 2 s
+  warm for 2.58 GB. Cold, if the read ran as slowly as the 6.6 MB/s seen after a reboot during the
+  old pass, it would be about 6.5 minutes; that is an upper bound and never worse than the old
+  pass, which read the file at least as often and parsed it as well. Any change under `areneon_ml`,
+  `areneon_contracts` or the contract schemas (any commit that touches them) costs one
+  re-verification, a full pass, per run directory, because the code identity is in the key; the
+  markers of older code stay beside the new one (under 1 MB each) and are never read. A marker is a
+  cache: no generation file, checkpoint, learner state or hash depends on it, and deleting it costs
+  one pass. An absent, damaged or foreign marker, or a stream that fails the digest, runs the old
+  pass with its own refusals. `import-teacher` writes none (it has no run encoders), so each run
+  directory pays one pass. **Documented follow-up, not built:** an optional fast path that trusts
+  the stream's size, mtime and inode and skips the SHA-256 would save the 2 s (cold: up to minutes)
+  per start, at the price of not noticing an in-place edit that restores the mtime or silent bit rot.
 - **Loss:** `lambda_im(t) * mean(-log pi_theta(teacher choice))` over the minibatch's teacher
   steps, the softmax over each example's real candidates at the run's play temperature, no clip and
   no value term. K = floor(`share_ppm` * N_battle / 10^6) steps per update (capped at the set's
