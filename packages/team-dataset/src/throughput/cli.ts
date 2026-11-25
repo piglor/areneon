@@ -5,7 +5,7 @@
 //   verify     read records with the contract reader and print their hashes
 //   summarise  the median and range per arm over records or run directories
 //
-// Exit codes: 0 done and every run valid, 1 a run is void or a record is refused, 2 usage, 3 the machine is not idle (nothing was started).
+// Exit codes: 0 done and every run valid, 1 a run is void or a record is refused, 2 usage, 3 the machine is not idle (nothing was started), 130 interrupted.
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -194,6 +194,11 @@ async function run(values: Values, positionals: readonly string[], io: CliIo): P
     const rate = record.rates.decisions_per_core_hour.toLocaleString("en-US");
     io.out(`${id}: ${record.valid ? "VALID" : `VOID (${record.void_reasons.join(", ")})`}, ${rate} decisions per host-core-hour (${record.report.counts.decisions} decisions, ${seconds(record.cpu.total_ms)} host CPU, ${seconds(record.window.wall_ms)} wall); record ${join(outDir, id, "record.json")} sha256 ${result.hash}`);
     if (result.collectError !== null) io.err(`${id}: the arm's report could not be read: ${result.collectError}`);
+    if (result.interrupted) {
+      io.err("interrupted: the runs after it were not started");
+      io.out(renderComparison(records));
+      return 130;
+    }
   }
   io.out(renderComparison(records));
   return code;

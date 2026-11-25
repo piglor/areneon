@@ -97,6 +97,8 @@ export interface RunResult {
   hash: string;
   /** Why the arm's own report could not be read (the record then holds an empty one), else null. */
   collectError: string | null;
+  /** A SIGINT or SIGTERM reached the harness during the run: the arm was ended and nothing queued after it should start. */
+  interrupted: boolean;
 }
 
 /** The pids of this process and its ancestors: the harness's own look-alikes, never "another run". */
@@ -127,9 +129,16 @@ export async function runArm(spec: ArmSpec, options: RunOptions, deps: Deps): Pr
   const before = deps.proc.stat(process.pid) as NonNullable<ReturnType<Proc["stat"]>>;
   const out = openSync(stdoutPath, "w");
   const err = openSync(stderrPath, "w");
-  const child = spawn(spec.command, [...spec.args], { cwd: spec.cwd, env: { ...process.env, ...spec.env }, stdio: ["ignore", out, err], detached: true });
-  closeSync(out);
-  closeSync(err);
+  let child: ReturnType<typeof spawn>;
+  try {
+    child = spawn(spec.command, [...spec.args], { cwd: spec.cwd, env: { ...process.env, ...spec.env }, stdio: ["ignore", out, err], detached: true });
+  } catch (error) {
+    await monitor.stop(); // an argument spawn refuses outright: the monitor must not outlive the harness's failure
+    throw error;
+  } finally {
+    closeSync(out);
+    closeSync(err);
+  }
   const startedAt = deps.mono();
   const startedEpoch = deps.now();
   const pid = child.pid ?? -1;
@@ -139,6 +148,7 @@ export async function runArm(spec: ArmSpec, options: RunOptions, deps: Deps): Pr
   });
 
   let aborted = false;
+  let interrupted = false;
   let killTimer: NodeJS.Timeout | undefined;
   const send = (signal: NodeJS.Signals): void => {
     try {
@@ -153,8 +163,13 @@ export async function runArm(spec: ArmSpec, options: RunOptions, deps: Deps): Pr
     send("SIGTERM");
     killTimer = setTimeout(() => send("SIGKILL"), options.killGraceMs);
   };
-  deps.signals?.on("SIGINT", abort);
-  deps.signals?.on("SIGTERM", abort);
+  // A signal to the harness ends the arm and marks the run as interrupted, so a caller with more runs queued stops.
+  const onSignal = (): void => {
+    interrupted = true;
+    abort();
+  };
+  deps.signals?.on("SIGINT", onSignal);
+  deps.signals?.on("SIGTERM", onSignal);
 
   const watcher = new TreeWatcher(deps.proc, pid, spec.classify, deps.pageBytes);
   const samples: Sample[] = [start];
@@ -185,8 +200,8 @@ export async function runArm(spec: ArmSpec, options: RunOptions, deps: Deps): Pr
   clearInterval(walk);
   clearInterval(look);
   clearTimeout(killTimer);
-  deps.signals?.off("SIGINT", abort);
-  deps.signals?.off("SIGTERM", abort);
+  deps.signals?.off("SIGINT", onSignal);
+  deps.signals?.off("SIGTERM", onSignal);
 
   const stray = pid < 0 ? [] : survivorsOf(deps.proc, pid, exclude);
   for (const survivor of stray) {
@@ -270,5 +285,5 @@ export async function runArm(spec: ArmSpec, options: RunOptions, deps: Deps): Pr
   writeFileSync(join(options.outDir, "conditions.jsonl"), lines(samples));
   writeFileSync(join(options.outDir, "procs.jsonl"), lines(watcher.rows()));
   writeFileSync(join(options.outDir, "summary.md"), renderRunSummary(record, samples));
-  return { record, dir: options.outDir, hash: throughputRecordHash(record), collectError };
+  return { record, dir: options.outDir, hash: throughputRecordHash(record), collectError, interrupted };
 }

@@ -107,6 +107,19 @@ describe("run --arm command", () => {
     expect((await cli(argv("bad", ["--max-swap-growth-mib", "-1"]))).code).toBe(2);
   });
 
+  it("stops at once when the harness is signalled: the interrupted run is kept, the queued ones never start", async () => {
+    const out = tempDir();
+    const report = join(out, "r.json");
+    const lines: string[] = [];
+    const errors: string[] = [];
+    const deps = { ...fakeDeps(), sleep: () => Promise.resolve(), signals: { on: (_name: "SIGINT" | "SIGTERM", handler: () => void) => void setTimeout(handler, 300), off: () => undefined } };
+    const code = await runThroughputCli(["run", "--arm", "command", "--out", out, "--run-id", "sig", "--repeats", "3", "--arm-report", report, "--arm-id", "fake", "--arm-label", "Fake", ...quick, "--", process.execPath, FAKE_ARM, "--burn-ms", "10", "--hold-ms", "20000", "--decisions", "1", "--report", report], { out: (line) => lines.push(line), err: (line) => errors.push(line), repoRoot: REPO, deps: () => deps });
+    expect(code).toBe(130);
+    expect(readdirSync(out).filter((name) => name.startsWith("sig-"))).toEqual(["sig-r1"]);
+    expect(errors.join("\n")).toContain("interrupted");
+    expect(lines.join("\n")).toContain("sig-r1: VOID");
+  });
+
   it("refuses arguments it cannot use, exit 2, with the reason", async () => {
     const out = tempDir();
     const bad = async (argv: string[]): Promise<string> => {

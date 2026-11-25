@@ -179,11 +179,28 @@ describe("runArm: the arm and the harness stopping", () => {
     const running = runArm(arm, options, { ...fakeDeps(), signals });
     await new Promise((resolve) => setTimeout(resolve, 400));
     registered.get("SIGTERM")?.();
-    const { record } = await running;
+    const result = await running;
+    const { record } = result;
+    expect(result.interrupted).toBe(true); // a caller with more runs queued must stop
     expect(performance.now() - started).toBeLessThan(10_000);
     expect(record.window).toMatchObject({ aborted: true, exit_code: -1 });
     expect(record.void_reasons).toEqual(expect.arrayContaining(["aborted", "arm_failed"]));
     expect(removed.sort()).toEqual(["SIGINT", "SIGTERM"]); // the handlers do not outlive the run
+  });
+
+  it("stops the GPU monitor and fails when the arm's arguments cannot even be spawned", async () => {
+    const dir = tempDir();
+    let stopped = 0;
+    const base = fakeDeps();
+    const deps = { ...base, gpu: { ...base.gpu, monitor: () => ({ latest: () => null, readings: () => [], stop: async () => { stopped++; return { ticks: 0 }; } }) } };
+    const arm = commandArm({ command: process.execPath, args: ["a\0b"], cwd: dir, reportPath: join(dir, "r.json"), description });
+    await expect(runArm(arm, defaultRunOptions({ runId: "bad", outDir: join(dir, "run"), procIntervalMs: 50, conditionIntervalMs: 150, startWindowMs: 5 }), deps)).rejects.toThrow();
+    expect(stopped).toBe(1);
+  });
+
+  it("is not interrupted when the harness got no signal", async () => {
+    const { arm, options } = setup(["--burn-ms", "10", "--decisions", "1"]);
+    expect((await runArm(arm, options, fakeDeps())).interrupted).toBe(false);
   });
 
   it("writes the command that ran, quoted so it can be pasted", async () => {

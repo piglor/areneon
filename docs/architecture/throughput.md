@@ -21,7 +21,7 @@ The harness (`runner.ts`) starts the arm with `detached: true` (so the arm leads
 2. reads `/proc/loadavg`, `/proc/meminfo`, `/proc/stat` and `nvidia-smi` every minute (`--condition-interval-ms`; ADR-028 section 1: "sampled every minute and journaled", `conditions.jsonl`), reads `MemAvailable` at every walk as well, so a memory floor that breaks is seen within a second (and the minute sample is brought forward), and runs one long-lived `nvidia-smi -lms 1000` for the GPU's utilisation and memory (its own CPU is `helper_ms`, read before it ends and never part of the arm; the harness's own CPU is `harness_ms`);
 3. after the arm exits, reads the CPU figure and the wall clock first, then looks for processes left in the arm's process group or session (any live one is ended and the run is void: its CPU was never credited), stops the GPU monitor, takes the end sample and reads the arm's report.
 
-Helpers that spawn and reap a process (git, `nvidia-smi`, the Python ids helper) run before the arm starts or after its CPU is read; the harness reaps no other child in between. A harness SIGINT or SIGTERM ends the arm's process group and voids the run.
+Helpers that spawn and reap a process (git, `nvidia-smi`, the Python ids helper) run before the arm starts or after its CPU is read; the harness reaps no other child in between. A SIGINT or SIGTERM to the harness ends the arm's process group, voids the run and stops the queue (exit 130: the runs after it do not start).
 
 ## Idle-machine conditions (ADR-028 section 1)
 
