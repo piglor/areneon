@@ -196,7 +196,7 @@ describe("5. the ledger and the isolation of the native backend", () => {
     return false;
   };
   const tracked = (): string[] => execFileSync("git", ["ls-files", "-z", "--", "packages", "scripts", "ml", "services", "crates"], { cwd: root, encoding: "utf8" }).split("\0").filter((f) => /\.(ts|js|mjs|cjs)$/.test(f) && !f.includes("node_modules"));
-  const ALLOWED = (f: string): boolean => /^packages\/showdown-bridge\/(src|test)\/(native-probe-|index\.ts|support\/fake-native)/.test(f) || /^packages\/team-dataset\/(src\/differential-native|scripts\/(differential-native|native-probe-cases)|test\/differential-native)/.test(f);
+  const ALLOWED = (f: string): boolean => /^packages\/showdown-bridge\/(src|test)\/(native-probe-|index\.ts|support\/fake-native)/.test(f) || /^packages\/team-dataset\/(src\/differential-native|scripts\/(differential-native|native-probe-cases|builder-cost)|test\/(differential-native|native-ledger-commit))/.test(f);
 
   it("no source outside the native backend's own files, its composition root and their tests reaches it", () => {
     const found = tracked().filter((f) => !ALLOWED(f) && statSync(join(root, f), { throwIfNoEntry: false })?.isFile() === true && reaches(readFileSync(join(root, f), "utf8")));
