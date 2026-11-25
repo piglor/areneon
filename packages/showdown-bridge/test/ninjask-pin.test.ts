@@ -6,7 +6,7 @@
 // unless ARENEON_REQUIRE_NINJASK=1, which makes an absent submodule (or an absent build, `make ninjask`) a failure: CI sets
 // it in the `ninjask` job, which builds the engine and runs this file.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,8 +28,9 @@ const read = (path: string): string => readFileSync(join(NINJASK, path), "utf8")
 
 /** A test that reads the submodule's files: skipped, with the reason in its name, when it is not initialised. */
 const withSubmodule = it.skipIf(!PRESENT);
-/** A test that needs `make ninjask` to have run: skipped unless this run requires it. */
-const withBuild = it.skipIf(!(existsSync(BUILT) || REQUIRED));
+/** A test that needs `make ninjask` to have run: skipped unless this run requires it (and, like every test of the
+ * submodule's files, without the submodule: the one that fails then says why). */
+const withBuild = it.skipIf(!PRESENT || !(existsSync(BUILT) || REQUIRED));
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The interpreter that loads the built module, and the invariants of the vendored tree: pure functions, so that each has
@@ -179,6 +180,40 @@ describe("the vendored tree runs no code of its own at build time, and takes dep
   });
 });
 
+/** The workflows that fetch every submodule (`submodules: true`), vendor/ninjask included, and that are not the CI workflow. */
+export function fetchEverySubmodule(workflows: Record<string, string>): string[] {
+  return Object.keys(workflows)
+    .filter((name) => name !== "ci.yml" && /^\s*submodules:\s*(true|recursive)\b/m.test(workflows[name] as string))
+    .sort();
+}
+
+describe("the workflows that publish, and the CI job that builds the engine", () => {
+  const dir = join(ROOT, ".github", "workflows");
+  const workflows: Record<string, string> = {};
+  for (const name of readdirSync(dir).filter((f) => /\.ya?ml$/.test(f))) workflows[name] = readFileSync(join(dir, name), "utf8");
+
+  it("fetch only the pinned Showdown: the vendored engine is neither built nor read where they publish", () => {
+    expect(Object.keys(workflows)).toEqual(expect.arrayContaining(["ci.yml", "rules-publish.yml", "teams-publish.yml"]));
+    expect(fetchEverySubmodule(workflows)).toEqual([]);
+    for (const name of ["rules-publish.yml", "teams-publish.yml"]) expect(workflows[name], name).toContain("git submodule update --init --force --depth=1 vendor/pokemon-showdown");
+  });
+
+  it("keeps no credentials in the ninjask job's checkout, and requires the submodule and the build in its test run", () => {
+    const job = jobBlock(workflows["ci.yml"] as string, "ninjask");
+    expect(job).toMatch(/persist-credentials: false/);
+    expect(job).toMatch(/submodules: true/);
+    expect(job).toMatch(/ARENEON_REQUIRE_NINJASK: "1"[\s\S]*vitest run packages\/showdown-bridge\/test\/ninjask-pin\.test\.ts/);
+    expect(job).toMatch(/cargo-deny[\s\S]*--locked[\s\S]*check/);
+    expect(job).toMatch(/sha256sum -c/);
+  });
+
+  it("has a check with teeth (negative control)", () => {
+    expect(fetchEverySubmodule({ "ci.yml": "submodules: true", "a.yml": "      - uses: x\n        with:\n          submodules: true\n" })).toEqual(["a.yml"]);
+    expect(fetchEverySubmodule({ "a.yml": "submodules: recursive" })).toEqual(["a.yml"]);
+    expect(fetchEverySubmodule({ "a.yml": "# submodules: true is not used here\nrun: git submodule update --init vendor/pokemon-showdown" })).toEqual([]);
+  });
+});
+
 describe("the interpreter that loads the built module", () => {
   const versions: Record<string, string | null> = { old: "3.10", new: "3.13", odd: "garbage", gone: null, tip: "3.12" };
   const versionOf = (p: string): string | null => versions[p] ?? null;
@@ -187,7 +222,7 @@ describe("the interpreter that loads the built module", () => {
     expect(pickPython(["old", "new"], versionOf)).toEqual({ python: "new" });
     expect(pickPython(["tip"], versionOf)).toEqual({ python: "tip" });
     const none = pickPython(["old", "gone", "odd"], versionOf);
-    expect("error" in none && none.error).toMatch(/3\.12 or later.*old: 3\.10.*gone: not found.*odd: garbage.*NINJASK_PYTHON/);
+    expect("error" in none && none.error).toMatch(/CPython 3\.12 and later.*old: 3\.10.*gone: not found.*odd: garbage.*NINJASK_PYTHON/);
     expect(pickPython([], versionOf)).toHaveProperty("error");
   });
 });
@@ -214,6 +249,7 @@ function runBuilt(code: string, extraPath: string[] = [], env: Record<string, st
   return execFileSync(interpreter(), ["-c", code], {
     cwd: tmpdir(),
     encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
     env: { PATH: process.env.PATH ?? "", PYTHONPATH: [join(OUT, "python"), ...extraPath].join(":"), ...env },
   }).trim();
 }
@@ -230,7 +266,7 @@ describe("the built engine (make ninjask)", () => {
     const code = "import ninjask, ninjask.paths as p; assert not p.IN_CHECKOUT; print(ninjask.dex('gen9championsvgc2026regmc').format_id)";
     expect(runBuilt(code, [], { NINJASK_DATA: DATA })).toBe("gen9championsvgc2026regmc");
     // Without the data it refuses, and says what to give it (it cannot export: there is no Showdown beside it).
-    expect(() => runBuilt("import ninjask; ninjask.dex('gen9championsvgc2026regmc')", [], { NINJASK_DATA: join(OUT, "no-such-data") })).toThrow();
+    expect(() => runBuilt("import ninjask; ninjask.dex('gen9championsvgc2026regmc')", [], { NINJASK_DATA: join(OUT, "no-such-data") })).toThrow(/NINJASK_DATA/);
     // The same files are the ones refsim/PROVENANCE.json records (sizes and hashes, no Showdown needed).
     const checked = execFileSync(interpreter(), [join(NINJASK, "scripts", "repin.py"), "provenance", "check-data", DATA], { encoding: "utf8" });
     expect(checked).toContain("provenance data: ok");
@@ -246,7 +282,7 @@ describe("the built engine (make ninjask)", () => {
     const code = "import warnings; warnings.simplefilter('ignore'); import ninjask, ninjask._core as c; print(ninjask.Battle is c.Battle, ninjask.Dex is c.Dex)";
     expect(runBuilt(code, [dir])).toBe("True True");
     // Naming it in the process is the opt-in; the assembled package is not made to do that here.
-    expect(() => runBuilt(code, [dir], { NINJASK_EXTENSION: "hostile" })).toThrow();
+    expect(() => runBuilt(code, [dir], { NINJASK_EXTENSION: "hostile" })).toThrow(/declared extension module was imported/);
   });
 });
 
@@ -276,7 +312,8 @@ export function outsideBuildBlocks(path: string, text: string): string {
     return lines.filter((l, i) => !(i >= start && i < end) && !own(l)).join("\n").replace(/^\s*#.*$/gm, "");
   }
   if (path === ".github/workflows/ci.yml") return text.replace(jobBlock(text, "ninjask"), "").replace(/^\s*#.*$/gm, "");
-  return text;
+  // A comment in a workflow or other YAML explains; it runs nothing.
+  return /\.ya?ml$/.test(path) ? text.replace(/^\s*#.*$/gm, "") : text;
 }
 
 /** The tracked files that name the engine and are not allowed to. */
@@ -339,6 +376,7 @@ describe("the native engine is training play only", () => {
     expect(offenders({ "config/x.json": '{"engine": ".tmp/ninjask/python"}' })).toEqual(["config/x.json"]);
     expect(offenders({ "services/x/main.py": "from ninjask import Battle\n" })).toEqual(["services/x/main.py"]);
     expect(offenders({ ".github/workflows/other.yml": "run: PYTHONPATH=.tmp/ninjask/python python x.py" })).toEqual([".github/workflows/other.yml"]);
+    expect(offenders({ ".github/workflows/other.yml": "# the vendored vendor/ninjask engine is not fetched here\nrun: echo" })).toEqual([]);
     expect(offenders({ "packages/x/src/a.ts": "const p = 1;" })).toEqual([]);
     expect(offenders({ "docs/a.md": "vendor/ninjask" })).toEqual([]);
     expect(offenders({ "packages/showdown-bridge/src/ninjask-pin.ts": "vendor/ninjask" })).toEqual([]);
