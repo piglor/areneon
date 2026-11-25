@@ -287,6 +287,11 @@ const closes = (w: Pick<Write, "ended" | "bodies">, first: boolean): boolean => 
 /** Test seam: how the recorder wraps the engine's generator (default `recordingSource`); a test proves its check has teeth with it. */
 export interface RecordOptions {
   source?: (prng: any, log: () => Draw[]) => any;
+  /**
+   * Called with the live battle at the end of every step, in step order (step 0: the start), after its requests are judged: the
+   * battle-state projection's trace reader (`projection-points.ts`, G4) reads `toJSON()` here. It must not change the battle.
+   */
+  onStep?: (step: number, battle: any) => void;
 }
 
 export async function recordBattleTrace(engine: Engine, spec: TraceSpec, options: RecordOptions = {}): Promise<{ trace: BattleTrace; record: BattleRecord }> {
@@ -294,6 +299,7 @@ export async function recordBattleTrace(engine: Engine, spec: TraceSpec, options
   const writes: Write[] = [];
   const seqs: Record<Seat, number> = { p1: 0, p2: 0 };
   let current = newWrite();
+  let steps = 0;
   const Traced = tracedStreamClass(engine, {
     forward: true,
     started: (battle) => installSource(battle, wrap(battle.prng, () => current.draws)),
@@ -306,6 +312,8 @@ export async function recordBattleTrace(engine: Engine, spec: TraceSpec, options
       if (closes(current, writes.length === 0)) {
         current.requests = stepRequests(engine, battle, current.bodies, seqs);
         current.state = stateHash(battle);
+        options.onStep?.(steps, battle);
+        steps += 1;
       }
       writes.push(current);
     },

@@ -53,7 +53,9 @@ bytes changed so each diff can be reviewed with `git diff` before it is committe
 6. `calc-differential`: the probe against `@smogon/calc`.
 7. `reader-parity`: shared reader against the Python reducer, world facts and history facts
    parity, reduced goldens.
-8. `battle-state-spec-oracle`: the `BattleStateSpec` (ADR-030) against the engine, the reducer map and the encoder map.
+8. `battle-state-spec-oracle`: the `BattleStateSpec` (ADR-030) records v1 and v2 against the
+   engine, the reducer map and the encoder map; the G4 reference packer and projection of v2
+   bit-equal to the encoder at every committed request (the four corpus shards `battle-state-projection-corpus-{0..3}.python.test.ts`; the check's timeout is two hours), with the canary and the invariance test.
 9. `encoder-golden`: encoder golden digests and `encoder_version`.
 10. `a1-a2-equality`: A1 and A2 channels and observations equal, encoder pairs.
 11. `fidelity-corpus`: the targeted fidelity corpus replays and its committed report is fresh.
@@ -80,6 +82,7 @@ anything else is a regression to investigate, not to recapture.
 | encoder digests, `encoder_version` | the engine-data hash is in the version | the version string moves, tensor digests move with it; recapture only with the engine-data change explained |
 | mechanics fixtures, calc divergences, parity report | the hand-worked values are fixed by paper; only the engine may move them | a changed hand-worked value is wrong until worked again on paper; triage a new calc divergence by the fixture, never the calc |
 | `reduced/`, `random/`, `unavailable/`, `search-fidelity/` and its report | seeded battles replay differently if the engine's RNG use changed | recapture the corpora, then the fidelity report (about 5 minutes), then edit `admitted` in `config/search/world-writers.v1.json` to the report |
+| `projection/points.json` | the engine state at each kept step is recorded, so a pin bump or a recorder change moves it | rerun `capture-projection-points.ts` (wired to `--recapture`) only after the corpus gate (`battle-state-projection-corpus-{0..3}.python.test.ts`) is green; the state may change, the decisions must not |
 | (nothing: `battle-differential` keeps no golden) | traces are recorded fresh on each run, so a pin bump changes nothing it holds; a difference there is a recorder or backend defect, never a recapture | read the difference's kind, step and seat; the corpora it replays are recaptured by the rows above |
 | contract samples, `hashes.json` | the capture reads the golden vocabulary; identity hashes (damage-aware, feature set, belief, search) move with the pin | review that only hash fields and engine-derived values changed |
 | `docs/showdown-champions-gaps.md`, `docs/mechanics-parity.md`, `docs/mechanics-inventory.md` | generated from records, fixtures and exports | edit the records, never the docs |
@@ -93,6 +96,7 @@ snapshot rewrites): `capture-golden` and `capture-random-corpus` (golden-fixture
 copy, stall moves, history facts, mechanics inventory); `mechanics-parity` (the generated
 report); `capture-unavailable-corpus`, `capture-illusion-battle`, `capture-fling-battle`,
 `capture-baton-pass-battle` and the reduced-snapshot rewrites (reader-parity);
+`capture-projection-points` (battle-state-spec-oracle);
 `capture-encoder-pairs` (a1-a2-equality); `capture-samples` (contract-corpus, after the
 vocabulary export). The gap doc and the parity report are generated from records and
 fixtures: edit those, never the docs.
