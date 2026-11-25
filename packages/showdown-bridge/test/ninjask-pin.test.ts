@@ -149,7 +149,7 @@ describe("make ninjask and the CI job that runs it", () => {
     expect(job.slice(tree - 200, tree)).toContain('ARENEON_REQUIRE_NINJASK: "1"');
     for (const build of ["make showdown", "make ninjask"]) {
       expect(tree, build).toBeLessThan(at(build));
-      expect(at("cargo-deny --locked"), build).toBeLessThan(at(build));
+      expect(at("--locked --all-features check"), build).toBeLessThan(at(build));
     }
     // cargo-deny is pinned on purpose, and the comment says when to bump it.
     expect(job).toMatch(/pinned on purpose[\s\S]*bump/i);

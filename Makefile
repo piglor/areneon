@@ -21,7 +21,10 @@ showdown:
 # script (its dependencies do: docs/architecture/ninjask.md), and nothing comes from PyPI. The cdylib is the Python
 # extension (the crate's `python-module` feature, abi3), so the package is assembled by a copy: the fork's python/ninjask
 # plus the library as _core.abi3.so, under .tmp/ninjask/python (put it on PYTHONPATH). The toolchain is the fork's
-# rust-toolchain.toml (rustup installs it on first use).
+# rust-toolchain.toml (rustup installs it on first use). Before anything of the fork is built, its supply-chain
+# invariants are checked (packages/showdown-bridge/test/ninjask-tree.test.ts: no build.rs, no .cargo, no [patch], crates.io
+# with checksums only), the assembled package is made from nothing (a file of an older commit cannot linger), and the
+# fork's pools/ (real public player teams, which nothing here reads) is kept out of the working tree (sparse checkout).
 # The package has no Showdown beside it (it is not a source checkout), so its game data is exported here, from THIS
 # repository's pinned Showdown (`make showdown` first, or NINJASK_REFEREE=<a built checkout at the pin>), into
 # .tmp/ninjask/data/format/, and held to the fork's refsim/PROVENANCE.json (sizes and hashes of the bundled formats).
@@ -31,8 +34,12 @@ NINJASK_OUT ?= $(CURDIR)/.tmp/ninjask
 NINJASK_REFEREE ?= $(CURDIR)/vendor/pokemon-showdown
 ninjask:
 	git submodule update --init vendor/ninjask
+	git -C vendor/ninjask sparse-checkout set --no-cone '/*' '!/pools/'
+	ARENEON_REQUIRE_NINJASK=1 pnpm exec vitest run packages/showdown-bridge/test/ninjask-tree.test.ts
 	test "$$(tr -d '[:space:]' < vendor/ninjask/refsim/SHOWDOWN_COMMIT)" = "$$(git ls-tree HEAD vendor/pokemon-showdown | cut -f1 | cut -d' ' -f3)"
 	cd vendor/ninjask && CARGO_TARGET_DIR=$(NINJASK_OUT)/target cargo build --release --locked --features python-module
+	test -n "$(NINJASK_OUT)"
+	rm -rf "$(NINJASK_OUT)/python/ninjask"
 	mkdir -p $(NINJASK_OUT)/python/ninjask
 	cp -r vendor/ninjask/python/ninjask/. $(NINJASK_OUT)/python/ninjask/
 	cp $(NINJASK_OUT)/target/release/libninjask.so $(NINJASK_OUT)/python/ninjask/_core.abi3.so
