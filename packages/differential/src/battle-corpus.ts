@@ -4,6 +4,7 @@
 import { type BattleClassesCount, classCounts } from "./battle-report.ts";
 import type { BattleBackend } from "./battle-backend.ts";
 import { type BattleDifference, compareBattles } from "./battle-compare.ts";
+import type { ProjectionOracle } from "./battle-projection.ts";
 import { classifyStep, type InteractionClasses } from "./battle-classes.ts";
 import { stepFacts } from "./battle-level.ts";
 import type { BattleTrace } from "./battle-trace.ts";
@@ -30,14 +31,20 @@ export function newBattleCorpus(spec: CorpusSpec, classes: InteractionClasses): 
   return { tally: newTally(spec), classes: classCounts(classes), battles: 0, steps: 0, unreached: 0, differences: [] };
 }
 
-const REASON: Record<BattleDifference["kind"], DifferenceReason> = { channel: "value", request: "value", mask: "value", draws: "value", state: "value", outcome: "value", refusal: "settled", count: "count" };
+const REASON: Record<BattleDifference["kind"], DifferenceReason> = { channel: "value", request: "value", mask: "value", draws: "value", state: "value", outcome: "value", refusal: "settled", count: "count", projection: "value" };
 
-/** Compare `traces` with `backend` and add every compared step to the corpus, battle by battle in trace order. */
-export function addBattles(corpus: BattleCorpus, classes: InteractionClasses, backend: BattleBackend, traces: readonly BattleTrace[], batchSize = 64): void {
+/** Compare `traces` with `backend` (and its projection, given an oracle) and add every compared step to the corpus, battle by battle in trace order. */
+export function addBattles(corpus: BattleCorpus, classes: InteractionClasses, backend: BattleBackend, traces: readonly BattleTrace[], batchSize = 64, projection?: ProjectionOracle): void {
   const seen: (BattleDifference | null)[][] = traces.map(() => []);
-  compareBattles(backend, traces, batchSize, (n, _step, difference) => {
-    (seen[n] as (BattleDifference | null)[]).push(difference);
-  });
+  compareBattles(
+    backend,
+    traces,
+    batchSize,
+    (n, _step, difference) => {
+      (seen[n] as (BattleDifference | null)[]).push(difference);
+    },
+    projection,
+  );
   traces.forEach((trace, n) => {
     const facts = stepFacts(trace);
     const compared = seen[n] as (BattleDifference | null)[];

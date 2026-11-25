@@ -193,11 +193,24 @@ CHECKS: tuple[Check, ...] = (
     ),
     Check(
         "battle-state-spec-oracle",
-        "battle-state spec oracle (ADR-030): engine fields, reducer map and encoder map agree",
+        "battle-state spec oracle (ADR-030): engine fields, reducer map and encoder map agree;"
+        " the G4 projection of record v2 is bit-equal to the encoder (canary, invariance)",
         (
-            vitest("battle-state-spec.test.ts"),
-            pytest("tests/ml/model/test_battle_state_spec.py"),
+            # The corpus gate runs as four shards (each about a quarter of every committed corpus,
+            # 355 to 392 s on CI, about 15 minutes each on a loaded workstation); the filter is a
+            # substring match, so the invariance file does not select them.
+            vitest(
+                "battle-state-spec.test.ts",
+                "battle-state-projection.python.test.ts",
+                "battle-state-projection-corpus-0.python.test.ts",
+                "battle-state-projection-corpus-1.python.test.ts",
+                "battle-state-projection-corpus-2.python.test.ts",
+                "battle-state-projection-corpus-3.python.test.ts",
+            ),
+            pytest("tests/ml/model/test_battle_state_spec.py", "tests/ml/projection"),
         ),
+        (node("capture-projection-points.ts"),),
+        timeout_s=7200,
     ),
     Check(
         "encoder-golden",

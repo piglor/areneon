@@ -800,6 +800,12 @@ class Encoder:
         )
         return self._encode_state(query, state, _last_request(observation["log"]), value_only)
 
+    def encode_reduced(self, query: Mapping[str, Any], state: BattleState) -> EncodedQuery:
+        """Encode ``query`` against a reduced state the caller gives instead of the one its log
+        reduces to (the battle-state projection's rebuilt view, ADR-030 G4): the same tensors as
+        ``encode`` exactly when ``state`` is what ``reduce_channel`` makes of the log."""
+        return self._encode_state(query, state, _last_request(query["observation"]["log"]))
+
     def session(self) -> EncoderSession:
         """An incremental encoder: the same tensors as ``encode``, one reduction per channel."""
         return EncoderSession(self)

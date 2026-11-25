@@ -6,8 +6,9 @@
 import { type BattleBackend, type BattleStepOutput, type Draw, type Seat, SEATS, type StepRequest } from "./battle-backend.ts";
 import { type BattleTrace, endStep, type Step } from "./battle-trace.ts";
 import type { Settled } from "./backend.ts";
+import { checkProjection, type ProjectionOracle } from "./battle-projection.ts";
 
-export type BattleDifferenceKind = "channel" | "request" | "mask" | "draws" | "state" | "outcome" | "refusal" | "count";
+export type BattleDifferenceKind = "channel" | "request" | "mask" | "draws" | "state" | "outcome" | "refusal" | "count" | "projection";
 
 export interface BattleDifference {
   kind: BattleDifferenceKind;
@@ -89,9 +90,19 @@ const settledDifference = (outcome: Settled<unknown> | undefined, index: number,
 /**
  * Drive `traces` through `backend` in batches of `batchSize` battles, stepping every live battle of a batch together (a
  * battle leaves its batch at its first difference or its last step), and compare at every step. Results in trace order.
+ * With a `projection` oracle (G4, #1464), a step whose five protocol items agree is then compared by the backend's player-view
+ * projection of each seat (`backend.project`) against the oracle's views of the step (`checkProjection`, kind `projection`); a
+ * step the oracle has no views for is not projected.
  */
-export function compareBattles(backend: BattleBackend, traces: readonly BattleTrace[], batchSize = 64, listen?: StepListener): BattleComparison[] {
+export function compareBattles(backend: BattleBackend, traces: readonly BattleTrace[], batchSize = 64, listen?: StepListener, projection?: ProjectionOracle): BattleComparison[] {
   if (!Number.isSafeInteger(batchSize) || batchSize < 1) throw new BattleHarnessError("a batch holds at least one battle");
+  const project = backend.project?.bind(backend);
+  if (projection !== undefined && project === undefined) throw new BattleHarnessError("a projection oracle needs a backend with a projection");
+  const projected = (n: number, step: number, handle: string | undefined): BattleDifference | null => {
+    const want = projection?.(n, step) ?? null;
+    if (want === null || project === undefined || handle === undefined) return null;
+    return checkProjection({ p1: project(handle, "p1"), p2: project(handle, "p2") }, want, step);
+  };
   const results: BattleComparison[] = traces.map((t) => {
     if (endStep(t) !== t.steps.length - 1) throw new BattleHarnessError("a trace must end at its last step (read it with readBattleTrace)");
     return { battle_id: t.battle_id, steps: t.steps.length, compared: 0, difference: null };
@@ -108,7 +119,7 @@ export function compareBattles(backend: BattleBackend, traces: readonly BattleTr
     const check = (n: number, step: number, out: Settled<BattleStepOutput> | undefined, count: boolean): boolean => {
       const trace = traces[n] as BattleTrace;
       const refused = settledDifference(out, step, count);
-      const difference = refused ?? compareStep(trace.steps[step] as Step, (out as { result: BattleStepOutput }).result, step, step === trace.steps.length - 1, trace.outcome);
+      const difference = refused ?? compareStep(trace.steps[step] as Step, (out as { result: BattleStepOutput }).result, step, step === trace.steps.length - 1, trace.outcome) ?? projected(n, step, handles.get(n));
       record(n, step, difference);
       return difference === null && step < trace.steps.length - 1;
     };
