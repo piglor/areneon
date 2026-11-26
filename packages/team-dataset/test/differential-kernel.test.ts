@@ -194,6 +194,11 @@ describe("4. isolation: no evaluation path reaches the kernel", () => {
     "packages/showdown-bridge/src/damage-kernel-effects.ts",
     "packages/showdown-bridge/src/index.ts",
     "packages/team-dataset/scripts/differential-kernel-admission.ts",
+    // Reviewed (#1534): the native probe's admission run and its fork fixture generator reuse the kernel's interaction and
+    // targeted sweeps as QUERY generators only (`interactionSweep`, `specQuery`, `targetedSpecs`); they never call the kernel
+    // to answer a query, and they are differential tooling, not an evaluation path.
+    "packages/team-dataset/scripts/differential-native-admission.ts",
+    "packages/team-dataset/scripts/native-probe-cases.ts",
     "packages/team-dataset/src/differential-kernel.ts",
   ];
   const sources = (): string[] => [...files(join(root, "packages")).filter((f) => /\/(src|scripts|web)\//.test(f)), ...files(join(root, "ml")), ...files(join(root, "scripts"))];
