@@ -77,3 +77,33 @@ def test_the_evaluated_generation_must_be_whole_even_with_the_flag(
     )
     assert code == EXIT_REFUSED
     assert "g000001: its files differ from its manifest" in capsys.readouterr().err
+
+
+def versus_old(run: Path, other: Path, root: Path, generation: str, *extra: str) -> int:
+    return main(
+        args(
+            run,
+            *("--generation", "2", "--games", "2", "--record-games", "1"),
+            *("--versus-run-dir", str(other), "--versus-generation", generation),
+            *("--run-games", "4", "--progress-dir", str(root)),
+            *extra,
+        )
+    )
+
+
+def test_the_other_run_may_be_an_older_pruned_generation_with_the_flag(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    mine, other = tmp_path / "run", tmp_path / "other"
+    make_run(mine, generations=3)
+    make_run(other, generations=3, config=dataset_config("other-run", (21, 22)))
+    prune_run(other, 1)  # the opponent's generation 1; the evaluated run stays whole
+    fake_node(monkeypatch, mine)
+    root = tmp_path / "p"
+    assert versus_old(mine, other, root, "1") == EXIT_REFUSED
+    assert "g000001: its files differ from its manifest" in capsys.readouterr().err
+    assert versus_old(mine, other, root, "1", "--allow-pruned") == 0
+    (done,) = json.loads(capsys.readouterr().out)["generations"]
+    assert "run-sample" in {m["match_id"] for m in done["matches"]}
