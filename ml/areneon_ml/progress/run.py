@@ -860,8 +860,13 @@ def _versus_pair(
     config: RunConfig,
     spec: VersusSpec,
     eval_dataset: EvalDataset | None = None,
+    *,
+    allow_pruned: bool = False,
 ) -> RunPair:
     """The other run's frozen pair, verified; refuses a run that cannot be compared.
+
+    ``allow_pruned``: an older generation of the other run (an opponent) may lack its bulk files;
+    its newest generation is always verified whole.
 
     Both runs must name the same format and the same team dataset (so the validation split
     is one and the same) unless ``eval_dataset`` supplies the common validation split (the two
@@ -892,7 +897,9 @@ def _versus_pair(
             "--eval-dataset-hash is the other run's own training dataset: its teams are not "
             "held out from that run"
         )
-    found = _source(other_dir, other, spec.generation, member=spec.member)
+    found = _source(
+        other_dir, other, spec.generation, member=spec.member, allow_pruned=allow_pruned
+    )
     return RunPair(
         other.run_key,
         other.hash,
@@ -1894,7 +1901,11 @@ def _skipped(  # noqa: PLR0913, PLR0917
     allow_pruned: bool = False,
 ) -> dict[str, Any]:
     """A committed directory is verified and reported, never rewritten."""
-    pair = None if versus is None else _versus_pair(run_dir, config, versus, eval_dataset)
+    pair = (
+        None
+        if versus is None
+        else _versus_pair(run_dir, config, versus, eval_dataset, allow_pruned=allow_pruned)
+    )
     record = verify_progress_dir(
         target,
         config,
@@ -1978,7 +1989,7 @@ def _open_versus(  # noqa: PLR0913
     without ``versus``."""
     if versus is None:
         return None, None
-    pair = _versus_pair(run_dir, config, versus, eval_dataset)
+    pair = _versus_pair(run_dir, config, versus, eval_dataset, allow_pruned=allow_pruned)
     relation = versus_relation(run_dir, source, pair, allow_pruned=allow_pruned)
     teams = layout.read_json(pair.team_set)
     manifest = layout.read_json(pair.team_set.parent / layout.MANIFEST)

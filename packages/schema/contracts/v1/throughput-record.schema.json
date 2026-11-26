@@ -1,0 +1,753 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:throughput-record",
+  "title": "ThroughputRecord",
+  "description": "One measured run of one arm of the throughput comparison (ADR-030 step 5): how many full decisions an arm (the Showdown path, a native engine, a GPU engine) played per host-core-hour, with every input of that number. The harness (packages/team-dataset/scripts/throughput-bench.ts) is the only writer: it runs the arm as a child process, measures wall clock, the host CPU of the arm's whole process tree and the machine's conditions itself, and takes the counts, phases and stages from the ArmReport the arm leaves (the same definition, ArmReport, is what a Python or C++ arm writes). Integers only: milliseconds, KiB, bytes, counts, centi-load, parts per million and per-hour rates. A rate is the count times 3,600,000 divided by the milliseconds it is measured against, truncated, and 0 when those milliseconds are 0. host-core-hour = the user plus system CPU of every process and thread of the arm, from launch to exit (cutime and cstime of the reaped process tree, read from the harness's own /proc entry after the arm exits), divided by 3,600,000 ms. A decision counts only if it is a full decision: one policy query answered, with the engine step to reach it, the legal mask, the features, the encoding, the policy forward and the sampling that the request kind has. valid is true exactly when void_reasons is empty; a run that broke an idle-machine condition (ADR-028 section 1), failed, was aborted, left a process behind or whose CPU accounting does not add up is void and is never part of a gate figure.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "data_class",
+    "run_id",
+    "report",
+    "machine",
+    "code",
+    "conditions",
+    "window",
+    "cpu",
+    "gpu",
+    "rates",
+    "valid",
+    "void_reasons"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "data_class": {
+      "const": "synthetic"
+    },
+    "run_id": {
+      "$ref": "#/$defs/Token"
+    },
+    "report": {
+      "$ref": "#/$defs/ArmReport"
+    },
+    "machine": {
+      "$ref": "#/$defs/Machine"
+    },
+    "code": {
+      "$ref": "#/$defs/Code"
+    },
+    "conditions": {
+      "$ref": "#/$defs/Conditions"
+    },
+    "window": {
+      "$ref": "#/$defs/Window"
+    },
+    "cpu": {
+      "$ref": "#/$defs/Cpu"
+    },
+    "gpu": {
+      "$ref": "#/$defs/GpuObserved"
+    },
+    "rates": {
+      "$ref": "#/$defs/Rates"
+    },
+    "valid": {
+      "type": "boolean"
+    },
+    "void_reasons": {
+      "description": "Why the run is void, sorted and unique; empty exactly when valid.",
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/VoidReason"
+      }
+    }
+  },
+  "$defs": {
+    "Token": {
+      "description": "An identifier: letters, digits and . _ : -, starting with a letter or digit.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "Label": {
+      "description": "A short printable-ASCII description.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[ -~]+$"
+    },
+    "Hash64": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "Hex40": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "Count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "ArmReport": {
+      "description": "What an arm leaves for the harness when it has played its plan (a file the harness reads, validated against this definition): the arm's identity and its tuning knobs, the plan it played, the counts, the phases of its run and the stages of its pipeline. It states nothing about host CPU, wall clock or the machine: the harness measures those, so every arm is measured the same way.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "arm",
+        "plan",
+        "counts",
+        "phases",
+        "stages",
+        "gpu_used"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "arm": {
+          "$ref": "#/$defs/Arm"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan"
+        },
+        "counts": {
+          "$ref": "#/$defs/Counts"
+        },
+        "phases": {
+          "description": "The run's wall-clock phases in the order they ran, each named once.",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/Phase"
+          }
+        },
+        "stages": {
+          "description": "The pipeline stages, in process-milliseconds summed over the arm's processes and sorted by name, each named once; a stage that games in flight overlap (waiting for a worker) is not listed.",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/Stage"
+          }
+        },
+        "gpu_used": {
+          "description": "Whether the arm computes on the GPU; decisions per GPU-hour is stated only then.",
+          "type": "boolean"
+        }
+      }
+    },
+    "Arm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "parameters"
+      ],
+      "properties": {
+        "id": {
+          "description": "The arm: showdown, native-cpu, gpu, ...",
+          "$ref": "#/$defs/Token"
+        },
+        "label": {
+          "$ref": "#/$defs/Label"
+        },
+        "parameters": {
+          "description": "The arm's tuning knobs as integers (game_processes, policy_workers, threads, games_in_flight, ...), sorted by name, each named once.",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/Parameter"
+          }
+        }
+      }
+    },
+    "Parameter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "value"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/Token"
+        },
+        "value": {
+          "$ref": "#/$defs/Count"
+        }
+      }
+    },
+    "Plan": {
+      "description": "What the arm played: the team pool, the plan and the run config, each by identifier and (where there is one) hash, so two records are comparable only when these agree.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pool_id",
+        "pool_hash",
+        "plan_hash",
+        "config_hash"
+      ],
+      "properties": {
+        "pool_id": {
+          "$ref": "#/$defs/Token"
+        },
+        "pool_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "plan_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "config_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "Counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "games",
+        "games_forfeited",
+        "games_on_showdown",
+        "decisions",
+        "scripted_decisions"
+      ],
+      "properties": {
+        "games": {
+          "description": "Games the arm ran to their end, forfeits included.",
+          "$ref": "#/$defs/Count"
+        },
+        "games_forfeited": {
+          "description": "Of those, the games a side forfeited; at most games.",
+          "$ref": "#/$defs/Count"
+        },
+        "games_on_showdown": {
+          "description": "Of those, the games the pinned Showdown engine played (all of them for the Showdown arm; 0 for an arm that plays the sub-pool natively); at most games.",
+          "$ref": "#/$defs/Count"
+        },
+        "decisions": {
+          "description": "Full decisions: policy queries answered for the learned pair, Team Preview, move and forced-switch requests alike.",
+          "$ref": "#/$defs/Count"
+        },
+        "scripted_decisions": {
+          "description": "Decisions of scripted baseline seats (no policy forward); not part of the rate, stated so the work of the arm is visible.",
+          "$ref": "#/$defs/Count"
+        }
+      }
+    },
+    "Phase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "kind",
+        "wall_ms",
+        "cpu_ms"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/Token"
+        },
+        "kind": {
+          "description": "warmup (before the first game: pool load, worker start, kernel compile), play, or teardown (after the last game: merge, record writing).",
+          "enum": [
+            "warmup",
+            "play",
+            "teardown"
+          ]
+        },
+        "wall_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "cpu_ms": {
+          "description": "Host CPU the arm measured in this phase, summed over its processes; null when it does not know.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "Stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "ms"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/Token"
+        },
+        "ms": {
+          "$ref": "#/$defs/Count"
+        }
+      }
+    },
+    "Machine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "logical_cpus",
+        "mem_total_kib",
+        "cpu_model"
+      ],
+      "properties": {
+        "logical_cpus": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        },
+        "mem_total_kib": {
+          "$ref": "#/$defs/Count"
+        },
+        "cpu_model": {
+          "$ref": "#/$defs/Label"
+        }
+      }
+    },
+    "Code": {
+      "description": "The checkout the arm ran from and the engine pin it was built against; tree_clean is false when the working tree had uncommitted changes (the commit then does not name the code).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit",
+        "engine_pin",
+        "tree_clean"
+      ],
+      "properties": {
+        "commit": {
+          "$ref": "#/$defs/Hex40"
+        },
+        "engine_pin": {
+          "$ref": "#/$defs/Hex40"
+        },
+        "tree_clean": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Conditions": {
+      "description": "The machine's state around the run (ADR-028 section 1): the mode and thresholds in force, the sample at the start and at the end, the minute samples' extremes and every breach of an enforced condition during the run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "thresholds",
+        "start",
+        "end",
+        "interval_ms",
+        "samples",
+        "min_mem_available_kib",
+        "max_swap_used_kib",
+        "breaches"
+      ],
+      "properties": {
+        "mode": {
+          "description": "idle: every ADR-028 condition is enforced before the start and throughout; non-idle: a labelled measurement beside other work, only the memory floors are enforced and the figures are relative, never gate values.",
+          "enum": [
+            "idle",
+            "non-idle"
+          ]
+        },
+        "thresholds": {
+          "$ref": "#/$defs/Thresholds"
+        },
+        "start": {
+          "$ref": "#/$defs/Sample"
+        },
+        "end": {
+          "$ref": "#/$defs/Sample"
+        },
+        "interval_ms": {
+          "description": "The interval of the condition samples (ADR-028: one minute).",
+          "$ref": "#/$defs/Count"
+        },
+        "samples": {
+          "description": "How many condition samples the run took, the start and the end included.",
+          "$ref": "#/$defs/Count"
+        },
+        "min_mem_available_kib": {
+          "description": "The lowest MemAvailable of any sample.",
+          "$ref": "#/$defs/Count"
+        },
+        "max_swap_used_kib": {
+          "description": "The highest swap in use of any sample.",
+          "$ref": "#/$defs/Count"
+        },
+        "breaches": {
+          "description": "Breaches of an enforced condition during the run, in time order; each is also a void reason.",
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/Breach"
+          }
+        }
+      }
+    },
+    "Thresholds": {
+      "description": "The conditions in force. A threshold of 9007199254740991 (the largest integer), or 1000000 ppm of CPU busy, or 100 % of GPU utilisation, is a condition the mode does not enforce.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_load1_centi",
+        "max_cpu_busy_ppm",
+        "min_mem_available_start_kib",
+        "min_mem_available_run_kib",
+        "max_swap_growth_kib",
+        "forbid_other_runs",
+        "require_idle_gpu",
+        "max_gpu_util_pct",
+        "max_gpu_mem_used_mib"
+      ],
+      "properties": {
+        "max_load1_centi": {
+          "description": "The 1-minute load average before the start, times 100.",
+          "$ref": "#/$defs/Count"
+        },
+        "max_cpu_busy_ppm": {
+          "description": "System-wide CPU busy share over 5 s before the start, in parts per million.",
+          "$ref": "#/$defs/Count"
+        },
+        "min_mem_available_start_kib": {
+          "$ref": "#/$defs/Count"
+        },
+        "min_mem_available_run_kib": {
+          "$ref": "#/$defs/Count"
+        },
+        "max_swap_growth_kib": {
+          "$ref": "#/$defs/Count"
+        },
+        "forbid_other_runs": {
+          "type": "boolean"
+        },
+        "require_idle_gpu": {
+          "type": "boolean"
+        },
+        "max_gpu_util_pct": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "max_gpu_mem_used_mib": {
+          "$ref": "#/$defs/Count"
+        }
+      }
+    },
+    "Sample": {
+      "description": "One reading of the machine: /proc/loadavg, /proc/meminfo and, when the card is there, nvidia-smi.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "at_epoch_ms",
+        "load1_centi",
+        "load5_centi",
+        "mem_available_kib",
+        "swap_used_kib",
+        "cpu_busy_ppm",
+        "gpu_util_pct",
+        "gpu_mem_used_mib"
+      ],
+      "properties": {
+        "at_epoch_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "load1_centi": {
+          "$ref": "#/$defs/Count"
+        },
+        "load5_centi": {
+          "$ref": "#/$defs/Count"
+        },
+        "mem_available_kib": {
+          "$ref": "#/$defs/Count"
+        },
+        "swap_used_kib": {
+          "$ref": "#/$defs/Count"
+        },
+        "cpu_busy_ppm": {
+          "description": "System-wide busy share since the previous sample (null for the first sample of a run, which has none).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "gpu_util_pct": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "gpu_mem_used_mib": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "Breach": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "at_ms"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "memory_run",
+            "other_run",
+            "swap_growth"
+          ]
+        },
+        "at_ms": {
+          "description": "Milliseconds after the arm started.",
+          "$ref": "#/$defs/Count"
+        }
+      }
+    },
+    "Window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "started_epoch_ms",
+        "wall_ms",
+        "exit_code",
+        "aborted"
+      ],
+      "properties": {
+        "started_epoch_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "wall_ms": {
+          "description": "Wall clock from launching the arm to its exit.",
+          "$ref": "#/$defs/Count"
+        },
+        "exit_code": {
+          "description": "The arm's exit code; -1 when it was ended by a signal.",
+          "type": "integer",
+          "minimum": -1,
+          "maximum": 255
+        },
+        "aborted": {
+          "description": "Whether the harness ended the arm (a memory floor broke).",
+          "type": "boolean"
+        }
+      }
+    },
+    "Cpu": {
+      "description": "Host CPU of the arm. total_ms is exact to the clock tick (10 ms): the user plus system time of every process the arm started, threads included, as the kernel credits it to the harness's reaped children. by_role splits what a 1 s walk of /proc saw (sampled_ms); the rest, unsampled_ms, is CPU of processes that ended between two walks. helper_ms (monitor processes the harness itself started) is already subtracted from total_ms; harness_ms is the harness's own CPU and is not part of the arm.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total_ms",
+        "user_ms",
+        "system_ms",
+        "helper_ms",
+        "harness_ms",
+        "sampled_ms",
+        "unsampled_ms",
+        "processes_seen",
+        "peak_tree_rss_bytes",
+        "survivors",
+        "by_role"
+      ],
+      "properties": {
+        "total_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "user_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "system_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "helper_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "harness_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "sampled_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "unsampled_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "processes_seen": {
+          "description": "Distinct processes of the arm the walks saw.",
+          "$ref": "#/$defs/Count"
+        },
+        "peak_tree_rss_bytes": {
+          "description": "The most resident memory the arm's processes held at once (a sum over one walk).",
+          "$ref": "#/$defs/Count"
+        },
+        "survivors": {
+          "description": "Processes still alive in the arm's process group after the arm exited (killed by the harness; the run is void).",
+          "$ref": "#/$defs/Count"
+        },
+        "by_role": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/Role"
+          }
+        }
+      }
+    },
+    "Role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "processes",
+        "cpu_ms",
+        "peak_rss_bytes"
+      ],
+      "properties": {
+        "role": {
+          "$ref": "#/$defs/Token"
+        },
+        "processes": {
+          "$ref": "#/$defs/Count"
+        },
+        "cpu_ms": {
+          "description": "CPU of the role's processes as last seen by a walk.",
+          "$ref": "#/$defs/Count"
+        },
+        "peak_rss_bytes": {
+          "description": "The largest resident set of any one process of the role.",
+          "$ref": "#/$defs/Count"
+        }
+      }
+    },
+    "GpuObserved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "used",
+        "available",
+        "allocated_ms",
+        "util_mean_ppm",
+        "mem_peak_mib",
+        "samples"
+      ],
+      "properties": {
+        "used": {
+          "description": "The arm's own statement (report.gpu_used).",
+          "type": "boolean"
+        },
+        "available": {
+          "description": "Whether nvidia-smi answered; false on a machine without a card or a driver, in which case the other figures are null.",
+          "type": "boolean"
+        },
+        "allocated_ms": {
+          "description": "GPU time the run occupied: the whole wall clock when the arm uses the GPU, else 0.",
+          "$ref": "#/$defs/Count"
+        },
+        "util_mean_ppm": {
+          "description": "Mean GPU utilisation over the run's 1 s readings, in parts per million.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "mem_peak_mib": {
+          "description": "The most GPU memory in use during the run.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "samples": {
+          "description": "How many GPU readings the run took.",
+          "$ref": "#/$defs/Count"
+        }
+      }
+    },
+    "Rates": {
+      "description": "Decisions and games per hour of the measures above; every one is the count times 3,600,000 divided by the milliseconds, truncated.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decisions_per_core_hour",
+        "games_per_core_hour",
+        "decisions_per_wall_hour",
+        "decisions_per_gpu_hour",
+        "decisions_per_core_hour_steady"
+      ],
+      "properties": {
+        "decisions_per_core_hour": {
+          "description": "The unit of comparison: decisions over cpu.total_ms.",
+          "$ref": "#/$defs/Count"
+        },
+        "games_per_core_hour": {
+          "$ref": "#/$defs/Count"
+        },
+        "decisions_per_wall_hour": {
+          "description": "Decisions over window.wall_ms.",
+          "$ref": "#/$defs/Count"
+        },
+        "decisions_per_gpu_hour": {
+          "description": "Decisions over gpu.allocated_ms; null when the arm does not use the GPU.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "decisions_per_core_hour_steady": {
+          "description": "Decisions over cpu.total_ms less the CPU of every warmup and teardown phase; null unless every such phase states its CPU and there is at least one.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "VoidReason": {
+      "enum": [
+        "aborted",
+        "accounting_mismatch",
+        "arm_failed",
+        "memory_run",
+        "no_decisions",
+        "other_run",
+        "survivors",
+        "swap_growth"
+      ]
+    }
+  }
+}

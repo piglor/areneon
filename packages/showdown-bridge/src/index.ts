@@ -501,6 +501,23 @@ export {
   sumBeliefCounts,
   tallyScripted,
 } from "./scripted-h2h-record.ts";
+export {
+  type ArmReport,
+  CLOCK_TICK_MS,
+  HOUR_MS,
+  perHour,
+  type Phase as ThroughputPhase,
+  type Rates as ThroughputRates,
+  ratesOf,
+  readArmReport,
+  readThroughputRecord,
+  type Role as ThroughputRole,
+  type ThroughputRecord,
+  ThroughputRecordError,
+  throughputRecordHash,
+  type VoidReason,
+  voidReasonsOf,
+} from "./throughput-record.ts";
 export { BEST_RESPONSE_FILE, type BestResponsePorts, parseLeaf, runBestResponseCli } from "./best-response-cli.ts";
 export {
   ALL_COLUMNS,

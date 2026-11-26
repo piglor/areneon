@@ -1217,6 +1217,8 @@ game-process figures are wall time of code that does not wait, which is its CPU 
   process during the measurement.
 - `MemAvailable` at least 8 GiB at the start and at least 4 GiB throughout; no growth of swap in use.
 - `uptime` and `/proc/meminfo` sampled every minute and journaled with the result.
+- The throughput harness (`packages/team-dataset/scripts/throughput-bench.ts`, `docs/architecture/throughput.md`) enforces
+  these before it starts a run (`--mode idle`), samples them every minute during it and voids a run that breaks one.
 - Config: the #1179 control config (768 games: 448 self-play, 320 baseline) and, if ADR-022 tier A is
   adopted, its feature config; each is named in the journal by its file SHA-256 and `run_config_hash`.
   Two consecutive full-size generations of each, with the operational flags the run uses.
