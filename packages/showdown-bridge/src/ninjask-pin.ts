@@ -7,4 +7,4 @@
  * constant together, and `test/ninjask-pin.test.ts` fails on any that is left behind. The fork's Showdown pin
  * (`vendor/ninjask/refsim/SHOWDOWN_COMMIT`) must equal `PINNED_SHOWDOWN_COMMIT`.
  */
-export const PINNED_NINJASK_COMMIT = "4dfb2a9d3806a7824d40395b85f483e6920a0d1c";
+export const PINNED_NINJASK_COMMIT = "18da58a5af85de5731c84e0a65c505b7bd7c7490";

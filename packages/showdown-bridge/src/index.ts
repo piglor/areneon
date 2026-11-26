@@ -862,3 +862,6 @@ export { sampleTarget } from "./inference-divergence.ts";
 export { recordBattleTrace, TRACE_FORMAT, TraceRecordError, type TraceSpec } from "./battle-trace.ts";
 export { REPLAY_FORMAT, showdownBattleBackend, type ShowdownBattleBackend } from "./battle-replay.ts";
 export { type CommittedBattle, committedBattles, SINGLE_BATTLES } from "./battle-trace-corpus.ts";
+export { nativeAbstained, nativeCase, NativeAbstain, type NativeCounts, nativeProbeBackend, type NativeProbeBackend, NativeProbeBackendError, type NativeProbeBackendOptions, NATIVE_PROBE_FORMAT } from "./native-probe-backend.ts";
+export { type NativeProbeCommand, NativeProbeError, NativeProbeProcess } from "./native-probe-process.ts";
+export { hasHistory, type NativeOutcome, NativeProtocolError, wireQuery, type WireQuery, type WireSet, wireSet } from "./native-probe-wire.ts";

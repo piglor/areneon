@@ -163,6 +163,18 @@ jobs:
         env:
           ARENEON_REQUIRE_NINJASK: "1"
         run: pnpm exec vitest run packages/showdown-bridge/test/ninjask-pin.test.ts
+      - name: native probe backend and its differential against the Showdown probe (the built process is required)
+        # The probe process and the formats `make ninjask` built; no skip here (ARENEON_REQUIRE_NINJASK=1). Bounded subset
+        # of the admission run (docs/architecture/native-probe.md): the committed corpora, the sweeps and the fixtures,
+        # not the fresh corpus, which is regenerated offline and checked against the vendored commit by an always-run test.
+        env:
+          ARENEON_REQUIRE_NINJASK: "1"
+        run: |
+          set -euo pipefail
+          export ARENEON_NINJASK_PROBE="$PWD/.tmp/ninjask/target/release/ninjask-probe"
+          export ARENEON_NINJASK_DATA="$PWD/.tmp/ninjask/data"
+          test -x "$ARENEON_NINJASK_PROBE"
+          pnpm exec vitest run packages/showdown-bridge/test/native-probe-backend.test.ts packages/team-dataset/test/differential-native.test.ts
 
   team-guard:
     runs-on: ubuntu-24.04
